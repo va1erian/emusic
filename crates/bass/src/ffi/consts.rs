@@ -147,10 +147,10 @@ pub const BASS_TAG_MUSIC_MESSAGE: Dword = 0x10001;
 pub const BASS_TAG_MUSIC_ORDERS: Dword = 0x10002;
 /// Add the (zero-based) instrument index to this base to get
 /// `BASS_TAG_MUSIC_INST` for that instrument.
-pub const BASS_TAG_MUSIC_INST: Dword = 0x10300;
+pub const BASS_TAG_MUSIC_INST: Dword = 0x10100;
 /// Add the (zero-based) sample index to this base to get
 /// `BASS_TAG_MUSIC_SAMPLE` for that sample.
-pub const BASS_TAG_MUSIC_SAMPLE: Dword = 0x10400;
+pub const BASS_TAG_MUSIC_SAMPLE: Dword = 0x10300;
 /// Author/composer tag. **Unverified**: not directly confirmed against a
 /// real `bass.h` in this environment (no network/DLL access) — recorded
 /// here as the value documented for BASS 2.4; re-check before relying on
