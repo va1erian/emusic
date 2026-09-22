@@ -16,6 +16,7 @@ pub mod library_api;
 pub mod mock;
 pub mod panels;
 pub mod player_api;
+mod search;
 pub mod settings;
 pub mod state;
 pub mod theme;

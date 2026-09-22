@@ -5,8 +5,15 @@ use eframe::egui;
 
 use crate::icons;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
+use crate::search::QUERY_HELP;
 use crate::state::{AppState, Command};
 use crate::theme;
+
+/// Stable [`egui::Id`] for the top-bar search box, so Ctrl+F can request
+/// focus on it from anywhere in the frame.
+pub fn search_box_id() -> egui::Id {
+    egui::Id::new("top_bar_search_box")
+}
 
 /// Fixed size of every transport button, matching the accent-filled play
 /// button's size so the row stays uniform while the icons are painted.
@@ -17,6 +24,15 @@ const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(30.0, 30.0);
 type TransportIcon = fn(&egui::Painter, egui::Rect, egui::Color32);
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+    // Ctrl+F focuses the search box regardless of which widget currently
+    // has focus. The app shell consumes the more specific Ctrl+Shift+F /
+    // Ctrl+K shortcuts for the global search popup before this runs, so
+    // they never fall through to this plain Ctrl+F check.
+    let focus_requested = ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F));
+    if focus_requested {
+        ui.memory_mut(|mem| mem.request_focus(search_box_id()));
+    }
+
     egui::Panel::top("top_bar").exact_size(56.0).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
             ui.add_space(4.0);
@@ -145,16 +161,21 @@ fn volume_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) 
 }
 
 fn search_box(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.label("🔍");
+    ui.label("🔍").on_hover_text(QUERY_HELP);
     let mut query = state.search_query.clone();
     let response = ui.add(
         egui::TextEdit::singleline(&mut query)
-            .hint_text("Search library...")
+            .id(search_box_id())
+            .hint_text("Search library... (Ctrl+F)")
             .desired_width(200.0),
     );
-    if response.changed() {
+    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        query.clear();
+    }
+    if query != state.search_query {
         state.push(Command::SetSearchQuery(query));
     }
+    response.on_hover_text(QUERY_HELP);
 }
 
 fn format_time(seconds: f64) -> String {

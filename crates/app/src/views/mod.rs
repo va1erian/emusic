@@ -21,6 +21,7 @@ use eframe::egui;
 
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
+use crate::search::SearchEngine;
 use crate::state::{AppState, View};
 
 pub fn show(
@@ -28,12 +29,13 @@ pub fn show(
     state: &mut AppState,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
+    search: &SearchEngine,
 ) {
     egui::CentralPanel::default().show(ui, |ui| {
         ui.heading(state.view.label());
         ui.add_space(4.0);
         match state.view {
-            View::Music => music::show(ui, state, library, player),
+            View::Music => music::show(ui, state, library, player, search),
             View::Albums => album_grid::show(ui, state, library, player),
             View::Artists => artists::show(ui, library),
             View::Genres => genres::show(ui, library),

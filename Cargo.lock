@@ -1210,6 +1210,7 @@ dependencies = [
  "emusic-core",
  "emusic-library",
  "emusic-player",
+ "emusic-search",
  "image",
  "lofty 0.22.4",
  "rand",

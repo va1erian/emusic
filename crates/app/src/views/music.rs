@@ -7,6 +7,7 @@ use super::column_browser;
 use super::track_table::{self, TrackAction};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
+use crate::search::SearchEngine;
 use crate::state::{AppState, Command};
 
 pub fn show(
@@ -14,8 +15,10 @@ pub fn show(
     state: &mut AppState,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
+    search: &SearchEngine,
 ) {
     if library.track_count() == 0 {
+        state.search_result_count = None;
         empty_state(ui, state, library);
         return;
     }
@@ -24,18 +27,21 @@ pub fn show(
         column_browser::show(ui, &mut state.column_browser, library);
     }
 
-    let query = state.search_query.to_lowercase();
+    // The query is parsed and matched off the UI thread (see
+    // `crate::search`); here we only check each track's id against the
+    // already-computed match set, which is O(1) per track.
     let tracks: Vec<&_> = library
         .tracks()
         .iter()
         .filter(|t| state.column_browser.matches(t))
-        .filter(|t| {
-            query.is_empty()
-                || t.title.to_lowercase().contains(&query)
-                || t.artist.to_lowercase().contains(&query)
-                || t.album.to_lowercase().contains(&query)
-        })
+        .filter(|t| search.is_match(t.id))
         .collect();
+
+    state.search_result_count = if search.is_active() {
+        Some(tracks.len())
+    } else {
+        None
+    };
 
     ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
     ui.separator();

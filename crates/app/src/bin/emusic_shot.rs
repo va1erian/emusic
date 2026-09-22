@@ -64,6 +64,16 @@ struct Cli {
     /// Output PNG path (single view) or directory (`--all`).
     #[arg(long, default_value = "target/shots/shot.png")]
     out: PathBuf,
+
+    /// Pre-fills the top-bar search box with this query before rendering
+    /// (#22), so a filtered Music view can be screenshotted headlessly.
+    #[arg(long)]
+    query: Option<String>,
+
+    /// Opens the global search popup, pre-filled with `--query` (or empty),
+    /// before rendering (#22).
+    #[arg(long)]
+    search_popup: bool,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -86,6 +96,11 @@ fn main() {
     let (width, height) = parse_size(&cli.size);
     let mode = LibraryMode::from_flags(cli.empty, cli.scanning);
 
+    let search = SearchArgs {
+        query: cli.query.clone(),
+        popup: cli.search_popup,
+    };
+
     if cli.all {
         let dir = if cli.out.extension().is_some() {
             cli.out
@@ -98,7 +113,15 @@ fn main() {
         std::fs::create_dir_all(&dir).expect("create output directory");
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
-            render_one(view, width, height, cli.theme, cli.accent, mode, &out);
+            render_one(
+                view,
+                (width, height),
+                cli.theme,
+                cli.accent,
+                mode,
+                &search,
+                &out,
+            );
         }
         return;
     }
@@ -111,7 +134,23 @@ fn main() {
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    render_one(view, width, height, cli.theme, cli.accent, mode, &cli.out);
+    render_one(
+        view,
+        (width, height),
+        cli.theme,
+        cli.accent,
+        mode,
+        &search,
+        &cli.out,
+    );
+}
+
+/// Search state (#22) to apply before rendering: a top-bar query and/or the
+/// global popup, pre-filled and left open.
+#[derive(Clone, Default)]
+struct SearchArgs {
+    query: Option<String>,
+    popup: bool,
 }
 
 /// Mock library to render: the populated default, the first-run empty state,
@@ -149,13 +188,14 @@ impl LibraryMode {
 
 fn render_one(
     view: View,
-    width: f32,
-    height: f32,
+    size: (f32, f32),
     theme: ThemeArg,
     accent: Option<Accent>,
     mode: LibraryMode,
+    search: &SearchArgs,
     out: &Path,
 ) {
+    let (width, height) = size;
     // Theme/accent go through the config so the shell applies them the
     // same way it applies user settings.
     let defaults = Config::default();
@@ -176,10 +216,26 @@ fn render_one(
         });
 
     harness.state_mut().set_view(view);
+    if let Some(query) = &search.query {
+        harness.state_mut().set_search_query(query.clone());
+    }
+    if search.popup {
+        harness
+            .state_mut()
+            .open_search_popup(search.query.clone().unwrap_or_default());
+    }
     // A single step is enough for a static screenshot; `Harness::run` would
     // wait for the UI to go idle, which it never does here because the
     // shell's repaint policy (#6) keeps requesting frames while "playing".
+    // When a search query is active, the match runs on a background thread
+    // (#22): give it real wall-clock time to answer, then run a couple more
+    // steps so the UI thread polls and renders the result rather than a
+    // still-empty "pending" frame.
     harness.run_steps(1);
+    if search.query.is_some() || search.popup {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        harness.run_steps(2);
+    }
 
     let image = harness.render().expect("headless render failed");
     image.save(out).expect("write screenshot PNG");
