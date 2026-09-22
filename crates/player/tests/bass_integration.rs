@@ -5,7 +5,8 @@
 //! gracefully (rather than failing) when `Bass::init` can't find them,
 //! which is the expected case in CI and on a fresh checkout. On a machine
 //! with `EMUSIC_BASS_DIR` (or `<exe dir>/bass/`) pointing at a real BASS
-//! install, it exercises real playback end-to-end.
+//! install, it exercises real playback end-to-end — on the "no sound"
+//! device, so the generated tone stays silent on the developer's speakers.
 //!
 //! BASS's `BASS_Init`/`BASS_Free` state is process-global (`bass` enforces
 //! a single live instance), so this is the only test in the binary and
@@ -17,6 +18,22 @@ use std::time::Duration;
 
 use bass::Bass;
 use emusic_player::{BassBackend, PlaybackState, Player};
+
+/// Initializes BASS on device `0`, the "no sound" device, so playback runs
+/// the same mixing path as a real device without any audible output.
+///
+/// Returns `None` (after printing why) when `bass.dll` is absent, so the
+/// test can skip instead of failing; any other error is unexpected.
+fn init_silent() -> Option<Bass> {
+    match Bass::init(0, 44100) {
+        Ok(bass) => Some(bass),
+        Err(bass::BassError::DllNotFound(detail)) => {
+            eprintln!("skipping: bass.dll not available ({detail})");
+            None
+        }
+        Err(other) => panic!("unexpected error initializing BASS: {other}"),
+    }
+}
 
 /// One second of 44100 Hz mono 16-bit PCM WAV, generated in-memory (no
 /// fixture file, no extra dependency).
@@ -60,13 +77,8 @@ fn write_temp_wav(name: &str) -> PathBuf {
 
 #[test]
 fn plays_a_generated_wav_through_the_real_backend() {
-    let bass = match Bass::init(-1, 44100) {
-        Ok(bass) => bass,
-        Err(bass::BassError::DllNotFound(detail)) => {
-            eprintln!("skipping: bass.dll not available ({detail})");
-            return;
-        }
-        Err(other) => panic!("unexpected error initializing BASS: {other}"),
+    let Some(bass) = init_silent() else {
+        return;
     };
 
     let path = write_temp_wav("plays_a_generated_wav_through_the_real_backend");
