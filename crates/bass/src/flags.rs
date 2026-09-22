@@ -26,6 +26,26 @@ bitflags! {
 }
 
 bitflags! {
+    /// Flags for [`crate::Bass::open_push_stream`] (`BASS_StreamCreate`
+    /// with `STREAMPROC_PUSH`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct PushFlags: u32 {
+        /// Feed 8-bit unsigned samples instead of the default signed 16-bit.
+        const EIGHT_BIT = c::BASS_SAMPLE_8BITS;
+        /// Feed 32-bit floating-point samples instead of 16-bit integer.
+        const FLOAT = c::BASS_SAMPLE_FLOAT;
+        /// Downmix to mono.
+        const MONO = c::BASS_SAMPLE_MONO;
+        /// Loop the stream when it reaches the end.
+        const LOOP = c::BASS_SAMPLE_LOOP;
+        /// Create a decoding stream (no playback device output).
+        const DECODE = c::BASS_STREAM_DECODE;
+        /// Free the stream automatically once playback reaches the end.
+        const AUTOFREE = c::BASS_STREAM_AUTOFREE;
+    }
+}
+
+bitflags! {
     /// Flags for [`crate::Music::from_file`] (`BASS_MusicLoad`) and for
     /// [`crate::Channel::set_flags`] on a music channel
     /// (`BASS_ChannelFlags`).
@@ -79,6 +99,9 @@ pub enum Attribute {
     Volume,
     /// Panning position, `-1.0` (full left) to `1.0` (full right).
     Pan,
+    /// Maximum number of bytes a push stream may have queued (`0` = no
+    /// limit); push streams only.
+    PushLimit,
     /// Music amplification level, `0`-`100` (MOD music channels only).
     MusicAmplify,
     /// Music channel separation, `0`-`100` (MOD music channels only; `0`
@@ -92,6 +115,7 @@ impl Attribute {
             Self::Freq => c::BASS_ATTRIB_FREQ,
             Self::Volume => c::BASS_ATTRIB_VOL,
             Self::Pan => c::BASS_ATTRIB_PAN,
+            Self::PushLimit => c::BASS_ATTRIB_PUSH_LIMIT,
             Self::MusicAmplify => c::BASS_ATTRIB_MUSIC_AMPLIFY,
             Self::MusicPanSeparation => c::BASS_ATTRIB_MUSIC_PANSEP,
         }
@@ -216,5 +240,18 @@ mod tests {
     fn playback_state_defaults_to_stopped_for_unknown_values() {
         assert_eq!(PlaybackState::from_raw(999), PlaybackState::Stopped);
         assert_eq!(PlaybackState::from_raw(1), PlaybackState::Playing);
+    }
+
+    #[test]
+    fn push_flags_combine_with_bitor() {
+        let flags = PushFlags::FLOAT | PushFlags::DECODE;
+        assert!(flags.contains(PushFlags::FLOAT));
+        assert!(flags.contains(PushFlags::DECODE));
+        assert!(!flags.contains(PushFlags::LOOP));
+    }
+
+    #[test]
+    fn push_limit_attribute_matches_the_header() {
+        assert_eq!(Attribute::PushLimit.as_raw(), 17);
     }
 }

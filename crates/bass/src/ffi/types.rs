@@ -28,6 +28,18 @@ pub type HPlugin = Dword;
 pub type SyncProc =
     unsafe extern "system" fn(handle: HSync, channel: Dword, data: Dword, user: *mut c_void);
 
+/// Callback signature for `STREAMPROC` (`BASS_StreamCreate`).
+///
+/// A push stream passes [`STREAMPROC_PUSH`](super::consts::STREAMPROC_PUSH)
+/// instead of a real callback, so this type only exists to give
+/// `BASS_StreamCreate` an accurate signature.
+pub type StreamProc = unsafe extern "system" fn(
+    handle: HStream,
+    buffer: *mut c_void,
+    length: Dword,
+    user: *mut c_void,
+) -> Dword;
+
 /// Mirrors `BASS_DEVICEINFO`. The `name`/`driver` pointers are only valid
 /// for the lifetime of the `BASS_GetDeviceInfo` call that filled them in.
 #[repr(C)]

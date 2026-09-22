@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-use super::types::Dword;
+use super::types::{Dword, StreamProc};
 
 // ---- BASS_ErrorGetCode -----------------------------------------------
 pub const BASS_OK: i32 = 0;
@@ -81,12 +81,22 @@ pub const BASS_CONFIG_SRC_SAMPLE: Dword = 44;
 pub const BASS_CONFIG_FLOAT: Dword = 54;
 
 // ---- BASS_StreamCreateFile / BASS_MusicLoad shared flags -----------------
+pub const BASS_SAMPLE_8BITS: Dword = 1;
 pub const BASS_SAMPLE_FLOAT: Dword = 256;
 pub const BASS_SAMPLE_MONO: Dword = 2;
 pub const BASS_SAMPLE_LOOP: Dword = 4;
 pub const BASS_STREAM_PRESCAN: Dword = 0x0002_0000;
 pub const BASS_STREAM_AUTOFREE: Dword = 0x0004_0000;
 pub const BASS_STREAM_DECODE: Dword = 0x0020_0000;
+
+// ---- BASS_StreamCreate / BASS_StreamPutData (push streams) ---------------
+/// `STREAMPROC_PUSH`: the sentinel `STREAMPROC *` (`(STREAMPROC *)-1`)
+/// passed to `BASS_StreamCreate` to create a "push" stream instead of
+/// pulling data from a user callback.
+pub const STREAMPROC_PUSH: *const StreamProc = usize::MAX as *const StreamProc;
+/// `BASS_STREAMPROC_END`: OR'd into the `length` argument of
+/// `BASS_StreamPutData` to signal the end of a push stream.
+pub const BASS_STREAMPROC_END: Dword = 0x8000_0000;
 
 // ---- BASS_MusicLoad-specific flags ---------------------------------------
 pub const BASS_MUSIC_LOOP: Dword = BASS_SAMPLE_LOOP;
@@ -110,6 +120,8 @@ pub const BASS_MUSIC_NOSAMPLE: Dword = 0x0010_0000;
 pub const BASS_ATTRIB_FREQ: Dword = 1;
 pub const BASS_ATTRIB_VOL: Dword = 2;
 pub const BASS_ATTRIB_PAN: Dword = 3;
+/// Maximum number of bytes a push stream may have queued (`0` = no limit).
+pub const BASS_ATTRIB_PUSH_LIMIT: Dword = 17;
 pub const BASS_ATTRIB_MUSIC_AMPLIFY: Dword = 0x100;
 pub const BASS_ATTRIB_MUSIC_PANSEP: Dword = 0x101;
 
