@@ -20,10 +20,11 @@ use crate::library_api::{LibraryDataSource, TrackInfo};
 use pane::PaneEntry;
 pub use selection::PaneSelection;
 
-/// Default splitter height, in pixels (the pane strip above the table).
-pub const DEFAULT_HEIGHT: f32 = 150.0;
+/// Default splitter height, in pixels (the pane strip above the table),
+/// sized so roughly eight to ten rows are visible in each pane.
+pub const DEFAULT_HEIGHT: f32 = 200.0;
 /// Smallest the column browser may be dragged to.
-pub const MIN_HEIGHT: f32 = 60.0;
+pub const MIN_HEIGHT: f32 = 80.0;
 /// Largest the column browser may be dragged to.
 pub const MAX_HEIGHT: f32 = 480.0;
 

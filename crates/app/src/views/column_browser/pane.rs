@@ -4,8 +4,13 @@ use eframe::egui;
 
 use super::selection::PaneSelection;
 
-/// Extra vertical space added to each row on top of the text height.
-const ROW_PADDING: f32 = 2.0;
+/// Height of one row, in pixels. Kept close to the row text's line height so
+/// panes stay as dense as MusicBee's.
+const ROW_HEIGHT: f32 = 17.0;
+
+/// Point size of a row's text, a touch smaller than body text so more
+/// entries fit without feeling cramped.
+const ROW_FONT_SIZE: f32 = 12.0;
 
 /// One selectable row in a pane; `value == None` is the leading "All (N)"
 /// row, and an empty value is shown as "(unknown)".
@@ -24,14 +29,12 @@ impl PaneEntry {
             Some(value) => value,
         }
     }
-
-    fn text(&self) -> String {
-        format!("{} ({})", self.label(), self.count)
-    }
 }
 
-/// Shows a pane's title and its virtualized list of rows (only the visible
-/// rows are laid out, so large libraries stay smooth).
+/// Shows a pane's title and its rows: the "All (N)" row stays pinned at the
+/// top while the facet rows scroll (and are virtualized, so large libraries
+/// stay smooth). The name is left-aligned and the count right-aligned, like
+/// MusicBee.
 pub fn show(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -43,19 +46,27 @@ pub fn show(
         ui.set_min_width(ui.available_width());
         ui.label(egui::RichText::new(title).strong());
 
-        let row_height = ui.text_style_height(&egui::TextStyle::Body) + ROW_PADDING;
+        // Rows sit flush against each other (no inter-item gap); the pane's
+        // density comes from the row height alone.
+        ui.spacing_mut().item_spacing.y = 0.0;
+
+        let Some((all, facets)) = entries.split_first() else {
+            return;
+        };
+
+        row(ui, all, selection);
         egui::ScrollArea::vertical()
             .id_salt(id_salt)
             .auto_shrink([false, false])
-            .show_rows(ui, row_height, entries.len(), |ui, range| {
+            .show_rows(ui, ROW_HEIGHT, facets.len(), |ui, range| {
                 for index in range {
-                    row(ui, row_height, &entries[index], selection);
+                    row(ui, &facets[index], selection);
                 }
             });
     });
 }
 
-fn row(ui: &mut egui::Ui, row_height: f32, entry: &PaneEntry, selection: &mut PaneSelection) {
+fn row(ui: &mut egui::Ui, entry: &PaneEntry, selection: &mut PaneSelection) {
     let selected = match entry.value.as_deref() {
         None => selection.is_all(),
         Some(value) => selection.contains(value),
@@ -63,8 +74,17 @@ fn row(ui: &mut egui::Ui, row_height: f32, entry: &PaneEntry, selection: &mut Pa
 
     let width = ui.available_width();
     let response = ui.add_sized(
-        [width, row_height],
-        egui::Button::selectable(selected, entry.text()),
+        [width, ROW_HEIGHT],
+        egui::Button::selectable(
+            selected,
+            egui::RichText::new(entry.label()).size(ROW_FONT_SIZE),
+        )
+        .small()
+        .right_text(
+            egui::RichText::new(entry.count.to_string())
+                .weak()
+                .size(ROW_FONT_SIZE),
+        ),
     );
     if response.clicked() {
         let ctrl = ui.input(|i| i.modifiers.command);
