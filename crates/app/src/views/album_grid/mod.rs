@@ -232,6 +232,12 @@ fn grid_view(
                                 commands.push(Command::PlayAlbum(ids));
                             }
                         }
+                        response.context_menu(|ui| {
+                            if ui.button("Shuffle play").clicked() {
+                                commands.push(crate::shuffle::album(library, album));
+                                ui.close();
+                            }
+                        });
                     }
                 });
             }

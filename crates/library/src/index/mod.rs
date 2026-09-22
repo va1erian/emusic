@@ -13,11 +13,13 @@ pub mod artists;
 pub mod dirs;
 pub mod genres;
 pub mod natural_sort;
+mod scopes;
 
 pub use albums::{Album, AlbumId};
 pub use artists::{Artist, ArtistId};
 pub use dirs::DirNode;
 pub use genres::{Genre, GenreId};
+pub use scopes::ShuffleScope;
 
 /// Aggregated totals across the whole library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

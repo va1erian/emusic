@@ -40,6 +40,10 @@ pub enum PlayerEvent {
     /// An operation failed; playback continues in whatever state it was in
     /// (or moves to `Stopped` if the failure was opening a new track).
     Error(PlayerError),
+    /// A track in a shuffle scope couldn't be opened (offline NAS, deleted
+    /// file, ...) and was skipped rather than stopping playback. Consumers
+    /// can surface this as a transient status message.
+    TrackSkipped { path: PathBuf },
     /// Listening-accounting summary for a track that just stopped being
     /// current (ended naturally, was skipped, or playback was replaced).
     ///

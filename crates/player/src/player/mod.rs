@@ -25,7 +25,11 @@ use crate::backend::{AudioBackend, BackendChannel};
 use crate::error::PlayerError;
 use crate::events::{PlaybackState, PlayerEvent};
 use crate::listen::ListenAccounting;
-use crate::queue::{Queue, RepeatMode};
+use crate::queue::{QueueSource, RepeatMode};
+
+/// Maximum number of upcoming tracks materialised for the queue panel. Keeps
+/// a 100k-track shuffle scope from ever building a full visible queue.
+pub const UPCOMING_LIMIT: usize = 20;
 
 /// The currently loaded (playing/paused/stopped-at-zero) track.
 struct CurrentTrack {
@@ -45,6 +49,7 @@ enum OpenMessage {
         guard: Box<dyn Any + Send>,
     },
     Failed {
+        path: PathBuf,
         error: PlayerError,
     },
 }
@@ -61,7 +66,10 @@ enum OpenMessage {
 /// the result (success or failure) once it arrives and never blocks itself.
 pub struct Player {
     backend: Arc<dyn AudioBackend>,
-    queue: Queue,
+    queue: QueueSource,
+    /// Human-readable description of the active shuffle scope, if playback
+    /// is a scoped shuffle (see [`Player::play_shuffled`]).
+    shuffle_scope: Option<String>,
     state: PlaybackState,
     /// Linear UI volume, `0.0..=1.0` (see [`crate::volume`] for the curve
     /// applied before it reaches the backend).
@@ -86,7 +94,8 @@ impl Player {
         let (events_tx, events_rx) = unbounded();
         Self {
             backend,
-            queue: Queue::new(),
+            queue: QueueSource::explicit(),
+            shuffle_scope: None,
             state: PlaybackState::Stopped,
             volume: 1.0,
             current: None,
@@ -155,27 +164,52 @@ impl Player {
         self.queue.shuffle_enabled()
     }
 
-    /// The upcoming queue in navigation (shuffled, if enabled) order.
+    /// The label of the active scoped shuffle, if any (see
+    /// [`Player::play_shuffled`]); `None` for ordinary playback.
+    pub fn shuffle_scope(&self) -> Option<&str> {
+        self.shuffle_scope.as_deref()
+    }
+
+    /// The whole queue in navigation order. For a shuffle scope this is the
+    /// scope's original order, not the shuffled play order.
     pub fn queue_paths(&self) -> impl Iterator<Item = &Path> {
-        self.queue.iter_order()
+        self.queue.iter_paths()
     }
 
     /// The not-yet-played portion of the queue, each paired with its index
     /// into the original list — for a UI "up next" list where "remove"/
     /// "jump" (see [`Player::jump_to`]) need to address a specific track,
-    /// not just its display position.
+    /// not just its display position. Capped at [`UPCOMING_LIMIT`].
     pub fn upcoming(&self) -> Vec<(usize, PathBuf)> {
-        self.queue.upcoming()
+        self.queue.upcoming(UPCOMING_LIMIT)
     }
 
     // -- Queue management -------------------------------------------------
 
-    /// Replaces the whole queue and starts playing `items[start_index]`.
+    /// Replaces the whole queue with an explicit list and starts playing
+    /// `items[start_index]`, leaving any shuffle scope.
     pub fn replace_and_play(&mut self, items: Vec<PathBuf>, start_index: usize) {
         self.drop_current_and_account();
+        self.shuffle_scope = None;
         let path = self.queue.replace(items, start_index);
         self.emit(PlayerEvent::QueueChanged);
         self.open_current_or_stop(path);
+    }
+
+    /// Starts a lazy shuffled playback over `scope`, showing `label` as the
+    /// active scope. Tracks are pulled from the scope on demand, so only a
+    /// short preview ever reaches the queue panel; unreadable tracks are
+    /// skipped rather than stopping playback.
+    pub fn play_shuffled(&mut self, scope: Vec<PathBuf>, label: impl Into<String>) {
+        let repeat = self.queue.repeat_mode();
+        self.drop_current_and_account();
+        let mut source = crate::queue::ShuffleSource::new(scope);
+        source.set_repeat_mode(repeat);
+        self.queue = QueueSource::Shuffle(source);
+        self.shuffle_scope = Some(label.into());
+        self.emit(PlayerEvent::QueueChanged);
+        let first = self.queue.advance();
+        self.open_current_or_stop(first);
     }
 
     /// Appends a track to the end of the queue without affecting playback.
@@ -188,15 +222,7 @@ impl Player {
     /// leaves it at the end if nothing is current), without affecting
     /// playback.
     pub fn play_next(&mut self, path: PathBuf) {
-        let current = self.queue.current_item_index();
-        let new_item_index = self.queue.len();
-        self.queue.enqueue(path);
-        if let Some(current) = current {
-            let target = current + 1;
-            if target < new_item_index {
-                self.queue.move_track(new_item_index, target);
-            }
-        }
+        self.queue.play_next(path);
         self.emit(PlayerEvent::QueueChanged);
     }
 
@@ -224,7 +250,15 @@ impl Player {
         self.emit(PlayerEvent::RepeatModeChanged(mode));
     }
 
+    /// Enables/disables shuffle. Disabling it while a scoped shuffle is
+    /// active ends the scope, leaving the current track as a one-item queue.
     pub fn set_shuffle(&mut self, enabled: bool) {
+        if !enabled && self.queue.is_shuffle() {
+            self.end_shuffle_scope();
+            self.emit(PlayerEvent::ShuffleChanged(false));
+            self.emit(PlayerEvent::QueueChanged);
+            return;
+        }
         self.queue.set_shuffle(enabled);
         self.emit(PlayerEvent::ShuffleChanged(enabled));
         self.emit(PlayerEvent::QueueChanged);
@@ -241,6 +275,19 @@ impl Player {
     }
 
     // -- Internals shared across this module's files -----------------------
+
+    /// Drops the shuffle scope, keeping the current track as a one-item
+    /// explicit queue so playback isn't interrupted.
+    fn end_shuffle_scope(&mut self) {
+        let current = self.queue.current().cloned();
+        let repeat = self.queue.repeat_mode();
+        self.shuffle_scope = None;
+        self.queue = QueueSource::explicit();
+        self.queue.set_repeat_mode(repeat);
+        if let Some(path) = current {
+            self.queue.replace(vec![path], 0);
+        }
+    }
 
     pub(super) fn emit(&mut self, event: PlayerEvent) {
         let _ = self.events_tx.send(event);

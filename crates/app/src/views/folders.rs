@@ -16,6 +16,8 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
+    let recursive = state.folder_tree.include_subfolders;
+    let mut folder_command = None;
     egui::Panel::left("folder_tree")
         .resizable(true)
         .default_size(260.0)
@@ -24,9 +26,18 @@ pub fn show(
             egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    folder_tree::show(ui, library.dir_tree(), &mut state.folder_tree.selected);
+                    folder_command = folder_tree::show(
+                        ui,
+                        library.dir_tree(),
+                        &mut state.folder_tree.selected,
+                        library,
+                        recursive,
+                    );
                 });
         });
+    if let Some(command) = folder_command {
+        state.push(command);
+    }
 
     let tracks: Vec<&TrackInfo> = library
         .tracks()

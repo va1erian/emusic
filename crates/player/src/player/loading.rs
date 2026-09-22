@@ -47,6 +47,7 @@ impl Player {
         let spawned = thread::Builder::new()
             .name("emusic-player-open".to_string())
             .spawn(move || {
+                let failed_path = path.clone();
                 let outcome = backend.open(&path).and_then(|channel| {
                     let guard = channel.on_end(Box::new(move || {
                         let _ = end_tx.send(());
@@ -60,7 +61,10 @@ impl Player {
                         channel,
                         guard,
                     },
-                    Err(error) => OpenMessage::Failed { error },
+                    Err(error) => OpenMessage::Failed {
+                        path: failed_path,
+                        error,
+                    },
                 };
                 let _ = tx.send(message);
             });
@@ -104,10 +108,25 @@ impl Player {
                 self.set_state(PlaybackState::Playing);
                 self.emit(PlayerEvent::TrackStarted { path, queue_index });
             }
-            Ok(OpenMessage::Failed { error }) => {
+            Ok(OpenMessage::Failed { path, error }) => {
                 self.pending_open = None;
-                self.emit(PlayerEvent::Error(error));
-                self.set_state(PlaybackState::Stopped);
+                if self.queue.is_shuffle() {
+                    // A scoped shuffle must survive an unreadable file (an
+                    // offline NAS, a deleted track): skip it and try the next
+                    // one instead of stopping. `advance_skip` never
+                    // reshuffles, so an entirely offline scope still ends.
+                    self.emit(PlayerEvent::TrackSkipped { path });
+                    match self.queue.advance_skip() {
+                        Some(next) => {
+                            self.emit(PlayerEvent::QueueChanged);
+                            self.open_current_or_stop(Some(next));
+                        }
+                        None => self.set_state(PlaybackState::Stopped),
+                    }
+                } else {
+                    self.emit(PlayerEvent::Error(error));
+                    self.set_state(PlaybackState::Stopped);
+                }
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => self.pending_open = None,

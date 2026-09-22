@@ -44,4 +44,4 @@ pub use backend::{AudioBackend, BackendChannel, BassBackend};
 pub use error::PlayerError;
 pub use events::{PlaybackState, PlayerEvent};
 pub use player::Player;
-pub use queue::{Queue, RepeatMode};
+pub use queue::{Queue, QueueSource, RepeatMode, ShuffleSource};
