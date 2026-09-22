@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::views::album_grid::AlbumGridState;
 use crate::views::column_browser::ColumnBrowserState;
+use crate::views::folder_tree::FolderTreeState;
 use crate::views::track_table::TrackTableState;
 
 #[cfg(test)]
@@ -307,6 +308,11 @@ pub struct AppState {
     pub column_browser: ColumnBrowserState,
     /// The Albums view's grid, sort and thumbnail cache (#17).
     pub album_grid: AlbumGridState,
+    /// The Folders view's selected directory + "include subfolders" toggle
+    /// (#18).
+    pub folder_tree: FolderTreeState,
+    /// The Folders view's track table (sort + selection).
+    pub folders_table: TrackTableState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
@@ -326,6 +332,8 @@ impl Default for AppState {
             music_table: TrackTableState::default(),
             column_browser: ColumnBrowserState::default(),
             album_grid: AlbumGridState::default(),
+            folder_tree: FolderTreeState::default(),
+            folders_table: TrackTableState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),
         }

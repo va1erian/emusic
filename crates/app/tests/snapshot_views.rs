@@ -59,6 +59,11 @@ fn albums_view() {
 }
 
 #[test]
+fn folders_view() {
+    snapshot_view(View::Folders);
+}
+
+#[test]
 fn now_playing_view() {
     snapshot_view(View::NowPlaying);
 }

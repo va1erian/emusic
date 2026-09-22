@@ -75,6 +75,22 @@ pub struct FolderInfo {
     pub track_count: usize,
 }
 
+/// A node in the Folders view's collapsible directory tree (#18), built from
+/// the library index's directory grouping.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DirNodeInfo {
+    /// Full path of this directory.
+    pub path: String,
+    /// Display name (the last path component, or the drive root).
+    pub name: String,
+    /// Tracks located directly in this directory, not counting children.
+    pub direct_track_count: usize,
+    /// Tracks in this directory and all descendants.
+    pub total_track_count: usize,
+    /// Child directories, sorted by name.
+    pub children: Vec<DirNodeInfo>,
+}
+
 /// One row in the play history list.
 #[derive(Debug, Clone, Default)]
 pub struct HistoryEntry {
@@ -92,6 +108,8 @@ pub trait LibraryDataSource {
     fn artists(&self) -> &[ArtistInfo];
     fn genres(&self) -> &[String];
     fn folders(&self) -> &[FolderInfo];
+    /// Root nodes of the library's directory tree (Folders view, #18).
+    fn dir_tree(&self) -> &[DirNodeInfo];
     fn history(&self) -> &[HistoryEntry];
     /// Tracks ordered by descending play count.
     fn most_played(&self) -> &[TrackInfo];

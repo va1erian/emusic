@@ -7,6 +7,7 @@
 pub(crate) mod album_grid;
 mod artists;
 pub(crate) mod column_browser;
+pub(crate) mod folder_tree;
 mod folders;
 mod genres;
 mod history;
@@ -36,7 +37,7 @@ pub fn show(
             View::Albums => album_grid::show(ui, state, library, player),
             View::Artists => artists::show(ui, library),
             View::Genres => genres::show(ui, library),
-            View::Folders => folders::show(ui, library),
+            View::Folders => folders::show(ui, state, library, player),
             View::MostPlayed => most_played::show(ui, library),
             View::History => history::show(ui, library),
             View::NowPlaying => now_playing::show(ui, player),

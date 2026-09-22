@@ -63,6 +63,27 @@ fn from_store_builds_track_info() {
 }
 
 #[test]
+fn from_store_builds_dir_tree_with_counts() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut in_album = sample_track(r"C:\music\Album\1.flac");
+    in_album.id = TrackId(1);
+    in_album.dir = PathBuf::from(r"C:\music\Album");
+    let mut at_root = sample_track(r"C:\music\2.flac");
+    at_root.id = TrackId(2);
+    at_root.path = PathBuf::from(r"C:\music\2.flac");
+    store.upsert_tracks(&mut [in_album, at_root]).unwrap();
+
+    let snapshot = Snapshot::from_store(&store, &[]).unwrap();
+    assert_eq!(snapshot.dirs.len(), 1);
+    let root = &snapshot.dirs[0];
+    let music = &root.children[0];
+    assert_eq!(music.name, "music");
+    assert_eq!(music.direct_track_count, 1);
+    assert_eq!(music.total_track_count, 2);
+    assert_eq!(music.children[0].name, "Album");
+}
+
+#[test]
 fn record_play_updates_snapshot_play_count() {
     let mut snapshot = Snapshot::default();
     snapshot.tracks.push(TrackInfo {

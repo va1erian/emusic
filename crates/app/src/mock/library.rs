@@ -2,7 +2,7 @@
 
 use super::data::{self, GeneratedLibrary};
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -49,6 +49,7 @@ fn empty_data() -> GeneratedLibrary {
         artists: Vec::new(),
         genres: Vec::new(),
         folders: Vec::new(),
+        dirs: Vec::new(),
         history: Vec::new(),
         most_played: Vec::new(),
     }
@@ -79,6 +80,10 @@ impl LibraryDataSource for MockLibrary {
 
     fn folders(&self) -> &[FolderInfo] {
         &self.data.folders
+    }
+
+    fn dir_tree(&self) -> &[DirNodeInfo] {
+        &self.data.dirs
     }
 
     fn history(&self) -> &[HistoryEntry] {

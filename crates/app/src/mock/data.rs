@@ -10,9 +10,10 @@ use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
 };
 
+use super::dirs;
 use super::generators::*;
 
 /// Fixed seed so `emusic --mock` and `emusic-shot` render byte-identical
@@ -82,6 +83,7 @@ pub struct GeneratedLibrary {
     pub artists: Vec<ArtistInfo>,
     pub genres: Vec<String>,
     pub folders: Vec<FolderInfo>,
+    pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
     pub most_played: Vec<TrackInfo>,
 }
@@ -192,6 +194,8 @@ pub fn generate() -> GeneratedLibrary {
         })
         .collect();
 
+    let dirs = dirs::build(&tracks);
+
     let mut most_played: Vec<TrackInfo> = tracks.clone();
     most_played.sort_by_key(|t| std::cmp::Reverse(t.play_count));
     most_played.truncate(50);
@@ -204,6 +208,7 @@ pub fn generate() -> GeneratedLibrary {
         artists,
         genres,
         folders,
+        dirs,
         history,
         most_played,
     }
