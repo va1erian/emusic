@@ -16,6 +16,7 @@ use crate::backend::ipc::IpcBridge;
 use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::{PlaybackStatus, PlayerApi};
+use crate::search::SearchEngine;
 use crate::state::{AppState, Command, PanelKind, View};
 use crate::{fonts, panels, theme, views};
 
@@ -45,6 +46,13 @@ pub struct App {
     /// A startup problem to keep showing the user (e.g. "no audio device")
     /// rather than silently degrading; `None` once nothing is wrong.
     backend_notice: Option<String>,
+    /// Live full-text search over the library for the top bar / Music view
+    /// (#22); owns a background worker so matching never blocks the UI
+    /// thread.
+    search: SearchEngine,
+    /// A second, independent search engine for the global search popup, so
+    /// its query never changes what the Music view underneath is showing.
+    popup_search: SearchEngine,
 }
 
 impl App {
@@ -95,6 +103,8 @@ impl App {
             dirty_since: None,
             ipc: None,
             backend_notice: None,
+            search: SearchEngine::new(),
+            popup_search: SearchEngine::new(),
         }
     }
 
@@ -137,6 +147,20 @@ impl App {
     /// like Settings) can be screenshotted directly.
     pub fn set_view(&mut self, view: View) {
         self.state.view = view;
+    }
+
+    /// Sets the top-bar search box's query text directly, bypassing the
+    /// widget. Used by `emusic-shot` (`--query`) so a filtered Music view
+    /// can be screenshotted headlessly.
+    pub fn set_search_query(&mut self, query: impl Into<String>) {
+        self.state.search_query = query.into();
+    }
+
+    /// Opens the global search popup with the given query, as Ctrl+K would.
+    /// Used by `emusic-shot` (`--search-popup`).
+    pub fn open_search_popup(&mut self, query: impl Into<String>) {
+        self.state.search_popup.open();
+        self.state.search_popup.query = query.into();
     }
 
     fn apply_pending(&mut self) {
@@ -240,6 +264,33 @@ impl eframe::App for App {
 
         theme::apply(&ctx, self.state.theme, self.state.accent.color());
 
+        // Global search popup shortcuts. Checked (and consumed) before the
+        // top bar's own Ctrl+F check, and matched most-specific-first, so
+        // Ctrl+Shift+F never also triggers the plain Ctrl+F focus request.
+        let toggle_popup = ctx.input_mut(|i| {
+            i.consume_key(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::F,
+            ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)
+        });
+        if toggle_popup {
+            if self.state.search_popup.open {
+                self.state.search_popup.close();
+            } else {
+                self.state.search_popup.open();
+            }
+        }
+
+        // Keep both search engines in sync: the top bar's (drives the Music
+        // view's live filter) and the popup's (independent, so typing in
+        // the popup never changes what's filtered underneath it). Both run
+        // their matching on background threads (see `crate::search`), so
+        // neither ever blocks a frame.
+        self.search
+            .tick(self.library.tracks(), &self.state.search_query);
+        self.popup_search
+            .tick(self.library.tracks(), &self.state.search_popup.query);
+
         if let Some(message) = self.ipc.as_ref().and_then(IpcBridge::try_recv) {
             self.handle_ipc_message(message);
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -281,6 +332,13 @@ impl eframe::App for App {
             &mut self.state,
             self.library.as_ref(),
             self.player.as_ref(),
+            &self.search,
+        );
+        panels::search_popup::show(
+            &ctx,
+            &mut self.state,
+            self.library.as_ref(),
+            &self.popup_search,
         );
 
         self.apply_pending();
