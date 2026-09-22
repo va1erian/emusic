@@ -51,10 +51,11 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
 
 fn strip_the(s: &str) -> &str {
     let trimmed = s.trim_start();
-    if trimmed.len() > 4 && trimmed[..4].eq_ignore_ascii_case("the ") {
-        &trimmed[4..]
-    } else {
-        trimmed
+    // `get` rather than `[..4]`: byte 4 may land inside a multi-byte
+    // character (e.g. "Mísia"), which would panic when slicing.
+    match trimmed.get(..4) {
+        Some(prefix) if prefix.eq_ignore_ascii_case("the ") && trimmed.len() > 4 => &trimmed[4..],
+        _ => trimmed,
     }
 }
 
@@ -99,6 +100,24 @@ impl Ord for NaturalKey<'_> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Regression: `strip_the` used to slice `[..4]` by bytes, which panics
+    /// when byte 4 falls inside a multi-byte character.
+    #[test]
+    fn handles_multibyte_names_shorter_than_the_prefix() {
+        for name in ["Mísia", "Émilie", "夜の街", "Ü", "Señor", "Ré", "らき"] {
+            let _ = natural_compare(name, "The Beatles");
+            let _ = natural_compare("The Beatles", name);
+            let _ = natural_compare(name, name);
+        }
+    }
+
+    #[test]
+    fn strips_the_only_on_ascii_prefix() {
+        assert_eq!(natural_compare("The Beatles", "Beatles"), Ordering::Equal);
+        // "Théâtre" must not be treated as "The " + "âtre".
+        assert_eq!(natural_compare("Théâtre", "âtre"), Ordering::Less);
+    }
     use super::*;
 
     #[test]
