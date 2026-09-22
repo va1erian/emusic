@@ -193,6 +193,29 @@ impl Queue {
         self.order.iter().map(|&i| self.items[i].as_path())
     }
 
+    /// The navigation order strictly after the current position (i.e. not
+    /// yet played), each paired with its index into the original list —
+    /// callers (a UI "up next" queue view) need that original index to
+    /// address a specific track for [`Queue::jump_to`]/[`Queue::remove`]
+    /// even though they only display what's upcoming.
+    pub fn upcoming(&self) -> Vec<(usize, PathBuf)> {
+        let start = self.pos.map_or(0, |p| p + 1);
+        self.order[start..]
+            .iter()
+            .map(|&i| (i, self.items[i].clone()))
+            .collect()
+    }
+
+    /// Jumps directly to the track at `item_index` (an index into the
+    /// original list, e.g. one returned by [`Queue::upcoming`]), updating
+    /// the current position without otherwise touching the queue. Returns
+    /// the path now current, or `None` if `item_index` isn't present.
+    pub fn jump_to(&mut self, item_index: usize) -> Option<PathBuf> {
+        let slot = self.order.iter().position(|&i| i == item_index)?;
+        self.pos = Some(slot);
+        self.current().cloned()
+    }
+
     /// Advances to the next track per the current repeat mode, updating and
     /// returning the new current path. `None` means playback should stop
     /// (ran off the end with repeat off).

@@ -355,6 +355,49 @@ fn previous_moves_to_the_previous_track_within_the_threshold() {
 }
 
 #[test]
+fn play_next_inserts_right_after_the_current_track() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play(
+        vec![
+            PathBuf::from("a.mp3"),
+            PathBuf::from("b.mp3"),
+            PathBuf::from("c.mp3"),
+        ],
+        0,
+    );
+    wait_until(&mut player, |p| {
+        p.current_path() == Some(Path::new("a.mp3"))
+    });
+
+    player.play_next(PathBuf::from("urgent.mp3"));
+
+    let queue: Vec<_> = player.queue_paths().map(Path::to_path_buf).collect();
+    assert_eq!(
+        queue,
+        vec![
+            PathBuf::from("a.mp3"),
+            PathBuf::from("urgent.mp3"),
+            PathBuf::from("b.mp3"),
+            PathBuf::from("c.mp3"),
+        ]
+    );
+    // Still playing "a.mp3"; play_next doesn't disturb current playback.
+    assert_eq!(player.current_path(), Some(Path::new("a.mp3")));
+}
+
+#[test]
+fn play_next_with_nothing_playing_just_appends() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+
+    player.play_next(PathBuf::from("only.mp3"));
+
+    let queue: Vec<_> = player.queue_paths().map(Path::to_path_buf).collect();
+    assert_eq!(queue, vec![PathBuf::from("only.mp3")]);
+}
+
+#[test]
 fn set_volume_is_clamped_and_readable() {
     let backend = MockBackend::new(Duration::from_secs(5));
     let mut player = Player::new(Arc::new(backend));

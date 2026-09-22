@@ -1,7 +1,10 @@
 //! The [`eframe::App`] implementation: wires the menu bar, the four fixed
 //! panels and the central view router together, applies queued
-//! [`Command`]s, and implements the repaint policy from #6 (no continuous
-//! repaint; ~30 fps only while something is actually playing).
+//! [`Command`]s (see [`commands`]), and implements the repaint policy from
+//! #6 (no continuous repaint; ~30 fps only while something is actually
+//! playing).
+
+mod commands;
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -9,9 +12,10 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use tracing::warn;
 
+use crate::backend::ipc::IpcBridge;
 use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
-use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
+use crate::player_api::{PlaybackStatus, PlayerApi};
 use crate::state::{AppState, Command, PanelKind, View};
 use crate::{fonts, panels, theme, views};
 
@@ -35,6 +39,12 @@ pub struct App {
     /// When the live settings first diverged from `saved`; drives the
     /// debounced save.
     dirty_since: Option<Instant>,
+    /// Set when this process is the primary instance (#11); polled once per
+    /// frame for messages a secondary launch forwarded.
+    ipc: Option<IpcBridge>,
+    /// A startup problem to keep showing the user (e.g. "no audio device")
+    /// rather than silently degrading; `None` once nothing is wrong.
+    backend_notice: Option<String>,
 }
 
 impl App {
@@ -81,6 +91,42 @@ impl App {
             config_path,
             saved: config,
             dirty_since: None,
+            ipc: None,
+            backend_notice: None,
+        }
+    }
+
+    /// Registers this process's [`IpcBridge`] (present only for the primary
+    /// instance, #11); polled once per frame in [`App::ui`].
+    pub fn attach_ipc(&mut self, ipc: IpcBridge) {
+        self.ipc = Some(ipc);
+    }
+
+    /// Sets a one-line startup notice (e.g. "Audio unavailable: ...") shown
+    /// under the menu bar until the app is restarted.
+    pub fn set_backend_notice(&mut self, notice: impl Into<String>) {
+        self.backend_notice = Some(notice.into());
+    }
+
+    /// Applies a request from the CLI or from a secondary instance (#11):
+    /// stop and replace the queue with `message`'s files (or append them),
+    /// resolved against its working directory.
+    pub fn handle_ipc_message(&mut self, message: winshell::IpcMessage) {
+        let paths = crate::backend::ipc::resolve_paths(&message);
+        if paths.is_empty() {
+            return;
+        }
+        tracing::info!(
+            count = paths.len(),
+            enqueue = message.enqueue,
+            "handling IPC message"
+        );
+        if message.enqueue {
+            for path in &paths {
+                self.player.enqueue(path);
+            }
+        } else {
+            self.player.replace_and_play(&paths, 0);
         }
     }
 
@@ -95,7 +141,7 @@ impl App {
         let commands = std::mem::take(&mut self.state.pending);
         for cmd in &commands {
             self.state.apply_local(cmd);
-            apply_player_command(self.player.as_mut(), cmd);
+            commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
         }
     }
 
@@ -182,7 +228,22 @@ impl eframe::App for App {
 
         theme::apply(&ctx, self.state.theme, self.state.accent.color());
 
+        if let Some(message) = self.ipc.as_ref().and_then(IpcBridge::try_recv) {
+            self.handle_ipc_message(message);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+
         self.menu_bar(ui);
+        if let Some(notice) = self.backend_notice.clone() {
+            egui::Panel::top("backend_notice")
+                .exact_size(24.0)
+                .show(ui, |ui| {
+                    ui.horizontal_centered(|ui| {
+                        ui.colored_label(ui.visuals().warn_fg_color, notice);
+                    });
+                });
+        }
         panels::top_bar::show(ui, &mut self.state, self.player.as_ref());
         if self.state.panels.status_bar {
             panels::status_bar::show(ui, self.library.as_ref(), self.player.as_ref());
@@ -218,24 +279,4 @@ impl eframe::App for App {
         let current = Config::capture(&self.state, self.player.as_ref());
         self.write_config(current);
     }
-}
-
-fn apply_player_command(player: &mut dyn PlayerApi, cmd: &Command) {
-    match cmd {
-        Command::PlayerPlayPause => player.play_pause(),
-        Command::PlayerStop => player.stop(),
-        Command::PlayerNext => player.next(),
-        Command::PlayerPrevious => player.previous(),
-        Command::PlayerSeek(pos) => player.seek(*pos),
-        Command::PlayerSetVolume(v) => player.set_volume(*v),
-        Command::PlayerToggleRepeat => player.set_repeat_mode(next_repeat(player.repeat_mode())),
-        Command::PlayerToggleShuffle => player.set_shuffle(!player.shuffle()),
-        Command::PlayerQueueJump(index) => player.queue_jump(*index),
-        Command::PlayerQueueRemove(index) => player.queue_remove(*index),
-        _ => {}
-    }
-}
-
-fn next_repeat(mode: RepeatMode) -> RepeatMode {
-    mode.next()
 }

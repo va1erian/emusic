@@ -7,6 +7,8 @@
 //! share it.
 
 pub mod app;
+pub mod backend;
+pub mod cli;
 pub mod config;
 pub mod fonts;
 pub mod library_api;
