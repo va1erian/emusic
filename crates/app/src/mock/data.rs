@@ -1,0 +1,271 @@
+//! Seeded fake-data generator: ~2000 tracks, ~80 artists, ~200 albums, ~15
+//! genres, nested folders, a mix of formats (including tracker modules),
+//! some missing tags, unicode/CJK names, and long titles.
+
+use std::time::Duration;
+
+use rand::Rng;
+use rand::SeedableRng;
+use rand::seq::SliceRandom;
+use rand_chacha::ChaCha8Rng;
+
+use crate::library_api::{AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, TrackInfo};
+
+/// Fixed seed so `emusic --mock` and `emusic-shot` render byte-identical
+/// output across runs (required for snapshot tests).
+const SEED: u64 = 0xE51C_2024;
+
+const GENRES: &[&str] = &[
+    "Rock",
+    "Pop",
+    "Jazz",
+    "Classical",
+    "Electronic",
+    "Hip-Hop",
+    "Metal",
+    "Folk",
+    "Blues",
+    "Reggae",
+    "Chiptune",
+    "Ambient",
+    "Soundtrack",
+    "Demoscene",
+    "Trance",
+];
+
+const FORMATS: &[&str] = &["mp3", "flac", "ogg", "m4a", "wav", "xm", "it", "mod", "s3m"];
+const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
+
+/// Name fragments used to build pronounceable-ish fake artist/album/track
+/// names, including some unicode/CJK entries so text-rendering and font
+/// fallback get exercised.
+const NAME_WORDS: &[&str] = &[
+    "Crimson",
+    "Velvet",
+    "Neon",
+    "Silent",
+    "Broken",
+    "Electric",
+    "Paper",
+    "Midnight",
+    "Golden",
+    "Static",
+    "Hollow",
+    "Wandering",
+    "Iron",
+    "Glass",
+    "Faded",
+    "夜の街",
+    "桜",
+    "雨音",
+    "은하수",
+    "여름밤",
+    "Étoile",
+    "Über",
+    "Señorita",
+    "Café",
+    "Nørdic",
+];
+const NAME_NOUNS: &[&str] = &[
+    "Wolves", "Horizon", "Echo", "Garden", "Machine", "River", "Dream", "Signal", "Ashes", "Tides",
+    "Circuit", "Bloom", "Shadow", "Voyage", "Lantern", "楽団", "回廊", "물결", "여행", "Rêverie",
+];
+
+/// Everything the mock library needs, pre-generated once.
+pub struct GeneratedLibrary {
+    pub tracks: Vec<TrackInfo>,
+    pub albums: Vec<AlbumInfo>,
+    pub artists: Vec<ArtistInfo>,
+    pub genres: Vec<String>,
+    pub folders: Vec<FolderInfo>,
+    pub history: Vec<HistoryEntry>,
+    pub most_played: Vec<TrackInfo>,
+}
+
+pub fn generate() -> GeneratedLibrary {
+    let mut rng = ChaCha8Rng::seed_from_u64(SEED);
+
+    let artist_names: Vec<String> = (0..80).map(|i| person_name(&mut rng, i)).collect();
+    let genres: Vec<String> = GENRES.iter().map(|s| s.to_string()).collect();
+
+    let mut albums = Vec::new();
+    for i in 0..200u32 {
+        let artist = artist_names.choose(&mut rng).unwrap().clone();
+        albums.push(AlbumInfo {
+            name: phrase(&mut rng, i),
+            artist,
+            year: rng.gen_bool(0.9).then(|| rng.gen_range(1975..=2025)),
+            track_count: 0, // filled in below
+        });
+    }
+
+    let folders: Vec<String> = build_folders(&mut rng, &artist_names);
+
+    let mut tracks = Vec::with_capacity(2000);
+    for id in 0..2000u64 {
+        let album_idx = rng.gen_range(0..albums.len());
+        let format = if rng.gen_bool(0.06) {
+            *TRACKER_FORMATS.choose(&mut rng).unwrap()
+        } else {
+            *FORMATS
+                .iter()
+                .filter(|f| !TRACKER_FORMATS.contains(f))
+                .collect::<Vec<_>>()
+                .choose(&mut rng)
+                .unwrap()
+        };
+        let is_tracker = TRACKER_FORMATS.contains(&format);
+        let missing_tags = rng.gen_bool(0.05);
+
+        let title = if is_tracker {
+            // Tracker modules often carry their "title" as the module
+            // message / an instrument-name-derived string.
+            tracker_title(&mut rng)
+        } else if rng.gen_bool(0.03) {
+            long_title(&mut rng)
+        } else {
+            phrase(&mut rng, id as u32)
+        };
+
+        let album = &albums[album_idx];
+        let folder = folders.choose(&mut rng).unwrap().clone();
+
+        tracks.push(TrackInfo {
+            id,
+            title: if missing_tags { String::new() } else { title },
+            artist: if missing_tags {
+                String::new()
+            } else {
+                album.artist.clone()
+            },
+            album: album.name.clone(),
+            genre: genres.choose(&mut rng).unwrap().clone(),
+            track_no: (!missing_tags).then(|| rng.gen_range(1..=18)),
+            duration: Duration::from_secs(rng.gen_range(45..=420)),
+            path: format!("{folder}/{:03}.{format}", id % 1000),
+            format: format.to_string(),
+            play_count: weighted_play_count(&mut rng),
+        });
+    }
+
+    for album in &mut albums {
+        album.track_count = tracks.iter().filter(|t| t.album == album.name).count();
+    }
+    albums.retain(|a| a.track_count > 0);
+
+    let artists = artist_names
+        .into_iter()
+        .map(|name| {
+            let their_tracks: Vec<_> = tracks.iter().filter(|t| t.artist == name).collect();
+            ArtistInfo {
+                track_count: their_tracks.len(),
+                album_count: albums.iter().filter(|a| a.artist == name).count(),
+                name,
+            }
+        })
+        .filter(|a| a.track_count > 0)
+        .collect();
+
+    let folders = folders
+        .into_iter()
+        .map(|path| {
+            let track_count = tracks.iter().filter(|t| t.path.starts_with(&path)).count();
+            FolderInfo { path, track_count }
+        })
+        .collect();
+
+    let mut most_played: Vec<TrackInfo> = tracks.clone();
+    most_played.sort_by_key(|t| std::cmp::Reverse(t.play_count));
+    most_played.truncate(50);
+
+    let history = build_history(&mut rng, &tracks);
+
+    GeneratedLibrary {
+        tracks,
+        albums,
+        artists,
+        genres,
+        folders,
+        history,
+        most_played,
+    }
+}
+
+fn weighted_play_count(rng: &mut ChaCha8Rng) -> u32 {
+    // Most tracks rarely played, a handful very frequently - gives
+    // `most_played` a non-trivial ranking.
+    if rng.gen_bool(0.05) {
+        rng.gen_range(50..300)
+    } else if rng.gen_bool(0.2) {
+        rng.gen_range(5..50)
+    } else {
+        rng.gen_range(0..5)
+    }
+}
+
+fn person_name(rng: &mut ChaCha8Rng, i: u32) -> String {
+    format!(
+        "{} {}",
+        NAME_WORDS[(i as usize).wrapping_mul(7) % NAME_WORDS.len()],
+        NAME_NOUNS[rng.gen_range(0..NAME_NOUNS.len())]
+    )
+}
+
+fn phrase(rng: &mut ChaCha8Rng, salt: u32) -> String {
+    let a = NAME_WORDS[(salt as usize).wrapping_mul(3) % NAME_WORDS.len()];
+    let b = NAME_NOUNS[rng.gen_range(0..NAME_NOUNS.len())];
+    format!("{a} {b}")
+}
+
+fn long_title(rng: &mut ChaCha8Rng) -> String {
+    let words: Vec<&str> = (0..9).map(|_| *NAME_WORDS.choose(rng).unwrap()).collect();
+    format!("{} (Extended Unabridged Remaster)", words.join(" "))
+}
+
+fn tracker_title(rng: &mut ChaCha8Rng) -> String {
+    let instrument = ["lead synth", "amiga bass", "fm organ", "chip lead", "noise"]
+        .choose(rng)
+        .unwrap();
+    let salt: u32 = rng.r#gen();
+    format!("{} - module msg: \"{}\"", phrase(rng, salt), instrument)
+}
+
+fn build_folders(rng: &mut ChaCha8Rng, artists: &[String]) -> Vec<String> {
+    let roots = ["D:/Music/Library", "D:/Music/Imports", "D:/Music/Tracker"];
+    let mut folders = Vec::new();
+    for artist in artists {
+        let root = roots.choose(rng).unwrap();
+        let safe_artist = artist.replace(' ', "_");
+        if rng.gen_bool(0.5) {
+            folders.push(format!("{root}/{safe_artist}"));
+        } else {
+            folders.push(format!("{root}/{safe_artist}/Disc1"));
+        }
+    }
+    folders
+}
+
+fn build_history(rng: &mut ChaCha8Rng, tracks: &[TrackInfo]) -> Vec<HistoryEntry> {
+    let minutes_ago = [1, 5, 20, 45, 90, 180, 600, 1440, 2880, 10080];
+    (0..60)
+        .filter_map(|_| {
+            let track = tracks.choose(rng)?;
+            let mins = *minutes_ago.choose(rng).unwrap();
+            Some(HistoryEntry {
+                track_title: track.title.clone(),
+                artist: track.artist.clone(),
+                played_at: format_relative(mins),
+            })
+        })
+        .collect()
+}
+
+fn format_relative(minutes: u32) -> String {
+    if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 1440 {
+        format!("{} h ago", minutes / 60)
+    } else {
+        format!("{} d ago", minutes / 1440)
+    }
+}

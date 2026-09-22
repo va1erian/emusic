@@ -35,3 +35,20 @@ cargo test --workspace
 ```
 
 Do not submit work with failing or skipped checks. PR bodies must contain `Closes #<issue>`.
+
+## UI changes: use `emusic-shot`
+
+`crates/app` has a headless screenshot tool (see #32) for looking at the shell without a display:
+
+```
+cargo run -p emusic --features shot --bin emusic-shot -- --all --theme dark --out target/shots/dark
+cargo run -p emusic --features shot --bin emusic-shot -- --view music --theme light --out target/shots/light/music.png
+```
+
+It renders the real app against deterministic mock data (`emusic --mock` runs the same data interactively). For **any** change touching `crates/app` UI code (panels, views, theme, fonts), regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting — don't just rely on the checks passing. Describe or attach the relevant screenshots in the PR.
+
+Main views also have `egui_kittest` snapshot tests under `crates/app/tests/snapshots/`, run as part of `cargo test --workspace`; they skip (rather than fail) if no headless GPU adapter is available. After an intentional UI change, update the baselines with:
+
+```
+UPDATE_SNAPSHOTS=1 cargo test -p emusic --test snapshot_views
+```
