@@ -97,6 +97,13 @@ pub const COLUMNS: &[ColumnSpec] = &[
 /// to fill leftover space rather than taking a fixed initial width.
 pub const TITLE_MIN_WIDTH: f32 = 120.0;
 
+/// Side of the "now playing" triangle as a fraction of the row's text height,
+/// so the marker stays proportional to the title at any DPI.
+const PLAYING_MARKER_SCALE: f32 = 0.8;
+
+/// Horizontal gap between the "now playing" marker and the title text.
+const PLAYING_MARKER_GAP: f32 = 4.0;
+
 /// Placeholder shown for an empty/unknown tag value, matching the flat list
 /// view's existing convention.
 pub fn title_text(track: &TrackInfo) -> &str {
@@ -138,12 +145,10 @@ pub fn show_cell(ui: &mut egui::Ui, id: ColumnId, track: &TrackInfo, is_playing:
 
         match id {
             ColumnId::Title => {
-                let text = if is_playing {
-                    format!("▶ {}", title_text(track))
-                } else {
-                    title_text(track).to_string()
-                };
-                ui.add(egui::Label::new(tint(&text)).truncate());
+                if is_playing {
+                    playing_marker(ui);
+                }
+                ui.add(egui::Label::new(tint(title_text(track))).truncate());
             }
             ColumnId::Artist => {
                 ui.add(egui::Label::new(tint(artist_text(track))).truncate());
@@ -188,4 +193,16 @@ pub fn show_cell(ui: &mut egui::Ui, id: ColumnId, track: &TrackInfo, is_playing:
 pub fn format_duration(d: std::time::Duration) -> String {
     let secs = d.as_secs();
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+/// Reserves space for, and paints, the "now playing" triangle at the start of
+/// a title cell. It is a painted vector shape (see [`crate::icons`]) rather
+/// than a `▶` glyph, and the cell's centred layout vertically centres the
+/// reserved box on the row, so the marker lines up with the row's text
+/// instead of sitting high on the text baseline (#81).
+fn playing_marker(ui: &mut egui::Ui) {
+    let side = ui.text_style_height(&egui::TextStyle::Body) * PLAYING_MARKER_SCALE;
+    let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::hover());
+    crate::icons::play_in(ui.painter(), rect, crate::theme::current_accent());
+    ui.add_space(PLAYING_MARKER_GAP);
 }

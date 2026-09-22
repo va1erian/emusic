@@ -3,18 +3,17 @@
 
 use eframe::egui;
 
+use crate::icons;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{AppState, Command};
 use crate::theme;
-
-mod icons;
 
 /// Fixed size of every transport button, matching the accent-filled play
 /// button's size so the row stays uniform while the icons are painted.
 const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(30.0, 30.0);
 
 /// A transport icon: paints itself into the button's rect with the given
-/// colour. See [`icons`] for the shape definitions.
+/// colour. See [`crate::icons`] for the shape definitions.
 type TransportIcon = fn(&egui::Painter, egui::Rect, egui::Color32);
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
