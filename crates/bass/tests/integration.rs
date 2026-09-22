@@ -7,45 +7,24 @@
 //! coverage on a dev machine (or CI runner) that has BASS installed under
 //! `EMUSIC_BASS_DIR` or `<exe dir>/bass/`.
 //!
+//! Tests initialize BASS on the "no sound" device (see [`silent`]) so they
+//! mix/process audio identically without beeping out of the speakers.
+//!
 //! BASS's `BASS_Init`/`BASS_Free` state is process-global (and the crate
-//! enforces exactly one live [`Bass`]), so all tests serialize access to
-//! it via [`SERIALIZE`].
+//! enforces exactly one live [`Bass`]), so [`silent::init_silent`]
+//! serializes access to it.
 
+mod silent;
 mod temp;
 mod wav;
 
-use std::sync::{Mutex, MutexGuard};
-
 use bass::{Bass, BassError, Channel, PositionMode, StreamFlags};
 
-static SERIALIZE: Mutex<()> = Mutex::new(());
-
-fn lock() -> MutexGuard<'static, ()> {
-    // If a test panicked while holding the lock, recover rather than
-    // poisoning every remaining test.
-    SERIALIZE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// Tries to initialize BASS while holding the serialization lock,
-/// returning `None` (and printing why) if the DLL simply isn't present —
-/// the expected case in this sandboxed environment.
-fn try_init() -> Option<(MutexGuard<'static, ()>, Bass)> {
-    let guard = lock();
-    match Bass::init(-1, 44100) {
-        Ok(bass) => Some((guard, bass)),
-        Err(BassError::DllNotFound(detail)) => {
-            eprintln!("skipping: bass.dll not available ({detail})");
-            None
-        }
-        Err(other) => panic!("unexpected error initializing BASS: {other}"),
-    }
-}
+use silent::init_silent;
 
 #[test]
 fn init_and_query_version() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     // Any successfully-parsed version is fine; we're just checking the
@@ -55,16 +34,16 @@ fn init_and_query_version() {
 
 #[test]
 fn second_init_in_a_process_is_a_clear_error() {
-    let Some((_guard, _bass)) = try_init() else {
+    let Some((_guard, _bass)) = init_silent() else {
         return;
     };
-    let second = Bass::init(-1, 44100);
+    let second = Bass::init(0, 44100);
     assert!(matches!(second, Err(BassError::AlreadyInitialized)));
 }
 
 #[test]
 fn enumerate_devices() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let devices = bass.devices().expect("BASS_GetDeviceInfo should succeed");
@@ -77,7 +56,7 @@ fn enumerate_devices() {
 
 #[test]
 fn load_plugins_from_missing_dir_reports_nothing() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let results = bass.load_plugins("this/directory/does/not/exist");
@@ -86,7 +65,7 @@ fn load_plugins_from_missing_dir_reports_nothing() {
 
 #[test]
 fn opening_a_missing_file_returns_an_error() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     match bass.open_stream("this/file/does/not/exist.flac", StreamFlags::empty()) {
@@ -98,7 +77,7 @@ fn opening_a_missing_file_returns_an_error() {
 
 #[test]
 fn decoding_a_wav_reports_info_length_and_samples() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     // 1 second of 44100 Hz mono 16-bit samples.
