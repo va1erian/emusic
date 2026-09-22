@@ -1,32 +1,27 @@
-//! The [`eframe::App`] implementation: wires the menu bar, the four fixed
-//! panels and the central view router together, applies queued
-//! [`Command`]s (see [`commands`]), and implements the repaint policy from
-//! #6 (no continuous repaint; ~30 fps only while something is actually
-//! playing).
+//! The [`eframe::App`] implementation: owns the app's state and backends,
+//! wires the menu bar, panels and central view router together, applies
+//! queued [`Command`]s and implements the repaint policy from #6 (no
+//! continuous repaint; ~30 fps only while something is actually playing).
+//!
+//! The pieces are split by responsibility: [`update`] is the per-frame
+//! `eframe::App` loop and config persistence, [`events`] handles input and
+//! messages from other instances, and [`commands`] translates queued
+//! [`Command`]s into player/library calls.
+//!
+//! [`Command`]: crate::state::Command
 
 mod commands;
+mod events;
+mod update;
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 
-use eframe::egui;
-use tracing::warn;
-
-use crate::backend::ipc::IpcBridge;
 use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
-use crate::player_api::{PlaybackStatus, PlayerApi};
+use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
-use crate::state::{AppState, Command, PanelKind, View};
-use crate::{fonts, panels, theme, views};
-
-/// Cap on repaint rate while playing, per #6 ("`request_repaint_after(33ms)`
-/// only while playing and window not minimized").
-const PLAYING_REPAINT_INTERVAL: Duration = Duration::from_millis(33);
-
-/// How long after a settings change the config is written, per #8; further
-/// changes within the window restart the countdown.
-const SAVE_DEBOUNCE: Duration = Duration::from_secs(2);
+use crate::state::{AppState, View};
+use crate::{fonts, theme};
 
 pub struct App {
     state: AppState,
@@ -39,10 +34,10 @@ pub struct App {
     saved: Config,
     /// When the live settings first diverged from `saved`; drives the
     /// debounced save.
-    dirty_since: Option<Instant>,
+    dirty_since: Option<std::time::Instant>,
     /// Set when this process is the primary instance (#11); polled once per
     /// frame for messages a secondary launch forwarded.
-    ipc: Option<IpcBridge>,
+    ipc: Option<crate::backend::ipc::IpcBridge>,
     /// A startup problem to keep showing the user (e.g. "no audio device")
     /// rather than silently degrading; `None` once nothing is wrong.
     backend_notice: Option<String>,
@@ -110,7 +105,10 @@ impl App {
 
     /// Registers this process's [`IpcBridge`] (present only for the primary
     /// instance, #11); polled once per frame in [`App::ui`].
-    pub fn attach_ipc(&mut self, ipc: IpcBridge) {
+    ///
+    /// [`IpcBridge`]: crate::backend::ipc::IpcBridge
+    /// [`App::ui`]: eframe::App::ui
+    pub fn attach_ipc(&mut self, ipc: crate::backend::ipc::IpcBridge) {
         self.ipc = Some(ipc);
     }
 
@@ -118,28 +116,6 @@ impl App {
     /// under the menu bar until the app is restarted.
     pub fn set_backend_notice(&mut self, notice: impl Into<String>) {
         self.backend_notice = Some(notice.into());
-    }
-
-    /// Applies a request from the CLI or from a secondary instance (#11):
-    /// stop and replace the queue with `message`'s files (or append them),
-    /// resolved against its working directory.
-    pub fn handle_ipc_message(&mut self, message: winshell::IpcMessage) {
-        let paths = crate::backend::ipc::resolve_paths(&message);
-        if paths.is_empty() {
-            return;
-        }
-        tracing::info!(
-            count = paths.len(),
-            enqueue = message.enqueue,
-            "handling IPC message"
-        );
-        if message.enqueue {
-            for path in &paths {
-                self.player.enqueue(path);
-            }
-        } else {
-            self.player.replace_and_play(&paths, 0);
-        }
     }
 
     /// Jumps straight to a view, bypassing the navigator click. Used by
@@ -161,197 +137,5 @@ impl App {
     pub fn open_search_popup(&mut self, query: impl Into<String>) {
         self.state.search_popup.open();
         self.state.search_popup.query = query.into();
-    }
-
-    fn apply_pending(&mut self) {
-        let commands = std::mem::take(&mut self.state.pending);
-        for cmd in &commands {
-            self.state.apply_local(cmd);
-            commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
-        }
-        commands::apply_library_commands(self.library.as_mut(), &mut self.state, &commands);
-    }
-
-    /// Config persistence policy from #8: write 2 s after the last change
-    /// (plus once more on exit via [`App::on_exit`]). No-op when
-    /// persistence is disabled.
-    fn tick_config_persistence(&mut self) {
-        if self.config_path.is_none() {
-            return;
-        }
-        let current = Config::capture(&self.state, self.player.as_ref());
-        if current == self.saved {
-            self.dirty_since = None;
-            return;
-        }
-        let dirty_since = *self.dirty_since.get_or_insert(Instant::now());
-        if dirty_since.elapsed() >= SAVE_DEBOUNCE {
-            self.write_config(current);
-        }
-    }
-
-    fn write_config(&mut self, config: Config) {
-        let Some(path) = self.config_path.clone() else {
-            return;
-        };
-        match config::save(&path, &config) {
-            Ok(()) => {
-                self.saved = config;
-                self.dirty_since = None;
-            }
-            Err(err) => {
-                warn!(%err, path = %path.display(), "could not save config");
-            }
-        }
-    }
-
-    fn menu_bar(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::top("menu_bar").show(ui, |ui| {
-            egui::containers::menu::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("View", |ui| {
-                    self.panel_menu_item(ui, "Navigator", PanelKind::Navigator);
-                    self.panel_menu_item(ui, "Now playing panel", PanelKind::RightPanel);
-                    self.panel_menu_item(ui, "Status bar", PanelKind::StatusBar);
-                    ui.separator();
-                    let mut column_browser = self.state.column_browser.visible;
-                    if ui.checkbox(&mut column_browser, "Column browser").changed() {
-                        self.state.push(Command::ToggleColumnBrowser);
-                    }
-                    ui.separator();
-                    if ui.button("Toggle dark / light theme").clicked() {
-                        self.state.push(Command::ToggleTheme);
-                        ui.close();
-                    }
-                });
-                ui.menu_button("Window", |ui| {
-                    for view in View::ALL {
-                        if ui.button(view.label()).clicked() {
-                            self.state.push(Command::SetView(view));
-                            ui.close();
-                        }
-                    }
-                });
-            });
-        });
-    }
-
-    fn panel_menu_item(&mut self, ui: &mut egui::Ui, label: &str, kind: PanelKind) {
-        let visible = match kind {
-            PanelKind::Navigator => self.state.panels.navigator,
-            PanelKind::RightPanel => self.state.panels.right_panel,
-            PanelKind::StatusBar => self.state.panels.status_bar,
-        };
-        let mut checked = visible;
-        if ui.checkbox(&mut checked, label).changed() {
-            self.state.push(Command::TogglePanel(kind));
-        }
-    }
-}
-
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
-
-        // Apply background updates (new library snapshots, scan progress,
-        // recorded plays) before any view reads the data.
-        self.library.tick();
-
-        // Driven by egui's own (deterministic, harness-controllable) frame
-        // delta rather than a wall-clock `Instant`, so headless renders
-        // (#32) are reproducible instead of depending on real elapsed time.
-        let dt = ctx.input(|i| i.stable_dt);
-        self.player.tick(Duration::from_secs_f32(dt.max(0.0)));
-
-        theme::apply(&ctx, self.state.theme, self.state.accent.color());
-
-        // Global search popup shortcuts. Checked (and consumed) before the
-        // top bar's own Ctrl+F check, and matched most-specific-first, so
-        // Ctrl+Shift+F never also triggers the plain Ctrl+F focus request.
-        let toggle_popup = ctx.input_mut(|i| {
-            i.consume_key(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::F,
-            ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)
-        });
-        if toggle_popup {
-            if self.state.search_popup.open {
-                self.state.search_popup.close();
-            } else {
-                self.state.search_popup.open();
-            }
-        }
-
-        // Keep both search engines in sync: the top bar's (drives the Music
-        // view's live filter) and the popup's (independent, so typing in
-        // the popup never changes what's filtered underneath it). Both run
-        // their matching on background threads (see `crate::search`), so
-        // neither ever blocks a frame.
-        self.search
-            .tick(self.library.tracks(), &self.state.search_query);
-        self.popup_search
-            .tick(self.library.tracks(), &self.state.search_popup.query);
-
-        if let Some(message) = self.ipc.as_ref().and_then(IpcBridge::try_recv) {
-            self.handle_ipc_message(message);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        }
-
-        self.menu_bar(ui);
-        if let Some(notice) = self.backend_notice.clone() {
-            egui::Panel::top("backend_notice")
-                .exact_size(24.0)
-                .show(ui, |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.colored_label(ui.visuals().warn_fg_color, notice);
-                    });
-                });
-        }
-        panels::top_bar::show(ui, &mut self.state, self.player.as_ref());
-        if self.state.panels.status_bar {
-            panels::status_bar::show(
-                ui,
-                &mut self.state,
-                self.library.as_ref(),
-                self.player.as_ref(),
-            );
-        }
-        if self.state.panels.navigator {
-            panels::navigator::show(ui, &mut self.state, self.library.as_ref());
-        }
-        if self.state.panels.right_panel {
-            panels::right_panel::show(
-                ui,
-                &mut self.state,
-                self.library.as_ref(),
-                self.player.as_ref(),
-            );
-        }
-        views::show(
-            ui,
-            &mut self.state,
-            self.library.as_ref(),
-            self.player.as_ref(),
-            &self.search,
-        );
-        panels::search_popup::show(
-            &ctx,
-            &mut self.state,
-            self.library.as_ref(),
-            &self.popup_search,
-        );
-
-        self.apply_pending();
-        self.tick_config_persistence();
-
-        let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-        if self.player.status() == PlaybackStatus::Playing && !minimized {
-            ctx.request_repaint_after(PLAYING_REPAINT_INTERVAL);
-        }
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let current = Config::capture(&self.state, self.player.as_ref());
-        self.write_config(current);
     }
 }
