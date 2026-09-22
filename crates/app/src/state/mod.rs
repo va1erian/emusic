@@ -267,6 +267,14 @@ pub enum Command {
     PlayerQueueJump(usize),
     /// Remove a queue entry by its current index.
     PlayerQueueRemove(usize),
+    /// Add a root folder to the library (Settings → Library / empty state).
+    LibraryAddFolder(PathBuf),
+    /// Remove a root folder from the library.
+    LibraryRemoveFolder(PathBuf),
+    /// Rescan every enabled library folder on demand.
+    LibraryRescan,
+    /// Stop the scan currently running, if any.
+    LibraryCancelScan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,6 +345,14 @@ impl AppState {
             Command::SetSearchQuery(query) => self.search_query = query.clone(),
             Command::ToggleColumnBrowser => {
                 self.column_browser.visible = !self.column_browser.visible;
+            }
+            Command::LibraryAddFolder(path) => {
+                if !self.library_folders.contains(path) {
+                    self.library_folders.push(path.clone());
+                }
+            }
+            Command::LibraryRemoveFolder(path) => {
+                self.library_folders.retain(|folder| folder != path);
             }
             _ => {}
         }

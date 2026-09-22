@@ -115,8 +115,21 @@ pub trait LibraryDataSource {
     fn tick(&mut self) {}
 
     /// Sets the watched library folders. Real backends start background
-    /// loading, scanning and watching; mock backends ignore this.
+    /// loading, scanning and watching, and purge tracks under folders that
+    /// were removed; mock backends ignore this.
     fn set_folders(&mut self, _folders: &[PathBuf]) {}
+
+    /// Rescans every enabled folder, even if the folder set is unchanged.
+    fn rescan(&mut self) {}
+
+    /// Requests cancellation of the scan currently running, if any.
+    fn cancel_scan(&mut self) {}
+
+    /// Whether a background scan is currently running (drives the status
+    /// bar's progress line and cancel button).
+    fn is_scanning(&self) -> bool {
+        false
+    }
 
     /// Returns an optional status line (e.g. scan progress) to show in the
     /// status bar alongside the player state.

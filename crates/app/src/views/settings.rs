@@ -1,13 +1,16 @@
-//! "Settings" view: the Appearance section (theme toggle, accent colour
-//! presets and a custom picker, #40) and File associations (#11). Real
-//! settings (library paths, tracker playback options, ...) are later
-//! issues (#8, #19).
+//! "Settings" view: Library folders (#19), Appearance (theme toggle, accent
+//! colour presets and a custom picker, #40) and File associations (#11).
 
 use eframe::egui::{self, Color32, Stroke};
 
 use crate::state::{Accent, AppState, Command};
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
+    crate::settings::library::show(ui, state);
+
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
     ui.label("Appearance");
     ui.separator();
     if ui.button("Toggle dark / light theme").clicked() {

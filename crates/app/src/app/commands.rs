@@ -9,6 +9,39 @@ use crate::library_api::LibraryDataSource;
 use crate::player_api::{PlayerApi, RepeatMode};
 use crate::state::Command;
 
+/// Applies a frame's queued library commands. `folders` is the already-updated
+/// [`crate::state::AppState::library_folders`], so a batch of adds/removes
+/// results in a single [`LibraryDataSource::set_folders`] call (and one scan).
+pub(super) fn apply_library_commands(
+    library: &mut dyn LibraryDataSource,
+    folders: &[PathBuf],
+    commands: &[Command],
+) {
+    let mut folders_changed = false;
+    let mut rescan = false;
+    let mut cancel = false;
+    for cmd in commands {
+        match cmd {
+            Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
+                folders_changed = true
+            }
+            Command::LibraryRescan => rescan = true,
+            Command::LibraryCancelScan => cancel = true,
+            _ => {}
+        }
+    }
+
+    if folders_changed {
+        library.set_folders(folders);
+    }
+    if rescan {
+        library.rescan();
+    }
+    if cancel {
+        library.cancel_scan();
+    }
+}
+
 pub(super) fn apply_player_command(
     player: &mut dyn PlayerApi,
     library: &dyn LibraryDataSource,

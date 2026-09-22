@@ -7,6 +7,7 @@
 //! keeps the app responsive even when the library lives on a mapped network
 //! drive, where directory walks and tag reads are slow.
 
+pub(crate) mod folders;
 pub(crate) mod loader;
 pub(crate) mod scan;
 pub(crate) mod source;
@@ -25,6 +26,7 @@ use crate::library_api::{
     AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
 };
 
+use scan::ScanHandle;
 use source::Snapshot;
 
 /// Messages sent from background threads to the UI-owning backend.
@@ -33,6 +35,9 @@ pub(crate) enum Update {
     Snapshot(Snapshot),
     /// A progress line for the status bar; empty clears it.
     Status(String),
+    /// A scan with this id finished; clears the scanning state if it is still
+    /// the current one (an older scan's completion is ignored).
+    ScanFinished(u64),
 }
 
 /// [`LibraryDataSource`] implementation backed by `emusic-library`.
@@ -53,6 +58,11 @@ pub struct LibraryBackend {
     watcher: Option<Watcher>,
     status: Option<String>,
     loader_started: bool,
+    /// Id handed to the next scan; makes stale `ScanFinished` messages
+    /// detectable.
+    next_scan_id: u64,
+    /// The scan currently running (cancel handle + id), if any.
+    active_scan: Option<ScanHandle>,
 }
 
 impl Default for LibraryBackend {
@@ -109,57 +119,14 @@ impl LibraryBackend {
             watcher,
             status: None,
             loader_started: false,
+            next_scan_id: 0,
+            active_scan: None,
         }
     }
 
     /// Sender the player adapter uses to report completed plays.
     pub fn play_record_tx(&self) -> Sender<PlayRecord> {
         self.play_record_tx.clone()
-    }
-
-    /// Persists `folders`, updates the watcher, and starts the background
-    /// loader on the first call. The initial load emits a snapshot as soon as
-    /// the existing store is read, then rescans if any enabled roots exist.
-    fn apply_folders(&mut self, folders: &[PathBuf]) {
-        {
-            let store = self
-                .store
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            for path in folders {
-                if let Err(err) = store.add_folder(path) {
-                    warn!(path = %path.display(), %err, "could not add library folder");
-                }
-            }
-            match store.list_folders() {
-                Ok(list) => self.folders = list,
-                Err(err) => warn!(%err, "could not list library folders"),
-            }
-        }
-
-        let roots = enabled_roots(&self.folders);
-        if let Some(watcher) = &self.watcher
-            && let Err(err) = watcher.set_roots(roots.clone())
-        {
-            warn!(%err, "could not update watched folders");
-        }
-
-        if !self.loader_started {
-            self.loader_started = true;
-            loader::spawn(
-                self.store.clone(),
-                self.folders.clone(),
-                self.update_tx.clone(),
-            );
-        } else if roots != self.scanned_roots {
-            scan::spawn(
-                self.store.clone(),
-                self.folders.clone(),
-                roots.clone(),
-                self.update_tx.clone(),
-            );
-        }
-        self.scanned_roots = roots;
     }
 }
 
@@ -199,6 +166,11 @@ impl LibraryDataSource for LibraryBackend {
                 Update::Status(text) => {
                     self.status = if text.is_empty() { None } else { Some(text) };
                 }
+                Update::ScanFinished(id) => {
+                    if self.active_scan.as_ref().is_some_and(|scan| scan.id == id) {
+                        self.active_scan = None;
+                    }
+                }
             }
         }
 
@@ -206,11 +178,14 @@ impl LibraryDataSource for LibraryBackend {
             match event {
                 WatchEvent::ScanRequested { paths } => {
                     info!(count = paths.len(), "library watch triggered rescan");
+                    let handle = self.begin_scan();
                     scan::spawn(
                         self.store.clone(),
                         self.folders.clone(),
                         paths,
                         self.update_tx.clone(),
+                        handle,
+                        Vec::new(),
                     );
                 }
             }
@@ -224,6 +199,35 @@ impl LibraryDataSource for LibraryBackend {
 
     fn set_folders(&mut self, folders: &[PathBuf]) {
         self.apply_folders(folders);
+    }
+
+    fn rescan(&mut self) {
+        let roots = enabled_roots(&self.folders);
+        if roots.is_empty() {
+            info!("rescan skipped: no enabled library folders");
+            return;
+        }
+        info!(folders = roots.len(), "on-demand library rescan requested");
+        let handle = self.begin_scan();
+        scan::spawn(
+            self.store.clone(),
+            self.folders.clone(),
+            roots,
+            self.update_tx.clone(),
+            handle,
+            Vec::new(),
+        );
+    }
+
+    fn cancel_scan(&mut self) {
+        if let Some(handle) = &self.active_scan {
+            info!("library scan cancellation requested");
+            handle.cancel.cancel();
+        }
+    }
+
+    fn is_scanning(&self) -> bool {
+        self.active_scan.is_some()
     }
 
     fn status_text(&self) -> Option<String> {
@@ -246,9 +250,10 @@ impl Drop for LibraryBackend {
 
 /// Roots that should be scanned and watched: enabled folders.
 ///
-/// Per-folder watch opt-out is exposed by the settings UI (#19); until then
-/// every enabled folder is watched so changes on a mapped drive are picked
-/// up, including by the watcher's remote-root polling.
+/// The settings UI (#19) adds and removes whole folders; per-folder
+/// enable/watch toggles are not exposed yet, so every enabled folder is
+/// watched and changes on a mapped drive are picked up, including by the
+/// watcher's remote-root polling.
 pub(crate) fn enabled_roots(folders: &[Folder]) -> Vec<PathBuf> {
     folders
         .iter()
