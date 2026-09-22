@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::views::track_table::TrackTableState;
+
 /// Which central-area view is currently shown.
 ///
 /// New views (track table, album grid, column browser, ...) add a variant
@@ -127,6 +129,16 @@ pub enum Command {
     PlayerSetVolume(f32),
     PlayerToggleRepeat,
     PlayerToggleShuffle,
+    /// Start playing this track. A stand-in for real queue control (#4):
+    /// currently a no-op in the shell, kept here so the track table's
+    /// double-click/Enter/context menu have somewhere to send intent.
+    PlayTrack(u64),
+    /// "Play next" from a track's context menu; same caveat as
+    /// [`Command::PlayTrack`].
+    PlayTrackNext(u64),
+    /// "Add to queue" from a track's context menu; same caveat as
+    /// [`Command::PlayTrack`].
+    QueueTrack(u64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,6 +154,10 @@ pub struct AppState {
     pub theme: Theme,
     pub panels: PanelVisibility,
     pub search_query: String,
+    /// The Music view's track table (sort + selection). Other views that
+    /// embed a track table later (albums, artists, genres, folders,
+    /// history) will each get their own field here.
+    pub music_table: TrackTableState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
 }
@@ -153,6 +169,7 @@ impl Default for AppState {
             theme: Theme::Dark,
             panels: PanelVisibility::default(),
             search_query: String::new(),
+            music_table: TrackTableState::default(),
             pending: Vec::new(),
         }
     }

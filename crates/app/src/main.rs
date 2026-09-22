@@ -47,10 +47,13 @@ fn main() -> eframe::Result {
 /// shell.
 fn backends(mock: bool) -> (Box<dyn LibraryDataSource>, Box<dyn PlayerApi>) {
     if mock {
-        (
-            Box::new(mock::MockLibrary::new()),
-            Box::new(mock::MockPlayer::playing_demo()),
-        )
+        let library = mock::MockLibrary::new();
+        // A fixed, arbitrary index into the deterministically seeded mock
+        // library, just so "now playing" points at a real track (and thus
+        // highlights a real row in the track table) instead of made-up
+        // metadata that never matches anything.
+        let player = mock::MockPlayer::playing_demo(&library.tracks()[0]);
+        (Box::new(library), Box::new(player))
     } else {
         (Box::new(stub::EmptyLibrary), Box::new(stub::StoppedPlayer))
     }

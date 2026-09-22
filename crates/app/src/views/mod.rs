@@ -13,6 +13,7 @@ mod most_played;
 mod music;
 mod now_playing;
 mod settings;
+pub(crate) mod track_table;
 
 use eframe::egui;
 
@@ -30,7 +31,7 @@ pub fn show(
         ui.heading(state.view.label());
         ui.add_space(4.0);
         match state.view {
-            View::Music => music::show(ui, library, &state.search_query),
+            View::Music => music::show(ui, state, library, player),
             View::Albums => albums::show(ui, library),
             View::Artists => artists::show(ui, library),
             View::Genres => genres::show(ui, library),

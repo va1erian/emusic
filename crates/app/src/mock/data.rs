@@ -9,7 +9,9 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
-use crate::library_api::{AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, TrackInfo};
+use crate::library_api::{
+    AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
+};
 
 /// Fixed seed so `emusic --mock` and `emusic-shot` render byte-identical
 /// output across runs (required for snapshot tests).
@@ -129,6 +131,7 @@ pub fn generate() -> GeneratedLibrary {
 
         let album = &albums[album_idx];
         let folder = folders.choose(&mut rng).unwrap().clone();
+        let play_count = weighted_play_count(&mut rng);
 
         tracks.push(TrackInfo {
             id,
@@ -141,10 +144,12 @@ pub fn generate() -> GeneratedLibrary {
             album: album.name.clone(),
             genre: genres.choose(&mut rng).unwrap().clone(),
             track_no: (!missing_tags).then(|| rng.gen_range(1..=18)),
+            year: album.year,
             duration: Duration::from_secs(rng.gen_range(45..=420)),
             path: format!("{folder}/{:03}.{format}", id % 1000),
             format: format.to_string(),
-            play_count: weighted_play_count(&mut rng),
+            play_count,
+            last_played_minutes_ago: (play_count > 0).then(|| *minutes_ago(&mut rng)),
         });
     }
 
@@ -245,27 +250,24 @@ fn build_folders(rng: &mut ChaCha8Rng, artists: &[String]) -> Vec<String> {
     folders
 }
 
+/// Candidate "minutes ago" values used both for the play history list and
+/// for tracks' `last_played` field.
+const MINUTES_AGO_CHOICES: &[u32] = &[1, 5, 20, 45, 90, 180, 600, 1440, 2880, 10080];
+
+fn minutes_ago(rng: &mut ChaCha8Rng) -> &'static u32 {
+    MINUTES_AGO_CHOICES.choose(rng).unwrap()
+}
+
 fn build_history(rng: &mut ChaCha8Rng, tracks: &[TrackInfo]) -> Vec<HistoryEntry> {
-    let minutes_ago = [1, 5, 20, 45, 90, 180, 600, 1440, 2880, 10080];
     (0..60)
         .filter_map(|_| {
             let track = tracks.choose(rng)?;
-            let mins = *minutes_ago.choose(rng).unwrap();
+            let mins = *minutes_ago(rng);
             Some(HistoryEntry {
                 track_title: track.title.clone(),
                 artist: track.artist.clone(),
-                played_at: format_relative(mins),
+                played_at: format_minutes_ago(mins),
             })
         })
         .collect()
-}
-
-fn format_relative(minutes: u32) -> String {
-    if minutes < 60 {
-        format!("{minutes} min ago")
-    } else if minutes < 1440 {
-        format!("{} h ago", minutes / 60)
-    } else {
-        format!("{} d ago", minutes / 1440)
-    }
 }
