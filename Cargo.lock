@@ -631,6 +631,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
+
+[[package]]
 name = "dirs"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -832,6 +838,13 @@ dependencies = [
  "emusic-core",
  "rusqlite",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "emusic-search"
+version = "0.1.0"
+dependencies = [
+ "deunicode",
 ]
 
 [[package]]
