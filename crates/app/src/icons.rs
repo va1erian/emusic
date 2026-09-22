@@ -1,11 +1,12 @@
-//! Transport icons drawn as vector shapes with [`egui::Painter`] (#60).
+//! Shared vector icons drawn with [`egui::Painter`] (#60, #81).
 //!
-//! The old implementation used text glyphs (`▶`, `⏸`, …) from a fallback
-//! font whose metrics did not line up with the button box, leaving the play
-//! triangle visibly off-centre. Painting the shapes ourselves keeps every
-//! icon centred and crisp at any DPI: each function draws into a square icon
-//! box derived from the button [`egui::Rect`], so the caller only has to pass
-//! the button's rect and the current text colour.
+//! Text glyphs (`▶`, `⏸`, …) come from a fallback font whose metrics do not
+//! line up with the surrounding layout, leaving the play triangle visibly
+//! off-centre (once against the transport button box, once against the track
+//! table's row). Painting the shapes ourselves keeps every icon centred and
+//! crisp at any DPI: each function draws into a square icon box derived from
+//! the [`egui::Rect`] it is given, so the caller only has to pass that rect
+//! and the current colour.
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
@@ -26,32 +27,44 @@ fn icon_box(rect: Rect, scale: f32) -> Rect {
     Rect::from_center_size(rect.center(), Vec2::splat(side))
 }
 
-/// The three corners of the right-pointing play triangle, optically centred
-/// in `rect`.
-fn play_triangle(rect: Rect) -> [Pos2; 3] {
-    let b = icon_box(rect, ICON_SCALE);
-    let shift = b.width() * PLAY_OPTICAL_SHIFT;
-    let left = b.left() + shift;
-    let right = b.right() + shift;
-    let mid_y = b.center().y;
+/// The three corners of a right-pointing play triangle filling the square
+/// `box`, optically centred.
+fn play_triangle_in(box_: Rect) -> [Pos2; 3] {
+    let shift = box_.width() * PLAY_OPTICAL_SHIFT;
+    let left = box_.left() + shift;
+    let right = box_.right() + shift;
+    let mid_y = box_.center().y;
     [
-        egui::pos2(left, b.top()),
+        egui::pos2(left, box_.top()),
         egui::pos2(right, mid_y),
-        egui::pos2(left, b.bottom()),
+        egui::pos2(left, box_.bottom()),
     ]
 }
 
+/// The three corners of the right-pointing play triangle, optically centred
+/// in the icon box derived from `rect`.
+fn play_triangle(rect: Rect) -> [Pos2; 3] {
+    play_triangle_in(icon_box(rect, ICON_SCALE))
+}
+
+fn paint_triangle(painter: &Painter, points: [Pos2; 3], color: Color32) {
+    painter.add(Shape::convex_polygon(points.to_vec(), color, Stroke::NONE));
+}
+
 /// Right-pointing triangle: play.
-pub(super) fn play(painter: &Painter, rect: Rect, color: Color32) {
-    painter.add(Shape::convex_polygon(
-        play_triangle(rect).to_vec(),
-        color,
-        Stroke::NONE,
-    ));
+pub(crate) fn play(painter: &Painter, rect: Rect, color: Color32) {
+    paint_triangle(painter, play_triangle(rect), color);
+}
+
+/// Right-pointing triangle filling `box_` exactly: the inline "now playing"
+/// marker drawn by the track table, sized and positioned by the caller so it
+/// can centre it on the row rather than on the text baseline.
+pub(crate) fn play_in(painter: &Painter, box_: Rect, color: Color32) {
+    paint_triangle(painter, play_triangle_in(box_), color);
 }
 
 /// Two vertical bars: pause.
-pub(super) fn pause(painter: &Painter, rect: Rect, color: Color32) {
+pub(crate) fn pause(painter: &Painter, rect: Rect, color: Color32) {
     let b = icon_box(rect, 0.5);
     let bar_width = b.width() * 0.3;
     let radius = bar_width * 0.2;
@@ -66,13 +79,13 @@ pub(super) fn pause(painter: &Painter, rect: Rect, color: Color32) {
 }
 
 /// A filled square: stop.
-pub(super) fn stop(painter: &Painter, rect: Rect, color: Color32) {
+pub(crate) fn stop(painter: &Painter, rect: Rect, color: Color32) {
     let b = icon_box(rect, 0.46);
     painter.rect_filled(b, b.width() * 0.1, color);
 }
 
 /// A left-pointing triangle next to a bar: previous track.
-pub(super) fn previous(painter: &Painter, rect: Rect, color: Color32) {
+pub(crate) fn previous(painter: &Painter, rect: Rect, color: Color32) {
     let b = icon_box(rect, 0.58);
     let bar_width = b.width() * 0.16;
     let bar = Rect::from_min_size(
@@ -94,7 +107,7 @@ pub(super) fn previous(painter: &Painter, rect: Rect, color: Color32) {
 }
 
 /// A right-pointing triangle next to a bar: next track.
-pub(super) fn next(painter: &Painter, rect: Rect, color: Color32) {
+pub(crate) fn next(painter: &Painter, rect: Rect, color: Color32) {
     let b = icon_box(rect, 0.58);
     let bar_width = b.width() * 0.16;
     let bar = Rect::from_min_size(
@@ -148,5 +161,15 @@ mod tests {
         for p in triangle {
             assert!(rect.contains(p), "{p:?} escaped the button {rect:?}");
         }
+    }
+
+    #[test]
+    fn play_triangle_in_is_vertically_centred_in_its_box() {
+        let b = Rect::from_min_size(egui::pos2(4.0, 10.0), Vec2::splat(16.0));
+        let t = play_triangle_in(b);
+        assert_eq!(t[0].y, b.top());
+        assert_eq!(t[1].y, b.center().y);
+        assert_eq!(t[2].y, b.bottom());
+        assert_eq!((t[0].y + t[2].y) / 2.0, b.center().y);
     }
 }

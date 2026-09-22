@@ -11,6 +11,7 @@ pub mod backend;
 pub mod cli;
 pub mod config;
 pub mod fonts;
+mod icons;
 pub mod library_api;
 pub mod mock;
 pub mod panels;
