@@ -1,0 +1,65 @@
+//! Schema migrations, applied in order against `PRAGMA user_version`.
+//!
+//! Each entry is the SQL executed to go from version `i` to `i + 1`
+//! (1-indexed: `MIGRATIONS[0]` takes the database from version 0 to 1).
+//! Migrations are additive only: once released, an entry must never be
+//! edited — add a new one instead.
+
+/// The schema version this build of `emusic-library` expects.
+pub const CURRENT_VERSION: i64 = 1;
+
+pub const MIGRATIONS: &[&str] = &[
+    // v1: initial schema.
+    r"
+    CREATE TABLE tracks (
+        id              INTEGER PRIMARY KEY,
+        path            TEXT NOT NULL UNIQUE,
+        dir             TEXT NOT NULL,
+        filename        TEXT NOT NULL,
+        ext             TEXT NOT NULL,
+        size            INTEGER NOT NULL,
+        mtime           INTEGER NOT NULL,
+        kind            INTEGER NOT NULL,
+        duration_ms     INTEGER NOT NULL,
+        bitrate         INTEGER,
+        sample_rate     INTEGER,
+        channels        INTEGER,
+        title           TEXT,
+        artist          TEXT,
+        album_artist    TEXT,
+        album           TEXT,
+        genre           TEXT,
+        year            INTEGER,
+        track_no        INTEGER,
+        disc_no         INTEGER,
+        composer        TEXT,
+        comment         TEXT,
+        art_source_kind INTEGER NOT NULL,
+        art_source_path TEXT,
+        added_at        INTEGER NOT NULL
+    );
+    CREATE INDEX idx_tracks_dir ON tracks(dir);
+    CREATE INDEX idx_tracks_album_artist ON tracks(album_artist);
+
+    CREATE TABLE plays (
+        id                  INTEGER PRIMARY KEY,
+        track_id            INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        played_at           INTEGER NOT NULL,
+        duration_played_ms  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_plays_track_id ON plays(track_id);
+    CREATE INDEX idx_plays_played_at ON plays(played_at);
+
+    CREATE TABLE track_stats (
+        track_id        INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+        play_count      INTEGER NOT NULL DEFAULT 0,
+        last_played_at  INTEGER
+    );
+
+    CREATE TABLE folders (
+        id      INTEGER PRIMARY KEY,
+        path    TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 1
+    );
+    ",
+];
