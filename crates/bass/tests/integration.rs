@@ -14,11 +14,12 @@
 //! enforces exactly one live [`Bass`]), so [`silent::init_silent`]
 //! serializes access to it.
 
+mod signal;
 mod silent;
 mod temp;
 mod wav;
 
-use bass::{Bass, BassError, Channel, PositionMode, StreamFlags};
+use bass::{Bass, BassError, Channel, PositionMode, PushFlags, StreamFlags};
 
 use silent::init_silent;
 
@@ -105,4 +106,97 @@ fn decoding_a_wav_reports_info_length_and_samples() {
     let read = stream.get_data_f32(&mut buffer).expect("get_data");
     assert_eq!(read, 1024);
     assert!(buffer.iter().any(|&s| s != 0.0));
+}
+
+#[test]
+fn push_decode_stream_decodes_pushed_samples() {
+    let Some((_guard, bass)) = try_init() else {
+        return;
+    };
+    let stream = bass
+        .open_push_stream(44_100, 1, PushFlags::DECODE | PushFlags::FLOAT)
+        .expect("creating a push stream should succeed");
+
+    let bytes = signal::f32_bytes(&signal::f32_sine(44_100.0, 440.0, 0.1));
+    let queued = stream.push_data(&bytes).expect("push_data");
+    // A decoding stream has no playback buffer, so everything is queued.
+    assert_eq!(queued, bytes.len() as u32);
+    assert_eq!(stream.queued_bytes().expect("queued"), queued);
+
+    let mut buffer = vec![0f32; 256];
+    let read = stream.get_data_f32(&mut buffer).expect("get_data");
+    assert_eq!(read, 256);
+    assert!(buffer.iter().any(|&s| s != 0.0));
+}
+
+#[test]
+fn push_limit_round_trips() {
+    let Some((_guard, bass)) = try_init() else {
+        return;
+    };
+    let stream = bass
+        .open_push_stream(44_100, 1, PushFlags::FLOAT)
+        .expect("create push stream");
+
+    stream.set_push_limit(4096).expect("set push limit");
+    assert_eq!(stream.push_limit().expect("push limit"), 4096);
+    stream.set_push_limit(0).expect("clear push limit");
+    assert_eq!(stream.push_limit().expect("push limit"), 0);
+}
+
+#[test]
+fn push_data_rejects_partial_frames() {
+    let Some((_guard, bass)) = try_init() else {
+        return;
+    };
+    let stream = bass
+        .open_push_stream(44_100, 2, PushFlags::FLOAT)
+        .expect("create push stream");
+    assert_eq!(stream.frame_bytes(), 8);
+    // 4 bytes is half a stereo f32 sample frame.
+    assert!(matches!(
+        stream.push_data(&[0; 4]),
+        Err(BassError::IllParam)
+    ));
+}
+
+#[test]
+fn push_stream_duration_comes_from_the_owner() {
+    let Some((_guard, bass)) = try_init() else {
+        return;
+    };
+    let stream = bass
+        .open_push_stream(44_100, 1, PushFlags::FLOAT)
+        .expect("create push stream");
+
+    // The length is unknown until the owner supplies it.
+    assert!(matches!(stream.length_seconds(), Err(BassError::NotAvail)));
+
+    stream.set_duration(2.0);
+    assert_eq!(stream.duration(), Some(2.0));
+    assert_eq!(stream.length_seconds().expect("length"), 2.0);
+    assert_eq!(
+        stream.length(PositionMode::Bytes).expect("length bytes"),
+        2 * 44_100 * 4
+    );
+}
+
+#[test]
+fn push_playback_stream_advances_and_ends() {
+    let Some((_guard, bass)) = try_init() else {
+        return;
+    };
+    let stream = bass
+        .open_push_stream(44_100, 1, PushFlags::FLOAT)
+        .expect("create push stream");
+
+    let bytes = signal::f32_bytes(&signal::f32_sine(44_100.0, 440.0, 0.5));
+    stream.push_data(&bytes).expect("push_data");
+    stream.play(false).expect("play");
+
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    let position = stream.position(PositionMode::Bytes).expect("position");
+    assert!(position > 0, "position did not advance: {position}");
+
+    stream.end_of_stream().expect("end_of_stream");
 }

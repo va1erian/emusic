@@ -5,7 +5,8 @@ use std::ffi::c_void;
 use libloading::Library;
 
 use super::types::{
-    BassChannelInfo, BassDeviceInfo, Bool, Dword, HMusic, HPlugin, HStream, HSync, Qword, SyncProc,
+    BassChannelInfo, BassDeviceInfo, Bool, Dword, HMusic, HPlugin, HStream, HSync, Qword,
+    StreamProc, SyncProc,
 };
 use crate::error::BassError;
 
@@ -38,6 +39,15 @@ pub(crate) struct RawBindings {
         length: Qword,
         flags: Dword,
     ) -> HStream,
+    pub bass_stream_create: unsafe extern "system" fn(
+        freq: Dword,
+        chans: Dword,
+        flags: Dword,
+        proc_: *const StreamProc,
+        user: *mut c_void,
+    ) -> HStream,
+    pub bass_stream_put_data:
+        unsafe extern "system" fn(handle: HStream, buffer: *const c_void, length: Dword) -> Dword,
     pub bass_stream_free: unsafe extern "system" fn(handle: HStream) -> Bool,
     pub bass_music_load: unsafe extern "system" fn(
         mem: Bool,
@@ -124,6 +134,8 @@ impl RawBindings {
             bass_get_device_info: "BASS_GetDeviceInfo",
             bass_plugin_load: "BASS_PluginLoad",
             bass_stream_create_file: "BASS_StreamCreateFile",
+            bass_stream_create: "BASS_StreamCreate",
+            bass_stream_put_data: "BASS_StreamPutData",
             bass_stream_free: "BASS_StreamFree",
             bass_music_load: "BASS_MusicLoad",
             bass_music_free: "BASS_MusicFree",

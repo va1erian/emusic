@@ -21,6 +21,8 @@
 //! - [`Stream`] / [`Music`] — playable channel handles, both implementing
 //!   the common [`Channel`] trait (play/pause/stop, seek, attributes,
 //!   FFT/sample data, ...).
+//! - [`PushStream`] — a "push" stream the owner feeds decoded PCM into,
+//!   also implementing [`Channel`]; useful for non-BASS decoders.
 //! - [`config::Config`] — global `BASS_SetConfig`/`BASS_GetConfig` knobs.
 //! - [`flags`] — safe flag/enum types for stream/music creation flags,
 //!   channel attributes and playback state.
@@ -53,6 +55,7 @@ pub mod error;
 pub mod ffi;
 pub mod flags;
 mod music;
+mod push;
 mod stream;
 pub mod sync;
 pub mod tags;
@@ -66,8 +69,11 @@ pub use channel::{Channel, ChannelInfo};
 pub use config::Config;
 pub use device::DeviceInfo;
 pub use error::BassError;
-pub use flags::{Attribute, FftSize, MusicFlags, PlaybackState, PositionMode, StreamFlags};
+pub use flags::{
+    Attribute, FftSize, MusicFlags, PlaybackState, PositionMode, PushFlags, StreamFlags,
+};
 pub use music::Music;
+pub use push::PushStream;
 pub use stream::Stream;
 pub use sync::ChannelSync;
 pub use tags::MusicTags;
@@ -176,6 +182,21 @@ impl Bass {
         freq: u32,
     ) -> Result<Music, BassError> {
         Music::from_file(Arc::clone(&self.lib), path, flags, freq)
+    }
+
+    /// Creates a new "push" stream, whose PCM data is supplied by the owner
+    /// via [`PushStream::push_data`] rather than decoded from a file.
+    ///
+    /// `freq` is the sample rate in Hz and `channels` the channel count.
+    /// Include [`PushFlags::FLOAT`] to push `f32` samples, otherwise BASS
+    /// expects signed 16-bit samples.
+    pub fn open_push_stream(
+        &self,
+        freq: u32,
+        channels: u32,
+        flags: PushFlags,
+    ) -> Result<PushStream, BassError> {
+        PushStream::create(Arc::clone(&self.lib), freq, channels, flags)
     }
 
     /// Loads every `bass*.dll` plugin (decoder add-on) found in `dir`,
