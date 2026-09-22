@@ -113,14 +113,15 @@ fn render_one(
 ) {
     // Theme/accent go through the config so the shell applies them the
     // same way it applies user settings.
-    let mut config = Config::default();
-    config.theme = match theme {
-        ThemeArg::Dark => Theme::Dark,
-        ThemeArg::Light => Theme::Light,
+    let defaults = Config::default();
+    let config = Config {
+        theme: match theme {
+            ThemeArg::Dark => Theme::Dark,
+            ThemeArg::Light => Theme::Light,
+        },
+        accent: accent.unwrap_or(defaults.accent),
+        ..defaults
     };
-    if let Some(accent) = accent {
-        config.accent = accent;
-    }
 
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(width, height))
