@@ -1,8 +1,9 @@
 //! "Music" view: the full library as a virtualized, sortable track table
-//! (#15), filtered by the top bar's search box.
+//! (#15), filtered by the column browser (#16) and the top bar's search box.
 
 use eframe::egui;
 
+use super::column_browser;
 use super::track_table::{self, TrackAction};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
@@ -14,10 +15,15 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
+    if state.column_browser.visible {
+        column_browser::show(ui, &mut state.column_browser, library);
+    }
+
     let query = state.search_query.to_lowercase();
     let tracks: Vec<&_> = library
         .tracks()
         .iter()
+        .filter(|t| state.column_browser.matches(t))
         .filter(|t| {
             query.is_empty()
                 || t.title.to_lowercase().contains(&query)

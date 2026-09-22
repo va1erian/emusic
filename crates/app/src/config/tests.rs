@@ -9,7 +9,7 @@ use eframe::egui::Color32;
 
 use crate::config::{Config, load, save};
 use crate::player_api::RepeatMode;
-use crate::state::{Accent, PanelVisibility, Theme, View};
+use crate::state::{Accent, AppState, PanelVisibility, Theme, View};
 
 /// Unique scratch directory per test, so parallel tests never collide and
 /// nothing is written to the real `%APPDATA%`.
@@ -44,6 +44,8 @@ fn non_default_config() -> Config {
             right_panel: true,
             status_bar: false,
         },
+        column_browser_visible: false,
+        column_browser_height: 222.0,
         last_view: View::MostPlayed,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
     }
@@ -59,6 +61,20 @@ fn round_trip_preserves_all_fields() {
     assert_eq!(load(&path), config);
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn apply_to_state_restores_column_browser() {
+    let config = Config {
+        column_browser_visible: false,
+        column_browser_height: 222.0,
+        ..Config::default()
+    };
+    let mut state = AppState::default();
+    config.apply_to_state(&mut state);
+
+    assert!(!state.column_browser.visible);
+    assert_eq!(state.column_browser.height, 222.0);
 }
 
 #[test]
@@ -82,6 +98,14 @@ fn missing_fields_fall_back_to_defaults() {
     assert_eq!(config.theme, Theme::default());
     assert_eq!(config.accent, Accent::default());
     assert_eq!(config.panels, PanelVisibility::default());
+    assert_eq!(
+        config.column_browser_visible,
+        Config::default().column_browser_visible
+    );
+    assert_eq!(
+        config.column_browser_height,
+        Config::default().column_browser_height
+    );
     assert_eq!(config.last_view, View::default());
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
@@ -100,6 +124,11 @@ fn unknown_fields_are_ignored() {
     assert_eq!(config.theme, defaults.theme);
     assert_eq!(config.accent, defaults.accent);
     assert_eq!(config.panels, defaults.panels);
+    assert_eq!(
+        config.column_browser_visible,
+        defaults.column_browser_visible
+    );
+    assert_eq!(config.column_browser_height, defaults.column_browser_height);
     assert_eq!(config.last_view, defaults.last_view);
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");

@@ -33,6 +33,10 @@ pub struct Config {
     pub accent: Accent,
     /// Which optional panels are visible.
     pub panels: PanelVisibility,
+    /// Whether the Music view's column browser (#16) is shown.
+    pub column_browser_visible: bool,
+    /// Height of the column browser's splitter, in pixels.
+    pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
     /// Library folders to scan at startup. Editable UI is #19; until then
@@ -50,6 +54,8 @@ impl Default for Config {
             theme: Theme::default(),
             accent: Accent::default(),
             panels: PanelVisibility::default(),
+            column_browser_visible: true,
+            column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             last_view: View::default(),
             library_folders: Vec::new(),
         }
@@ -68,16 +74,21 @@ impl Config {
             theme: state.theme,
             accent: state.accent,
             panels: state.panels,
+            column_browser_visible: state.column_browser.visible,
+            column_browser_height: state.column_browser.height,
             last_view: state.view,
             library_folders: state.library_folders.clone(),
         }
     }
 
-    /// Restores the UI-state fields (theme, accent, panels, last view).
+    /// Restores the UI-state fields (theme, accent, panels, column browser,
+    /// last view).
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.theme = self.theme;
         state.accent = self.accent;
         state.panels = self.panels;
+        state.column_browser.visible = self.column_browser_visible;
+        state.column_browser.height = self.column_browser_height;
         state.view = self.last_view;
         state.library_folders = self.library_folders.clone();
     }
