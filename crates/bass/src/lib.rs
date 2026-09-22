@@ -47,6 +47,7 @@
 
 pub mod channel;
 pub mod config;
+pub mod ctype;
 pub mod device;
 pub mod error;
 pub mod ffi;
@@ -59,6 +60,7 @@ mod util;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use channel::{Channel, ChannelInfo};
 pub use config::Config;
@@ -71,6 +73,14 @@ pub use sync::ChannelSync;
 pub use tags::MusicTags;
 
 use ffi::{BassLib, consts as c, loader};
+
+/// `true` while a live [`Bass`] exists in this process.
+///
+/// BASS's `BASS_Init`/`BASS_Free` state is process-global, so attempting a
+/// second `BASS_Init` while one is live fails with `BASS_ERROR_ALREADY`.
+/// We track it here to surface a clear [`BassError::AlreadyInitialized`]
+/// instead of depending on that BASS-level error.
+static LIVE: AtomicBool = AtomicBool::new(false);
 
 /// The result of attempting to load one plugin DLL via
 /// [`Bass::load_plugins`].
@@ -98,7 +108,27 @@ impl Bass {
     /// `device` is a zero-based device index, or `-1` for the system's
     /// default device. `freq` is the output sample rate in Hz (e.g.
     /// `44100`); pass `0` to use the device's current rate.
+    ///
+    /// Because BASS's `BASS_Init` state is process-global, at most one
+    /// [`Bass`] may be live at a time: a second call while one is alive
+    /// returns [`BassError::AlreadyInitialized`]. The flag is released on
+    /// drop; if initialization itself fails it is released too (so a
+    /// caller can retry).
     pub fn init(device: i32, freq: u32) -> Result<Self, BassError> {
+        if LIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(BassError::AlreadyInitialized);
+        }
+        let result = Self::init_after_claim(device, freq);
+        if result.is_err() {
+            LIVE.store(false, Ordering::Release);
+        }
+        result
+    }
+
+    fn init_after_claim(device: i32, freq: u32) -> Result<Self, BassError> {
         let lib = Arc::new(BassLib::open()?);
         // SAFETY: `win` (window handle) and `clsid` are optional per the
         // BASS docs and null is an accepted value for both on Windows.
@@ -181,5 +211,8 @@ impl Drop for Bass {
         // `BASS_Init`; it also frees any channels/plugins we didn't free
         // individually.
         unsafe { (self.lib.raw.bass_free)() };
+        // Allow a new `Bass::init` in this process now that the device is
+        // freed.
+        LIVE.store(false, Ordering::Release);
     }
 }

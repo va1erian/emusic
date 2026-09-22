@@ -16,8 +16,9 @@ pub struct ChannelInfo {
     pub freq: u32,
     /// Number of channels (1 = mono, 2 = stereo, ...).
     pub channels: u32,
-    /// Coarse, human-readable description of the channel type, derived
-    /// from BASS's `ctype` value (e.g. `"Stream"`, `"Music"`).
+    /// Human-readable description of the channel's type, derived from
+    /// BASS's `ctype` value (e.g. `"WAV PCM"`, `"FLAC"`, `"IT"`) — see
+    /// [`crate::ctype::format_name`].
     pub format_name: String,
 }
 
@@ -198,7 +199,7 @@ pub trait Channel {
         Ok(ChannelInfo {
             freq: raw.freq,
             channels: raw.chans,
-            format_name: format_name(raw.ctype),
+            format_name: crate::ctype::format_name(raw.ctype),
         })
     }
 
@@ -253,30 +254,5 @@ pub trait Channel {
     }
 }
 
-/// A coarse, best-effort description of a `BASS_CHANNELINFO.ctype` value.
-///
-/// Only the top-level category bits are interpreted; sub-format codes
-/// (exact codec) aren't decoded here since not every one is confidently
-/// verifiable without a real `bass.h` (see the crate-level docs).
-fn format_name(ctype: Dword) -> String {
-    const CTYPE_STREAM_BASE: Dword = 0x10000;
-    const CTYPE_MUSIC_BASE: Dword = 0x20000;
-    const CATEGORY_MASK: Dword = 0xFFFF_0000;
-    match ctype & CATEGORY_MASK {
-        CTYPE_STREAM_BASE => "Stream".to_string(),
-        CTYPE_MUSIC_BASE => "Music".to_string(),
-        _ => format!("Unknown (0x{ctype:08x})"),
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_name_recognises_stream_and_music_categories() {
-        assert_eq!(format_name(0x10005), "Stream");
-        assert_eq!(format_name(0x20001), "Music");
-        assert_eq!(format_name(0x99999999), "Unknown (0x99999999)");
-    }
-}
+mod tests {}
