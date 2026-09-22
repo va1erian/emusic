@@ -294,7 +294,7 @@ fn move_detection_preserves_history() {
 
     let id = store.load_all_tracks().unwrap()[0].id;
     store
-        .record_play(&PlayEvent::new(id, 1_000, 30_000))
+        .record_play(&PlayEvent::new(id, 1_000, 30_000, true))
         .unwrap();
 
     std::fs::rename(&old_path, root.join("renamed.wav")).unwrap();

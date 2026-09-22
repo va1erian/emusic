@@ -33,7 +33,7 @@
 
 mod module_tags;
 mod moves;
-mod paths;
+pub(crate) mod paths;
 mod progress;
 mod tags;
 mod types;
