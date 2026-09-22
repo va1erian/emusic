@@ -19,6 +19,7 @@ use crate::player_api::PlayerApi;
 use crate::state::AppState;
 
 pub use artwork::ArtworkCache;
+pub(crate) use artwork::load_artwork;
 
 /// Persistent UI state for the now-playing panel.
 #[derive(Default)]

@@ -4,7 +4,7 @@
 //! through [`LibraryDataSource`]/[`PlayerApi`] so they already exercise the
 //! mock data end to end.
 
-mod albums;
+pub(crate) mod album_grid;
 mod artists;
 pub(crate) mod column_browser;
 mod folders;
@@ -33,7 +33,7 @@ pub fn show(
         ui.add_space(4.0);
         match state.view {
             View::Music => music::show(ui, state, library, player),
-            View::Albums => albums::show(ui, library),
+            View::Albums => album_grid::show(ui, state, library, player),
             View::Artists => artists::show(ui, library),
             View::Genres => genres::show(ui, library),
             View::Folders => folders::show(ui, library),

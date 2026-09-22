@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use eframe::egui::Color32;
 use serde::{Deserialize, Serialize};
 
+use crate::views::album_grid::AlbumGridState;
 use crate::views::column_browser::ColumnBrowserState;
 use crate::views::track_table::TrackTableState;
 
@@ -257,6 +258,10 @@ pub enum Command {
     /// currently a no-op in the shell, kept here so the track table's
     /// double-click/Enter/context menu have somewhere to send intent.
     PlayTrack(u64),
+    /// Play a whole album (#17): replaces the queue with these tracks, in
+    /// order, and starts at the first. The ids are resolved to paths by the
+    /// shell, same as [`Command::PlayTrack`].
+    PlayAlbum(Vec<u64>),
     /// "Play next" from a track's context menu; same caveat as
     /// [`Command::PlayTrack`].
     PlayTrackNext(u64),
@@ -300,6 +305,8 @@ pub struct AppState {
     pub music_table: TrackTableState,
     /// The Music view's cascading filter panes (#16), above the track table.
     pub column_browser: ColumnBrowserState,
+    /// The Albums view's grid, sort and thumbnail cache (#17).
+    pub album_grid: AlbumGridState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
@@ -318,6 +325,7 @@ impl Default for AppState {
             library_folders: Vec::new(),
             music_table: TrackTableState::default(),
             column_browser: ColumnBrowserState::default(),
+            album_grid: AlbumGridState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),
         }
