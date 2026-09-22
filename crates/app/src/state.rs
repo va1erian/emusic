@@ -1,13 +1,20 @@
 //! Shared UI state, the [`View`] router, [`Theme`] and the [`Command`]
 //! message type panels/views use to ask the shell to change something.
 
+use serde::{Deserialize, Serialize};
+
 /// Which central-area view is currently shown.
 ///
 /// New views (track table, album grid, column browser, ...) add a variant
 /// here plus a module under `views/`; the router in `views::show` is the
 /// only other place that needs updating.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// Serde uses the same kebab-case identifiers as [`View::slug`], so the
+/// config file's `last_view` matches the CLI/`emusic-shot` spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum View {
+    #[default]
     Music,
     Albums,
     Artists,
@@ -68,7 +75,8 @@ impl View {
 }
 
 /// Colour scheme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Theme {
     #[default]
     Dark,
@@ -85,7 +93,8 @@ impl Theme {
 }
 
 /// Which optional panels are visible (toggled from the View menu).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PanelVisibility {
     pub navigator: bool,
     pub right_panel: bool,

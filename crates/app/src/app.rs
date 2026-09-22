@@ -3,10 +3,13 @@
 //! [`Command`]s, and implements the repaint policy from #6 (no continuous
 //! repaint; ~30 fps only while something is actually playing).
 
-use std::time::Duration;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
+use tracing::warn;
 
+use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{AppState, Command, PanelKind, View};
@@ -16,25 +19,68 @@ use crate::{fonts, panels, theme, views};
 /// only while playing and window not minimized").
 const PLAYING_REPAINT_INTERVAL: Duration = Duration::from_millis(33);
 
+/// How long after a settings change the config is written, per #8; further
+/// changes within the window restart the countdown.
+const SAVE_DEBOUNCE: Duration = Duration::from_secs(2);
+
 pub struct App {
     state: AppState,
     library: Box<dyn LibraryDataSource>,
     player: Box<dyn PlayerApi>,
+    /// Where the config is persisted; `None` disables all disk I/O (used
+    /// by `emusic-shot` and the snapshot tests for determinism).
+    config_path: Option<PathBuf>,
+    /// Config as last loaded/saved, compared each frame to detect changes.
+    saved: Config,
+    /// When the live settings first diverged from `saved`; drives the
+    /// debounced save.
+    dirty_since: Option<Instant>,
 }
 
 impl App {
+    /// Builds the app, restoring persisted settings from
+    /// `%APPDATA%\emusic\config.toml` (defaults when absent or bad).
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         library: Box<dyn LibraryDataSource>,
         player: Box<dyn PlayerApi>,
     ) -> Self {
+        let path = config::config_path();
+        let saved = path.as_deref().map_or_else(Config::default, config::load);
+        Self::build(cc, library, player, saved, path)
+    }
+
+    /// Builds the app from an explicit [`Config`] with persistence
+    /// disabled. Used by `emusic-shot` and the snapshot tests so renders
+    /// stay deterministic and never touch the user's config.
+    pub fn with_config(
+        cc: &eframe::CreationContext<'_>,
+        library: Box<dyn LibraryDataSource>,
+        player: Box<dyn PlayerApi>,
+        config: Config,
+    ) -> Self {
+        Self::build(cc, library, player, config, None)
+    }
+
+    fn build(
+        cc: &eframe::CreationContext<'_>,
+        library: Box<dyn LibraryDataSource>,
+        mut player: Box<dyn PlayerApi>,
+        config: Config,
+        config_path: Option<PathBuf>,
+    ) -> Self {
         fonts::install(&cc.egui_ctx);
-        let state = AppState::default();
+        let mut state = AppState::default();
+        config.apply_to_state(&mut state);
         theme::apply(&cc.egui_ctx, state.theme);
+        config.apply_to_player(player.as_mut());
         Self {
             state,
             library,
             player,
+            config_path,
+            saved: config,
+            dirty_since: None,
         }
     }
 
@@ -50,6 +96,39 @@ impl App {
         for cmd in &commands {
             self.state.apply_local(cmd);
             apply_player_command(self.player.as_mut(), cmd);
+        }
+    }
+
+    /// Config persistence policy from #8: write 2 s after the last change
+    /// (plus once more on exit via [`App::on_exit`]). No-op when
+    /// persistence is disabled.
+    fn tick_config_persistence(&mut self) {
+        if self.config_path.is_none() {
+            return;
+        }
+        let current = Config::capture(&self.state, self.player.as_ref());
+        if current == self.saved {
+            self.dirty_since = None;
+            return;
+        }
+        let dirty_since = *self.dirty_since.get_or_insert(Instant::now());
+        if dirty_since.elapsed() >= SAVE_DEBOUNCE {
+            self.write_config(current);
+        }
+    }
+
+    fn write_config(&mut self, config: Config) {
+        let Some(path) = self.config_path.clone() else {
+            return;
+        };
+        match config::save(&path, &config) {
+            Ok(()) => {
+                self.saved = config;
+                self.dirty_since = None;
+            }
+            Err(err) => {
+                warn!(%err, path = %path.display(), "could not save config");
+            }
         }
     }
 
@@ -122,11 +201,17 @@ impl eframe::App for App {
         );
 
         self.apply_pending();
+        self.tick_config_persistence();
 
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         if self.player.status() == PlaybackStatus::Playing && !minimized {
             ctx.request_repaint_after(PLAYING_REPAINT_INTERVAL);
         }
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        let current = Config::capture(&self.state, self.player.as_ref());
+        self.write_config(current);
     }
 }
 

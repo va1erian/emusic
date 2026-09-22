@@ -7,8 +7,13 @@
 
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
 /// Repeat behaviour for the queue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialized (lowercase, e.g. `off`) for the config file (#8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RepeatMode {
     #[default]
     Off,

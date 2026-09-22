@@ -16,8 +16,13 @@ required-features = ["shot"]
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+dirs = "5"
+thiserror = "2"
 rand = "0.8"
 rand_chacha = "0.3"
+tracing = "0.1"
 egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"], optional = true }
 
 [features]
