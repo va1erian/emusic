@@ -47,6 +47,17 @@ const UPSERT_SQL: &str = "
     RETURNING id
 ";
 
+const MOVE_SQL: &str = "
+    UPDATE tracks SET
+        path = ?1, dir = ?2, filename = ?3, ext = ?4, size = ?5, mtime = ?6,
+        kind = ?7, duration_ms = ?8, bitrate = ?9, sample_rate = ?10,
+        channels = ?11, title = ?12, artist = ?13, album_artist = ?14,
+        album = ?15, genre = ?16, year = ?17, track_no = ?18, disc_no = ?19,
+        composer = ?20, comment = ?21, art_source_kind = ?22, art_source_path = ?23
+    WHERE path = ?24
+    RETURNING id, added_at
+";
+
 impl Store {
     /// Inserts or updates `tracks` (matched by `path`) in a single
     /// transaction, writing back the store-assigned [`TrackId`] into each
@@ -106,6 +117,64 @@ impl Store {
         }
         tx.commit()?;
         Ok(deleted)
+    }
+
+    /// Updates the row currently stored at `old_path` to hold `track`'s
+    /// data — including its new path — preserving the row's id, original
+    /// `added_at` and (via the id) its play history.
+    ///
+    /// The scanner uses this for changed files and for detected moves: a
+    /// rename must not go through [`Store::upsert_tracks`], which matches
+    /// by path, inserts a fresh row and leaves the old row's play history
+    /// to cascade-delete.
+    ///
+    /// Returns `false` if no row currently lives at `old_path`.
+    pub fn move_track(&mut self, old_path: &Path, track: &mut Track) -> Result<bool> {
+        let (art_kind, art_path) = art_source_to_columns(&track.art_source);
+        let tx = self.conn.transaction()?;
+        let existing = {
+            let mut stmt = tx.prepare_cached(MOVE_SQL)?;
+            stmt.query_row(
+                params![
+                    path_to_string(&track.path),
+                    path_to_string(&track.dir),
+                    track.filename,
+                    track.ext,
+                    track.size,
+                    track.mtime,
+                    track_kind_to_i64(track.kind),
+                    track.duration_ms,
+                    track.bitrate,
+                    track.sample_rate,
+                    track.channels,
+                    track.title,
+                    track.artist,
+                    track.album_artist,
+                    track.album,
+                    track.genre,
+                    track.year,
+                    track.track_no,
+                    track.disc_no,
+                    track.composer,
+                    track.comment,
+                    art_kind,
+                    art_path,
+                    path_to_string(old_path),
+                ],
+                |row| Ok((TrackId(row.get(0)?), row.get::<_, i64>(1)?)),
+            )
+            .optional()?
+        };
+        tx.commit()?;
+
+        match existing {
+            Some((id, added_at)) => {
+                track.id = id;
+                track.added_at = added_at;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 
     /// Loads every track in the library.
@@ -319,5 +388,65 @@ mod tests {
             map.get(&PathBuf::from(r"C:\music\a.flac")),
             Some(&(1_000, 1_700_000_000))
         );
+    }
+
+    #[test]
+    fn move_track_preserves_id_and_added_at() {
+        let mut store = Store::open_in_memory().unwrap();
+        let mut tracks = vec![sample_track(r"C:\music\a.flac")];
+        store.upsert_tracks(&mut tracks).unwrap();
+        let original_id = tracks[0].id;
+
+        let mut moved = sample_track(r"D:\elsewhere\b.flac");
+        moved.title = Some("New Title".to_string());
+        moved.added_at = 9_999_999_999; // must be overwritten by the row's original
+        assert!(
+            store
+                .move_track(Path::new(r"C:\music\a.flac"), &mut moved)
+                .unwrap()
+        );
+
+        assert_eq!(moved.id, original_id);
+        assert_eq!(moved.added_at, 1_700_000_000);
+        let loaded = store.load_all_tracks().unwrap();
+        assert_eq!(loaded.len(), 1, "moving must not leave a second row");
+        assert_eq!(loaded[0].path, PathBuf::from(r"D:\elsewhere\b.flac"));
+        assert_eq!(loaded[0].id, original_id);
+        assert_eq!(loaded[0].title.as_deref(), Some("New Title"));
+        assert_eq!(loaded[0].added_at, 1_700_000_000);
+    }
+
+    #[test]
+    fn move_track_returns_false_for_unknown_path() {
+        let mut store = Store::open_in_memory().unwrap();
+        let mut track = sample_track(r"C:\music\a.flac");
+        assert!(
+            !store
+                .move_track(Path::new(r"C:\nope.flac"), &mut track)
+                .unwrap()
+        );
+        assert!(track.id.is_unassigned());
+    }
+
+    #[test]
+    fn play_history_survives_a_move() {
+        use emusic_core::PlayEvent;
+
+        let mut store = Store::open_in_memory().unwrap();
+        let mut tracks = vec![sample_track(r"C:\music\a.flac")];
+        store.upsert_tracks(&mut tracks).unwrap();
+        let id = tracks[0].id;
+        store
+            .record_play(&PlayEvent::new(id, 1_000, 30_000))
+            .unwrap();
+
+        let mut moved = sample_track(r"C:\music\renamed.flac");
+        store
+            .move_track(Path::new(r"C:\music\a.flac"), &mut moved)
+            .unwrap();
+
+        assert_eq!(moved.id, id);
+        let stats = store.track_stats(id).unwrap().unwrap();
+        assert_eq!(stats.play_count, 1);
     }
 }
