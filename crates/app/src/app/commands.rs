@@ -73,6 +73,15 @@ pub(super) fn apply_player_command(
                 player.replace_and_play(std::slice::from_ref(&path), 0);
             }
         }
+        Command::PlayAlbum(ids) => {
+            let paths: Vec<PathBuf> = ids
+                .iter()
+                .filter_map(|id| track_path(library, *id))
+                .collect();
+            if !paths.is_empty() {
+                player.replace_and_play(&paths, 0);
+            }
+        }
         Command::PlayTrackNext(id) => {
             if let Some(path) = track_path(library, *id) {
                 player.play_next(&path);

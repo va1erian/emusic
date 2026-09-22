@@ -153,20 +153,26 @@ fn request(cache: &mut ArtworkCache, ctx: egui::Context, key: &str, track: Optio
     let key = key.to_string();
     let fallback_dir = track.and_then(|t| Path::new(&t.path).parent().map(Path::to_path_buf));
     std::thread::spawn(move || {
-        let image = load_artwork(&path, fallback_dir.as_deref());
+        let image = load_artwork(&path, fallback_dir.as_deref()).map(color_image_from_dynamic);
         let _ = tx.send(LoadedArtwork { key, image });
         ctx.request_repaint();
     });
 }
 
 /// Try embedded artwork via `lofty`, then folder images.
-fn load_artwork(path: &Path, fallback_dir: Option<&Path>) -> Option<ColorImage> {
+///
+/// Returns the raw decoded image (not yet converted to egui's [`ColorImage`])
+/// so callers such as the album grid (#17) can resize it before uploading.
+pub(crate) fn load_artwork(
+    path: &Path,
+    fallback_dir: Option<&Path>,
+) -> Option<image::DynamicImage> {
     // 1. Embedded picture.
     if let Ok(tagged) = lofty::read_from_path(path)
         && let Some(picture) = tagged.primary_tag().and_then(|tag| tag.pictures().first())
         && let Ok(img) = image::load_from_memory(picture.data())
     {
-        return Some(color_image_from_dynamic(img));
+        return Some(img);
     }
 
     // 2. Folder image fallback.
@@ -177,7 +183,7 @@ fn load_artwork(path: &Path, fallback_dir: Option<&Path>) -> Option<ColorImage> 
                 if candidate.exists()
                     && let Ok(img) = image::open(&candidate)
                 {
-                    return Some(color_image_from_dynamic(img));
+                    return Some(img);
                 }
             }
         }
