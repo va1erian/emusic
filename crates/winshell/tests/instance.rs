@@ -60,7 +60,23 @@ fn primary_receives_a_single_message() {
         .expect("message should arrive");
     assert_eq!(received.files, vec![PathBuf::from("a.mp3")]);
     assert!(!received.enqueue);
-    assert!(woken.load(Ordering::SeqCst) >= 1, "waker should have fired");
+    // The listener delivers the batch before calling the waker, so the
+    // waker may fire slightly after `recv_timeout` returns.
+    assert!(
+        wait_until(Duration::from_secs(2), || woken.load(Ordering::SeqCst) >= 1),
+        "waker should have fired"
+    );
+}
+
+fn wait_until(timeout: Duration, condition: impl Fn() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if condition() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    condition()
 }
 
 #[test]
