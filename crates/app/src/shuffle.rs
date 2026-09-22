@@ -148,7 +148,7 @@ mod tests {
         fn history(&self) -> &[crate::library_api::HistoryEntry] {
             &[]
         }
-        fn most_played(&self) -> &[TrackInfo] {
+        fn most_played(&self, _window: crate::library_api::StatsWindow) -> &[TrackInfo] {
             &[]
         }
     }
