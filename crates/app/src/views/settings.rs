@@ -1,6 +1,7 @@
 //! "Settings" view: the Appearance section (theme toggle, accent colour
-//! presets and a custom picker, #40). Real settings (library paths,
-//! tracker playback options, ...) are later issues (#8, #19).
+//! presets and a custom picker, #40) and File associations (#11). Real
+//! settings (library paths, tracker playback options, ...) are later
+//! issues (#8, #19).
 
 use eframe::egui::{self, Color32, Stroke};
 
@@ -17,6 +18,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label("Accent colour");
     ui.horizontal_wrapped(|ui| preset_buttons(ui, state));
     custom_picker(ui, state);
+
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
+    crate::settings::associations::show(ui);
 }
 
 /// One filled button per preset; the active preset gets a strong border.

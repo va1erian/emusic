@@ -5,6 +5,7 @@
 //! to this trait, so it can be wired to a real player later without
 //! touching panel/view code.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -118,4 +119,21 @@ pub trait PlayerApi {
     fn queue_jump(&mut self, index: usize);
     /// Remove a queue entry by its current index.
     fn queue_remove(&mut self, index: usize);
+
+    /// Stops whatever is playing, replaces the whole queue with `paths`, and
+    /// starts playing the item at `start_index`.
+    ///
+    /// Used both by the track table's "Play" action (a single-item queue)
+    /// and by CLI/IPC-supplied files (#11): opening a file, or a second
+    /// `emusic.exe` invocation forwarding one, replaces playback the same
+    /// way.
+    fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize);
+
+    /// Inserts `path` immediately after the currently playing track, without
+    /// interrupting playback.
+    fn play_next(&mut self, path: &Path);
+
+    /// Appends `path` to the end of the queue, without interrupting
+    /// playback.
+    fn enqueue(&mut self, path: &Path);
 }

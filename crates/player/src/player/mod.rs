@@ -160,6 +160,14 @@ impl Player {
         self.queue.iter_order()
     }
 
+    /// The not-yet-played portion of the queue, each paired with its index
+    /// into the original list — for a UI "up next" list where "remove"/
+    /// "jump" (see [`Player::jump_to`]) need to address a specific track,
+    /// not just its display position.
+    pub fn upcoming(&self) -> Vec<(usize, PathBuf)> {
+        self.queue.upcoming()
+    }
+
     // -- Queue management -------------------------------------------------
 
     /// Replaces the whole queue and starts playing `items[start_index]`.
@@ -173,6 +181,22 @@ impl Player {
     /// Appends a track to the end of the queue without affecting playback.
     pub fn enqueue(&mut self, path: PathBuf) {
         self.queue.enqueue(path);
+        self.emit(PlayerEvent::QueueChanged);
+    }
+
+    /// Inserts a track immediately after the currently playing item (or
+    /// leaves it at the end if nothing is current), without affecting
+    /// playback.
+    pub fn play_next(&mut self, path: PathBuf) {
+        let current = self.queue.current_item_index();
+        let new_item_index = self.queue.len();
+        self.queue.enqueue(path);
+        if let Some(current) = current {
+            let target = current + 1;
+            if target < new_item_index {
+                self.queue.move_track(new_item_index, target);
+            }
+        }
         self.emit(PlayerEvent::QueueChanged);
     }
 
@@ -204,6 +228,16 @@ impl Player {
         self.queue.set_shuffle(enabled);
         self.emit(PlayerEvent::ShuffleChanged(enabled));
         self.emit(PlayerEvent::QueueChanged);
+    }
+
+    /// Jumps directly to `item_index` (an index into the original queue
+    /// list, e.g. from [`Player::upcoming`]) and starts playing it,
+    /// dropping whatever was currently loaded.
+    pub fn jump_to(&mut self, item_index: usize) {
+        self.drop_current_and_account();
+        let path = self.queue.jump_to(item_index);
+        self.emit(PlayerEvent::QueueChanged);
+        self.open_current_or_stop(path);
     }
 
     // -- Internals shared across this module's files -----------------------

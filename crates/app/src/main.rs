@@ -1,28 +1,59 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+//! Thin entry point (#11): parses the CLI, handles the one-shot
+//! `--register-associations`/`--unregister` actions, acquires single
+//! instance *before* creating any window (forwarding to, and exiting in
+//! favor of, an already-running primary), then starts the UI. All the
+//! actual wiring lives in [`emusic::backend`] and [`emusic::cli`].
+
+use std::env;
+
 use clap::Parser;
 use eframe::egui;
+use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::App;
-use emusic::library_api::LibraryDataSource;
-use emusic::mock;
-use emusic::player_api::PlayerApi;
+use emusic::backend::{self, ipc};
+use emusic::cli::Cli;
 
-/// emusic: a MusicBee-inspired music player.
-#[derive(Parser, Debug)]
-#[command(name = "emusic")]
-struct Cli {
-    /// Run against deterministic fake data instead of a real library/player
-    /// backend (no BASS, no database). Useful for development and for
-    /// `emusic-shot` screenshots.
-    #[arg(long)]
-    mock: bool,
-}
-
-fn main() -> eframe::Result {
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
+    if cli.register_associations {
+        return register_associations();
+    }
+    if cli.unregister {
+        return unregister_associations();
+    }
+
+    let message = IpcMessage {
+        enqueue: cli.enqueue,
+        files: cli.files.clone(),
+        cwd: env::current_dir().unwrap_or_default(),
+    };
+
+    let repaint = ipc::RepaintHandle::new();
+    let app_id = ipc::app_id(cli.mock);
+    match SingleInstance::acquire(&app_id, repaint.waker())? {
+        SingleInstance::Secondary => {
+            if !message.files.is_empty() {
+                winshell::instance::send_to_primary(&app_id, &message)?;
+            }
+            tracing::info!("emusic is already running; forwarded arguments and exiting");
+            Ok(())
+        }
+        SingleInstance::Primary(listener) => run_ui(cli, message, repaint, listener),
+    }
+}
+
+fn run_ui(
+    cli: Cli,
+    startup_message: IpcMessage,
+    repaint: ipc::RepaintHandle,
+    listener: winshell::Listener,
+) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("emusic")
@@ -34,114 +65,33 @@ fn main() -> eframe::Result {
         "emusic",
         options,
         Box::new(move |cc| {
-            let (library, player) = backends(cli.mock);
-            Ok(Box::new(App::new(cc, library, player)))
+            repaint.bind(cc.egui_ctx.clone());
+            let backends = backend::build(cli.mock);
+            let mut app = App::new(cc, backends.library, backends.player);
+            if let Some(notice) = backends.notice {
+                app.set_backend_notice(notice);
+            }
+            app.attach_ipc(ipc::IpcBridge::primary(listener));
+            if !startup_message.files.is_empty() {
+                app.handle_ipc_message(startup_message);
+            }
+            Ok(Box::new(app))
         }),
     )
+    .map_err(|err| anyhow::anyhow!("eframe: {err}"))
 }
 
-/// Chooses which [`LibraryDataSource`]/[`PlayerApi`] implementations to run
-/// against. Real backends (`crates/library`, `crates/player`) don't exist
-/// yet, so the non-mock path currently falls back to an empty stub; issue
-/// #11 will wire the real ones in here without touching the rest of the
-/// shell.
-fn backends(mock: bool) -> (Box<dyn LibraryDataSource>, Box<dyn PlayerApi>) {
-    if mock {
-        let library = mock::MockLibrary::new();
-        // A fixed, arbitrary index into the deterministically seeded mock
-        // library, just so "now playing" points at a real track (and thus
-        // highlights a real row in the track table) instead of made-up
-        // metadata that never matches anything.
-        let player = mock::MockPlayer::playing_demo(&library.tracks()[0]);
-        (Box::new(library), Box::new(player))
-    } else {
-        (Box::new(stub::EmptyLibrary), Box::new(stub::StoppedPlayer))
-    }
+fn register_associations() -> anyhow::Result<()> {
+    let exe = env::current_exe()?;
+    let manager = winshell::assoc::AssocManager::new("emusic");
+    manager.register(&exe, winshell::assoc::EXTENSIONS)?;
+    tracing::info!(exe = %exe.display(), "registered emusic file associations");
+    Ok(())
 }
 
-/// Trivial placeholder backends used until a real player/library crate is
-/// wired in (#11).
-mod stub {
-    use std::time::Duration;
-
-    use emusic::library_api::{
-        AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
-    };
-    use emusic::player_api::{
-        ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
-    };
-
-    pub struct EmptyLibrary;
-
-    impl LibraryDataSource for EmptyLibrary {
-        fn tracks(&self) -> &[TrackInfo] {
-            &[]
-        }
-        fn albums(&self) -> &[AlbumInfo] {
-            &[]
-        }
-        fn artists(&self) -> &[ArtistInfo] {
-            &[]
-        }
-        fn genres(&self) -> &[String] {
-            &[]
-        }
-        fn folders(&self) -> &[FolderInfo] {
-            &[]
-        }
-        fn history(&self) -> &[HistoryEntry] {
-            &[]
-        }
-        fn most_played(&self) -> &[TrackInfo] {
-            &[]
-        }
-    }
-
-    #[derive(Default)]
-    pub struct StoppedPlayer;
-
-    impl PlayerApi for StoppedPlayer {
-        fn tick(&mut self, _dt: Duration) {}
-        fn status(&self) -> PlaybackStatus {
-            PlaybackStatus::Stopped
-        }
-        fn now_playing(&self) -> Option<&NowPlayingInfo> {
-            None
-        }
-        fn position(&self) -> Duration {
-            Duration::ZERO
-        }
-        fn duration(&self) -> Option<Duration> {
-            None
-        }
-        fn volume(&self) -> f32 {
-            1.0
-        }
-        fn repeat_mode(&self) -> RepeatMode {
-            RepeatMode::Off
-        }
-        fn shuffle(&self) -> bool {
-            false
-        }
-        fn queue(&self) -> &[QueueEntry] {
-            &[]
-        }
-        fn module_info(&self) -> Option<&ModuleInfo> {
-            None
-        }
-        fn spectrum(&self) -> &[f32] {
-            &[]
-        }
-        fn play_pause(&mut self) {}
-        fn stop(&mut self) {}
-        fn next(&mut self) {}
-        fn previous(&mut self) {}
-        fn seek(&mut self, _position: Duration) {}
-        fn set_volume(&mut self, _volume: f32) {}
-        fn set_repeat_mode(&mut self, _mode: RepeatMode) {}
-        fn set_shuffle(&mut self, _enabled: bool) {}
-
-        fn queue_jump(&mut self, _index: usize) {}
-        fn queue_remove(&mut self, _index: usize) {}
-    }
+fn unregister_associations() -> anyhow::Result<()> {
+    let manager = winshell::assoc::AssocManager::new("emusic");
+    manager.unregister()?;
+    tracing::info!("removed emusic file associations");
+    Ok(())
 }

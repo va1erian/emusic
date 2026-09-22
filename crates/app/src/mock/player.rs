@@ -3,12 +3,23 @@
 //! formats, and a synthetic spectrum for the visualizer strip. No audio,
 //! no BASS.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::library_api::TrackInfo;
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
 };
+
+/// Derives a display title from a file path (its file stem), for the mock
+/// player's fake metadata-free "now playing"/queue entries created by
+/// [`PlayerApi::replace_and_play`]/`play_next`/`enqueue` (#11).
+fn label(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Unknown")
+        .to_string()
+}
 
 const SPECTRUM_BINS: usize = 32;
 const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
@@ -208,6 +219,48 @@ impl PlayerApi for MockPlayer {
         if index < self.queue.len() {
             self.queue.remove(index);
         }
+    }
+
+    fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize) {
+        let Some(start) = paths.get(start_index) else {
+            return;
+        };
+        let path = start.to_string_lossy().into_owned();
+        let title = label(start);
+        self.now_playing = Some(NowPlayingInfo {
+            title: title.clone(),
+            artist: String::new(),
+            album: String::new(),
+            path: path.clone(),
+            duration: Duration::ZERO,
+        });
+        self.status = PlaybackStatus::Playing;
+        self.position = Duration::ZERO;
+        self.module_info = tracker_module_info(&path, &title, Duration::ZERO);
+        self.queue = paths[start_index.saturating_add(1)..]
+            .iter()
+            .map(|p| QueueEntry {
+                title: label(p),
+                artist: String::new(),
+            })
+            .collect();
+    }
+
+    fn play_next(&mut self, path: &Path) {
+        self.queue.insert(
+            0,
+            QueueEntry {
+                title: label(path),
+                artist: String::new(),
+            },
+        );
+    }
+
+    fn enqueue(&mut self, path: &Path) {
+        self.queue.push(QueueEntry {
+            title: label(path),
+            artist: String::new(),
+        });
     }
 }
 
