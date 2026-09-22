@@ -32,22 +32,22 @@
 //! ```
 
 mod module_tags;
+mod moves;
 mod paths;
 mod progress;
 mod tags;
+mod types;
 mod walk;
 mod writer;
 
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
@@ -60,73 +60,11 @@ use crate::error::Result;
 use crate::store::Store;
 
 pub use progress::{CancelToken, ScanEvent};
+pub use types::{ScanOptions, ScanSummary};
 
+use moves::{PendingRead, classify_files, vanished_rows};
 use walk::FoundFile;
 use writer::{ScannedTrack, WriterMessage, WriterStats};
-
-/// Tuning knobs and external resources for one scan run.
-#[derive(Clone)]
-pub struct ScanOptions {
-    /// Number of threads reading tags. Tag reading is I/O-bound —
-    /// especially over SMB shares — so this is a small bounded pool
-    /// (sensible range 8–16) rather than the machine's CPU count.
-    pub tag_threads: usize,
-    /// How many scanned tracks are committed per database transaction.
-    pub batch_size: usize,
-    /// An initialised BASS instance used to read tracker module tags.
-    /// When `None`, module files are counted but skipped (see
-    /// [`ScanSummary::modules_skipped`]).
-    pub bass: Option<Arc<bass::Bass>>,
-}
-
-impl Default for ScanOptions {
-    fn default() -> Self {
-        Self {
-            tag_threads: 8,
-            batch_size: 500,
-            bass: None,
-        }
-    }
-}
-
-/// The outcome of a completed (or cancelled) scan.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScanSummary {
-    /// Supported audio files seen during the walk.
-    pub files_found: u64,
-    /// Rows inserted for files new to the library.
-    pub tracks_added: u64,
-    /// Rows of changed files updated in place.
-    pub tracks_updated: u64,
-    /// Rows re-pointed to a new path after move/rename detection.
-    pub tracks_moved: u64,
-    /// Rows deleted for files that vanished under fully-scanned roots.
-    pub tracks_deleted: u64,
-    /// Files that could not be parsed (logged and skipped).
-    pub files_skipped: u64,
-    /// Module files skipped because no BASS instance was provided.
-    pub modules_skipped: u64,
-    /// Roots that could not be accessed at all.
-    pub unreachable_roots: Vec<PathBuf>,
-    /// Whether the scan stopped early after
-    /// [`CancelToken::cancel`] was requested.
-    pub cancelled: bool,
-    /// Whether the scan could not see the whole library: unreachable
-    /// roots, unreadable directories, or cancellation. Nothing was deleted
-    /// that might still exist.
-    pub partial: bool,
-    /// Total wall-clock time of the scan.
-    pub elapsed: Duration,
-}
-
-/// A candidate file whose tags must be (re)read, plus the stored row it
-/// replaces, if any.
-struct PendingRead {
-    file: FoundFile,
-    /// The stored path of the row whose normalised key matches this file;
-    /// `None` for files new to the library.
-    prior_path: Option<PathBuf>,
-}
 
 /// What happened to one candidate file during tag reading.
 enum ScanOutcome {
@@ -217,86 +155,6 @@ pub fn scan(
         partial: cancel.is_cancelled() || outcome.partial,
         elapsed: started.elapsed(),
     })
-}
-
-/// Splits walked files into unchanged (dropped) and new/changed (to read),
-/// tagging each candidate with the stored row it replaces, matched by
-/// normalised path key.
-fn classify_files(
-    files: Vec<FoundFile>,
-    existing: &HashMap<PathBuf, (u64, i64)>,
-) -> Vec<PendingRead> {
-    let mut prior_by_key: HashMap<String, (PathBuf, u64, i64)> =
-        HashMap::with_capacity(existing.len());
-    for (path, &(size, mtime)) in existing {
-        prior_by_key
-            .entry(paths::normalize_key(path))
-            .or_insert((path.clone(), size, mtime));
-    }
-
-    let mut pending = Vec::new();
-    for file in files {
-        let key = paths::normalize_key(&file.path);
-        match prior_by_key.get(&key) {
-            Some((prior, size, mtime)) if *size == file.size && *mtime == file.mtime => {}
-            Some((prior, ..)) => pending.push(PendingRead {
-                file,
-                prior_path: Some(prior.clone()),
-            }),
-            None => pending.push(PendingRead {
-                file,
-                prior_path: None,
-            }),
-        }
-    }
-    pending
-}
-
-/// Stored rows whose files were not seen on disk — but only those safe to
-/// act on: under a root that was walked completely, and not under a
-/// directory that failed to list. Empty when the walk was cancelled (the
-/// "seen" set would be incomplete).
-fn vanished_rows(
-    existing: &HashMap<PathBuf, (u64, i64)>,
-    outcome: &walk::WalkOutcome,
-    cancel: &CancelToken,
-) -> Vec<PathBuf> {
-    if cancel.is_cancelled() {
-        return Vec::new();
-    }
-    let scanned_root_keys: Vec<String> = outcome
-        .scanned_roots
-        .iter()
-        .map(|root| paths::normalize_key(root))
-        .collect();
-    let failed_keys: Vec<String> = outcome
-        .failed_subtrees
-        .iter()
-        .map(|dir| paths::normalize_key(dir))
-        .collect();
-
-    let mut vanished = Vec::new();
-    for path in existing.keys() {
-        let key = paths::normalize_key(path);
-        if outcome.seen_keys.contains(&key) {
-            continue;
-        }
-        if !scanned_root_keys
-            .iter()
-            .any(|root| paths::key_is_under(&key, root))
-        {
-            continue;
-        }
-        if failed_keys
-            .iter()
-            .any(|failed| paths::key_is_under(&key, failed))
-        {
-            continue;
-        }
-        vanished.push(path.clone());
-    }
-    vanished.sort();
-    vanished
 }
 
 /// Reads tags for every pending file on a bounded pool, streaming batches to
