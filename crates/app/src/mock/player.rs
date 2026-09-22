@@ -1,13 +1,17 @@
 //! [`PlayerApi`] fake backend: a synthetic "now playing" state with a
-//! moving position, a small queue, and a synthetic spectrum for the
-//! visualizer strip. No audio, no BASS.
+//! moving position, a small queue, synthetic module info for tracker
+//! formats, and a synthetic spectrum for the visualizer strip. No audio,
+//! no BASS.
 
 use std::time::Duration;
 
 use crate::library_api::TrackInfo;
-use crate::player_api::{NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode};
+use crate::player_api::{
+    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+};
 
 const SPECTRUM_BINS: usize = 32;
+const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
 
 pub struct MockPlayer {
     status: PlaybackStatus,
@@ -17,6 +21,7 @@ pub struct MockPlayer {
     repeat: RepeatMode,
     shuffle: bool,
     queue: Vec<QueueEntry>,
+    module_info: Option<ModuleInfo>,
     spectrum: [f32; SPECTRUM_BINS],
     /// Monotonically increasing phase used to animate the fake spectrum
     /// deterministically (no wall-clock reads).
@@ -35,10 +40,12 @@ impl MockPlayer {
                 title: track.title.clone(),
                 artist: track.artist.clone(),
                 album: track.album.clone(),
+                path: track.path.clone(),
                 duration: track.duration,
             }),
             status: PlaybackStatus::Playing,
             position: Duration::from_secs(76).min(track.duration),
+            module_info: tracker_module_info(&track.path, &track.title, Duration::ZERO),
             queue: vec![
                 QueueEntry {
                     title: "Iron Garden".to_string(),
@@ -68,6 +75,7 @@ impl Default for MockPlayer {
             repeat: RepeatMode::Off,
             shuffle: false,
             queue: Vec::new(),
+            module_info: None,
             spectrum: [0.0; SPECTRUM_BINS],
             phase: 0.0,
         }
@@ -86,6 +94,9 @@ impl PlayerApi for MockPlayer {
         for (i, bin) in self.spectrum.iter_mut().enumerate() {
             let f = i as f32 / SPECTRUM_BINS as f32;
             *bin = (0.5 + 0.5 * (self.phase * (2.0 + f * 5.0) + f * 10.0).sin()).clamp(0.0, 1.0);
+        }
+        if let Some(np) = &self.now_playing {
+            self.module_info = tracker_module_info(&np.path, &np.title, self.position);
         }
     }
 
@@ -121,6 +132,10 @@ impl PlayerApi for MockPlayer {
         &self.queue
     }
 
+    fn module_info(&self) -> Option<&ModuleInfo> {
+        self.module_info.as_ref()
+    }
+
     fn spectrum(&self) -> &[f32] {
         &self.spectrum
     }
@@ -143,8 +158,10 @@ impl PlayerApi for MockPlayer {
             if let Some(np) = &mut self.now_playing {
                 np.title = entry.title;
                 np.artist = entry.artist;
+                np.path.clear();
             }
             self.position = Duration::ZERO;
+            self.module_info = None;
         }
     }
 
@@ -169,4 +186,75 @@ impl PlayerApi for MockPlayer {
     fn set_shuffle(&mut self, enabled: bool) {
         self.shuffle = enabled;
     }
+
+    fn queue_jump(&mut self, index: usize) {
+        if index >= self.queue.len() {
+            return;
+        }
+        for _ in 0..index {
+            self.queue.remove(0);
+        }
+        let entry = self.queue.remove(0);
+        if let Some(np) = &mut self.now_playing {
+            np.title = entry.title;
+            np.artist = entry.artist;
+            np.path.clear();
+        }
+        self.position = Duration::ZERO;
+        self.module_info = None;
+    }
+
+    fn queue_remove(&mut self, index: usize) {
+        if index < self.queue.len() {
+            self.queue.remove(index);
+        }
+    }
+}
+
+/// Build deterministic fake tracker-module metadata when the current path
+/// ends in a tracker extension.
+fn tracker_module_info(path: &str, title: &str, position: Duration) -> Option<ModuleInfo> {
+    let ext = path.rsplit('.').next()?;
+    if !TRACKER_FORMATS.contains(&ext.to_ascii_lowercase().as_str()) {
+        return None;
+    }
+
+    let format_name = match ext.to_ascii_lowercase().as_str() {
+        "xm" => "FastTracker II",
+        "it" => "Impulse Tracker",
+        "mod" => "ProTracker",
+        "s3m" => "Scream Tracker 3",
+        _ => "Tracker module",
+    }
+    .to_string();
+
+    let orders = 32u32;
+    let rows_per_order = 64u32;
+    let total_rows = orders * rows_per_order;
+    let elapsed_rows = ((position.as_secs_f32() / 0.05) as u32).min(total_rows.saturating_sub(1));
+    let current_order = elapsed_rows / rows_per_order;
+    let current_row = elapsed_rows % rows_per_order;
+
+    Some(ModuleInfo {
+        name: title.to_string(),
+        format: format_name,
+        channels: 8,
+        orders,
+        current_order,
+        current_row,
+        message: "mock module message".to_string(),
+        instruments: vec![
+            "lead synth".to_string(),
+            "amiga bass".to_string(),
+            "fm organ".to_string(),
+            "chip lead".to_string(),
+        ],
+        samples: vec![
+            "kick drum".to_string(),
+            "snare".to_string(),
+            "hihat".to_string(),
+            "bass".to_string(),
+            "pad".to_string(),
+        ],
+    })
 }

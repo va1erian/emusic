@@ -139,6 +139,10 @@ pub enum Command {
     /// "Add to queue" from a track's context menu; same caveat as
     /// [`Command::PlayTrack`].
     QueueTrack(u64),
+    /// Jump to a queue entry by its current index and start playback.
+    PlayerQueueJump(usize),
+    /// Remove a queue entry by its current index.
+    PlayerQueueRemove(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +164,9 @@ pub struct AppState {
     pub music_table: TrackTableState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
+    /// Persistent state for the right-hand now-playing panel (artwork cache,
+    /// collapsible section flags, ...).
+    pub now_playing: crate::panels::now_playing::PanelState,
 }
 
 impl Default for AppState {
@@ -171,6 +178,7 @@ impl Default for AppState {
             search_query: String::new(),
             music_table: TrackTableState::default(),
             pending: Vec::new(),
+            now_playing: crate::panels::now_playing::PanelState::default(),
         }
     }
 }

@@ -1120,6 +1120,8 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "emusic-player",
+ "image",
+ "lofty 0.22.4",
  "rand",
  "rand_chacha",
  "serde",
@@ -1144,7 +1146,7 @@ dependencies = [
  "dirs",
  "dunce",
  "emusic-core",
- "lofty",
+ "lofty 0.25.4",
  "rayon",
  "rusqlite",
  "thiserror 2.0.20",
@@ -1713,6 +1715,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -1982,6 +1986,21 @@ dependencies = [
 
 [[package]]
 name = "lofty"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca260c51a9c71f823fbfd2e6fbc8eb2ee09834b98c00763d877ca8bfa85cde3e"
+dependencies = [
+ "byteorder",
+ "data-encoding",
+ "flate2",
+ "lofty_attr 0.11.1",
+ "log",
+ "ogg_pager",
+ "paste",
+]
+
+[[package]]
+name = "lofty"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb21dd79145b0781f2423fda92dd807fcd3911e44b66044d86db3b11ec7accf9"
@@ -1989,10 +2008,21 @@ dependencies = [
  "byteorder",
  "data-encoding",
  "flate2",
- "lofty_attr",
+ "lofty_attr 0.13.0",
  "log",
  "ogg_pager",
  "paste",
+]
+
+[[package]]
+name = "lofty_attr"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9983e64b2358522f745c1251924e3ab7252d55637e80f6a0a3de642d6a9efc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
