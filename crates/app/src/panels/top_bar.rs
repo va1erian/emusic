@@ -1,11 +1,21 @@
 //! Top transport bar: prev/play-pause/stop/next, repeat, shuffle, seek
 //! slider with elapsed/total time, volume slider, and a search box.
 
-use eframe::egui::{self, RichText};
+use eframe::egui;
 
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{AppState, Command};
 use crate::theme;
+
+mod icons;
+
+/// Fixed size of every transport button, matching the accent-filled play
+/// button's size so the row stays uniform while the icons are painted.
+const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(30.0, 30.0);
+
+/// A transport icon: paints itself into the button's rect with the given
+/// colour. See [`icons`] for the shape definitions.
+type TransportIcon = fn(&egui::Painter, egui::Rect, egui::Color32);
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     egui::Panel::top("top_bar").exact_size(56.0).show(ui, |ui| {
@@ -36,26 +46,45 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
 }
 
 fn transport_buttons(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
-    if ui.button(RichText::new("⏮").size(16.0)).clicked() {
+    if transport_button(ui, icons::previous, false, "Previous").clicked() {
         state.push(Command::PlayerPrevious);
     }
-    let play_icon = if player.status() == PlaybackStatus::Playing {
-        "⏸"
+
+    let (icon, tooltip) = if player.status() == PlaybackStatus::Playing {
+        (icons::pause as TransportIcon, "Pause")
     } else {
-        "▶"
+        (icons::play as TransportIcon, "Play")
     };
-    if ui
-        .add(egui::Button::new(RichText::new(play_icon).size(18.0)).fill(theme::current_accent()))
-        .clicked()
-    {
+    if transport_button(ui, icon, true, tooltip).clicked() {
         state.push(Command::PlayerPlayPause);
     }
-    if ui.button(RichText::new("⏹").size(16.0)).clicked() {
+
+    if transport_button(ui, icons::stop, false, "Stop").clicked() {
         state.push(Command::PlayerStop);
     }
-    if ui.button(RichText::new("⏭").size(16.0)).clicked() {
+    if transport_button(ui, icons::next, false, "Next").clicked() {
         state.push(Command::PlayerNext);
     }
+}
+
+/// A transport button with a custom-painted vector icon. It stays a regular
+/// [`egui::Button`] (focusable, clickable, announced as a button) and only
+/// the glyph is replaced by [`icons`] painting; the icon colour follows the
+/// button's hover/active state, and `accent` fills it like before.
+fn transport_button(
+    ui: &mut egui::Ui,
+    icon: TransportIcon,
+    accent: bool,
+    tooltip: &str,
+) -> egui::Response {
+    let mut button = egui::Button::new("").min_size(TRANSPORT_BUTTON_SIZE);
+    if accent {
+        button = button.fill(theme::current_accent());
+    }
+    let response = ui.add(button).on_hover_text(tooltip);
+    let color = ui.style().interact(&response).fg_stroke.color;
+    icon(ui.painter(), response.rect, color);
+    response
 }
 
 fn repeat_label(mode: RepeatMode) -> bool {
