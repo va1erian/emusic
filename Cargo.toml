@@ -9,3 +9,9 @@ license = "MIT"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# CI test binaries are linked on every run; the line-tables-only debug info
+# keeps useful panic backtraces while cutting link time and artifact size
+# noticeably (#90).
+[profile.test]
+debug = "line-tables-only"
