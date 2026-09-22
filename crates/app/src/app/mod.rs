@@ -317,7 +317,7 @@ impl eframe::App for App {
             );
         }
         if self.state.panels.navigator {
-            panels::navigator::show(ui, &mut self.state);
+            panels::navigator::show(ui, &mut self.state, self.library.as_ref());
         }
         if self.state.panels.right_panel {
             panels::right_panel::show(

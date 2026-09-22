@@ -98,6 +98,12 @@ pub trait PlayerApi {
     fn volume(&self) -> f32;
     fn repeat_mode(&self) -> RepeatMode;
     fn shuffle(&self) -> bool;
+    /// Label of the active scoped shuffle (see [`PlayerApi::play_shuffled`]),
+    /// or `None` for ordinary playback.
+    fn shuffle_scope(&self) -> Option<&str>;
+    /// A transient status line from the player (e.g. an unreadable file was
+    /// skipped), shown in the status bar until the next track starts.
+    fn status_message(&self) -> Option<&str>;
     fn queue(&self) -> &[QueueEntry];
 
     /// Live tracker-module metadata, if the current track is a module.
@@ -128,6 +134,12 @@ pub trait PlayerApi {
     /// `emusic.exe` invocation forwarding one, replaces playback the same
     /// way.
     fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize);
+
+    /// Starts a lazy shuffled playback over `paths`, showing `label` as the
+    /// active scope (e.g. `"Album — Purple Motion"`). The player pulls tracks
+    /// from the scope on demand and skips unreadable ones instead of
+    /// stopping; only a short preview reaches the queue panel.
+    fn play_shuffled(&mut self, paths: &[PathBuf], label: &str);
 
     /// Inserts `path` immediately after the currently playing track, without
     /// interrupting playback.

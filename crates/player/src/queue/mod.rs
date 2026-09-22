@@ -9,6 +9,12 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
+mod shuffle;
+mod source;
+
+pub use shuffle::ShuffleSource;
+pub use source::QueueSource;
+
 /// Repeat behaviour for the queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RepeatMode {
@@ -198,10 +204,14 @@ impl Queue {
     /// callers (a UI "up next" queue view) need that original index to
     /// address a specific track for [`Queue::jump_to`]/[`Queue::remove`]
     /// even though they only display what's upcoming.
-    pub fn upcoming(&self) -> Vec<(usize, PathBuf)> {
+    ///
+    /// Capped at `limit` entries so a very large queue never gets fully
+    /// cloned just to preview what's next.
+    pub fn upcoming(&self, limit: usize) -> Vec<(usize, PathBuf)> {
         let start = self.pos.map_or(0, |p| p + 1);
         self.order[start..]
             .iter()
+            .take(limit)
             .map(|&i| (i, self.items[i].clone()))
             .collect()
     }

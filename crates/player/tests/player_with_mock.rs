@@ -421,3 +421,140 @@ fn waker_is_invoked_on_events() {
         "QueueChanged should have woken the UI"
     );
 }
+
+/// Starts the next track and waits until it (or a stop) shows up, returning
+/// the new current path.
+fn advance_and_wait(player: &mut Player) -> Option<PathBuf> {
+    player.next();
+    for _ in 0..2000 {
+        player.tick();
+        if player.state() == PlaybackState::Stopped {
+            return None;
+        }
+        if let Some(path) = player.current_path() {
+            return Some(path.to_path_buf());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("next track did not start in time");
+}
+
+#[test]
+fn scoped_shuffle_plays_every_track_once_without_repeating() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+    player.play_shuffled(
+        vec![
+            PathBuf::from("a.mp3"),
+            PathBuf::from("b.mp3"),
+            PathBuf::from("c.mp3"),
+        ],
+        "All tracks",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    let mut played = Vec::new();
+    played.push(player.current_path().unwrap().to_path_buf());
+    while let Some(path) = advance_and_wait(&mut player) {
+        played.push(path);
+    }
+
+    assert_eq!(played.len(), 3, "each track should play exactly once");
+    played.sort();
+    played.dedup();
+    assert_eq!(played.len(), 3, "no track may repeat within a cycle");
+    assert_eq!(player.shuffle_scope(), Some("All tracks"));
+}
+
+#[test]
+fn scoped_shuffle_previous_walks_back_through_history() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+    player.play_shuffled(
+        vec![PathBuf::from("a.mp3"), PathBuf::from("b.mp3")],
+        "scope",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+    let first = player.current_path().unwrap().to_path_buf();
+    let second = advance_and_wait(&mut player).unwrap();
+
+    player.previous();
+    wait_until(&mut player, |p| p.current_path() == Some(first.as_path()));
+    // The forward history is replayed by `next`.
+    let forward = advance_and_wait(&mut player).unwrap();
+    assert_eq!(forward, second);
+}
+
+#[test]
+fn scoped_shuffle_repeat_all_starts_a_new_cycle() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+    player.set_repeat_mode(emusic_player::RepeatMode::All);
+    player.play_shuffled(
+        vec![PathBuf::from("a.mp3"), PathBuf::from("b.mp3")],
+        "scope",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    assert!(advance_and_wait(&mut player).is_some(), "second track");
+    assert!(
+        advance_and_wait(&mut player).is_some(),
+        "repeat-all should reshuffle and keep playing"
+    );
+}
+
+#[test]
+fn turning_shuffle_off_ends_the_scope() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mut player = Player::new(Arc::new(backend));
+    player.play_shuffled(
+        vec![PathBuf::from("a.mp3"), PathBuf::from("b.mp3")],
+        "scope",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    player.set_shuffle(false);
+    assert_eq!(player.shuffle_scope(), None);
+    assert!(!player.shuffle());
+    assert!(
+        player.current_path().is_some(),
+        "the current track keeps playing"
+    );
+}
+
+#[test]
+fn unreadable_tracks_are_skipped_not_stopped_in_a_scope() {
+    let backend = MockBackend::new(Duration::from_millis(30));
+    backend.fail_for("bad.mp3");
+    let mock = backend.clone();
+    let mut player = Player::new(Arc::new(backend));
+    player.play_shuffled(
+        vec![PathBuf::from("good.mp3"), PathBuf::from("bad.mp3")],
+        "scope",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    let mut events = Vec::new();
+    for _ in 0..4000 {
+        player.tick();
+        events.extend(drain_events(&player));
+        if player.state() == PlaybackState::Stopped {
+            break;
+        }
+        mock.end_current_track();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    assert!(
+        events.iter().any(
+            |e| matches!(e, PlayerEvent::TrackSkipped { path } if path == Path::new("bad.mp3"))
+        ),
+        "the unreadable track should be reported as skipped"
+    );
+    assert!(
+        events.iter().any(
+            |e| matches!(e, PlayerEvent::TrackStarted { path, .. } if path == Path::new("good.mp3"))
+        ),
+        "the readable track should still play"
+    );
+}

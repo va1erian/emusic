@@ -18,6 +18,7 @@ pub mod panels;
 pub mod player_api;
 mod search;
 pub mod settings;
+pub mod shuffle;
 pub mod state;
 pub mod theme;
 pub mod views;

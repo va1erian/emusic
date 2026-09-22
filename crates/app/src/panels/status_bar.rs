@@ -24,6 +24,11 @@ pub fn show(
                 ui.label(format_duration(library.total_duration()));
                 ui.separator();
                 ui.label(status_text(player));
+                shuffle_scope(ui, state, player);
+                if let Some(message) = player.status_message() {
+                    ui.separator();
+                    ui.colored_label(ui.visuals().warn_fg_color, message);
+                }
                 scan_status(ui, state, library);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -61,6 +66,18 @@ fn status_text(player: &dyn PlayerApi) -> String {
         PlaybackStatus::Playing => "Playing".to_string(),
         PlaybackStatus::Paused => "Paused".to_string(),
         PlaybackStatus::Stopped => "Ready".to_string(),
+    }
+}
+
+/// Shows the active scoped shuffle (#57) and a way to stop it.
+fn shuffle_scope(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+    let Some(scope) = player.shuffle_scope() else {
+        return;
+    };
+    ui.separator();
+    ui.label(format!("Shuffling: {scope}"));
+    if ui.small_button("Stop").clicked() {
+        state.push(Command::PlayerToggleShuffle);
     }
 }
 

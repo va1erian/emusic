@@ -263,6 +263,13 @@ pub enum Command {
     /// order, and starts at the first. The ids are resolved to paths by the
     /// shell, same as [`Command::PlayTrack`].
     PlayAlbum(Vec<u64>),
+    /// Start a lazy shuffled playback over these tracks (#57), showing
+    /// `label` as the active scope. The ids are resolved to paths by the
+    /// shell, same as [`Command::PlayTrack`].
+    ShuffleScope {
+        ids: Vec<u64>,
+        label: String,
+    },
     /// "Play next" from a track's context menu; same caveat as
     /// [`Command::PlayTrack`].
     PlayTrackNext(u64),

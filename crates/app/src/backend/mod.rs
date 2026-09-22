@@ -140,6 +140,12 @@ impl PlayerApi for UnavailablePlayer {
     fn shuffle(&self) -> bool {
         false
     }
+    fn shuffle_scope(&self) -> Option<&str> {
+        None
+    }
+    fn status_message(&self) -> Option<&str> {
+        None
+    }
     fn queue(&self) -> &[QueueEntry] {
         &[]
     }
@@ -160,6 +166,7 @@ impl PlayerApi for UnavailablePlayer {
     fn queue_jump(&mut self, _index: usize) {}
     fn queue_remove(&mut self, _index: usize) {}
     fn replace_and_play(&mut self, _paths: &[PathBuf], _start_index: usize) {}
+    fn play_shuffled(&mut self, _paths: &[PathBuf], _label: &str) {}
     fn play_next(&mut self, _path: &Path) {}
     fn enqueue(&mut self, _path: &Path) {}
 }

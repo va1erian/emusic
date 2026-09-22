@@ -82,6 +82,15 @@ pub(super) fn apply_player_command(
                 player.replace_and_play(&paths, 0);
             }
         }
+        Command::ShuffleScope { ids, label } => {
+            let paths: Vec<PathBuf> = ids
+                .iter()
+                .filter_map(|id| track_path(library, *id))
+                .collect();
+            if !paths.is_empty() {
+                player.play_shuffled(&paths, label);
+            }
+        }
         Command::PlayTrackNext(id) => {
             if let Some(path) = track_path(library, *id) {
                 player.play_next(&path);

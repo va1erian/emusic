@@ -37,8 +37,8 @@ pub fn show(
         match state.view {
             View::Music => music::show(ui, state, library, player, search),
             View::Albums => album_grid::show(ui, state, library, player),
-            View::Artists => artists::show(ui, library),
-            View::Genres => genres::show(ui, library),
+            View::Artists => artists::show(ui, state, library),
+            View::Genres => genres::show(ui, state, library),
             View::Folders => folders::show(ui, state, library, player),
             View::MostPlayed => most_played::show(ui, library),
             View::History => history::show(ui, library),

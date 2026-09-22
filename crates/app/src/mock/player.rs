@@ -23,6 +23,8 @@ fn label(path: &Path) -> String {
 
 const SPECTRUM_BINS: usize = 32;
 const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
+/// Number of upcoming entries the mock materialises for a shuffle scope.
+const SHUFFLE_PREVIEW: usize = 20;
 
 pub struct MockPlayer {
     status: PlaybackStatus,
@@ -37,6 +39,10 @@ pub struct MockPlayer {
     /// Monotonically increasing phase used to animate the fake spectrum
     /// deterministically (no wall-clock reads).
     phase: f32,
+    /// Label of the active scoped shuffle, if any (#57).
+    shuffle_scope: Option<String>,
+    /// Transient status line shown in the status bar.
+    status_message: Option<String>,
 }
 
 impl MockPlayer {
@@ -89,6 +95,8 @@ impl Default for MockPlayer {
             module_info: None,
             spectrum: [0.0; SPECTRUM_BINS],
             phase: 0.0,
+            shuffle_scope: None,
+            status_message: None,
         }
     }
 }
@@ -137,6 +145,14 @@ impl PlayerApi for MockPlayer {
 
     fn shuffle(&self) -> bool {
         self.shuffle
+    }
+
+    fn shuffle_scope(&self) -> Option<&str> {
+        self.shuffle_scope.as_deref()
+    }
+
+    fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
     }
 
     fn queue(&self) -> &[QueueEntry] {
@@ -196,6 +212,9 @@ impl PlayerApi for MockPlayer {
 
     fn set_shuffle(&mut self, enabled: bool) {
         self.shuffle = enabled;
+        if !enabled {
+            self.shuffle_scope = None;
+        }
     }
 
     fn queue_jump(&mut self, index: usize) {
@@ -254,6 +273,36 @@ impl PlayerApi for MockPlayer {
                 artist: String::new(),
             },
         );
+    }
+
+    fn play_shuffled(&mut self, paths: &[PathBuf], scope_label: &str) {
+        let Some(first) = paths.first() else {
+            return;
+        };
+        let title = label(first);
+        let path = first.to_string_lossy().into_owned();
+        self.now_playing = Some(NowPlayingInfo {
+            title: title.clone(),
+            artist: String::new(),
+            album: String::new(),
+            path: path.clone(),
+            duration: Duration::ZERO,
+        });
+        self.status = PlaybackStatus::Playing;
+        self.position = Duration::ZERO;
+        self.module_info = tracker_module_info(&path, &title, Duration::ZERO);
+        self.queue = paths
+            .iter()
+            .skip(1)
+            .take(SHUFFLE_PREVIEW)
+            .map(|p| QueueEntry {
+                title: label(p),
+                artist: String::new(),
+            })
+            .collect();
+        self.shuffle = true;
+        self.shuffle_scope = Some(scope_label.to_string());
+        self.status_message = None;
     }
 
     fn enqueue(&mut self, path: &Path) {

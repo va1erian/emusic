@@ -43,7 +43,12 @@ pub fn show(
         None
     };
 
-    ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
+        if ui.button("Shuffle all").clicked() {
+            state.push(crate::shuffle::all(library));
+        }
+    });
     ui.separator();
 
     let playing_id = currently_playing_id(library, player);

@@ -34,6 +34,10 @@ pub struct PlayerAdapter {
     play_record_tx: Option<Sender<PlayRecord>>,
     /// Unix timestamp (seconds, UTC) when the current track started playing.
     current_track_started_at: Option<i64>,
+    /// Cached label of the active scoped shuffle (#57).
+    shuffle_scope: Option<String>,
+    /// Cached transient status line (e.g. a skipped unreadable file).
+    status_message: Option<String>,
 }
 
 impl PlayerAdapter {
@@ -45,6 +49,8 @@ impl PlayerAdapter {
             queue_item_indices: Vec::new(),
             play_record_tx,
             current_track_started_at: None,
+            shuffle_scope: None,
+            status_message: None,
         }
     }
 
@@ -61,6 +67,7 @@ impl PlayerAdapter {
         let upcoming = self.player.upcoming();
         self.queue_item_indices = upcoming.iter().map(|(index, _)| *index).collect();
         self.queue = upcoming.iter().map(|(_, path)| queue_entry(path)).collect();
+        self.shuffle_scope = self.player.shuffle_scope().map(str::to_string);
     }
 }
 
@@ -117,6 +124,11 @@ impl PlayerAdapter {
         match event {
             PlayerEvent::TrackStarted { .. } => {
                 self.current_track_started_at = Some(unix_now());
+                self.status_message = None;
+            }
+            PlayerEvent::TrackSkipped { path } => {
+                self.status_message =
+                    Some(format!("Skipped unreadable file: {}", track_label(&path)));
             }
             PlayerEvent::PlayFinished {
                 path,
@@ -193,6 +205,14 @@ impl PlayerApi for PlayerAdapter {
         self.player.shuffle()
     }
 
+    fn shuffle_scope(&self) -> Option<&str> {
+        self.shuffle_scope.as_deref()
+    }
+
+    fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
     fn queue(&self) -> &[QueueEntry] {
         &self.queue
     }
@@ -257,6 +277,11 @@ impl PlayerApi for PlayerAdapter {
 
     fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize) {
         self.player.replace_and_play(paths.to_vec(), start_index);
+    }
+
+    fn play_shuffled(&mut self, paths: &[PathBuf], label: &str) {
+        self.status_message = None;
+        self.player.play_shuffled(paths.to_vec(), label);
     }
 
     fn play_next(&mut self, path: &Path) {
