@@ -81,7 +81,7 @@ impl LibraryBackend {
                 store
             }
             Err(err) => {
-                warn!(%err, "could not open default library store; using in-memory store");
+                warn!(%err, "could not open library store; using an in-memory store");
                 Store::open_in_memory().expect("in-memory store always opens")
             }
         };
@@ -194,6 +194,19 @@ impl LibraryDataSource for LibraryBackend {
         while let Ok(record) = self.play_records.try_recv() {
             self.stats_recorder.record(record.clone());
             self.snapshot.record_play(&record);
+        }
+
+        while let Some(path) = crate::settings::folder_picker::try_recv() {
+            info!(path = %path.display(), "folder chosen via picker");
+            let mut folders: Vec<PathBuf> = self
+                .folders
+                .iter()
+                .map(|folder| folder.path.clone())
+                .collect();
+            if !folders.contains(&path) {
+                folders.push(path);
+            }
+            self.apply_folders(&folders);
         }
     }
 

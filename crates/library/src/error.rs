@@ -19,6 +19,11 @@ pub enum LibraryError {
         source: std::io::Error,
     },
 
+    /// [`Store::open_second`](crate::Store::open_second) was called on an
+    /// in-memory store, which has no file for a second connection to open.
+    #[error("an in-memory library store has no second connection")]
+    NoSecondConnection,
+
     /// The database's `user_version` is newer than this build of emusic
     /// knows how to handle.
     #[error(

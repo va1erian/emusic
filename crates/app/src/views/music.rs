@@ -16,7 +16,7 @@ pub fn show(
     player: &dyn PlayerApi,
 ) {
     if library.track_count() == 0 {
-        empty_state(ui, state);
+        empty_state(ui, state, library);
         return;
     }
 
@@ -59,23 +59,32 @@ pub fn show(
 
 /// First-run (or emptied-library) state: nothing to list, so offer to add a
 /// music folder right away. The text distinguishes "no folders configured"
-/// from "folders configured but nothing scanned yet".
-fn empty_state(ui: &mut egui::Ui, state: &mut AppState) {
+/// from "folders configured but nothing scanned yet" — and, during a scan,
+/// shows the scan's progress instead of a misleading "no tracks found"
+/// message (#69).
+fn empty_state(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
     ui.add_space(48.0);
     ui.vertical_centered(|ui| {
         ui.heading("Your library is empty");
         ui.add_space(8.0);
-        let message = if state.library_folders.is_empty() {
-            "Add a folder with your music to get started."
+        let scanning = library.is_scanning() || library.status_text().is_some();
+        let message = if scanning {
+            library
+                .status_text()
+                .unwrap_or_else(|| "Scanning your music folders...".to_string())
+        } else if state.library_folders.is_empty() {
+            "Add a folder with your music to get started.".to_string()
         } else {
-            "No tracks found in your music folders yet."
+            "No tracks found in your music folders yet.".to_string()
         };
         ui.label(message);
+        if scanning {
+            ui.spinner();
+            return;
+        }
         ui.add_space(12.0);
-        if ui.button("Add music folder").clicked()
-            && let Some(path) = rfd::FileDialog::new().pick_folder()
-        {
-            state.push(Command::LibraryAddFolder(path));
+        if ui.button("Add music folder").clicked() {
+            crate::settings::folder_picker::request();
         }
     });
 }
