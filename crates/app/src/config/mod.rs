@@ -9,7 +9,7 @@ mod tests;
 use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
-use crate::state::{AppState, PanelVisibility, Theme, View};
+use crate::state::{Accent, AppState, PanelVisibility, Theme, View};
 
 pub use io::{ConfigError, config_path, load, save};
 
@@ -27,6 +27,8 @@ pub struct Config {
     pub shuffle: bool,
     /// Colour scheme.
     pub theme: Theme,
+    /// UI accent colour (preset name or `#rrggbb`).
+    pub accent: Accent,
     /// Which optional panels are visible.
     pub panels: PanelVisibility,
     /// View shown on startup.
@@ -40,6 +42,7 @@ impl Default for Config {
             repeat_mode: RepeatMode::Off,
             shuffle: false,
             theme: Theme::default(),
+            accent: Accent::default(),
             panels: PanelVisibility::default(),
             last_view: View::default(),
         }
@@ -56,14 +59,16 @@ impl Config {
             repeat_mode: player.repeat_mode(),
             shuffle: player.shuffle(),
             theme: state.theme,
+            accent: state.accent,
             panels: state.panels,
             last_view: state.view,
         }
     }
 
-    /// Restores the UI-state fields (theme, panels, last view).
+    /// Restores the UI-state fields (theme, accent, panels, last view).
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.theme = self.theme;
+        state.accent = self.accent;
         state.panels = self.panels;
         state.view = self.last_view;
     }

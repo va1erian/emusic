@@ -5,7 +5,7 @@ use eframe::egui::{self, RichText};
 
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{AppState, Command};
-use crate::theme::ACCENT;
+use crate::theme;
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     egui::Panel::top("top_bar").exact_size(56.0).show(ui, |ui| {
@@ -45,7 +45,7 @@ fn transport_buttons(ui: &mut egui::Ui, state: &mut AppState, player: &dyn Playe
         "▶"
     };
     if ui
-        .add(egui::Button::new(RichText::new(play_icon).size(18.0)).fill(ACCENT))
+        .add(egui::Button::new(RichText::new(play_icon).size(18.0)).fill(theme::current_accent()))
         .clicked()
     {
         state.push(Command::PlayerPlayPause);
@@ -65,7 +65,7 @@ fn repeat_label(mode: RepeatMode) -> bool {
 fn toggle_button(ui: &mut egui::Ui, state: &mut AppState, icon: &str, tooltip: &str, active: bool) {
     let mut button = egui::Button::new(icon);
     if active {
-        button = button.fill(ACCENT);
+        button = button.fill(theme::current_accent());
     }
     if ui.add(button).on_hover_text(tooltip).clicked() {
         state.push(Command::PlayerToggleRepeat);
@@ -81,7 +81,7 @@ fn toggle_button_bool(
 ) {
     let mut button = egui::Button::new(icon);
     if active {
-        button = button.fill(ACCENT);
+        button = button.fill(theme::current_accent());
     }
     if ui.add(button).on_hover_text(tooltip).clicked() {
         state.push(Command::PlayerToggleShuffle);

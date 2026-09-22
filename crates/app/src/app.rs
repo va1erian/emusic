@@ -72,7 +72,7 @@ impl App {
         fonts::install(&cc.egui_ctx);
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
-        theme::apply(&cc.egui_ctx, state.theme);
+        theme::apply(&cc.egui_ctx, state.theme, state.accent.color());
         config.apply_to_player(player.as_mut());
         Self {
             state,
@@ -180,7 +180,7 @@ impl eframe::App for App {
         let dt = ctx.input(|i| i.stable_dt);
         self.player.tick(Duration::from_secs_f32(dt.max(0.0)));
 
-        theme::apply(&ctx, self.state.theme);
+        theme::apply(&ctx, self.state.theme, self.state.accent.color());
 
         self.menu_bar(ui);
         panels::top_bar::show(ui, &mut self.state, self.player.as_ref());

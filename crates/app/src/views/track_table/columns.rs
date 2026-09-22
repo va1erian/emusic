@@ -123,14 +123,14 @@ pub fn show_cell(ui: &mut egui::Ui, id: ColumnId, track: &TrackInfo, is_playing:
         let tint = |text: &str| {
             let rich = egui::RichText::new(text);
             if is_playing {
-                rich.color(crate::theme::ACCENT).strong()
+                rich.color(crate::theme::current_accent()).strong()
             } else {
                 rich
             }
         };
         let weak_tint = |text: String| {
             if is_playing {
-                egui::RichText::new(text).color(crate::theme::ACCENT)
+                egui::RichText::new(text).color(crate::theme::current_accent())
             } else {
                 egui::RichText::new(text).weak()
             }

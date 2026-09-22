@@ -6,7 +6,7 @@ use eframe::egui;
 
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
-use crate::theme::ACCENT;
+use crate::theme;
 
 pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, player: &dyn PlayerApi) {
     egui::Panel::bottom("status_bar")
@@ -53,7 +53,7 @@ fn visualizer_strip(ui: &mut egui::Ui, player: &dyn PlayerApi) {
             egui::pos2(x, rect.bottom() - height),
             egui::pos2(x + bar_width * 0.8, rect.bottom()),
         );
-        painter.rect_filled(bar, 0.0, ACCENT);
+        painter.rect_filled(bar, 0.0, theme::current_accent());
     }
 }
 
