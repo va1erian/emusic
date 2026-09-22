@@ -191,7 +191,12 @@ impl eframe::App for App {
             panels::navigator::show(ui, &mut self.state);
         }
         if self.state.panels.right_panel {
-            panels::right_panel::show(ui, self.player.as_ref());
+            panels::right_panel::show(
+                ui,
+                &mut self.state,
+                self.library.as_ref(),
+                self.player.as_ref(),
+            );
         }
         views::show(
             ui,
@@ -225,6 +230,8 @@ fn apply_player_command(player: &mut dyn PlayerApi, cmd: &Command) {
         Command::PlayerSetVolume(v) => player.set_volume(*v),
         Command::PlayerToggleRepeat => player.set_repeat_mode(next_repeat(player.repeat_mode())),
         Command::PlayerToggleShuffle => player.set_shuffle(!player.shuffle()),
+        Command::PlayerQueueJump(index) => player.queue_jump(*index),
+        Command::PlayerQueueRemove(index) => player.queue_remove(*index),
         _ => {}
     }
 }

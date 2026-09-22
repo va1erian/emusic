@@ -24,6 +24,8 @@ dirs = "5"
 thiserror = "2"
 rand = "0.8"
 rand_chacha = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+lofty = "0.22"
 tracing = "0.1"
 egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"], optional = true }
 

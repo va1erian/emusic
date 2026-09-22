@@ -51,7 +51,27 @@ pub struct NowPlayingInfo {
     pub title: String,
     pub artist: String,
     pub album: String,
+    /// Full path to the source file, used to look up richer metadata in the
+    /// library and to load artwork.
+    pub path: String,
     pub duration: Duration,
+}
+
+/// Live tracker-module metadata, returned by [`PlayerApi::module_info`].
+///
+/// Only tracker formats (MOD/XM/IT/S3M and friends) expose this; streamed
+/// audio returns `None`.
+#[derive(Debug, Clone, Default)]
+pub struct ModuleInfo {
+    pub name: String,
+    pub format: String,
+    pub channels: u32,
+    pub orders: u32,
+    pub current_order: u32,
+    pub current_row: u32,
+    pub message: String,
+    pub instruments: Vec<String>,
+    pub samples: Vec<String>,
 }
 
 /// One entry in the upcoming queue, shown in the right panel.
@@ -79,6 +99,9 @@ pub trait PlayerApi {
     fn shuffle(&self) -> bool;
     fn queue(&self) -> &[QueueEntry];
 
+    /// Live tracker-module metadata, if the current track is a module.
+    fn module_info(&self) -> Option<&ModuleInfo>;
+
     /// Normalized (0.0..=1.0) magnitude bins for the visualizer strip.
     fn spectrum(&self) -> &[f32];
 
@@ -90,4 +113,9 @@ pub trait PlayerApi {
     fn set_volume(&mut self, volume: f32);
     fn set_repeat_mode(&mut self, mode: RepeatMode);
     fn set_shuffle(&mut self, enabled: bool);
+
+    /// Jump to a queue entry by its current index and start playback.
+    fn queue_jump(&mut self, index: usize);
+    /// Remove a queue entry by its current index.
+    fn queue_remove(&mut self, index: usize);
 }

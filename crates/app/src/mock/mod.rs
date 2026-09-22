@@ -3,6 +3,7 @@
 //! database, and fully reproducible output.
 
 mod data;
+mod generators;
 mod library;
 mod player;
 

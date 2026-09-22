@@ -18,10 +18,21 @@ pub struct TrackInfo {
     pub track_no: Option<u32>,
     /// Release year, when known (usually inherited from the album).
     pub year: Option<u32>,
+    pub disc_no: Option<u32>,
     pub duration: Duration,
     pub path: String,
     /// e.g. "mp3", "flac", "xm", "it" ...
     pub format: String,
+    /// Human-readable codec, e.g. "MP3", "FLAC", "MPEG-1 Layer III".
+    pub codec: String,
+    /// Bitrate in kbps, when known.
+    pub bitrate: Option<u32>,
+    /// Sample rate in Hz, when known.
+    pub sample_rate: Option<u32>,
+    /// Bit depth in bits, when known.
+    pub bit_depth: Option<u8>,
+    /// Channel count, when known.
+    pub channels: Option<u8>,
     pub play_count: u32,
     /// Minutes elapsed since the track was last played; `None` if it has
     /// never been played. Kept as a plain number (rather than a formatted
@@ -90,5 +101,10 @@ pub trait LibraryDataSource {
 
     fn total_duration(&self) -> Duration {
         self.tracks().iter().map(|t| t.duration).sum()
+    }
+
+    /// Looks up a track by its full file path.
+    fn track_by_path(&self, path: &str) -> Option<&TrackInfo> {
+        self.tracks().iter().find(|t| t.path == path)
     }
 }

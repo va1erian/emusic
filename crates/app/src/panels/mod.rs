@@ -5,6 +5,7 @@
 //! each other.
 
 pub mod navigator;
+pub mod now_playing;
 pub mod right_panel;
 pub mod status_bar;
 pub mod top_bar;

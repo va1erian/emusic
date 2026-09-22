@@ -67,7 +67,9 @@ mod stub {
     use emusic::library_api::{
         AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
     };
-    use emusic::player_api::{NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode};
+    use emusic::player_api::{
+        ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+    };
 
     pub struct EmptyLibrary;
 
@@ -124,6 +126,9 @@ mod stub {
         fn queue(&self) -> &[QueueEntry] {
             &[]
         }
+        fn module_info(&self) -> Option<&ModuleInfo> {
+            None
+        }
         fn spectrum(&self) -> &[f32] {
             &[]
         }
@@ -135,5 +140,8 @@ mod stub {
         fn set_volume(&mut self, _volume: f32) {}
         fn set_repeat_mode(&mut self, _mode: RepeatMode) {}
         fn set_shuffle(&mut self, _enabled: bool) {}
+
+        fn queue_jump(&mut self, _index: usize) {}
+        fn queue_remove(&mut self, _index: usize) {}
     }
 }
