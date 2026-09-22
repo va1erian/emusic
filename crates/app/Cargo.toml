@@ -9,4 +9,4 @@ name = "emusic"
 path = "src/main.rs"
 
 [dependencies]
-eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11"] }
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
