@@ -1,0 +1,67 @@
+//! The entire crate's raw Win32 surface.
+//!
+//! Everything else in `winshell` goes through safe crates (`interprocess`
+//! for named pipes, `windows-registry` for the registry). What's left here
+//! has no safe wrapper anywhere: granting foreground rights to another
+//! process, reading a named pipe's server PID, restoring/raising a window,
+//! and telling Explorer that associations changed. Every `unsafe` block
+//! carries a `// SAFETY:` comment.
+
+use std::io;
+use std::os::windows::io::{AsHandle, AsRawHandle};
+
+use windows::Win32::Foundation::HWND;
+use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
+use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AllowSetForegroundWindow, SW_RESTORE, SetForegroundWindow, ShowWindow,
+};
+
+/// Grants the process `pid` the right to call `SetForegroundWindow`, even
+/// though it isn't currently the foreground process.
+///
+/// Used by the primary instance right after accepting an IPC connection, so
+/// the (briefly foreground) secondary launcher can hand control back to it.
+pub fn allow_set_foreground_window(pid: u32) -> io::Result<()> {
+    // SAFETY: `AllowSetForegroundWindow` only reads `pid`; there is no
+    // pointer or lifetime obligation to uphold.
+    unsafe { AllowSetForegroundWindow(pid) }.map_err(|e| io::Error::from_raw_os_error(e.code().0))
+}
+
+/// Returns the process id of the server end of a connected named-pipe
+/// client handle (anything implementing [`AsHandle`], e.g. an
+/// `interprocess` `PipeStream`).
+pub fn named_pipe_server_process_id(pipe: &impl AsHandle) -> io::Result<u32> {
+    let raw = pipe.as_handle().as_raw_handle();
+    let handle = windows::Win32::Foundation::HANDLE(raw);
+    let mut pid = 0u32;
+    // SAFETY: `handle` borrows a valid, open, connected named-pipe handle
+    // for the duration of this call; `pid` is a valid `u32` out-pointer.
+    unsafe { GetNamedPipeServerProcessId(handle, &mut pid) }
+        .map_err(|e| io::Error::from_raw_os_error(e.code().0))?;
+    Ok(pid)
+}
+
+/// Restores (if minimized) and raises the window identified by `hwnd` (its
+/// raw value) to the foreground.
+pub fn bring_to_front(hwnd: isize) {
+    let hwnd = HWND(hwnd as *mut core::ffi::c_void);
+    // SAFETY: `ShowWindow`/`SetForegroundWindow` only require a window
+    // handle; a stale or invalid `HWND` is a documented no-op/failure on
+    // the Win32 side, not undefined behaviour.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_RESTORE);
+        let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+/// Tells Explorer that file associations changed, so icons and "Open with"
+/// menus refresh without a logoff/logon.
+pub fn notify_assoc_changed() {
+    // SAFETY: `SHChangeNotify` with `SHCNE_ASSOCCHANGED`/`SHCNF_IDLIST`
+    // ignores `dwItem1`/`dwItem2`; passing `None` for both is the
+    // documented usage for a global association-change notification.
+    unsafe {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None);
+    }
+}
