@@ -45,6 +45,7 @@ fn non_default_config() -> Config {
             status_bar: false,
         },
         last_view: View::MostPlayed,
+        library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
     }
 }
 

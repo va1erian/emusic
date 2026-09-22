@@ -6,6 +6,8 @@ mod io;
 #[cfg(test)]
 mod tests;
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
@@ -33,6 +35,10 @@ pub struct Config {
     pub panels: PanelVisibility,
     /// View shown on startup.
     pub last_view: View,
+    /// Library folders to scan at startup. Editable UI is #19; until then
+    /// users can set this in `config.toml`.
+    #[serde(default)]
+    pub library_folders: Vec<PathBuf>,
 }
 
 impl Default for Config {
@@ -45,6 +51,7 @@ impl Default for Config {
             accent: Accent::default(),
             panels: PanelVisibility::default(),
             last_view: View::default(),
+            library_folders: Vec::new(),
         }
     }
 }
@@ -62,6 +69,7 @@ impl Config {
             accent: state.accent,
             panels: state.panels,
             last_view: state.view,
+            library_folders: state.library_folders.clone(),
         }
     }
 
@@ -71,6 +79,7 @@ impl Config {
         state.accent = self.accent;
         state.panels = self.panels;
         state.view = self.last_view;
+        state.library_folders = self.library_folders.clone();
     }
 
     /// Restores the player fields (volume, repeat, shuffle).

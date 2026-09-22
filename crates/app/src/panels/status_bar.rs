@@ -18,6 +18,10 @@ pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, player: &dyn Pla
                 ui.label(format_duration(library.total_duration()));
                 ui.separator();
                 ui.label(status_text(player));
+                if let Some(text) = library.status_text() {
+                    ui.separator();
+                    ui.label(text);
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     visualizer_strip(ui, player);

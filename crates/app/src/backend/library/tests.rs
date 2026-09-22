@@ -1,0 +1,115 @@
+//! End-to-end tests for the real library backend: a generated WAV is scanned
+//! on a background thread, swapped into the snapshot, and a play recorded
+//! through the player's channel updates the in-memory stats.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use emusic_library::Store;
+use emusic_library::stats::PlayRecord;
+
+use super::LibraryBackend;
+use crate::library_api::LibraryDataSource;
+
+#[test]
+fn backend_starts_empty_and_accepts_folders() {
+    let store = Store::open_in_memory().unwrap();
+    let mut backend = LibraryBackend::with_store(store);
+    assert!(backend.tracks().is_empty());
+
+    // A folder that does not exist yields no tracks, but the backend stays
+    // usable and never panics while the loader runs.
+    backend.set_folders(&[PathBuf::from(r"Z:\definitely\missing")]);
+    backend.tick();
+    assert!(backend.tracks().is_empty());
+}
+
+#[test]
+fn scans_generated_wav_and_tracks_play() {
+    let dir = unique_temp_dir("scan");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_wav(&dir.join("track.wav"), 8_000, 1);
+
+    let store = Store::open_in_memory().unwrap();
+    let mut backend = LibraryBackend::with_store(store);
+    backend.set_folders(std::slice::from_ref(&dir));
+
+    let tracks = wait_for_tracks(&mut backend);
+    assert_eq!(tracks.len(), 1, "expected the generated WAV to be scanned");
+    let track = &tracks[0];
+    assert!(track.path.ends_with("track.wav"));
+    assert!(track.duration > Duration::ZERO);
+    assert_eq!(backend.folders()[0].track_count, 1);
+
+    let path = PathBuf::from(&track.path);
+    backend
+        .play_record_tx()
+        .send(PlayRecord {
+            path,
+            started_at: unix_now(),
+            listened_ms: 1_000,
+            completed: true,
+        })
+        .unwrap();
+    backend.tick();
+    assert_eq!(backend.tracks()[0].play_count, 1);
+    assert!(backend.tracks()[0].last_played_minutes_ago.is_some());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Pumps the backend until the background scan produces a track, up to a
+/// generous timeout (network drives are slow; local temp dirs are not).
+fn wait_for_tracks(backend: &mut LibraryBackend) -> Vec<crate::library_api::TrackInfo> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        backend.tick();
+        if !backend.tracks().is_empty() {
+            return backend.tracks().to_vec();
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!("scan did not produce a track within the timeout");
+}
+
+fn unique_temp_dir(tag: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!("emusic-lib-{tag}-{}-{nanos}", std::process::id()))
+}
+
+/// Writes a minimal valid 16-bit PCM mono WAV with a short silent tone.
+fn write_wav(path: &Path, sample_rate: u32, seconds: u32) {
+    let samples = sample_rate * seconds;
+    let data_len = samples * 2; // 16-bit mono
+    let byte_rate = sample_rate * 2;
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&byte_rate.to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
+    bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..samples {
+        let phase = (i as f32 / sample_rate as f32) * 440.0 * std::f32::consts::TAU;
+        let sample = (phase.sin() * 1000.0) as i16;
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}

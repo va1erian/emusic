@@ -2,6 +2,8 @@
 //! [`Command`] message type panels/views use to ask the shell to change
 //! something.
 
+use std::path::PathBuf;
+
 use eframe::egui::Color32;
 use serde::{Deserialize, Serialize};
 
@@ -278,6 +280,9 @@ pub struct AppState {
     pub accent: Accent,
     pub panels: PanelVisibility,
     pub search_query: String,
+    /// Library folders mirrored from [`crate::config::Config`] so the
+    /// persisted list survives round-trips through [`Config::capture`].
+    pub library_folders: Vec<PathBuf>,
     /// The Music view's track table (sort + selection). Other views that
     /// embed a track table later (albums, artists, genres, folders,
     /// history) will each get their own field here.
@@ -297,6 +302,7 @@ impl Default for AppState {
             accent: Accent::default(),
             panels: PanelVisibility::default(),
             search_query: String::new(),
+            library_folders: Vec::new(),
             music_table: TrackTableState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),

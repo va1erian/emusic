@@ -1,12 +1,12 @@
-//! Chooses and wires up the real backends (#11): the BASS-backed
-//! [`emusic_player::Player`] via [`player_adapter::PlayerAdapter`], and
+//! Chooses and wires up the real backends (#11, #54): the BASS-backed
+//! [`emusic_player::Player`] via [`player_adapter::PlayerAdapter`], the
+//! SQLite-backed library via [`library::LibraryBackend`], and
 //! single-instance/IPC via `winshell` ([`ipc`]).
 //!
-//! The real library (`crates/library`) isn't wired in here — that's a
-//! separate issue's scope. `--mock` continues to use the in-memory fakes
-//! from `crate::mock`.
+//! `--mock` continues to use the in-memory fakes from [`crate::mock`].
 
 pub mod ipc;
+pub mod library;
 pub mod player_adapter;
 
 use std::path::{Path, PathBuf};
@@ -14,13 +14,12 @@ use std::sync::Arc;
 
 use tracing::{info, warn};
 
-use crate::library_api::{
-    AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
-};
+use crate::library_api::LibraryDataSource;
 use crate::mock;
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
 };
+use library::LibraryBackend;
 use player_adapter::PlayerAdapter;
 
 /// The library/player pair the app runs with, plus a startup notice (e.g.
@@ -32,9 +31,9 @@ pub struct Backends {
     pub notice: Option<String>,
 }
 
-/// Builds the backends for this run: fakes for `--mock`, otherwise a real
-/// [`PlayerAdapter`] over BASS. If BASS can't be loaded (missing DLLs, no
-/// output device, ...) the app still starts, with an inert player and a
+/// Builds the backends for this run: fakes for `--mock`, otherwise the real
+/// library store + BASS-backed player. If BASS can't be loaded (missing DLLs,
+/// no output device, ...) the app still starts, with an inert player and a
 /// notice describing why, rather than crashing (#11).
 pub fn build(mock: bool) -> Backends {
     if mock {
@@ -51,23 +50,32 @@ pub fn build(mock: bool) -> Backends {
         };
     }
 
-    match init_bass_player() {
-        Ok(player) => {
+    let library = LibraryBackend::new();
+    let play_record_tx = library.play_record_tx();
+
+    let (player, notice): (Box<dyn PlayerApi>, Option<String>) = match init_bass() {
+        Ok(bass) => {
             info!("BASS initialized");
-            Backends {
-                library: Box::new(EmptyLibrary),
-                player: Box::new(player),
-                notice: None,
-            }
+            load_bass_plugins(&bass);
+            let backend = Arc::new(emusic_player::BassBackend::new(bass));
+            let player =
+                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_record_tx));
+            (Box::new(player), None)
         }
         Err(err) => {
             warn!(%err, "audio backend unavailable; starting without playback");
-            Backends {
-                library: Box::new(EmptyLibrary),
-                player: Box::new(UnavailablePlayer),
-                notice: Some(format!("Audio unavailable: {err}")),
-            }
+            let notice = format!(
+                "Audio unavailable: {err} (looked in {}; set EMUSIC_BASS_DIR to override)",
+                bass_dir().display()
+            );
+            (Box::new(UnavailablePlayer), Some(notice))
         }
+    };
+
+    Backends {
+        library: Box::new(library),
+        player,
+        notice,
     }
 }
 
@@ -92,47 +100,15 @@ fn bass_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("bass"))
 }
 
-fn init_bass_player() -> anyhow::Result<PlayerAdapter> {
-    let bass = bass::Bass::init(-1, 44100).map_err(|err| {
-        anyhow::anyhow!(
-            "{err} (looked in {}; set EMUSIC_BASS_DIR to override)",
-            bass_dir().display()
-        )
-    })?;
+fn init_bass() -> Result<bass::Bass, bass::BassError> {
+    bass::Bass::init(-1, 44100)
+}
+
+fn load_bass_plugins(bass: &bass::Bass) {
     for result in bass.load_plugins(bass_dir()) {
         if let Err(err) = result.result {
             warn!(plugin = %result.path.display(), %err, "BASS plugin failed to load");
         }
-    }
-    let backend = Arc::new(emusic_player::BassBackend::new(bass));
-    Ok(PlayerAdapter::new(emusic_player::Player::new(backend)))
-}
-
-/// Empty library stand-in; wiring the real `crates/library` store into the
-/// shell is out of scope for #11 (player + winshell wiring only).
-struct EmptyLibrary;
-
-impl LibraryDataSource for EmptyLibrary {
-    fn tracks(&self) -> &[TrackInfo] {
-        &[]
-    }
-    fn albums(&self) -> &[AlbumInfo] {
-        &[]
-    }
-    fn artists(&self) -> &[ArtistInfo] {
-        &[]
-    }
-    fn genres(&self) -> &[String] {
-        &[]
-    }
-    fn folders(&self) -> &[FolderInfo] {
-        &[]
-    }
-    fn history(&self) -> &[HistoryEntry] {
-        &[]
-    }
-    fn most_played(&self) -> &[TrackInfo] {
-        &[]
     }
 }
 
