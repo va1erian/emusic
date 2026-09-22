@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+pub mod index;
 mod store;
 
 pub use error::{LibraryError, Result};
