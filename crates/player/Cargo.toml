@@ -14,5 +14,7 @@ bass = { path = "../bass" }
 thiserror = "2"
 crossbeam-channel = "0.5"
 rand = "0.8"
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+toml = "1"
