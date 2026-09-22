@@ -1,11 +1,22 @@
-//! Shared UI state, the [`View`] router, [`Theme`], [`Accent`] and the
-//! [`Command`] message type panels/views use to ask the shell to change
-//! something.
+//! Shared UI state: [`AppState`] plus the smaller state types the shell,
+//! config and panels share. Each lives in its own module — the [`View`]
+//! router, [`Theme`]/[`Accent`] appearance, panel [`PanelVisibility`], the
+//! [`Command`] message type and the global [`SearchPopupState`] — and is
+//! re-exported here so `crate::state::…` paths keep working.
+
+mod appearance;
+mod command;
+mod panels;
+mod search;
+mod view;
+
+pub use appearance::{Accent, Theme};
+pub use command::Command;
+pub use panels::{PanelKind, PanelVisibility};
+pub use search::{SearchPopupItem, SearchPopupState};
+pub use view::View;
 
 use std::path::PathBuf;
-
-use eframe::egui::Color32;
-use serde::{Deserialize, Serialize};
 
 use crate::views::album_grid::AlbumGridState;
 use crate::views::column_browser::ColumnBrowserState;
@@ -16,326 +27,6 @@ use crate::views::track_table::TrackTableState;
 
 #[cfg(test)]
 mod tests;
-
-/// Which central-area view is currently shown.
-///
-/// New views (track table, album grid, column browser, ...) add a variant
-/// here plus a module under `views/`; the router in `views::show` is the
-/// only other place that needs updating.
-///
-/// Serde uses the same kebab-case identifiers as [`View::slug`], so the
-/// config file's `last_view` matches the CLI/`emusic-shot` spelling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum View {
-    #[default]
-    Music,
-    Albums,
-    Artists,
-    Genres,
-    Folders,
-    MostPlayed,
-    History,
-    NowPlaying,
-    Settings,
-}
-
-impl View {
-    pub const ALL: [Self; 9] = [
-        Self::Music,
-        Self::Albums,
-        Self::Artists,
-        Self::Genres,
-        Self::Folders,
-        Self::MostPlayed,
-        Self::History,
-        Self::NowPlaying,
-        Self::Settings,
-    ];
-
-    /// Short label used in the navigator and window title.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Music => "Music",
-            Self::Albums => "Albums",
-            Self::Artists => "Artists",
-            Self::Genres => "Genres",
-            Self::Folders => "Folders",
-            Self::MostPlayed => "Most Played",
-            Self::History => "History",
-            Self::NowPlaying => "Now Playing",
-            Self::Settings => "Settings",
-        }
-    }
-
-    /// CLI-friendly identifier, e.g. for `emusic-shot --view most-played`.
-    pub fn slug(self) -> &'static str {
-        match self {
-            Self::Music => "music",
-            Self::Albums => "albums",
-            Self::Artists => "artists",
-            Self::Genres => "genres",
-            Self::Folders => "folders",
-            Self::MostPlayed => "most-played",
-            Self::History => "history",
-            Self::NowPlaying => "now-playing",
-            Self::Settings => "settings",
-        }
-    }
-
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|v| v.slug() == slug)
-    }
-}
-
-/// Colour scheme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Theme {
-    #[default]
-    Dark,
-    Light,
-}
-
-impl Theme {
-    pub fn toggled(self) -> Self {
-        match self {
-            Self::Dark => Self::Light,
-            Self::Light => Self::Dark,
-        }
-    }
-}
-
-/// The UI accent colour: a built-in preset or a custom colour picked in
-/// Settings → Appearance (#40).
-///
-/// Serializes as the preset's lowercase name (`"blue"`) or a `#rrggbb`
-/// string for custom colours, so the config file stays human-editable and
-/// the same spellings work for `emusic-shot --accent`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Accent {
-    #[default]
-    Orange,
-    Blue,
-    Green,
-    Purple,
-    Red,
-    Teal,
-    /// Any colour chosen with the custom picker.
-    Custom(Color32),
-}
-
-impl Accent {
-    /// The built-in presets, in display order.
-    pub const PRESETS: [Self; 6] = [
-        Self::Orange,
-        Self::Blue,
-        Self::Green,
-        Self::Purple,
-        Self::Red,
-        Self::Teal,
-    ];
-
-    /// Label shown in the UI.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Orange => "Orange",
-            Self::Blue => "Blue",
-            Self::Green => "Green",
-            Self::Purple => "Purple",
-            Self::Red => "Red",
-            Self::Teal => "Teal",
-            Self::Custom(_) => "Custom",
-        }
-    }
-
-    /// The colour to render with.
-    pub fn color(self) -> Color32 {
-        match self {
-            Self::Orange => crate::theme::DEFAULT_ACCENT,
-            Self::Blue => Color32::from_rgb(0x35, 0x84, 0xE4),
-            Self::Green => Color32::from_rgb(0x2E, 0xC2, 0x7E),
-            Self::Purple => Color32::from_rgb(0x91, 0x41, 0xAC),
-            Self::Red => Color32::from_rgb(0xE0, 0x1B, 0x24),
-            Self::Teal => Color32::from_rgb(0x0F, 0x9B, 0xA0),
-            Self::Custom(color) => color,
-        }
-    }
-
-    /// Parses the config/CLI spelling: a preset name (case-insensitive) or
-    /// a `#rrggbb` hex colour.
-    pub fn parse(s: &str) -> Option<Self> {
-        let lowered = s.trim().to_ascii_lowercase();
-        if let Some(preset) = Self::PRESETS
-            .into_iter()
-            .find(|preset| preset.label().to_ascii_lowercase() == lowered)
-        {
-            return Some(preset);
-        }
-        parse_hex(s).map(Self::Custom)
-    }
-
-    /// The canonical config/CLI spelling. [`Self::parse`] also accepts
-    /// preset names in any case.
-    pub fn to_config_str(self) -> String {
-        match self {
-            Self::Custom(color) => {
-                format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
-            }
-            other => other.label().to_ascii_lowercase(),
-        }
-    }
-}
-
-/// `#rrggbb` (with the `#` optional) to an opaque colour.
-fn parse_hex(s: &str) -> Option<Color32> {
-    let trimmed = s.trim();
-    let digits = trimmed.strip_prefix('#').unwrap_or(trimmed);
-    if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let value = u32::from_str_radix(digits, 16).ok()?;
-    Some(Color32::from_rgb(
-        (value >> 16) as u8,
-        (value >> 8) as u8,
-        value as u8,
-    ))
-}
-
-impl Serialize for Accent {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_config_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for Accent {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        Self::parse(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "unknown accent {s:?}; expected a preset name or #rrggbb"
-            ))
-        })
-    }
-}
-
-/// Which optional panels are visible (toggled from the View menu).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PanelVisibility {
-    pub navigator: bool,
-    pub right_panel: bool,
-    pub status_bar: bool,
-}
-
-impl Default for PanelVisibility {
-    fn default() -> Self {
-        Self {
-            navigator: true,
-            right_panel: true,
-            status_bar: true,
-        }
-    }
-}
-
-/// One-shot request emitted by a panel/view during `ui()`, applied by the
-/// shell after layout so widgets never need `&mut AppState` themselves.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Command {
-    SetView(View),
-    ToggleTheme,
-    SetAccent(Accent),
-    TogglePanel(PanelKind),
-    /// Show/hide the Music view's column browser (#16).
-    ToggleColumnBrowser,
-    SetSearchQuery(String),
-    PlayerPlayPause,
-    PlayerStop,
-    PlayerNext,
-    PlayerPrevious,
-    PlayerSeek(std::time::Duration),
-    PlayerSetVolume(f32),
-    PlayerToggleRepeat,
-    PlayerToggleShuffle,
-    /// Start playing this track. A stand-in for real queue control (#4):
-    /// currently a no-op in the shell, kept here so the track table's
-    /// double-click/Enter/context menu have somewhere to send intent.
-    PlayTrack(u64),
-    /// Play a whole album (#17): replaces the queue with these tracks, in
-    /// order, and starts at the first. The ids are resolved to paths by the
-    /// shell, same as [`Command::PlayTrack`].
-    PlayAlbum(Vec<u64>),
-    /// Start a lazy shuffled playback over these tracks (#57), showing
-    /// `label` as the active scope. The ids are resolved to paths by the
-    /// shell, same as [`Command::PlayTrack`].
-    ShuffleScope {
-        ids: Vec<u64>,
-        label: String,
-    },
-    /// "Play next" from a track's context menu; same caveat as
-    /// [`Command::PlayTrack`].
-    PlayTrackNext(u64),
-    /// "Add to queue" from a track's context menu; same caveat as
-    /// [`Command::PlayTrack`].
-    QueueTrack(u64),
-    /// Jump to a queue entry by its current index and start playback.
-    PlayerQueueJump(usize),
-    /// Remove a queue entry by its current index.
-    PlayerQueueRemove(usize),
-    /// Add a root folder to the library (Settings → Library / empty state).
-    LibraryAddFolder(PathBuf),
-    /// Remove a root folder from the library.
-    LibraryRemoveFolder(PathBuf),
-    /// Rescan every enabled library folder on demand.
-    LibraryRescan,
-    /// Stop the scan currently running, if any.
-    LibraryCancelScan,
-    /// Remove one playback history entry (History view, #24).
-    HistoryRemove(i64),
-    /// Clear the whole playback history (History view, #24), after the
-    /// confirmation dialog.
-    HistoryClear,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelKind {
-    Navigator,
-    RightPanel,
-    StatusBar,
-}
-
-/// One flattened entry in the global search popup's results, in display
-/// order across all three sections.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SearchPopupItem {
-    Artist(String),
-    Album { name: String, artist: String },
-    Track(u64),
-}
-
-/// State for the Ctrl+Shift+F / Ctrl+K global search popup (#22): its own
-/// query text (independent of the top-bar box), open/closed, and the
-/// keyboard-selected row.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SearchPopupState {
-    pub open: bool,
-    pub query: String,
-    /// Index into the flattened, currently-shown result list.
-    pub selected: usize,
-}
-
-impl SearchPopupState {
-    /// Opens the popup, focused on a blank query, ready for typing.
-    pub fn open(&mut self) {
-        self.open = true;
-        self.query.clear();
-        self.selected = 0;
-    }
-
-    pub fn close(&mut self) {
-        self.open = false;
-    }
-}
 
 /// Everything the shell needs beyond the player/library data itself.
 pub struct AppState {
@@ -352,6 +43,8 @@ pub struct AppState {
     pub search_popup: SearchPopupState,
     /// Library folders mirrored from [`crate::config::Config`] so the
     /// persisted list survives round-trips through [`Config::capture`].
+    ///
+    /// [`Config::capture`]: crate::config::Config::capture
     pub library_folders: Vec<PathBuf>,
     /// The Music view's track table (sort + selection). Other views that
     /// embed a track table later (albums, artists, genres, folders,
