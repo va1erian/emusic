@@ -6,9 +6,15 @@ use eframe::egui;
 
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
+use crate::state::{AppState, Command};
 use crate::theme;
 
-pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, player: &dyn PlayerApi) {
+pub fn show(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    library: &dyn LibraryDataSource,
+    player: &dyn PlayerApi,
+) {
     egui::Panel::bottom("status_bar")
         .exact_size(28.0)
         .show(ui, |ui| {
@@ -18,16 +24,26 @@ pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, player: &dyn Pla
                 ui.label(format_duration(library.total_duration()));
                 ui.separator();
                 ui.label(status_text(player));
-                if let Some(text) = library.status_text() {
-                    ui.separator();
-                    ui.label(text);
-                }
+                scan_status(ui, state, library);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     visualizer_strip(ui, player);
                 });
             });
         });
+}
+
+/// Shows the library's scan progress, with a cancel button while a scan is
+/// running.
+fn scan_status(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
+    let Some(text) = library.status_text() else {
+        return;
+    };
+    ui.separator();
+    ui.label(text);
+    if library.is_scanning() && ui.small_button("Cancel").clicked() {
+        state.push(Command::LibraryCancelScan);
+    }
 }
 
 fn status_text(player: &dyn PlayerApi) -> String {

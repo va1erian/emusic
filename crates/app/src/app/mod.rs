@@ -144,6 +144,11 @@ impl App {
             self.state.apply_local(cmd);
             commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
         }
+        commands::apply_library_commands(
+            self.library.as_mut(),
+            &self.state.library_folders,
+            &commands,
+        );
     }
 
     /// Config persistence policy from #8: write 2 s after the last change
@@ -256,7 +261,12 @@ impl eframe::App for App {
         }
         panels::top_bar::show(ui, &mut self.state, self.player.as_ref());
         if self.state.panels.status_bar {
-            panels::status_bar::show(ui, self.library.as_ref(), self.player.as_ref());
+            panels::status_bar::show(
+                ui,
+                &mut self.state,
+                self.library.as_ref(),
+                self.player.as_ref(),
+            );
         }
         if self.state.panels.navigator {
             panels::navigator::show(ui, &mut self.state);

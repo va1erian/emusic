@@ -58,6 +58,42 @@ fn scans_generated_wav_and_tracks_play() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+#[test]
+fn rescan_picks_up_files_added_after_startup() {
+    let dir = unique_temp_dir("rescan");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_wav(&dir.join("first.wav"), 8_000, 1);
+
+    let store = Store::open_in_memory().unwrap();
+    let mut backend = LibraryBackend::with_store(store);
+    backend.set_folders(std::slice::from_ref(&dir));
+    assert_eq!(wait_for_tracks(&mut backend).len(), 1);
+
+    write_wav(&dir.join("second.wav"), 8_000, 1);
+    backend.rescan();
+    wait_for_track_count(&mut backend, 2);
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn removing_a_folder_purges_its_tracks() {
+    let dir = unique_temp_dir("remove");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_wav(&dir.join("track.wav"), 8_000, 1);
+
+    let store = Store::open_in_memory().unwrap();
+    let mut backend = LibraryBackend::with_store(store);
+    backend.set_folders(std::slice::from_ref(&dir));
+    assert_eq!(wait_for_tracks(&mut backend).len(), 1);
+
+    backend.set_folders(&[]);
+    wait_for_track_count(&mut backend, 0);
+    assert!(backend.folders().is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Pumps the backend until the background scan produces a track, up to a
 /// generous timeout (network drives are slow; local temp dirs are not).
 fn wait_for_tracks(backend: &mut LibraryBackend) -> Vec<crate::library_api::TrackInfo> {
@@ -70,6 +106,22 @@ fn wait_for_tracks(backend: &mut LibraryBackend) -> Vec<crate::library_api::Trac
         std::thread::sleep(Duration::from_millis(25));
     }
     panic!("scan did not produce a track within the timeout");
+}
+
+/// Pumps the backend until it reports exactly `expected` tracks.
+fn wait_for_track_count(backend: &mut LibraryBackend, expected: usize) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        backend.tick();
+        if backend.tracks().len() == expected {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!(
+        "expected {expected} tracks, still have {} after the timeout",
+        backend.tracks().len()
+    );
 }
 
 fn unique_temp_dir(tag: &str) -> PathBuf {

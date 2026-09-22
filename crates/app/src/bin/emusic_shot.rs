@@ -39,6 +39,10 @@ struct Cli {
     #[arg(long)]
     all: bool,
 
+    /// Render against an empty mock library (shows the first-run empty state).
+    #[arg(long)]
+    empty: bool,
+
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
@@ -87,7 +91,7 @@ fn main() {
         std::fs::create_dir_all(&dir).expect("create output directory");
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
-            render_one(view, width, height, cli.theme, cli.accent, &out);
+            render_one(view, width, height, cli.theme, cli.accent, cli.empty, &out);
         }
         return;
     }
@@ -100,7 +104,9 @@ fn main() {
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    render_one(view, width, height, cli.theme, cli.accent, &cli.out);
+    render_one(
+        view, width, height, cli.theme, cli.accent, cli.empty, &cli.out,
+    );
 }
 
 fn render_one(
@@ -109,6 +115,7 @@ fn render_one(
     height: f32,
     theme: ThemeArg,
     accent: Option<Accent>,
+    empty: bool,
     out: &Path,
 ) {
     // Theme/accent go through the config so the shell applies them the
@@ -126,9 +133,14 @@ fn render_one(
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(width, height))
         .build_eframe(|cc| {
-            let library = MockLibrary::new();
-            let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
-            App::with_config(cc, Box::new(library), player, config)
+            let (library, player) = if empty {
+                (MockLibrary::empty(), MockPlayer::default())
+            } else {
+                let library = MockLibrary::new();
+                let player = MockPlayer::playing_demo(&library.tracks()[0]);
+                (library, player)
+            };
+            App::with_config(cc, Box::new(library), Box::new(player), config)
         });
 
     harness.state_mut().set_view(view);

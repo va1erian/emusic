@@ -15,6 +15,11 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
+    if library.track_count() == 0 {
+        empty_state(ui, state);
+        return;
+    }
+
     if state.column_browser.visible {
         column_browser::show(ui, &mut state.column_browser, library);
     }
@@ -50,6 +55,29 @@ pub fn show(
             TrackAction::AddToQueue(id) => Command::QueueTrack(id),
         });
     }
+}
+
+/// First-run (or emptied-library) state: nothing to list, so offer to add a
+/// music folder right away. The text distinguishes "no folders configured"
+/// from "folders configured but nothing scanned yet".
+fn empty_state(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.add_space(48.0);
+    ui.vertical_centered(|ui| {
+        ui.heading("Your library is empty");
+        ui.add_space(8.0);
+        let message = if state.library_folders.is_empty() {
+            "Add a folder with your music to get started."
+        } else {
+            "No tracks found in your music folders yet."
+        };
+        ui.label(message);
+        ui.add_space(12.0);
+        if ui.button("Add music folder").clicked()
+            && let Some(path) = rfd::FileDialog::new().pick_folder()
+        {
+            state.push(Command::LibraryAddFolder(path));
+        }
+    });
 }
 
 /// Matches the player's now-playing info back to a library track id, so the

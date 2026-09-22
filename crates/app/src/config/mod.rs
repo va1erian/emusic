@@ -39,8 +39,8 @@ pub struct Config {
     pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
-    /// Library folders to scan at startup. Editable UI is #19; until then
-    /// users can set this in `config.toml`.
+    /// Library folders to scan at startup, edited in Settings → Library
+    /// (#19); can also be set by hand in `config.toml`.
     #[serde(default)]
     pub library_folders: Vec<PathBuf>,
 }

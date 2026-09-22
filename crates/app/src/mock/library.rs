@@ -15,6 +15,21 @@ impl MockLibrary {
             data: data::generate(),
         }
     }
+
+    /// An empty library, for screenshots of the first-run empty state (#19).
+    pub fn empty() -> Self {
+        Self {
+            data: data::GeneratedLibrary {
+                tracks: Vec::new(),
+                albums: Vec::new(),
+                artists: Vec::new(),
+                genres: Vec::new(),
+                folders: Vec::new(),
+                history: Vec::new(),
+                most_played: Vec::new(),
+            },
+        }
+    }
 }
 
 impl Default for MockLibrary {
