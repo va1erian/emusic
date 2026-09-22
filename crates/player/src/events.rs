@@ -47,9 +47,10 @@ pub enum PlayerEvent {
     /// track's duration, capped at 4 minutes — the same heuristic
     /// `emusic_core::PlayEvent::counts_as_play` exists to encode. This event
     /// intentionally stays path-based rather than reusing `PlayEvent`
-    /// directly: the player has no `TrackId` (no library crate is wired in
-    /// yet, see #12), so downstream code (the stats module, #23) is expected
-    /// to resolve `path` to a `TrackId` and build a `PlayEvent` from it.
+    /// directly: this crate has no way to resolve a path to a `TrackId`
+    /// (that lookup lives in the library store, `emusic-library`), so
+    /// downstream code (the stats module, #23) is expected to resolve
+    /// `path` to a `TrackId` itself and build a `PlayEvent` from it.
     PlayFinished {
         path: PathBuf,
         listened: Duration,
