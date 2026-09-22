@@ -1,0 +1,21 @@
+[package]
+name = "bass"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Safe, runtime-loaded FFI wrapper over the BASS 2.4 audio library"
+
+[lib]
+name = "bass"
+path = "src/lib.rs"
+
+[dependencies]
+libloading = "0.8"
+thiserror = "2"
+bitflags = "2"
+
+[dev-dependencies]
+
+[[example]]
+name = "play"
+path = "examples/play.rs"
