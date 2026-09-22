@@ -10,6 +10,8 @@
 //! ```text
 //! cargo run -p emusic --features shot --bin emusic-shot -- \
 //!     --view music --size 1280x800 --theme dark --out target/shots/music.png
+//! cargo run -p emusic --features shot --bin emusic-shot -- \
+//!     --view music --accent blue --out target/shots/accent.png
 //! cargo run -p emusic --features shot --bin emusic-shot -- --all
 //! ```
 
@@ -23,7 +25,7 @@ use emusic::app::App;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
-use emusic::state::View;
+use emusic::state::{Accent, Theme, View};
 
 #[derive(Parser, Debug)]
 #[command(name = "emusic-shot")]
@@ -44,6 +46,11 @@ struct Cli {
     #[arg(long, value_enum, default_value = "dark")]
     theme: ThemeArg,
 
+    /// Accent colour: a preset name (`orange`, `blue`, `green`, `purple`,
+    /// `red`, `teal`) or `#rrggbb`.
+    #[arg(long, value_parser = parse_accent)]
+    accent: Option<Accent>,
+
     /// Output PNG path (single view) or directory (`--all`).
     #[arg(long, default_value = "target/shots/shot.png")]
     out: PathBuf,
@@ -53,6 +60,15 @@ struct Cli {
 enum ThemeArg {
     Dark,
     Light,
+}
+
+fn parse_accent(s: &str) -> Result<Accent, String> {
+    Accent::parse(s).ok_or_else(|| {
+        format!(
+            "invalid accent {s:?}: expected a preset name or #rrggbb \
+             (presets: orange, blue, green, purple, red, teal)"
+        )
+    })
 }
 
 fn main() {
@@ -71,7 +87,7 @@ fn main() {
         std::fs::create_dir_all(&dir).expect("create output directory");
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
-            render_one(view, width, height, cli.theme, &out);
+            render_one(view, width, height, cli.theme, cli.accent, &out);
         }
         return;
     }
@@ -84,21 +100,36 @@ fn main() {
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    render_one(view, width, height, cli.theme, &cli.out);
+    render_one(view, width, height, cli.theme, cli.accent, &cli.out);
 }
 
-fn render_one(view: View, width: f32, height: f32, theme: ThemeArg, out: &Path) {
+fn render_one(
+    view: View,
+    width: f32,
+    height: f32,
+    theme: ThemeArg,
+    accent: Option<Accent>,
+    out: &Path,
+) {
+    // Theme/accent go through the config so the shell applies them the
+    // same way it applies user settings.
+    let mut config = Config::default();
+    config.theme = match theme {
+        ThemeArg::Dark => Theme::Dark,
+        ThemeArg::Light => Theme::Light,
+    };
+    if let Some(accent) = accent {
+        config.accent = accent;
+    }
+
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(width, height))
         .build_eframe(|cc| {
             let library = MockLibrary::new();
             let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
-            App::with_config(cc, Box::new(library), player, Config::default())
+            App::with_config(cc, Box::new(library), player, config)
         });
 
-    if matches!(theme, ThemeArg::Light) {
-        harness.ctx.set_theme(egui::Theme::Light);
-    }
     harness.state_mut().set_view(view);
     // A single step is enough for a static screenshot; `Harness::run` would
     // wait for the UI to go idle, which it never does here because the

@@ -5,9 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use eframe::egui::Color32;
+
 use crate::config::{Config, load, save};
 use crate::player_api::RepeatMode;
-use crate::state::{PanelVisibility, Theme, View};
+use crate::state::{Accent, PanelVisibility, Theme, View};
 
 /// Unique scratch directory per test, so parallel tests never collide and
 /// nothing is written to the real `%APPDATA%`.
@@ -36,6 +38,7 @@ fn non_default_config() -> Config {
         repeat_mode: RepeatMode::One,
         shuffle: true,
         theme: Theme::Light,
+        accent: Accent::Blue,
         panels: PanelVisibility {
             navigator: false,
             right_panel: true,
@@ -76,6 +79,7 @@ fn missing_fields_fall_back_to_defaults() {
     assert!(config.shuffle);
     // Everything absent keeps its default.
     assert_eq!(config.theme, Theme::default());
+    assert_eq!(config.accent, Accent::default());
     assert_eq!(config.panels, PanelVisibility::default());
     assert_eq!(config.last_view, View::default());
 
@@ -93,8 +97,45 @@ fn unknown_fields_are_ignored() {
     let defaults = Config::default();
     assert_eq!(config.repeat_mode, defaults.repeat_mode);
     assert_eq!(config.theme, defaults.theme);
+    assert_eq!(config.accent, defaults.accent);
     assert_eq!(config.panels, defaults.panels);
     assert_eq!(config.last_view, defaults.last_view);
+
+    fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn custom_accent_round_trips_as_hex() {
+    let dir = scratch_dir("accent-hex");
+    let path = config_file(&dir);
+    let config = Config {
+        accent: Accent::Custom(Color32::from_rgb(0xCA, 0xFE, 0xBA)),
+        ..Config::default()
+    };
+
+    save(&path, &config).expect("save config");
+    assert_eq!(load(&path), config);
+
+    // Custom accents land in the file as an editable `#rrggbb` string.
+    let text = fs::read_to_string(&path).expect("read config");
+    assert!(text.contains("accent = \"#cafeba\""), "toml was: {text}");
+
+    fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn preset_accent_stored_by_name() {
+    let dir = scratch_dir("accent-preset");
+    let path = config_file(&dir);
+    let config = Config {
+        accent: Accent::Teal,
+        ..Config::default()
+    };
+
+    save(&path, &config).expect("save config");
+    let text = fs::read_to_string(&path).expect("read config");
+    assert!(text.contains("accent = \"teal\""), "toml was: {text}");
+    assert_eq!(load(&path), config);
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
 }
