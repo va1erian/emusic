@@ -10,14 +10,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use emusic_library::index::{Album, Artist, LibraryIndex};
+use emusic_library::index::{Album, Artist, DirNode, LibraryIndex};
 use emusic_library::stats::PlayRecord;
 use emusic_library::{Folder, Store, Track, TrackId, TrackKind, TrackStats};
 
 use super::stats;
 
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
 };
 
 /// A complete, UI-ready view of the library at one point in time.
@@ -28,6 +28,7 @@ pub(crate) struct Snapshot {
     pub artists: Vec<ArtistInfo>,
     pub genres: Vec<String>,
     pub folders: Vec<FolderInfo>,
+    pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
     pub most_played: Vec<TrackInfo>,
 }
@@ -68,6 +69,7 @@ impl Snapshot {
             .collect();
         let genres = index.genres().iter().map(|g| g.name.clone()).collect();
         let folders = folders_to_info(folders, &index);
+        let dirs = dir_tree_to_info(index.root_dirs());
         let history = history_from_store(store, &id_to_index, &tracks).unwrap_or_default();
         let most_played = most_played_from_store(store, &id_to_index, &tracks).unwrap_or_default();
 
@@ -77,6 +79,7 @@ impl Snapshot {
             artists,
             genres,
             folders,
+            dirs,
             history,
             most_played,
         }
@@ -191,6 +194,21 @@ fn folders_to_info(folders: &[Folder], index: &LibraryIndex) -> Vec<FolderInfo> 
         .map(|folder| FolderInfo {
             path: folder.path.to_string_lossy().into_owned(),
             track_count: prefix_counts.get(&folder.path).copied().unwrap_or(0),
+        })
+        .collect()
+}
+
+/// Converts the index's directory nodes into the UI-facing tree, dropping the
+/// track slots the Folders view doesn't need (it filters by path instead).
+fn dir_tree_to_info(nodes: &[DirNode]) -> Vec<DirNodeInfo> {
+    nodes
+        .iter()
+        .map(|node| DirNodeInfo {
+            path: node.path.to_string_lossy().into_owned(),
+            name: node.name.clone(),
+            direct_track_count: node.direct_track_count(),
+            total_track_count: node.total_track_count(),
+            children: dir_tree_to_info(&node.children),
         })
         .collect()
 }
