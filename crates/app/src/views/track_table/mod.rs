@@ -14,7 +14,7 @@
 //! lands. Selection, sorting, keyboard navigation, resizing and the context
 //! menu's Copy path / Open file location are fully functional today.
 
-mod columns;
+pub(crate) mod columns;
 mod context_menu;
 mod selection;
 mod sort;

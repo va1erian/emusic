@@ -8,6 +8,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// A "most played" time window (all time / last 30 days / last year).
+///
+/// Re-exported from the library crate so the UI selector and the store's
+/// ranking query agree on exactly one definition; the app already depends on
+/// `emusic-library`.
+pub use emusic_library::stats::StatsWindow;
+
 /// Minimal, local stand-in for `emusic_core::Track`.
 #[derive(Debug, Clone, Default)]
 pub struct TrackInfo {
@@ -91,14 +98,25 @@ pub struct DirNodeInfo {
     pub children: Vec<DirNodeInfo>,
 }
 
-/// One row in the play history list.
-#[derive(Debug, Clone, Default)]
+/// One row in the play history list: a single recorded play of a track.
+///
+/// History is per *play*, not per track (the same track can appear several
+/// times), so it carries the played track's identity for double-click
+/// playback plus the play's own timing and outcome.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HistoryEntry {
-    pub track_title: String,
+    /// Identifies one `plays` row, for removing that entry.
+    pub id: i64,
+    /// Library id of the track that was played, for double-click playback.
+    pub track_id: u64,
+    pub title: String,
     pub artist: String,
-    /// Human-readable, already formatted (mock data has no wall clock
-    /// dependency, so this stays a plain string rather than a timestamp).
-    pub played_at: String,
+    /// Unix timestamp (seconds, UTC) when playback started.
+    pub played_at: i64,
+    /// How much of the track was actually played, in milliseconds.
+    pub played_ms: u32,
+    /// Whether the player's completion threshold was met.
+    pub completed: bool,
 }
 
 /// Read-only view over the music library, as needed by the shell's views.
@@ -110,9 +128,19 @@ pub trait LibraryDataSource {
     fn folders(&self) -> &[FolderInfo];
     /// Root nodes of the library's directory tree (Folders view, #18).
     fn dir_tree(&self) -> &[DirNodeInfo];
+    /// Recorded plays, newest first.
     fn history(&self) -> &[HistoryEntry];
-    /// Tracks ordered by descending play count.
-    fn most_played(&self) -> &[TrackInfo];
+    /// Tracks ordered by descending play count within `window`.
+    fn most_played(&self, window: StatsWindow) -> &[TrackInfo];
+
+    /// Removes one playback history entry by its [`HistoryEntry::id`].
+    ///
+    /// A no-op if no such entry exists (e.g. it was already removed by
+    /// another path).
+    fn remove_history_entry(&mut self, _id: i64) {}
+
+    /// Removes every playback history entry.
+    fn clear_history(&mut self) {}
 
     fn track_count(&self) -> usize {
         self.tracks().len()

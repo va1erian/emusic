@@ -9,9 +9,7 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
-use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
-};
+use crate::library_api::{AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo};
 
 use super::dirs;
 use super::generators::*;
@@ -85,7 +83,13 @@ pub struct GeneratedLibrary {
     pub folders: Vec<FolderInfo>,
     pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
-    pub most_played: Vec<TrackInfo>,
+    /// Ranking variants for the Most Played view's window selector. The mock
+    /// has no per-play timestamps behind its aggregate counts, so the windows
+    /// just scale the all-time counts down; the real backend computes each
+    /// window from the `plays` table.
+    pub most_played_all: Vec<TrackInfo>,
+    pub most_played_30d: Vec<TrackInfo>,
+    pub most_played_year: Vec<TrackInfo>,
 }
 
 pub fn generate() -> GeneratedLibrary {
@@ -196,9 +200,7 @@ pub fn generate() -> GeneratedLibrary {
 
     let dirs = dirs::build(&tracks);
 
-    let mut most_played: Vec<TrackInfo> = tracks.clone();
-    most_played.sort_by_key(|t| std::cmp::Reverse(t.play_count));
-    most_played.truncate(50);
+    let (most_played_all, most_played_30d, most_played_year) = most_played_variants(&tracks);
 
     let history = build_history(&mut rng, &tracks);
 
@@ -210,20 +212,70 @@ pub fn generate() -> GeneratedLibrary {
         folders,
         dirs,
         history,
-        most_played,
+        most_played_all,
+        most_played_30d,
+        most_played_year,
     }
 }
 
-fn build_history(rng: &mut ChaCha8Rng, tracks: &[TrackInfo]) -> Vec<HistoryEntry> {
-    (0..60)
-        .filter_map(|_| {
-            let track = tracks.choose(rng)?;
-            let mins = *minutes_ago(rng);
-            Some(HistoryEntry {
-                track_title: track.title.clone(),
-                artist: track.artist.clone(),
-                played_at: format_minutes_ago(mins),
-            })
+/// Builds the three "most played" rankings (all time / 30 days / year).
+///
+/// The all-time list is the real ranking; the narrower windows scale the
+/// counts down so the selector visibly changes what the view shows.
+fn most_played_variants(tracks: &[TrackInfo]) -> (Vec<TrackInfo>, Vec<TrackInfo>, Vec<TrackInfo>) {
+    let mut all: Vec<TrackInfo> = tracks
+        .iter()
+        .filter(|track| track.play_count > 0)
+        .cloned()
+        .collect();
+    all.sort_by_key(|track| std::cmp::Reverse(track.play_count));
+    all.truncate(50);
+
+    let most_played_30d = scale_play_counts(&all, 1);
+    let most_played_year = scale_play_counts(&all, 3);
+    (all, most_played_30d, most_played_year)
+}
+
+/// Clones `tracks`, scaling each play count by `factor / 4` (rounded down,
+/// at least 1) to stand in for a narrower window.
+fn scale_play_counts(tracks: &[TrackInfo], factor: u32) -> Vec<TrackInfo> {
+    tracks
+        .iter()
+        .map(|track| {
+            let mut track = track.clone();
+            track.play_count = (track.play_count * factor / 4).max(1);
+            track
         })
         .collect()
+}
+
+fn build_history(rng: &mut ChaCha8Rng, tracks: &[TrackInfo]) -> Vec<HistoryEntry> {
+    let now = unix_now();
+    let mut history: Vec<HistoryEntry> = (0..60)
+        .enumerate()
+        .filter_map(|(i, _)| {
+            let track = tracks.choose(rng)?;
+            let minutes = i64::from(*minutes_ago(rng));
+            let duration_secs = track.duration.as_secs().max(21);
+            Some(HistoryEntry {
+                id: i as i64 + 1,
+                track_id: track.id,
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                played_at: now - minutes * 60,
+                played_ms: rng.gen_range(20..=duration_secs) as u32 * 1000,
+                completed: rng.gen_bool(0.7),
+            })
+        })
+        .collect();
+    // Match the store's newest-first ordering so day groups are contiguous.
+    history.sort_by_key(|entry| std::cmp::Reverse(entry.played_at));
+    history
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

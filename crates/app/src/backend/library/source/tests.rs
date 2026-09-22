@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use emusic_library::stats::StatsWindow;
 use emusic_library::{ArtSource, Store, Track, TrackId, TrackKind};
 
 use crate::library_api::TrackInfo;
@@ -84,6 +85,62 @@ fn from_store_builds_dir_tree_with_counts() {
 }
 
 #[test]
+fn from_store_maps_history_and_most_played_windows() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut track = sample_track(r"C:\music\song.flac");
+    store
+        .upsert_tracks(std::slice::from_mut(&mut track))
+        .unwrap();
+    let id = track.id;
+
+    store
+        .record_play(&emusic_core::PlayEvent::new(id, unix_now(), 120_000, true))
+        .unwrap();
+    store
+        .record_play(&emusic_core::PlayEvent::new(
+            id,
+            unix_now() - 10,
+            5_000,
+            false,
+        ))
+        .unwrap();
+
+    let mut snapshot = Snapshot::from_store(&store, &[]).unwrap();
+
+    // History: newest first, both the completed play and the skip, with the
+    // played track resolved for double-click playback.
+    assert_eq!(snapshot.history.len(), 2);
+    let entry = &snapshot.history[0];
+    assert!(entry.id > 0);
+    assert_eq!(entry.track_id, id.0 as u64);
+    assert_eq!(entry.title, "Song");
+    assert_eq!(entry.artist, "Artist");
+    assert_eq!(entry.played_ms, 120_000);
+    assert!(entry.completed);
+    assert!(!snapshot.history[1].completed);
+
+    // Most played counts only completed plays, but the same ranking is
+    // available for every window.
+    for window in StatsWindow::ALL {
+        let ranked = snapshot.most_played(window);
+        assert_eq!(ranked.len(), 1, "{window:?}");
+        assert_eq!(ranked[0].play_count, 1, "{window:?}");
+    }
+
+    // Removing the newest entry leaves only the skip in the in-memory list.
+    let removed = snapshot.history[0].id;
+    snapshot.remove_history(removed);
+    assert_eq!(snapshot.history.len(), 1);
+    assert!(!snapshot.history[0].completed);
+
+    snapshot.clear_history();
+    assert!(snapshot.history.is_empty());
+    for window in StatsWindow::ALL {
+        assert!(snapshot.most_played(window).is_empty(), "{window:?}");
+    }
+}
+
+#[test]
 fn record_play_updates_snapshot_play_count() {
     let mut snapshot = Snapshot::default();
     snapshot.tracks.push(TrackInfo {
@@ -103,4 +160,11 @@ fn record_play_updates_snapshot_play_count() {
 
     assert_eq!(snapshot.tracks[0].play_count, 4);
     assert!(snapshot.tracks[0].last_played_minutes_ago.is_some());
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

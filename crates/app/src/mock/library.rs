@@ -2,7 +2,8 @@
 
 use super::data::{self, GeneratedLibrary};
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, StatsWindow,
+    TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -51,7 +52,9 @@ fn empty_data() -> GeneratedLibrary {
         folders: Vec::new(),
         dirs: Vec::new(),
         history: Vec::new(),
-        most_played: Vec::new(),
+        most_played_all: Vec::new(),
+        most_played_30d: Vec::new(),
+        most_played_year: Vec::new(),
     }
 }
 
@@ -90,8 +93,23 @@ impl LibraryDataSource for MockLibrary {
         &self.data.history
     }
 
-    fn most_played(&self) -> &[TrackInfo] {
-        &self.data.most_played
+    fn most_played(&self, window: StatsWindow) -> &[TrackInfo] {
+        match window {
+            StatsWindow::AllTime => &self.data.most_played_all,
+            StatsWindow::Last30Days => &self.data.most_played_30d,
+            StatsWindow::LastYear => &self.data.most_played_year,
+        }
+    }
+
+    fn remove_history_entry(&mut self, id: i64) {
+        self.data.history.retain(|entry| entry.id != id);
+    }
+
+    fn clear_history(&mut self) {
+        self.data.history.clear();
+        self.data.most_played_all.clear();
+        self.data.most_played_30d.clear();
+        self.data.most_played_year.clear();
     }
 
     fn is_scanning(&self) -> bool {
