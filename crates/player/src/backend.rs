@@ -8,6 +8,7 @@ use std::time::Duration;
 use bass::{Attribute, Channel, MusicFlags, StreamFlags};
 
 use crate::error::PlayerError;
+use crate::tracker::TrackerSettings;
 
 /// Something that can open a playable channel for a file path.
 ///
@@ -19,6 +20,9 @@ pub trait AudioBackend: Send + Sync {
     /// Opens `path` as a playable channel, choosing a decoder based on the
     /// file extension (tracker modules vs. plain audio streams).
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError>;
+
+    /// Sets the global `BASS_CONFIG_SRC` resampler quality (`0..=4`).
+    fn set_tracker_resampling_quality(&self, quality: u8) -> Result<(), PlayerError>;
 }
 
 /// A single open, playable audio channel.
@@ -35,6 +39,9 @@ pub trait BackendChannel: Send {
     /// [`crate::volume::perceptual_to_gain`]) — pass linear amplitude, not a
     /// raw UI slider value.
     fn set_volume(&self, gain: f32) -> Result<(), PlayerError>;
+    /// Applies tracker-module-specific flags/attributes when `self` is a
+    /// music channel. Plain stream channels ignore this.
+    fn apply_tracker_settings(&self, settings: &TrackerSettings) -> Result<(), PlayerError>;
     /// Registers a callback that fires once when the channel reaches its
     /// end. The returned guard must be kept alive for as long as the
     /// callback should stay registered.
@@ -78,6 +85,13 @@ impl AudioBackend for BassBackend {
             BassChannel::Stream(self.bass.open_stream(path, StreamFlags::empty())?)
         };
         Ok(Box::new(channel))
+    }
+
+    fn set_tracker_resampling_quality(&self, quality: u8) -> Result<(), PlayerError> {
+        self.bass
+            .config()
+            .set_resampling_quality(u32::from(quality))
+            .map_err(PlayerError::Bass)
     }
 }
 
@@ -150,6 +164,13 @@ impl BackendChannel for BassChannel {
             Self::Music(m) => m.set_attribute(Attribute::Volume, gain)?,
         }
         Ok(())
+    }
+
+    fn apply_tracker_settings(&self, settings: &TrackerSettings) -> Result<(), PlayerError> {
+        match self {
+            Self::Stream(_) => Ok(()),
+            Self::Music(m) => settings.apply_to_music(m).map_err(PlayerError::Bass),
+        }
     }
 
     fn on_end(&self, callback: Box<dyn Fn() + Send>) -> Result<Box<dyn Any + Send>, PlayerError> {

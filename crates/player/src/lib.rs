@@ -37,6 +37,7 @@ pub mod events;
 mod listen;
 mod player;
 pub mod queue;
+pub mod tracker;
 pub mod volume;
 
 pub use backend::{AudioBackend, BackendChannel, BassBackend};

@@ -1119,6 +1119,7 @@ dependencies = [
  "eframe",
  "egui_extras",
  "egui_kittest",
+ "emusic-player",
  "rand",
  "rand_chacha",
  "serde",
@@ -1158,7 +1159,9 @@ dependencies = [
  "bass",
  "crossbeam-channel",
  "rand",
+ "serde",
  "thiserror 2.0.20",
+ "toml",
 ]
 
 [[package]]

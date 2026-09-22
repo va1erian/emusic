@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use emusic_player::backend::{AudioBackend, BackendChannel};
+use emusic_player::tracker::TrackerSettings;
 use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent};
 
 /// A fake channel: position advances with real wall-clock time (like a real
@@ -87,6 +88,10 @@ impl BackendChannel for MockChannel {
         Ok(())
     }
 
+    fn apply_tracker_settings(&self, _settings: &TrackerSettings) -> Result<(), PlayerError> {
+        Ok(())
+    }
+
     fn on_end(&self, callback: Box<dyn Fn() + Send>) -> Result<Box<dyn Any + Send>, PlayerError> {
         *self.end_callback.lock().unwrap() = Some(callback);
         Ok(Box::new(()))
@@ -156,6 +161,9 @@ impl BackendChannel for SharedChannel {
     fn set_volume(&self, gain: f32) -> Result<(), PlayerError> {
         self.0.set_volume(gain)
     }
+    fn apply_tracker_settings(&self, settings: &TrackerSettings) -> Result<(), PlayerError> {
+        self.0.apply_tracker_settings(settings)
+    }
     fn on_end(&self, callback: Box<dyn Fn() + Send>) -> Result<Box<dyn Any + Send>, PlayerError> {
         self.0.on_end(callback)
     }
@@ -174,6 +182,10 @@ impl AudioBackend for MockBackend {
         let channel = Arc::new(MockChannel::new(self.duration));
         *self.last_opened.lock().unwrap() = Some(Arc::clone(&channel));
         Ok(Box::new(SharedChannel(channel)))
+    }
+
+    fn set_tracker_resampling_quality(&self, _quality: u8) -> Result<(), PlayerError> {
+        Ok(())
     }
 }
 
