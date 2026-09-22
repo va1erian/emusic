@@ -10,12 +10,19 @@ emusic is a Windows music player & library in Rust + egui, audio via BASS. The f
 
 ## Unsafe
 - **Avoid `unsafe`.** Every crate except `bass` and `winshell` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
-- In `bass` and `winshell`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. Prefer safe crates where they exist (e.g. `winreg` for the registry).
+- In `bass` and `winshell`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.
 - BASS DLLs are never committed. Loaded at runtime from `<exe dir>/bass/` (override: env `EMUSIC_BASS_DIR`). Tests that need BASS must skip gracefully when the DLLs are absent.
 - Stay within the issue's scope; list follow-ups in the PR description.
+
+## Git workflow (no merge commits)
+- Branch from the latest `origin/main`; one branch per issue (`feat/<issue>-<slug>`).
+- **Always rebase, never merge:** before submitting, `git fetch origin && git rebase origin/main`. Use `git pull --rebase` when updating. Never merge `main` into your branch.
+- On a `Cargo.lock` conflict, take `origin/main`'s version and re-run `cargo check` to regenerate it.
+- After rebasing, re-run all checks below, then push with `--force-with-lease`.
+- PRs are integrated into `main` with **rebase merge** only, keeping history linear.
 
 ## Before submitting (mandatory)
 All of these must pass locally — the same checks CI runs:
