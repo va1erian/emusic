@@ -43,6 +43,12 @@ struct Cli {
     #[arg(long)]
     empty: bool,
 
+    /// Render against an empty mock library that is mid-scan (shows the
+    /// first-run "building your music library" state). Takes precedence over
+    /// `--empty`.
+    #[arg(long)]
+    scanning: bool,
+
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
@@ -78,6 +84,7 @@ fn parse_accent(s: &str) -> Result<Accent, String> {
 fn main() {
     let cli = Cli::parse();
     let (width, height) = parse_size(&cli.size);
+    let mode = LibraryMode::from_flags(cli.empty, cli.scanning);
 
     if cli.all {
         let dir = if cli.out.extension().is_some() {
@@ -91,7 +98,7 @@ fn main() {
         std::fs::create_dir_all(&dir).expect("create output directory");
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
-            render_one(view, width, height, cli.theme, cli.accent, cli.empty, &out);
+            render_one(view, width, height, cli.theme, cli.accent, mode, &out);
         }
         return;
     }
@@ -104,9 +111,40 @@ fn main() {
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    render_one(
-        view, width, height, cli.theme, cli.accent, cli.empty, &cli.out,
-    );
+    render_one(view, width, height, cli.theme, cli.accent, mode, &cli.out);
+}
+
+/// Mock library to render: the populated default, the first-run empty state,
+/// or the first-run mid-scan state.
+#[derive(Clone, Copy)]
+enum LibraryMode {
+    Populated,
+    Empty,
+    Scanning,
+}
+
+impl LibraryMode {
+    fn from_flags(empty: bool, scanning: bool) -> Self {
+        if scanning {
+            Self::Scanning
+        } else if empty {
+            Self::Empty
+        } else {
+            Self::Populated
+        }
+    }
+
+    fn build(self) -> (MockLibrary, MockPlayer) {
+        match self {
+            Self::Populated => {
+                let library = MockLibrary::new();
+                let player = MockPlayer::playing_demo(&library.tracks()[0]);
+                (library, player)
+            }
+            Self::Empty => (MockLibrary::empty(), MockPlayer::default()),
+            Self::Scanning => (MockLibrary::scanning(), MockPlayer::default()),
+        }
+    }
 }
 
 fn render_one(
@@ -115,7 +153,7 @@ fn render_one(
     height: f32,
     theme: ThemeArg,
     accent: Option<Accent>,
-    empty: bool,
+    mode: LibraryMode,
     out: &Path,
 ) {
     // Theme/accent go through the config so the shell applies them the
@@ -133,13 +171,7 @@ fn render_one(
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(width, height))
         .build_eframe(|cc| {
-            let (library, player) = if empty {
-                (MockLibrary::empty(), MockPlayer::default())
-            } else {
-                let library = MockLibrary::new();
-                let player = MockPlayer::playing_demo(&library.tracks()[0]);
-                (library, player)
-            };
+            let (library, player) = mode.build();
             App::with_config(cc, Box::new(library), Box::new(player), config)
         });
 

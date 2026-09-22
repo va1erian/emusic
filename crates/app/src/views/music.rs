@@ -60,33 +60,44 @@ pub fn show(
 /// First-run (or emptied-library) state: nothing to list, so offer to add a
 /// music folder right away. The text distinguishes "no folders configured"
 /// from "folders configured but nothing scanned yet" — and, during a scan,
-/// shows the scan's progress instead of a misleading "no tracks found"
-/// message (#69).
+/// shows that the library is still being built plus the scan's progress
+/// instead of a contradictory "no tracks found" message (#69, #80).
 fn empty_state(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
     ui.add_space(48.0);
     ui.vertical_centered(|ui| {
-        ui.heading("Your library is empty");
-        ui.add_space(8.0);
         let scanning = library.is_scanning() || library.status_text().is_some();
-        let message = if scanning {
-            library
-                .status_text()
-                .unwrap_or_else(|| "Scanning your music folders...".to_string())
-        } else if state.library_folders.is_empty() {
+        ui.heading(empty_heading(scanning));
+        ui.add_space(8.0);
+        if scanning {
+            ui.label(
+                library
+                    .status_text()
+                    .unwrap_or_else(|| "Scanning your music folders...".to_string()),
+            );
+            ui.spinner();
+            return;
+        }
+        let message = if state.library_folders.is_empty() {
             "Add a folder with your music to get started.".to_string()
         } else {
             "No tracks found in your music folders yet.".to_string()
         };
         ui.label(message);
-        if scanning {
-            ui.spinner();
-            return;
-        }
         ui.add_space(12.0);
         if ui.button("Add music folder").clicked() {
             crate::settings::folder_picker::request();
         }
     });
+}
+
+/// Heading shown when the library has no tracks: while a scan is running the
+/// library is being built, so calling it "empty" would be misleading (#80).
+fn empty_heading(scanning: bool) -> &'static str {
+    if scanning {
+        "Building your music library..."
+    } else {
+        "Your library is empty"
+    }
 }
 
 /// Matches the player's now-playing info back to a library track id, so the
