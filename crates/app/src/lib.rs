@@ -7,6 +7,7 @@
 //! share it.
 
 pub mod app;
+pub mod config;
 pub mod fonts;
 pub mod library_api;
 pub mod mock;

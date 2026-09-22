@@ -20,6 +20,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 
 use emusic::app::App;
+use emusic::config::Config;
 use emusic::mock::{MockLibrary, MockPlayer};
 use emusic::state::View;
 
@@ -91,7 +92,7 @@ fn render_one(view: View, width: f32, height: f32, theme: ThemeArg, out: &Path) 
         .build_eframe(|cc| {
             let library = Box::new(MockLibrary::new());
             let player = Box::new(MockPlayer::playing_demo());
-            App::new(cc, library, player)
+            App::with_config(cc, library, player, Config::default())
         });
 
     if matches!(theme, ThemeArg::Light) {
