@@ -110,7 +110,7 @@ fn decoding_a_wav_reports_info_length_and_samples() {
 
 #[test]
 fn push_decode_stream_decodes_pushed_samples() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let stream = bass
@@ -131,7 +131,7 @@ fn push_decode_stream_decodes_pushed_samples() {
 
 #[test]
 fn push_limit_round_trips() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let stream = bass
@@ -146,7 +146,7 @@ fn push_limit_round_trips() {
 
 #[test]
 fn push_data_rejects_partial_frames() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let stream = bass
@@ -162,7 +162,7 @@ fn push_data_rejects_partial_frames() {
 
 #[test]
 fn push_stream_duration_comes_from_the_owner() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let stream = bass
@@ -183,7 +183,7 @@ fn push_stream_duration_comes_from_the_owner() {
 
 #[test]
 fn push_playback_stream_advances_and_ends() {
-    let Some((_guard, bass)) = try_init() else {
+    let Some((_guard, bass)) = init_silent() else {
         return;
     };
     let stream = bass
