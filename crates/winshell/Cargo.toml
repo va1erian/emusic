@@ -1,0 +1,32 @@
+[package]
+name = "winshell"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Windows shell integration for emusic: single instance / IPC and file associations"
+
+[dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Safe named-pipe IPC (client + server), used instead of hand-rolled
+# CreateNamedPipeW/ConnectNamedPipe calls.
+interprocess = "2.4"
+# Safe registry access, used instead of hand-rolled RegCreateKeyExW etc.
+windows-registry = "0.6"
+# Only for naming `windows-registry`'s error type in our own error enum.
+windows-result = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+# Kept to the handful of calls with no safe wrapper elsewhere: SHChangeNotify,
+# AllowSetForegroundWindow, GetNamedPipeServerProcessId and the
+# ShowWindow/SetForegroundWindow pair for `bring_to_front`. All confined to
+# `src/sys.rs`.
+windows = { version = "0.58", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_System_Pipes",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
