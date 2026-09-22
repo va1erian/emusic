@@ -6,6 +6,7 @@
 
 mod albums;
 mod artists;
+pub(crate) mod column_browser;
 mod folders;
 mod genres;
 mod history;

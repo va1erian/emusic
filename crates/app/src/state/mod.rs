@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use eframe::egui::Color32;
 use serde::{Deserialize, Serialize};
 
+use crate::views::column_browser::ColumnBrowserState;
 use crate::views::track_table::TrackTableState;
 
 #[cfg(test)]
@@ -241,6 +242,8 @@ pub enum Command {
     ToggleTheme,
     SetAccent(Accent),
     TogglePanel(PanelKind),
+    /// Show/hide the Music view's column browser (#16).
+    ToggleColumnBrowser,
     SetSearchQuery(String),
     PlayerPlayPause,
     PlayerStop,
@@ -287,6 +290,8 @@ pub struct AppState {
     /// embed a track table later (albums, artists, genres, folders,
     /// history) will each get their own field here.
     pub music_table: TrackTableState,
+    /// The Music view's cascading filter panes (#16), above the track table.
+    pub column_browser: ColumnBrowserState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
@@ -304,6 +309,7 @@ impl Default for AppState {
             search_query: String::new(),
             library_folders: Vec::new(),
             music_table: TrackTableState::default(),
+            column_browser: ColumnBrowserState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),
         }
@@ -329,6 +335,9 @@ impl AppState {
                 PanelKind::StatusBar => self.panels.status_bar = !self.panels.status_bar,
             },
             Command::SetSearchQuery(query) => self.search_query = query.clone(),
+            Command::ToggleColumnBrowser => {
+                self.column_browser.visible = !self.column_browser.visible;
+            }
             _ => {}
         }
     }

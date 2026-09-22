@@ -187,6 +187,11 @@ impl App {
                     self.panel_menu_item(ui, "Now playing panel", PanelKind::RightPanel);
                     self.panel_menu_item(ui, "Status bar", PanelKind::StatusBar);
                     ui.separator();
+                    let mut column_browser = self.state.column_browser.visible;
+                    if ui.checkbox(&mut column_browser, "Column browser").changed() {
+                        self.state.push(Command::ToggleColumnBrowser);
+                    }
+                    ui.separator();
                     if ui.button("Toggle dark / light theme").clicked() {
                         self.state.push(Command::ToggleTheme);
                         ui.close();
