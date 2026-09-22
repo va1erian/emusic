@@ -6,3 +6,12 @@ license.workspace = true
 
 [dependencies]
 deunicode = "1"
+emusic-core = { path = "../core" }
+memchr = "2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "search"
+harness = false
