@@ -51,3 +51,7 @@ The app ships **no bundled fonts**: it uses the fonts already installed on the m
 ## License
 
 MIT — see [LICENSE](LICENSE). BASS is third-party software with its own license.
+
+## How this project is built
+
+Almost all of emusic is written by AI agents working from GitHub issues, one issue per PR. The process and the dispatch/landing scripts are documented in [docs/agent-workflow.md](docs/agent-workflow.md); the rules agents must follow are in [AGENTS.md](AGENTS.md).
