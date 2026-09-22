@@ -5,6 +5,7 @@
 //! swapping in a real SQLite-backed store later is a matter of implementing
 //! this trait, not touching view code.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Minimal, local stand-in for `emusic_core::Track`.
@@ -106,5 +107,20 @@ pub trait LibraryDataSource {
     /// Looks up a track by its full file path.
     fn track_by_path(&self, path: &str) -> Option<&TrackInfo> {
         self.tracks().iter().find(|t| t.path == path)
+    }
+
+    /// Applies any background updates (new index snapshots, scan progress,
+    /// play-recorded stats) that arrived since the last frame. Real backends
+    /// override this; mock backends have nothing to do.
+    fn tick(&mut self) {}
+
+    /// Sets the watched library folders. Real backends start background
+    /// loading, scanning and watching; mock backends ignore this.
+    fn set_folders(&mut self, _folders: &[PathBuf]) {}
+
+    /// Returns an optional status line (e.g. scan progress) to show in the
+    /// status bar alongside the player state.
+    fn status_text(&self) -> Option<String> {
+        None
     }
 }

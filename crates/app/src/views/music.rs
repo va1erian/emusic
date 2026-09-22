@@ -47,13 +47,10 @@ pub fn show(
 }
 
 /// Matches the player's now-playing info back to a library track id, so the
-/// table can highlight the right row. Title+artist is the best we can do
-/// without a real track handle in [`crate::player_api::NowPlayingInfo`].
+/// table can highlight the right row. Path is the most reliable identifier
+/// because the real player's [`NowPlayingInfo`](crate::player_api::NowPlayingInfo)
+/// only carries file-stem metadata today.
 fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
     let now_playing = player.now_playing()?;
-    library
-        .tracks()
-        .iter()
-        .find(|t| t.title == now_playing.title && t.artist == now_playing.artist)
-        .map(|t| t.id)
+    library.track_by_path(&now_playing.path).map(|t| t.id)
 }

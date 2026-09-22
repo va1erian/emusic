@@ -74,7 +74,7 @@ impl App {
 
     fn build(
         cc: &eframe::CreationContext<'_>,
-        library: Box<dyn LibraryDataSource>,
+        mut library: Box<dyn LibraryDataSource>,
         mut player: Box<dyn PlayerApi>,
         config: Config,
         config_path: Option<PathBuf>,
@@ -84,6 +84,7 @@ impl App {
         config.apply_to_state(&mut state);
         theme::apply(&cc.egui_ctx, state.theme, state.accent.color());
         config.apply_to_player(player.as_mut());
+        library.set_folders(&config.library_folders);
         Self {
             state,
             library,
@@ -219,6 +220,10 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+
+        // Apply background updates (new library snapshots, scan progress,
+        // recorded plays) before any view reads the data.
+        self.library.tick();
 
         // Driven by egui's own (deterministic, harness-controllable) frame
         // delta rather than a wall-clock `Instant`, so headless renders

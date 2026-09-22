@@ -1205,6 +1205,8 @@ dependencies = [
  "eframe",
  "egui_extras",
  "egui_kittest",
+ "emusic-core",
+ "emusic-library",
  "emusic-player",
  "image",
  "lofty 0.22.4",

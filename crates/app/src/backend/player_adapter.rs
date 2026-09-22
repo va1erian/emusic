@@ -9,9 +9,11 @@
 //! issue's scope, not #11's.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use emusic_player::{PlaybackState, Player, RepeatMode as PlayerRepeatMode};
+use emusic_library::stats::PlayRecord;
+use emusic_player::{PlaybackState, Player, PlayerEvent, RepeatMode as PlayerRepeatMode};
 
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
@@ -27,15 +29,22 @@ pub struct PlayerAdapter {
     /// [`Player::jump_to`]/[`Player::remove`], which take original-list
     /// indices.
     queue_item_indices: Vec<usize>,
+    /// Channel to the library backend's stats recorder. `None` in mock mode
+    /// or when the library backend is unavailable.
+    play_record_tx: Option<Sender<PlayRecord>>,
+    /// Unix timestamp (seconds, UTC) when the current track started playing.
+    current_track_started_at: Option<i64>,
 }
 
 impl PlayerAdapter {
-    pub fn new(player: Player) -> Self {
+    pub fn new(player: Player, play_record_tx: Option<Sender<PlayRecord>>) -> Self {
         Self {
             player,
             now_playing: None,
             queue: Vec::new(),
             queue_item_indices: Vec::new(),
+            play_record_tx,
+            current_track_started_at: None,
         }
     }
 
@@ -103,12 +112,56 @@ fn map_repeat_to_player(mode: RepeatMode) -> PlayerRepeatMode {
     }
 }
 
+impl PlayerAdapter {
+    fn handle_event(&mut self, event: PlayerEvent) {
+        match event {
+            PlayerEvent::TrackStarted { .. } => {
+                self.current_track_started_at = Some(unix_now());
+            }
+            PlayerEvent::PlayFinished {
+                path,
+                listened,
+                completed,
+            } => {
+                self.send_record(path, listened, completed);
+            }
+            _ => {}
+        }
+    }
+
+    fn send_record(&self, path: PathBuf, listened: Duration, completed: bool) {
+        let Some(tx) = &self.play_record_tx else {
+            return;
+        };
+        let Some(started_at) = self.current_track_started_at else {
+            return;
+        };
+        let record = PlayRecord {
+            path,
+            started_at,
+            listened_ms: listened.as_millis() as u32,
+            completed,
+        };
+        let _ = tx.send(record);
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 impl PlayerApi for PlayerAdapter {
     fn tick(&mut self, _dt: Duration) {
         self.player.tick();
-        // Nothing here reacts to individual events (yet); draining just
-        // keeps the channel from growing unbounded while running.
-        let _ = self.player.events().try_iter().count();
+        // Collect first so the borrow of `self.player` ends before handling,
+        // which needs `&mut self` for the started-at timestamp.
+        let events: Vec<PlayerEvent> = self.player.events().try_iter().collect();
+        for event in events {
+            self.handle_event(event);
+        }
         self.refresh();
     }
 
