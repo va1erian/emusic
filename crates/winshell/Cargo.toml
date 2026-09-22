@@ -19,12 +19,14 @@ windows-result = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 # Kept to the handful of calls with no safe wrapper elsewhere: SHChangeNotify,
-# AllowSetForegroundWindow, GetNamedPipeServerProcessId and the
-# ShowWindow/SetForegroundWindow pair for `bring_to_front`. All confined to
-# `src/sys.rs`.
+# AllowSetForegroundWindow, GetNamedPipeServerProcessId,
+# ShowWindow/SetForegroundWindow for `bring_to_front`, and GetDriveTypeW for
+# `is_remote_drive`. All confined to `src/sys.rs`.
 windows = { version = "0.58", default-features = false, features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
     "Win32_System_Pipes",
+    "Win32_System_WindowsProgramming",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

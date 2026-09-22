@@ -14,8 +14,10 @@ bass = { path = "../bass" }
 dirs = "5"
 dunce = "1"
 lofty = "0.25"
+notify = "8"
 rayon = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2"
 tracing = "0.1"
 walkdir = "2"
+winshell = { path = "../winshell" }

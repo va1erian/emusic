@@ -12,6 +12,8 @@ pub struct Folder {
     pub path: PathBuf,
     /// Whether this folder is included in scans.
     pub enabled: bool,
+    /// Whether this folder should be watched for file-system changes.
+    pub watch: bool,
 }
 
 impl Store {
@@ -41,7 +43,7 @@ impl Store {
     pub fn list_folders(&self) -> Result<Vec<Folder>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, path, enabled FROM folders ORDER BY path")?;
+            .prepare("SELECT id, path, enabled, watch FROM folders ORDER BY path")?;
         let folders = stmt
             .query_map([], row_to_folder)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -57,11 +59,20 @@ impl Store {
         Ok(())
     }
 
+    /// Enables or disables file-system watching for a folder.
+    pub fn set_folder_watch(&self, id: i64, watch: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE folders SET watch = ?1 WHERE id = ?2",
+            params![watch, id],
+        )?;
+        Ok(())
+    }
+
     fn folder_by_path(&self, path: &Path) -> Result<Option<Folder>> {
         let folder = self
             .conn
             .query_row(
-                "SELECT id, path, enabled FROM folders WHERE path = ?1",
+                "SELECT id, path, enabled, watch FROM folders WHERE path = ?1",
                 params![path_to_string(path)],
                 row_to_folder,
             )
@@ -80,6 +91,7 @@ fn row_to_folder(row: &rusqlite::Row) -> rusqlite::Result<Folder> {
         id: row.get(0)?,
         path: PathBuf::from(path),
         enabled: row.get(2)?,
+        watch: row.get(3)?,
     })
 }
 
@@ -92,6 +104,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let folder = store.add_folder(Path::new(r"C:\music")).unwrap();
         assert!(folder.enabled);
+        assert!(!folder.watch);
 
         let folders = store.list_folders().unwrap();
         assert_eq!(folders, vec![folder]);
@@ -114,6 +127,16 @@ mod tests {
         store.set_folder_enabled(folder.id, false).unwrap();
         let folders = store.list_folders().unwrap();
         assert!(!folders[0].enabled);
+    }
+
+    #[test]
+    fn set_folder_watch_toggles_flag() {
+        let store = Store::open_in_memory().unwrap();
+        let folder = store.add_folder(Path::new(r"C:\music")).unwrap();
+
+        store.set_folder_watch(folder.id, true).unwrap();
+        let folders = store.list_folders().unwrap();
+        assert!(folders[0].watch);
     }
 
     #[test]
