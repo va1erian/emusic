@@ -7,6 +7,7 @@ pub mod index;
 pub mod scanner;
 pub mod stats;
 mod store;
+pub mod watch;
 
 pub use error::{LibraryError, Result};
 pub use store::{Folder, MostPlayedEntry, PlayHistoryEntry, Store, TrackStats, default_db_path};

@@ -14,4 +14,4 @@ pub mod instance;
 
 pub use error::{Result, WinshellError};
 pub use instance::{IpcMessage, Listener, SingleInstance};
-pub use sys::bring_to_front;
+pub use sys::{bring_to_front, is_remote_drive};

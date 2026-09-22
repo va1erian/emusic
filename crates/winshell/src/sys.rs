@@ -11,7 +11,9 @@ use std::io;
 use std::os::windows::io::{AsHandle, AsRawHandle};
 
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
+use windows::Win32::System::WindowsProgramming::DRIVE_REMOTE;
 use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
 use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, SW_RESTORE, SetForegroundWindow, ShowWindow,
@@ -52,6 +54,32 @@ pub fn bring_to_front(hwnd: isize) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_RESTORE);
         let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+/// Returns whether `path` lives on a remote drive.
+///
+/// UNC paths (`\\server\share`) are always treated as remote. Mapped drive
+/// letters are checked with `GetDriveTypeW`. Non-Windows platforms and
+/// unrecognised paths return `false`.
+pub fn is_remote_drive(path: &std::path::Path) -> bool {
+    let Some(first) = path.components().next() else {
+        return false;
+    };
+    let std::path::Component::Prefix(prefix) = first else {
+        return false;
+    };
+    match prefix.kind() {
+        std::path::Prefix::VerbatimUNC(..) | std::path::Prefix::UNC(..) => true,
+        std::path::Prefix::Disk(drive) | std::path::Prefix::VerbatimDisk(drive) => {
+            let root = format!("{}:\\", drive as char);
+            let root = windows::core::HSTRING::from(&*root);
+            // SAFETY: `GetDriveTypeW` only reads its argument; `root` is a
+            // valid HSTRING that outlives the call.
+            let drive_type = unsafe { GetDriveTypeW(&root) };
+            drive_type == DRIVE_REMOTE
+        }
+        _ => false,
     }
 }
 
