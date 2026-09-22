@@ -132,6 +132,12 @@ pub enum BassError {
     #[error("BASS: unknown error (code {0})")]
     Unknown(i32),
 
+    /// Another [`Bass`](crate::Bass) is already live in this process.
+    /// BASS's `BASS_Init`/`BASS_Free` state is process-global, so the crate
+    /// enforces a single live instance; see [`Bass::init`](crate::Bass::init).
+    #[error("BASS: already initialized in this process (create at most one `Bass`)")]
+    AlreadyInitialized,
+
     /// `bass.dll` (or a plugin) could not be found or loaded.
     #[error("BASS DLL not found or couldn't be loaded: {0}")]
     DllNotFound(String),

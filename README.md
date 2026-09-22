@@ -34,7 +34,13 @@ Audio playback uses the native BASS library. You must download the BASS DLLs (x6
 - `bass_mpc.dll`
 - `basswebm.dll`
 
-The DLLs are never committed to this repository. The directory defaults to `<exe dir>/bass/` and can be overridden with the `EMUSIC_BASS_DIR` environment variable.
+The DLLs are never committed to this repository. The directory defaults to `<exe dir>/bass/` and can be overridden with the `EMUSIC_BASS_DIR` environment variable:
+
+```sh
+set EMUSIC_BASS_DIR=C:\path\to\BASS\x64
+```
+
+Note that each Windows BASS download zip contains both 32-bit and 64-bit builds — the x64 DLLs live in the `x64/` subfolder, so point the player (or `EMUSIC_BASS_DIR`, e.g. for `cargo test -p bass`) at that subfolder, not the zip root.
 
 Note: BASS is free for non-commercial use; see the license on the un4seen website.
 
