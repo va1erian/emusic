@@ -12,10 +12,11 @@ Build and run:
 cargo run -p emusic
 ```
 
-Checks used in CI:
+Checks used in CI (all must pass before submitting; see AGENTS.md):
 
 ```
 cargo fmt --all --check
+cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
