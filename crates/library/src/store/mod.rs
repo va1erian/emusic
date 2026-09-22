@@ -18,7 +18,7 @@ use rusqlite::Connection;
 use crate::error::{LibraryError, Result};
 
 pub use folders::Folder;
-pub use stats::TrackStats;
+pub use stats::{MostPlayedEntry, PlayHistoryEntry, TrackStats};
 
 /// Handle to the library database.
 ///

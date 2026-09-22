@@ -154,7 +154,7 @@ fn play_history_survives_a_move() {
     store.upsert_tracks(&mut tracks).unwrap();
     let id = tracks[0].id;
     store
-        .record_play(&PlayEvent::new(id, 1_000, 30_000))
+        .record_play(&PlayEvent::new(id, 1_000, 30_000, true))
         .unwrap();
 
     let mut moved = sample_track(r"C:\music\renamed.flac");

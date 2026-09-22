@@ -6,7 +6,7 @@
 //! edited — add a new one instead.
 
 /// The schema version this build of `emusic-library` expects.
-pub const CURRENT_VERSION: i64 = 1;
+pub const CURRENT_VERSION: i64 = 2;
 
 pub const MIGRATIONS: &[&str] = &[
     // v1: initial schema.
@@ -61,5 +61,11 @@ pub const MIGRATIONS: &[&str] = &[
         path    TEXT NOT NULL UNIQUE,
         enabled INTEGER NOT NULL DEFAULT 1
     );
+    ",
+    // v2: play/skip stats — a completion flag on each play row, and a
+    // running skip count alongside the existing play count.
+    r"
+    ALTER TABLE plays ADD COLUMN completed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE track_stats ADD COLUMN skip_count INTEGER NOT NULL DEFAULT 0;
     ",
 ];

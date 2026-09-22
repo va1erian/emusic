@@ -6,7 +6,9 @@ use crate::TrackId;
 ///
 /// `played_at` and `duration_played_ms` are stored so that stats (most
 /// played, recently played, "scrobble"-style thresholds) can be computed
-/// without re-deriving them from raw player events.
+/// without re-deriving them from raw player events. `completed` is the
+/// player's own verdict (its configurable completion threshold, default
+/// `min(50%, 4 min)`) on whether this was a real listen or a skip.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayEvent {
     /// The track that was played.
@@ -15,15 +17,24 @@ pub struct PlayEvent {
     pub played_at: i64,
     /// How much of the track was actually played, in milliseconds.
     pub duration_played_ms: u32,
+    /// Whether the played duration met the player's completion threshold.
+    /// `true` counts as a play, `false` as a skip.
+    pub completed: bool,
 }
 
 impl PlayEvent {
     /// Creates a new play event.
-    pub fn new(track_id: TrackId, played_at: i64, duration_played_ms: u32) -> Self {
+    pub fn new(
+        track_id: TrackId,
+        played_at: i64,
+        duration_played_ms: u32,
+        completed: bool,
+    ) -> Self {
         Self {
             track_id,
             played_at,
             duration_played_ms,
+            completed,
         }
     }
 
@@ -40,7 +51,7 @@ mod tests {
 
     #[test]
     fn counts_as_play_respects_threshold() {
-        let event = PlayEvent::new(TrackId(1), 1_700_000_000, 30_000);
+        let event = PlayEvent::new(TrackId(1), 1_700_000_000, 30_000, true);
         assert!(event.counts_as_play(30_000));
         assert!(event.counts_as_play(15_000));
         assert!(!event.counts_as_play(30_001));
