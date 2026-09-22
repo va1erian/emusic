@@ -24,3 +24,14 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
       - run: cargo test --workspace
+
+      # `shot` (the emusic-shot screenshot binary + its egui_kittest
+      # snapshot tests) is gated behind a feature so egui_kittest/wgpu stay
+      # out of the default build; check/test it explicitly too. Snapshot
+      # tests themselves skip gracefully if this runner has no headless GPU
+      # adapter (see crates/app/tests/snapshot_views.rs).
+      - run: cargo check --workspace --all-targets --features emusic/shot
+
+      - run: cargo clippy --workspace --all-targets --features emusic/shot -- -D warnings
+
+      - run: cargo test --workspace --features emusic/shot
