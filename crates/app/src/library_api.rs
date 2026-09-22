@@ -16,11 +16,30 @@ pub struct TrackInfo {
     pub album: String,
     pub genre: String,
     pub track_no: Option<u32>,
+    /// Release year, when known (usually inherited from the album).
+    pub year: Option<u32>,
     pub duration: Duration,
     pub path: String,
     /// e.g. "mp3", "flac", "xm", "it" ...
     pub format: String,
     pub play_count: u32,
+    /// Minutes elapsed since the track was last played; `None` if it has
+    /// never been played. Kept as a plain number (rather than a formatted
+    /// string or wall-clock timestamp) so it can be sorted numerically and
+    /// formatted on demand with [`format_minutes_ago`].
+    pub last_played_minutes_ago: Option<u32>,
+}
+
+/// Formats an elapsed-minutes value into a short, human-readable string,
+/// e.g. `"45 min ago"`, `"3 h ago"`, `"2 d ago"`.
+pub fn format_minutes_ago(minutes: u32) -> String {
+    if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 1440 {
+        format!("{} h ago", minutes / 60)
+    } else {
+        format!("{} d ago", minutes / 1440)
+    }
 }
 
 #[derive(Debug, Clone, Default)]

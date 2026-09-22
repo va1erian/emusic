@@ -1,15 +1,21 @@
-//! "Music" view: a flat, filterable track list. A virtualized track table
-//! widget (sortable columns, selection) is issue #15; this is a simple
-//! placeholder that already reads real (mock) data and respects the top
-//! bar's search box.
+//! "Music" view: the full library as a virtualized, sortable track table
+//! (#15), filtered by the top bar's search box.
 
 use eframe::egui;
 
+use super::track_table::{self, TrackAction};
 use crate::library_api::LibraryDataSource;
+use crate::player_api::PlayerApi;
+use crate::state::{AppState, Command};
 
-pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, search_query: &str) {
-    let query = search_query.to_lowercase();
-    let tracks: Vec<_> = library
+pub fn show(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    library: &dyn LibraryDataSource,
+    player: &dyn PlayerApi,
+) {
+    let query = state.search_query.to_lowercase();
+    let tracks: Vec<&_> = library
         .tracks()
         .iter()
         .filter(|t| {
@@ -23,34 +29,31 @@ pub fn show(ui: &mut egui::Ui, library: &dyn LibraryDataSource, search_query: &s
     ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
     ui.separator();
 
-    egui::ScrollArea::vertical().show_rows(ui, 18.0, tracks.len(), |ui, range| {
-        for track in &tracks[range] {
-            ui.horizontal(|ui| {
-                ui.set_width(ui.available_width());
-                let title = if track.title.is_empty() {
-                    "(unknown title)"
-                } else {
-                    track.title.as_str()
-                };
-                ui.add_sized([260.0, 16.0], egui::Label::new(title).truncate());
-                let artist = if track.artist.is_empty() {
-                    "(unknown artist)"
-                } else {
-                    track.artist.as_str()
-                };
-                ui.add_sized([180.0, 16.0], egui::Label::new(artist).truncate());
-                ui.add_sized([180.0, 16.0], egui::Label::new(&track.album).truncate());
-                ui.add_sized(
-                    [50.0, 16.0],
-                    egui::Label::new(egui::RichText::new(&track.format).weak()),
-                );
-                ui.label(format_duration(track.duration));
-            });
-        }
-    });
+    let playing_id = currently_playing_id(library, player);
+    let action = track_table::show(
+        ui,
+        "music_table",
+        &mut state.music_table,
+        &tracks,
+        playing_id,
+    );
+    if let Some(action) = action {
+        state.push(match action {
+            TrackAction::Play(id) => Command::PlayTrack(id),
+            TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
+            TrackAction::AddToQueue(id) => Command::QueueTrack(id),
+        });
+    }
 }
 
-fn format_duration(d: std::time::Duration) -> String {
-    let secs = d.as_secs();
-    format!("{}:{:02}", secs / 60, secs % 60)
+/// Matches the player's now-playing info back to a library track id, so the
+/// table can highlight the right row. Title+artist is the best we can do
+/// without a real track handle in [`crate::player_api::NowPlayingInfo`].
+fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
+    let now_playing = player.now_playing()?;
+    library
+        .tracks()
+        .iter()
+        .find(|t| t.title == now_playing.title && t.artist == now_playing.artist)
+        .map(|t| t.id)
 }

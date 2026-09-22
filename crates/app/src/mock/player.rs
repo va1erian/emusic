@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use crate::library_api::TrackInfo;
 use crate::player_api::{NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode};
 
 const SPECTRUM_BINS: usize = 32;
@@ -23,18 +24,21 @@ pub struct MockPlayer {
 }
 
 impl MockPlayer {
-    /// A player pre-loaded with a track and playing, useful for
-    /// screenshots of the now-playing panel/status bar.
-    pub fn playing_demo() -> Self {
+    /// A player pre-loaded with `track` and playing, useful for screenshots
+    /// of the now-playing panel/status bar and, importantly, of the track
+    /// table's playing-row highlight: passing an actual track from
+    /// [`super::MockLibrary`] (rather than made-up metadata) means the
+    /// title/artist match a real row so the highlight actually shows up.
+    pub fn playing_demo(track: &TrackInfo) -> Self {
         Self {
             now_playing: Some(NowPlayingInfo {
-                title: "Neon Horizon".to_string(),
-                artist: "Crimson Wolves".to_string(),
-                album: "Static Echo".to_string(),
-                duration: Duration::from_secs(214),
+                title: track.title.clone(),
+                artist: track.artist.clone(),
+                album: track.album.clone(),
+                duration: track.duration,
             }),
             status: PlaybackStatus::Playing,
-            position: Duration::from_secs(76),
+            position: Duration::from_secs(76).min(track.duration),
             queue: vec![
                 QueueEntry {
                     title: "Iron Garden".to_string(),

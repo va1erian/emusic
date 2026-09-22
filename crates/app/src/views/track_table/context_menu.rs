@@ -1,0 +1,66 @@
+//! Right-click context menu for a track row: Play, Play next, Add to queue,
+//! Open file location, Copy path.
+
+use eframe::egui;
+
+use crate::library_api::TrackInfo;
+
+/// What the caller should do after a context menu item is chosen. Playback
+/// actions are handed back as [`crate::state::Command`]s by the caller (the
+/// player queue isn't wired up yet - see the track table module docs);
+/// `CopyPath` and `OpenFileLocation` are executed immediately here since
+/// they have no effect on shared app state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextAction {
+    Play,
+    PlayNext,
+    AddToQueue,
+}
+
+/// Shows the context menu for `response` (a track row's response), if the
+/// user right-clicked it. Returns `Some` when a playback action was chosen;
+/// `CopyPath`/`OpenFileLocation` are handled internally.
+pub fn show(response: &egui::Response, track: &TrackInfo) -> Option<ContextAction> {
+    let mut action = None;
+    response.context_menu(|ui| {
+        if ui.button("Play").clicked() {
+            action = Some(ContextAction::Play);
+            ui.close();
+        }
+        if ui.button("Play next").clicked() {
+            action = Some(ContextAction::PlayNext);
+            ui.close();
+        }
+        if ui.button("Add to queue").clicked() {
+            action = Some(ContextAction::AddToQueue);
+            ui.close();
+        }
+        ui.separator();
+        if ui.button("Open file location").clicked() {
+            open_file_location(&track.path);
+            ui.close();
+        }
+        if ui.button("Copy path").clicked() {
+            ui.ctx().copy_text(track.path.clone());
+            ui.close();
+        }
+    });
+    action
+}
+
+/// Best-effort "reveal in Explorer". Mock data uses fake paths, so this is
+/// expected to silently fail to find anything outside a real library; any
+/// error is swallowed rather than surfaced, since there's no good UI to
+/// report it through yet.
+fn open_file_location(path: &str) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.replace('/', "\\")))
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+    }
+}
