@@ -28,10 +28,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        if ui.button("Add folder...").clicked()
-            && let Some(path) = rfd::FileDialog::new().pick_folder()
-        {
-            state.push(Command::LibraryAddFolder(path));
+        if ui.button("Add folder...").clicked() {
+            crate::settings::folder_picker::request();
         }
         if ui.button("Rescan now").clicked() {
             state.push(Command::LibraryRescan);

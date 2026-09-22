@@ -3,12 +3,15 @@
 //! through the player's channel updates the in-memory stats.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use emusic_library::Store;
+use emusic_library::scanner::CancelToken;
 use emusic_library::stats::PlayRecord;
 
-use super::LibraryBackend;
+use super::scan::ScanHandle;
+use super::{LibraryBackend, Update, scan};
 use crate::library_api::LibraryDataSource;
 
 #[test]
@@ -90,6 +93,76 @@ fn removing_a_folder_purges_its_tracks() {
     backend.set_folders(&[]);
     wait_for_track_count(&mut backend, 0);
     assert!(backend.folders().is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A file-backed store so the scan can open its own connection (#69), unlike
+/// the in-memory store the other tests use.
+///
+/// Regression: the scan used to keep the shared `Mutex<Store>` locked for its
+/// whole run, so every UI-side store call (folder edits, snapshot refreshes)
+/// blocked behind a minutes-long network scan. The scan now writes through a
+/// private connection, so the shared lock stays free while it runs; this test
+/// asserts that an unrelated `list_folders` succeeds *during* the scan.
+#[test]
+fn scan_does_not_hold_the_shared_store_lock() {
+    let dir = unique_temp_dir("nonblocking");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Enough files that the scan is observably in progress while the loop
+    // below runs; a couple of thousand keeps it comfortably past the first
+    // progress event.
+    for i in 0..500 {
+        write_wav(&dir.join(format!("track-{i:03}.wav")), 8_000, 1);
+    }
+
+    let db_path = dir.join("library.db");
+    let store = Store::open(&db_path).unwrap();
+    let folder = store.add_folder(&dir).unwrap();
+    let shared = Arc::new(Mutex::new(store));
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = ScanHandle {
+        cancel: CancelToken::default(),
+        id: 1,
+    };
+    scan::spawn(
+        shared.clone(),
+        vec![folder],
+        vec![dir.clone()],
+        tx,
+        handle,
+        Vec::new(),
+    );
+
+    let mut scanning = false;
+    let mut finished = false;
+    let mut lock_free_during_scan = false;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline && !finished {
+        while let Ok(update) = rx.try_recv() {
+            match update {
+                Update::Status(text) if !text.is_empty() => scanning = true,
+                Update::ScanFinished(_) => finished = true,
+                _ => {}
+            }
+        }
+        if scanning {
+            // A UI-side store call must not wait on the scan: acquire the
+            // shared lock and read the folder list, releasing immediately.
+            if let Ok(store) = shared.try_lock() {
+                lock_free_during_scan = true;
+                assert_eq!(store.list_folders().unwrap().len(), 1);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(finished, "scan did not finish within the timeout");
+    assert!(
+        lock_free_during_scan,
+        "the shared store lock was held for the whole scan"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }

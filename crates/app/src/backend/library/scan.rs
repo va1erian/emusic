@@ -1,14 +1,17 @@
 //! Background library scans: on-demand rescans, watch-triggered updates and
 //! removal purges.
 //!
-//! Each scan runs on its own thread, writes results to the store, then builds
-//! a fresh snapshot and sends it to the UI thread, forwarding coarse progress
-//! updates for the status bar. All file I/O stays off the UI thread.
+//! Each scan runs on its own thread and opens its **own** [`Store`]
+//! connection from the same database file (`Store::open_second`), so it never
+//! holds the shared store mutex: UI reads and folder edits stay responsive
+//! for the whole scan, even on a slow network drive (#69). Results are
+//! written through that connection, then a fresh snapshot built via the
+//! shared one and sent to the UI thread, forwarding coarse progress updates
+//! for the status bar. All file I/O stays off the UI thread.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use emusic_library::scanner::{CancelToken, ScanEvent, scan};
 use emusic_library::{Folder, Store};
@@ -39,7 +42,7 @@ pub(crate) fn spawn(
     handle: ScanHandle,
     purge: Vec<PathBuf>,
 ) {
-    thread::spawn(move || {
+    std::thread::spawn(move || {
         if let Err(err) = run(&store, &folders, &roots, &updates, &handle, &purge) {
             warn!(%err, "library scan failed");
         }
@@ -72,9 +75,26 @@ fn run_inner(
     handle: &ScanHandle,
     purge: &[PathBuf],
 ) -> anyhow::Result<()> {
-    purge_removed_roots(store, purge)?;
-    if !roots.is_empty() {
-        scan_roots(store, roots, updates, &handle.cancel)?;
+    // Real deployments scan through a private connection, so the shared lock
+    // stays free for the UI. In-memory stores (unit tests) cannot be
+    // reopened; for those, fall back to the shared connection and hold its
+    // lock for the run, matching the pre-#69 behaviour.
+    match private_scan_store(store) {
+        Some(mut scan_store) => {
+            purge_removed_roots(&mut scan_store, purge)?;
+            if !roots.is_empty() {
+                scan_roots(&mut scan_store, roots, updates, &handle.cancel)?;
+            }
+        }
+        None => {
+            let mut shared = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            purge_removed_roots(&mut shared, purge)?;
+            if !roots.is_empty() {
+                scan_roots(&mut shared, roots, updates, &handle.cancel)?;
+            }
+        }
     }
 
     let snapshot = {
@@ -88,44 +108,62 @@ fn run_inner(
     Ok(())
 }
 
+/// Opens the scan's private connection to the same file as the shared store,
+/// if there is one.
+///
+/// The shared lock is held only for the `open_second` call itself, never
+/// while a scan or purge runs, so a UI read can never wait on this. Returns
+/// `None` for an in-memory store (there is no file to reopen), which callers
+/// handle by falling back to the shared connection.
+fn private_scan_store(store: &Arc<Mutex<Store>>) -> Option<Store> {
+    let shared = store
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    shared.open_second().ok()
+}
+
 /// Scans `roots` on a worker thread while this thread forwards coarse
 /// progress updates to the UI.
 fn scan_roots(
-    store: &Arc<Mutex<Store>>,
+    store: &mut Store,
     roots: &[PathBuf],
     updates: &Sender<Update>,
     cancel: &CancelToken,
 ) -> anyhow::Result<()> {
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let scan_store = store.clone();
     let roots = roots.to_vec();
     let cancel = cancel.clone();
-    let scan_handle = thread::spawn(move || {
-        let mut store = scan_store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        scan(&mut store, &roots, &scan_options(), &progress_tx, &cancel)
+    let scan_result = std::thread::scope(|scope| {
+        // `move` so `progress_tx` is owned by the scan thread and dropped
+        // when it finishes, which ends the `progress_rx` loop below.
+        let scan_handle =
+            scope.spawn(move || scan(store, &roots, &scan_options(), &progress_tx, &cancel));
+
+        while let Ok(event) = progress_rx.recv() {
+            if let ScanEvent::FileProcessed {
+                processed,
+                total,
+                path,
+            } = event
+                && (processed % STATUS_EVERY == 0 || processed == total)
+            {
+                let _ = updates.send(Update::Status(format!(
+                    "Scanning {} / {} - {}",
+                    format_count(processed),
+                    format_count(total),
+                    file_name(&path)
+                )));
+            }
+        }
+
+        match scan_handle.join() {
+            Ok(result) => result,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
     });
 
-    while let Ok(event) = progress_rx.recv() {
-        if let ScanEvent::FileProcessed {
-            processed,
-            total,
-            path,
-        } = event
-            && (processed % STATUS_EVERY == 0 || processed == total)
-        {
-            let _ = updates.send(Update::Status(format!(
-                "Scanning {} / {} - {}",
-                format_count(processed),
-                format_count(total),
-                file_name(&path)
-            )));
-        }
-    }
-
-    match scan_handle.join() {
-        Ok(Ok(summary)) => {
+    match scan_result {
+        Ok(summary) => {
             info!(
                 added = summary.tracks_added,
                 updated = summary.tracks_updated,
@@ -135,21 +173,17 @@ fn scan_roots(
             );
             Ok(())
         }
-        Ok(Err(err)) => Err(err.into()),
-        Err(_) => Err(anyhow::anyhow!("scanner thread panicked")),
+        Err(err) => Err(err.into()),
     }
 }
 
 /// Deletes every stored track under a removed folder. Folder rows are
 /// independent of tracks (see `Store::remove_folder`), so without this a
 /// removed folder's music would linger in the library.
-fn purge_removed_roots(store: &Arc<Mutex<Store>>, roots: &[PathBuf]) -> anyhow::Result<()> {
+fn purge_removed_roots(store: &mut Store, roots: &[PathBuf]) -> anyhow::Result<()> {
     if roots.is_empty() {
         return Ok(());
     }
-    let mut store = store
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let paths: Vec<PathBuf> = store
         .load_all_tracks()?
         .into_iter()

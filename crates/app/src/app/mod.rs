@@ -80,6 +80,7 @@ impl App {
         config_path: Option<PathBuf>,
     ) -> Self {
         fonts::install(&cc.egui_ctx);
+        crate::settings::folder_picker::init();
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
         theme::apply(&cc.egui_ctx, state.theme, state.accent.color());
@@ -144,11 +145,7 @@ impl App {
             self.state.apply_local(cmd);
             commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
         }
-        commands::apply_library_commands(
-            self.library.as_mut(),
-            &self.state.library_folders,
-            &commands,
-        );
+        commands::apply_library_commands(self.library.as_mut(), &mut self.state, &commands);
     }
 
     /// Config persistence policy from #8: write 2 s after the last change
