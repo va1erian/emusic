@@ -103,7 +103,7 @@ fn run_inner(
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         Snapshot::from_store(&store, folders)?
     };
-    let _ = updates.send(Update::Snapshot(snapshot));
+    let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     let _ = updates.send(Update::Status(String::new()));
     Ok(())
 }

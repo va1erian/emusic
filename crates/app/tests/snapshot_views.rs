@@ -72,3 +72,8 @@ fn now_playing_view() {
 fn history_view() {
     snapshot_view(View::History);
 }
+
+#[test]
+fn most_played_view() {
+    snapshot_view(View::MostPlayed);
+}

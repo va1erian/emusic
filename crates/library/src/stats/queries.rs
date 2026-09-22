@@ -17,6 +17,18 @@ pub enum StatsWindow {
 }
 
 impl StatsWindow {
+    /// Every window, in display order (used by the "most played" selector).
+    pub const ALL: [Self; 3] = [Self::AllTime, Self::Last30Days, Self::LastYear];
+
+    /// Short, human-readable label for the window.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::AllTime => "All time",
+            Self::Last30Days => "Last 30 days",
+            Self::LastYear => "Last year",
+        }
+    }
+
     /// The number of seconds this window spans, or `None` for all time.
     fn span_secs(self) -> Option<i64> {
         const DAY: i64 = 24 * 60 * 60;

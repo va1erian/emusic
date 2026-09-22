@@ -74,7 +74,7 @@ fn send_initial_snapshot(
     updates: &Sender<Update>,
 ) -> anyhow::Result<()> {
     let snapshot = Snapshot::from_store(store, folders)?;
-    let _ = updates.send(Update::Snapshot(snapshot));
+    let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     Ok(())
 }
 

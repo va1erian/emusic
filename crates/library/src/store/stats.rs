@@ -21,6 +21,8 @@ pub struct TrackStats {
 /// A single row of playback history, newest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlayHistoryEntry {
+    /// Primary key of the `plays` row; lets the UI remove one entry.
+    pub id: i64,
     pub track_id: TrackId,
     pub played_at: i64,
     pub duration_played_ms: u32,
@@ -120,20 +122,41 @@ impl Store {
     /// rows to skip (`offset = page * page_size` for simple pagination).
     pub fn play_history_page(&self, limit: u32, offset: u32) -> Result<Vec<PlayHistoryEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT track_id, played_at, duration_played_ms, completed
+            "SELECT id, track_id, played_at, duration_played_ms, completed
              FROM plays
              ORDER BY played_at DESC, id DESC
              LIMIT ?1 OFFSET ?2",
         )?;
         let rows = stmt.query_map(params![limit.max(1), offset], |row| {
             Ok(PlayHistoryEntry {
-                track_id: TrackId(row.get(0)?),
-                played_at: row.get(1)?,
-                duration_played_ms: row.get(2)?,
-                completed: row.get(3)?,
+                id: row.get(0)?,
+                track_id: TrackId(row.get(1)?),
+                played_at: row.get(2)?,
+                duration_played_ms: row.get(3)?,
+                completed: row.get(4)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Deletes a single playback history row, returning whether it existed.
+    ///
+    /// Aggregate [`TrackStats`] are intentionally left untouched: this only
+    /// removes one history entry, it does not "un-play" the track.
+    pub fn delete_play(&self, id: i64) -> Result<bool> {
+        let deleted = self
+            .conn
+            .execute("DELETE FROM plays WHERE id = ?1", params![id])?;
+        Ok(deleted > 0)
+    }
+
+    /// Deletes every playback history row, returning how many were removed.
+    ///
+    /// Like [`Store::delete_play`], aggregate [`TrackStats`] are preserved;
+    /// only the per-play history (and therefore the windowed "most played"
+    /// rankings, which are computed from `plays`) is cleared.
+    pub fn clear_plays(&self) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM plays", [])?)
     }
 
     /// Returns the most-played tracks (by completed play count), optionally

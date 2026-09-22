@@ -141,6 +141,61 @@ fn play_history_page_orders_newest_first_and_paginates() {
 }
 
 #[test]
+fn history_entries_carry_the_play_row_id() {
+    let (mut store, track_id) = store_with_one_track();
+    store
+        .record_play(&PlayEvent::new(track_id, 1_000, 30_000, true))
+        .unwrap();
+    store
+        .record_play(&PlayEvent::new(track_id, 2_000, 30_000, false))
+        .unwrap();
+
+    let page = store.play_history_page(10, 0).unwrap();
+    assert_eq!(page.len(), 2);
+    // Newest first, each with a distinct, non-zero primary key.
+    assert_ne!(page[0].id, page[1].id);
+    assert!(page.iter().all(|entry| entry.id > 0));
+}
+
+#[test]
+fn delete_play_removes_only_that_entry() {
+    let (mut store, track_id) = store_with_one_track();
+    store
+        .record_play(&PlayEvent::new(track_id, 1_000, 30_000, true))
+        .unwrap();
+    store
+        .record_play(&PlayEvent::new(track_id, 2_000, 30_000, true))
+        .unwrap();
+
+    let page = store.play_history_page(10, 0).unwrap();
+    let removed = page[0].id;
+    assert!(store.delete_play(removed).unwrap());
+
+    let remaining = store.play_history_page(10, 0).unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, page[1].id);
+
+    // Deleting again is a no-op rather than an error.
+    assert!(!store.delete_play(removed).unwrap());
+}
+
+#[test]
+fn clear_plays_empties_history_but_keeps_aggregate_stats() {
+    let (mut store, track_id) = store_with_one_track();
+    store
+        .record_play(&PlayEvent::new(track_id, 1_000, 30_000, true))
+        .unwrap();
+    store
+        .record_play(&PlayEvent::new(track_id, 2_000, 30_000, true))
+        .unwrap();
+
+    assert_eq!(store.clear_plays().unwrap(), 2);
+    assert!(store.play_history_page(10, 0).unwrap().is_empty());
+    // The track's lifetime play count survives "clear history".
+    assert_eq!(store.track_stats(track_id).unwrap().unwrap().play_count, 2);
+}
+
+#[test]
 fn most_played_since_counts_only_completed_plays_in_window() {
     let mut store = Store::open_in_memory().unwrap();
     let mut tracks = vec![

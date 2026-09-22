@@ -10,8 +10,8 @@ pub(crate) mod column_browser;
 pub(crate) mod folder_tree;
 mod folders;
 mod genres;
-mod history;
-mod most_played;
+pub(crate) mod history;
+pub(crate) mod most_played;
 mod music;
 mod now_playing;
 mod settings;
@@ -40,8 +40,8 @@ pub fn show(
             View::Artists => artists::show(ui, state, library),
             View::Genres => genres::show(ui, state, library),
             View::Folders => folders::show(ui, state, library, player),
-            View::MostPlayed => most_played::show(ui, library),
-            View::History => history::show(ui, library),
+            View::MostPlayed => most_played::show(ui, state, library, player),
+            View::History => history::show(ui, state, library, player),
             View::NowPlaying => now_playing::show(ui, player),
             View::Settings => settings::show(ui, state),
         }

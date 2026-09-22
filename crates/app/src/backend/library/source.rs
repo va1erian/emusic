@@ -11,14 +11,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use emusic_library::index::{Album, Artist, DirNode, LibraryIndex};
-use emusic_library::stats::PlayRecord;
+use emusic_library::stats::{PlayRecord, StatsWindow, history_page, most_played};
 use emusic_library::{Folder, Store, Track, TrackId, TrackKind, TrackStats};
 
 use super::stats;
 
-use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo, format_minutes_ago,
-};
+use crate::library_api::{AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo};
 
 /// A complete, UI-ready view of the library at one point in time.
 #[derive(Debug, Default)]
@@ -30,7 +28,11 @@ pub(crate) struct Snapshot {
     pub folders: Vec<FolderInfo>,
     pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
-    pub most_played: Vec<TrackInfo>,
+    /// Rankings precomputed once per snapshot, one list per
+    /// [`StatsWindow`], so the view's selector is a plain slice lookup.
+    pub most_played_all: Vec<TrackInfo>,
+    pub most_played_30d: Vec<TrackInfo>,
+    pub most_played_year: Vec<TrackInfo>,
 }
 
 impl Snapshot {
@@ -70,8 +72,17 @@ impl Snapshot {
         let genres = index.genres().iter().map(|g| g.name.clone()).collect();
         let folders = folders_to_info(folders, &index);
         let dirs = dir_tree_to_info(index.root_dirs());
+        let now = unix_now();
         let history = history_from_store(store, &id_to_index, &tracks).unwrap_or_default();
-        let most_played = most_played_from_store(store, &id_to_index, &tracks).unwrap_or_default();
+        let most_played_all =
+            most_played_from_store(store, &id_to_index, &tracks, StatsWindow::AllTime, now)
+                .unwrap_or_default();
+        let most_played_30d =
+            most_played_from_store(store, &id_to_index, &tracks, StatsWindow::Last30Days, now)
+                .unwrap_or_default();
+        let most_played_year =
+            most_played_from_store(store, &id_to_index, &tracks, StatsWindow::LastYear, now)
+                .unwrap_or_default();
 
         Self {
             tracks,
@@ -81,7 +92,33 @@ impl Snapshot {
             folders,
             dirs,
             history,
-            most_played,
+            most_played_all,
+            most_played_30d,
+            most_played_year,
+        }
+    }
+
+    /// Removes one history entry from the in-memory snapshot (the store is
+    /// updated separately by [`super::LibraryBackend`]).
+    pub(crate) fn remove_history(&mut self, id: i64) {
+        self.history.retain(|entry| entry.id != id);
+    }
+
+    /// Drops the in-memory history and rankings after the store's `plays`
+    /// table has been cleared (the rankings are derived from it).
+    pub(crate) fn clear_history(&mut self) {
+        self.history.clear();
+        self.most_played_all.clear();
+        self.most_played_30d.clear();
+        self.most_played_year.clear();
+    }
+
+    /// The ranking for one [`StatsWindow`], as precomputed by [`Self::from_index`].
+    pub(crate) fn most_played(&self, window: StatsWindow) -> &[TrackInfo] {
+        match window {
+            StatsWindow::AllTime => &self.most_played_all,
+            StatsWindow::Last30Days => &self.most_played_30d,
+            StatsWindow::LastYear => &self.most_played_year,
         }
     }
 
@@ -104,12 +141,14 @@ impl Snapshot {
         if !record.completed {
             return;
         }
-        if let Some(entry) = self
-            .most_played
-            .iter_mut()
-            .find(|t| t.path == path.as_ref())
-        {
-            entry.play_count += 1;
+        for list in [
+            &mut self.most_played_all,
+            &mut self.most_played_30d,
+            &mut self.most_played_year,
+        ] {
+            if let Some(entry) = list.iter_mut().find(|t| t.path == path.as_ref()) {
+                entry.play_count += 1;
+            }
         }
     }
 }
@@ -219,18 +258,21 @@ fn history_from_store(
     tracks: &[TrackInfo],
 ) -> anyhow::Result<Vec<HistoryEntry>> {
     const HISTORY_PAGE_SIZE: u32 = 60;
-    let entries = store.play_history_page(HISTORY_PAGE_SIZE, 0)?;
+    let entries = history_page(store, 0, HISTORY_PAGE_SIZE)?;
     Ok(entries
         .into_iter()
         .filter_map(|entry| {
             let track = id_to_index
                 .get(&(entry.track_id.0 as u64))
                 .map(|&i| &tracks[i])?;
-            let minutes_ago = ((unix_now() - entry.played_at).max(0) / 60) as u32;
             Some(HistoryEntry {
-                track_title: track.title.clone(),
+                id: entry.id,
+                track_id: entry.track_id.0 as u64,
+                title: track.title.clone(),
                 artist: track.artist.clone(),
-                played_at: format_minutes_ago(minutes_ago),
+                played_at: entry.played_at,
+                played_ms: entry.duration_played_ms,
+                completed: entry.completed,
             })
         })
         .collect())
@@ -240,9 +282,11 @@ fn most_played_from_store(
     store: &Store,
     id_to_index: &HashMap<u64, usize>,
     tracks: &[TrackInfo],
+    window: StatsWindow,
+    now: i64,
 ) -> anyhow::Result<Vec<TrackInfo>> {
     const MOST_PLAYED_LIMIT: u32 = 50;
-    let entries = store.most_played_since(None, MOST_PLAYED_LIMIT)?;
+    let entries = most_played(store, window, MOST_PLAYED_LIMIT, now)?;
     Ok(entries
         .into_iter()
         .filter_map(|entry| {

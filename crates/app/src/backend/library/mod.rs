@@ -23,7 +23,8 @@ use emusic_library::{Folder, Store};
 use tracing::{info, warn};
 
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, TrackInfo,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, StatsWindow,
+    TrackInfo,
 };
 
 use scan::ScanHandle;
@@ -31,8 +32,9 @@ use source::Snapshot;
 
 /// Messages sent from background threads to the UI-owning backend.
 pub(crate) enum Update {
-    /// A freshly built, UI-ready snapshot to swap in.
-    Snapshot(Snapshot),
+    /// A freshly built, UI-ready snapshot to swap in. Boxed to keep this
+    /// small, frequently-created channel message compact.
+    Snapshot(Box<Snapshot>),
     /// A progress line for the status bar; empty clears it.
     Status(String),
     /// A scan with this id finished; clears the scanning state if it is still
@@ -159,14 +161,36 @@ impl LibraryDataSource for LibraryBackend {
         &self.snapshot.history
     }
 
-    fn most_played(&self) -> &[TrackInfo] {
-        &self.snapshot.most_played
+    fn most_played(&self, window: StatsWindow) -> &[TrackInfo] {
+        self.snapshot.most_played(window)
+    }
+
+    fn remove_history_entry(&mut self, id: i64) {
+        let store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Err(err) = store.delete_play(id) {
+            warn!(%err, "failed to remove history entry");
+        }
+        self.snapshot.remove_history(id);
+    }
+
+    fn clear_history(&mut self) {
+        let store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Err(err) = store.clear_plays() {
+            warn!(%err, "failed to clear history");
+        }
+        self.snapshot.clear_history();
     }
 
     fn tick(&mut self) {
         while let Ok(update) = self.updates.try_recv() {
             match update {
-                Update::Snapshot(snapshot) => self.snapshot = snapshot,
+                Update::Snapshot(snapshot) => self.snapshot = *snapshot,
                 Update::Status(text) => {
                     self.status = if text.is_empty() { None } else { Some(text) };
                 }

@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::views::album_grid::AlbumGridState;
 use crate::views::column_browser::ColumnBrowserState;
 use crate::views::folder_tree::FolderTreeState;
+use crate::views::history::HistoryState;
+use crate::views::most_played::MostPlayedState;
 use crate::views::track_table::TrackTableState;
 
 #[cfg(test)]
@@ -288,6 +290,11 @@ pub enum Command {
     LibraryRescan,
     /// Stop the scan currently running, if any.
     LibraryCancelScan,
+    /// Remove one playback history entry (History view, #24).
+    HistoryRemove(i64),
+    /// Clear the whole playback history (History view, #24), after the
+    /// confirmation dialog.
+    HistoryClear,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,6 +366,10 @@ pub struct AppState {
     pub folder_tree: FolderTreeState,
     /// The Folders view's track table (sort + selection).
     pub folders_table: TrackTableState,
+    /// The Most Played view's window selector + track table (#24).
+    pub most_played: MostPlayedState,
+    /// The History view's confirmation flag (#24).
+    pub history: HistoryState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
@@ -382,6 +393,8 @@ impl Default for AppState {
             album_grid: AlbumGridState::default(),
             folder_tree: FolderTreeState::default(),
             folders_table: TrackTableState::default(),
+            most_played: MostPlayedState::default(),
+            history: HistoryState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),
         }

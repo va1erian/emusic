@@ -22,6 +22,8 @@ pub(super) fn apply_library_commands(
     let mut folders_changed = false;
     let mut rescan = false;
     let mut cancel = false;
+    let mut remove_history = None;
+    let mut clear_history = false;
     for cmd in commands {
         match cmd {
             Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
@@ -29,6 +31,8 @@ pub(super) fn apply_library_commands(
             }
             Command::LibraryRescan => rescan = true,
             Command::LibraryCancelScan => cancel = true,
+            Command::HistoryRemove(id) => remove_history = Some(*id),
+            Command::HistoryClear => clear_history = true,
             _ => {}
         }
     }
@@ -49,6 +53,12 @@ pub(super) fn apply_library_commands(
     }
     if cancel {
         library.cancel_scan();
+    }
+    if let Some(id) = remove_history {
+        library.remove_history_entry(id);
+    }
+    if clear_history {
+        library.clear_history();
     }
 }
 
