@@ -59,6 +59,9 @@ bitflags! {
         const STOPBACK = c::BASS_MUSIC_STOPBACK;
         /// Pre-scan for an accurate length (`BASS_ChannelGetLength`).
         const PRESCAN = c::BASS_MUSIC_PRESCAN;
+        /// Don't load the samples. Reduces memory use; useful when only
+        /// metadata (name, message, instrument/sample names) is needed.
+        const NOSAMPLE = c::BASS_MUSIC_NOSAMPLE;
         /// Decode to 32-bit floating point.
         const FLOAT = c::BASS_SAMPLE_FLOAT;
         /// Create a decoding channel (no device output).

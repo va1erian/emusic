@@ -4,6 +4,7 @@
 
 mod error;
 pub mod index;
+pub mod scanner;
 mod store;
 
 pub use error::{LibraryError, Result};

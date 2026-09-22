@@ -104,6 +104,7 @@ pub const BASS_MUSIC_NONINTER: Dword = 0x0001_0000;
 pub const BASS_MUSIC_STOPBACK: Dword = BASS_STREAM_AUTOFREE << 1; // 0x00080000
 pub const BASS_MUSIC_PRESCAN: Dword = BASS_STREAM_PRESCAN;
 pub const BASS_MUSIC_SINCINTER: Dword = 0x0080_0000;
+pub const BASS_MUSIC_NOSAMPLE: Dword = 0x0010_0000;
 
 // ---- Channel attributes (BASS_ChannelGetAttribute/SetAttribute) ---------
 pub const BASS_ATTRIB_FREQ: Dword = 1;
