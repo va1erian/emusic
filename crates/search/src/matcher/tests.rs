@@ -29,6 +29,7 @@ fn sample_track(id: i64, artist: &str, title: &str, year: i32) -> Track {
         comment: None,
         art_source: emusic_core::ArtSource::None,
         added_at: 0,
+        starred: false,
     }
 }
 

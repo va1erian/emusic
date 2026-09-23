@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use emusic_library::stats::{PlayRecord, StatsRecorder};
 use emusic_library::watch::{WatchEvent, Watcher};
-use emusic_library::{Folder, Store};
+use emusic_library::{Folder, Store, TrackId};
 use tracing::{info, warn};
 
 use crate::library_api::{
@@ -193,6 +193,19 @@ impl LibraryDataSource for LibraryBackend {
             warn!(%err, "failed to clear history");
         }
         self.snapshot.clear_history();
+    }
+
+    fn set_starred(&mut self, id: u64, starred: bool) {
+        {
+            let store = self
+                .store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(err) = store.set_starred(TrackId(id as i64), starred) {
+                warn!(%err, "failed to update starred state");
+            }
+        }
+        self.snapshot.set_starred(id, starred);
     }
 
     fn tick(&mut self) {

@@ -74,6 +74,9 @@ pub enum Command {
     /// Clear the whole playback history (History view, #24), after the
     /// confirmation dialog.
     HistoryClear,
+    /// Flip whether the track is starred (favorited), from a row's star
+    /// column or Star/Unstar context-menu entry (#131).
+    ToggleStarred(u64),
 }
 
 impl Command {

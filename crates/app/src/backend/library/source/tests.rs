@@ -34,6 +34,7 @@ fn sample_track(path: &str) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: 1_700_000_000,
+        starred: false,
     }
 }
 
@@ -160,6 +161,36 @@ fn record_play_updates_snapshot_play_count() {
 
     assert_eq!(snapshot.tracks[0].play_count, 4);
     assert!(snapshot.tracks[0].last_played_minutes_ago.is_some());
+}
+
+#[test]
+fn from_store_carries_the_starred_flag() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut track = sample_track(r"C:\music\song.flac");
+    store
+        .upsert_tracks(std::slice::from_mut(&mut track))
+        .unwrap();
+    store.set_starred(track.id, true).unwrap();
+
+    let snapshot = Snapshot::from_store(&store, &[]).unwrap();
+    assert!(snapshot.tracks[0].starred);
+}
+
+#[test]
+fn set_starred_updates_the_track_and_rankings() {
+    let mut snapshot = Snapshot::default();
+    snapshot.tracks.push(TrackInfo {
+        id: 1,
+        ..Default::default()
+    });
+    snapshot.most_played_all.push(TrackInfo {
+        id: 1,
+        ..Default::default()
+    });
+
+    snapshot.set_starred(1, true);
+    assert!(snapshot.tracks[0].starred);
+    assert!(snapshot.most_played_all[0].starred);
 }
 
 fn unix_now() -> i64 {

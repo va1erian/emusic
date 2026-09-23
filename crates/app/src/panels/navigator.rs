@@ -1,5 +1,5 @@
 //! Left navigator: library sections (Music, Albums, Artists, Genres,
-//! Folders) and a second group (Most played, History, Now playing).
+//! Folders) and a second group (Starred, Most played, History, Now playing).
 //! Resizable and collapsible via [`crate::state::PanelKind::Navigator`].
 
 use eframe::egui;
@@ -14,7 +14,12 @@ const LIBRARY_VIEWS: &[View] = &[
     View::Genres,
     View::Folders,
 ];
-const ACTIVITY_VIEWS: &[View] = &[View::MostPlayed, View::History, View::NowPlaying];
+const ACTIVITY_VIEWS: &[View] = &[
+    View::Starred,
+    View::MostPlayed,
+    View::History,
+    View::NowPlaying,
+];
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
     egui::Panel::left("navigator")

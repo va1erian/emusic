@@ -128,6 +128,57 @@ pub(crate) fn next(painter: &Painter, rect: Rect, color: Color32) {
     ));
 }
 
+/// Fraction of the star's outer radius used for its five inner (notch)
+/// vertices. A little above the geometric 0.38 so the star reads as plump
+/// rather than spiky at table-row size.
+const STAR_INNER_RATIO: f32 = 0.42;
+
+/// The ten alternating outer/inner vertices of a five-pointed star filling
+/// the square `box_`, with the top point straight up.
+fn star_vertices(box_: Rect) -> Vec<Pos2> {
+    let center = box_.center();
+    let outer = box_.width().min(box_.height()) * 0.5;
+    let inner = outer * STAR_INNER_RATIO;
+    (0..10)
+        .map(|i| {
+            let radius = if i % 2 == 0 { outer } else { inner };
+            let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            egui::pos2(
+                center.x + radius * angle.cos(),
+                center.y + radius * angle.sin(),
+            )
+        })
+        .collect()
+}
+
+/// A filled five-pointed star: the track table's starred marker (#131).
+///
+/// A star is concave, so it is filled as a fan of ten triangles around its
+/// centre (valid because the centre can see every vertex) rather than with a
+/// single [`Shape::convex_polygon`].
+pub(crate) fn star(painter: &Painter, rect: Rect, color: Color32) {
+    let box_ = icon_box(rect, ICON_SCALE);
+    let center = box_.center();
+    let points = star_vertices(box_);
+    for i in 0..points.len() {
+        painter.add(Shape::convex_polygon(
+            vec![center, points[i], points[(i + 1) % points.len()]],
+            color,
+            Stroke::NONE,
+        ));
+    }
+}
+
+/// The outline of a five-pointed star, drawn for the unstarred state so the
+/// column keeps a visible, clickable target (#131).
+pub(crate) fn star_outline(painter: &Painter, rect: Rect, color: Color32) {
+    let box_ = icon_box(rect, ICON_SCALE);
+    painter.add(Shape::closed_line(
+        star_vertices(box_),
+        Stroke::new(1.0, color),
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +222,24 @@ mod tests {
         assert_eq!(t[1].y, b.center().y);
         assert_eq!(t[2].y, b.bottom());
         assert_eq!((t[0].y + t[2].y) / 2.0, b.center().y);
+    }
+
+    #[test]
+    fn star_has_ten_alternating_points_facing_up() {
+        let b = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::splat(20.0));
+        let points = star_vertices(b);
+        assert_eq!(points.len(), 10);
+
+        let center = b.center();
+        let radius = |p: Pos2| (p - center).length();
+        // Even indices are the outer points, odd ones the inner notches.
+        assert!(radius(points[0]) > radius(points[1]));
+        assert!((radius(points[0]) - 10.0).abs() < 1e-3);
+        // The first point is the top of the box.
+        assert!((points[0].x - center.x).abs() < 1e-3);
+        assert!((points[0].y - b.top()).abs() < 1e-3);
+        for p in points {
+            assert!(b.expand(0.5).contains(p), "{p:?} escaped {b:?}");
+        }
     }
 }

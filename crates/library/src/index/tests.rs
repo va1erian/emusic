@@ -36,6 +36,7 @@ fn track(id: i64, path: &str, artist: &str, album: &str, genre: &str) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: 1,
+        starred: false,
     }
 }
 
@@ -138,6 +139,7 @@ fn synthetic_tracks(count: usize) -> Vec<Track> {
             comment: None,
             art_source: ArtSource::None,
             added_at: 1_700_000_000,
+            starred: false,
         });
     }
     tracks

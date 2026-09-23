@@ -54,6 +54,8 @@ pub struct TrackInfo {
     /// string or wall-clock timestamp) so it can be sorted numerically and
     /// formatted on demand with [`format_minutes_ago`].
     pub last_played_minutes_ago: Option<u32>,
+    /// Whether the user has starred (favorited) this track (#131).
+    pub starred: bool,
 }
 
 /// Formats an elapsed-minutes value into a short, human-readable string,
@@ -147,6 +149,15 @@ pub trait LibraryDataSource {
     /// Tracks ordered by descending play count within `window`.
     fn most_played(&self, window: StatsWindow) -> &[TrackInfo];
 
+    /// Starred (favorited) tracks, in library order (#131).
+    ///
+    /// Defaults to filtering [`LibraryDataSource::tracks`] by
+    /// [`TrackInfo::starred`]; backends with a dedicated starred set can
+    /// override it.
+    fn starred_tracks(&self) -> Vec<&TrackInfo> {
+        self.tracks().iter().filter(|track| track.starred).collect()
+    }
+
     /// Removes one playback history entry by its [`HistoryEntry::id`].
     ///
     /// A no-op if no such entry exists (e.g. it was already removed by
@@ -155,6 +166,10 @@ pub trait LibraryDataSource {
 
     /// Removes every playback history entry.
     fn clear_history(&mut self) {}
+
+    /// Sets whether the track with `id` is starred (#131). A no-op for
+    /// backends that don't persist a library.
+    fn set_starred(&mut self, _id: u64, _starred: bool) {}
 
     fn track_count(&self) -> usize {
         self.tracks().len()

@@ -32,6 +32,7 @@ fn track(artist: &str, album_artist: Option<&str>, album: &str) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: 1,
+        starred: false,
     }
 }
 

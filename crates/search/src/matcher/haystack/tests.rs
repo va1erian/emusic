@@ -33,6 +33,7 @@ fn track_with_meta(
         comment: None,
         art_source: emusic_core::ArtSource::None,
         added_at: 0,
+        starred: false,
     }
 }
 

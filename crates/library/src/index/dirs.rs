@@ -198,6 +198,7 @@ mod tests {
             comment: None,
             art_source: emusic_core::ArtSource::None,
             added_at: 1,
+            starred: false,
         }
     }
 

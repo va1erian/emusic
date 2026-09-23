@@ -74,6 +74,11 @@ fn history_view() {
 }
 
 #[test]
+fn starred_view() {
+    snapshot_view(View::Starred);
+}
+
+#[test]
 fn most_played_view() {
     snapshot_view(View::MostPlayed);
 }

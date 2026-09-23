@@ -106,6 +106,24 @@ impl Snapshot {
         self.history.retain(|entry| entry.id != id);
     }
 
+    /// Updates the in-memory star flag for one track, everywhere it is
+    /// mirrored (the full track list and the cloned most-played rankings),
+    /// after the store has been written (#131).
+    pub(crate) fn set_starred(&mut self, id: u64, starred: bool) {
+        for track in self.tracks.iter_mut().filter(|track| track.id == id) {
+            track.starred = starred;
+        }
+        for list in [
+            &mut self.most_played_all,
+            &mut self.most_played_30d,
+            &mut self.most_played_year,
+        ] {
+            for track in list.iter_mut().filter(|track| track.id == id) {
+                track.starred = starred;
+            }
+        }
+    }
+
     /// Drops the in-memory history and rankings after the store's `plays`
     /// table has been cleared (the rankings are derived from it).
     pub(crate) fn clear_history(&mut self) {
@@ -189,6 +207,7 @@ fn track_to_info(track: &Track, stats: &HashMap<TrackId, TrackStats>) -> TrackIn
         channels: track.channels,
         play_count,
         last_played_minutes_ago,
+        starred: track.starred,
     }
 }
 

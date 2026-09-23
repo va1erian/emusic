@@ -231,6 +231,27 @@ pub fn format_duration(d: std::time::Duration) -> String {
     format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+/// Renders the star toggle for `track` (filled when starred, outlined
+/// otherwise) and returns whether it was clicked this frame (#131).
+///
+/// A painted vector icon (see [`crate::icons`]) rather than a `★` glyph, for
+/// the same font-metric reasons as the playing marker; the cell's centred
+/// layout keeps it centred on the row.
+pub fn star_cell(ui: &mut egui::Ui, track: &TrackInfo) -> bool {
+    let side = ui.text_style_height(&egui::TextStyle::Body) * PLAYING_MARKER_SCALE;
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
+    if track.starred {
+        crate::icons::star(ui.painter(), rect, crate::theme::current_accent());
+    } else {
+        let color = ui.visuals().weak_text_color();
+        crate::icons::star_outline(ui.painter(), rect, color);
+    }
+    let response = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(if track.starred { "Unstar" } else { "Star" });
+    response.clicked()
+}
+
 /// Reserves space for, and paints, the "now playing" triangle at the start of
 /// a title cell. It is a painted vector shape (see [`crate::icons`]) rather
 /// than a `▶` glyph, and the cell's centred layout vertically centres the
