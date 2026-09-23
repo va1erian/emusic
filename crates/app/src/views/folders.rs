@@ -23,7 +23,12 @@ pub fn show(
         .default_size(260.0)
         .size_range(180.0..=460.0)
         .show(ui, |ui| {
-            egui::ScrollArea::both()
+            // Vertical only (#163): directory rows must stay inside the
+            // panel. Horizontal scrolling let a wide, deeply-indented row
+            // paint past the panel's right edge and over the track table, and
+            // is no longer needed now that the tree's indentation is small
+            // (#162). Overlong names are clipped to the panel instead.
+            egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     folder_command = folder_tree::show(
