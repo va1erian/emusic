@@ -35,6 +35,7 @@ pub mod backend;
 pub mod error;
 pub mod events;
 mod listen;
+pub mod midi;
 mod player;
 pub mod queue;
 pub mod sid;

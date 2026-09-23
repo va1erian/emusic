@@ -79,6 +79,9 @@ pub const BASS_CONFIG_PAUSE_NOPLAY: Dword = 13;
 pub const BASS_CONFIG_SRC: Dword = 43;
 pub const BASS_CONFIG_SRC_SAMPLE: Dword = 44;
 pub const BASS_CONFIG_FLOAT: Dword = 54;
+/// `BASS_CONFIG_MIDI_DEFFONT` (`bassmidi.h`): the soundfont BASSMIDI uses
+/// when a MIDI stream has none of its own. Set with `BASS_SetConfigPtr`.
+pub const BASS_CONFIG_MIDI_DEFFONT: Dword = 0x10403;
 
 // ---- BASS_StreamCreateFile / BASS_MusicLoad shared flags -----------------
 pub const BASS_SAMPLE_8BITS: Dword = 1;

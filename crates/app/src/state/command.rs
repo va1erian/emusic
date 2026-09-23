@@ -106,6 +106,9 @@ pub enum Command {
     /// Replace the tracker module playback settings (interpolation, ramping,
     /// emulation, ...), applied live to the player and persisted.
     SetTrackerSettings(TrackerSettings),
+    /// Set (or clear, with `None`) the soundfont MIDI files play with,
+    /// applied live to the player and persisted.
+    SetMidiSoundfont(Option<PathBuf>),
 }
 
 impl Command {

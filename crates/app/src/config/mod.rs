@@ -106,6 +106,9 @@ pub struct Config {
     /// Tracker module playback settings (Settings → Tracker playback).
     #[serde(default)]
     pub tracker_settings: TrackerSettings,
+    /// Soundfont MIDI files are rendered with (Settings > Playback).
+    #[serde(default)]
+    pub midi_soundfont: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -126,6 +129,7 @@ impl Default for Config {
             visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
             tracker_settings: TrackerSettings::default(),
+            midi_soundfont: None,
         }
     }
 }
@@ -156,6 +160,7 @@ impl Config {
             visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
             tracker_settings: state.tracker_settings,
+            midi_soundfont: state.midi_soundfont.clone(),
         }
     }
 
@@ -173,6 +178,7 @@ impl Config {
         state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
         state.tracker_settings = self.tracker_settings;
+        state.midi_soundfont = self.midi_soundfont.clone();
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker
@@ -182,6 +188,7 @@ impl Config {
         player.set_repeat_mode(self.repeat_mode);
         player.set_shuffle(self.shuffle);
         player.set_tracker_settings(&self.tracker_settings);
+        player.set_midi_soundfont(self.midi_soundfont.as_deref());
         if self.resume_playback
             && let Some(session) = &self.last_played
             && !session.path().as_os_str().is_empty()

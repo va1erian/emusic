@@ -17,19 +17,28 @@ pub(crate) const STREAM_EXTENSIONS: &[&str] = &[
     "mpc", "mpp", "ogg", "opus", "spx", "wav", "wv",
 ];
 
+/// MIDI file extensions, read via BASS (`bassmidi` plugin). They are stored
+/// as [`TrackKind::Stream`] tracks but carry no tags for lofty to read.
+pub(crate) const MIDI_EXTENSIONS: &[&str] = &["mid", "midi"];
+
 /// Tracker module extensions, read via BASS (`BASS_MusicLoad`).
 pub(crate) const MODULE_EXTENSIONS: &[&str] = &["it", "mo3", "mod", "mtm", "s3m", "umx", "xm"];
 
 /// Classifies `path` as a scannable audio file by its extension.
 pub(crate) fn classify(path: &Path) -> Option<TrackKind> {
     let ext = extension(path)?;
-    if STREAM_EXTENSIONS.contains(&ext.as_str()) {
+    if STREAM_EXTENSIONS.contains(&ext.as_str()) || MIDI_EXTENSIONS.contains(&ext.as_str()) {
         Some(TrackKind::Stream)
     } else if MODULE_EXTENSIONS.contains(&ext.as_str()) {
         Some(TrackKind::Module)
     } else {
         None
     }
+}
+
+/// Whether `path` names a MIDI file.
+pub(crate) fn is_midi(path: &Path) -> bool {
+    extension(path).is_some_and(|ext| MIDI_EXTENSIONS.contains(&ext.as_str()))
 }
 
 /// The lowercased file extension of `path`, without the leading dot.
@@ -73,6 +82,10 @@ mod tests {
     fn classify_recognises_stream_and_module_extensions() {
         assert_eq!(classify(Path::new("a.FLAC")), Some(TrackKind::Stream));
         assert_eq!(classify(Path::new("b.Mp3")), Some(TrackKind::Stream));
+        assert_eq!(classify(Path::new("d.MID")), Some(TrackKind::Stream));
+        assert_eq!(classify(Path::new("e.midi")), Some(TrackKind::Stream));
+        assert!(is_midi(Path::new("e.Midi")));
+        assert!(!is_midi(Path::new("e.mp3")));
         assert_eq!(classify(Path::new("c.xm")), Some(TrackKind::Module));
         assert_eq!(classify(Path::new("c.IT")), Some(TrackKind::Module));
     }

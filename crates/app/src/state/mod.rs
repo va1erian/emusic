@@ -105,6 +105,9 @@ pub struct AppState {
     /// Tracker module playback settings (Settings → Tracker playback),
     /// applied live to the player and persisted.
     pub tracker_settings: TrackerSettings,
+    /// Soundfont (`.sf2`/`.sf3`/`.sfz`) MIDI files are rendered with
+    /// (Settings > Playback); `None` falls back to one next to the BASS DLLs.
+    pub midi_soundfont: Option<PathBuf>,
 }
 
 impl Default for AppState {
@@ -136,6 +139,7 @@ impl Default for AppState {
             database_info_open: false,
             now_playing: crate::panels::now_playing::PanelState::default(),
             tracker_settings: TrackerSettings::default(),
+            midi_soundfont: None,
         }
     }
 }
@@ -180,6 +184,7 @@ impl AppState {
                 self.library_folders.retain(|folder| folder != path);
             }
             Command::SetTrackerSettings(settings) => self.tracker_settings = *settings,
+            Command::SetMidiSoundfont(path) => self.midi_soundfont = path.clone(),
             _ => {}
         }
     }

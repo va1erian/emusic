@@ -135,6 +135,11 @@ pub trait PlayerApi {
     /// no-op otherwise (e.g. the mock backend, or a plain audio stream).
     fn set_tracker_settings(&mut self, settings: &TrackerSettings);
 
+    /// Sets the soundfont MIDI files are rendered with (`None` = use one
+    /// found next to the BASS DLLs). Applies to a MIDI track that is already
+    /// playing; a no-op for the mock backend.
+    fn set_midi_soundfont(&mut self, path: Option<&Path>);
+
     /// Jump to a queue entry by its current index and start playback.
     fn queue_jump(&mut self, index: usize);
     /// Remove a queue entry by its current index.

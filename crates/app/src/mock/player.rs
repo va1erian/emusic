@@ -225,6 +225,8 @@ impl PlayerApi for MockPlayer {
         // Nothing to apply: mock playback has no real tracker engine.
     }
 
+    fn set_midi_soundfont(&mut self, _path: Option<&std::path::Path>) {}
+
     fn set_repeat_mode(&mut self, mode: RepeatMode) {
         self.repeat = mode;
     }

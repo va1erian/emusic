@@ -25,6 +25,17 @@ impl Player {
         }
     }
 
+    /// Chooses the soundfont MIDI files play with (see
+    /// [`AudioBackend::set_midi_soundfont`]). Errors are emitted as
+    /// [`PlayerEvent::Error`].
+    ///
+    /// [`AudioBackend::set_midi_soundfont`]: crate::backend::AudioBackend::set_midi_soundfont
+    pub fn set_midi_soundfont(&mut self, configured: Option<&std::path::Path>) {
+        if let Err(error) = self.backend.set_midi_soundfont(configured) {
+            self.emit(PlayerEvent::Error(error));
+        }
+    }
+
     /// Live tracker-module metadata for the currently playing track, if it's
     /// a module (`None` for a plain audio stream or when nothing is
     /// loaded).

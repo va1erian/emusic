@@ -90,7 +90,9 @@ pub fn build(mock: bool) -> Backends {
 
     let player: Box<dyn PlayerApi> = match bass {
         Some(bass) => {
-            let backend = Arc::new(emusic_player::BassBackend::new(bass));
+            let backend = Arc::new(
+                emusic_player::BassBackend::new(bass).with_soundfont_dirs(vec![bass_dir()]),
+            );
             let player =
                 PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_message_tx));
             Box::new(player)
@@ -193,6 +195,7 @@ impl PlayerApi for UnavailablePlayer {
     fn set_repeat_mode(&mut self, _mode: RepeatMode) {}
     fn set_shuffle(&mut self, _enabled: bool) {}
     fn set_tracker_settings(&mut self, _settings: &emusic_player::tracker::TrackerSettings) {}
+    fn set_midi_soundfont(&mut self, _path: Option<&Path>) {}
     fn queue_jump(&mut self, _index: usize) {}
     fn queue_remove(&mut self, _index: usize) {}
     fn replace_and_play(&mut self, _paths: &[PathBuf], _start_index: usize) {}

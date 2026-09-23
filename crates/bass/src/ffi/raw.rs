@@ -29,6 +29,7 @@ pub(crate) struct RawBindings {
     pub bass_get_version: unsafe extern "system" fn() -> Dword,
     pub bass_set_config: unsafe extern "system" fn(option: Dword, value: Dword) -> Bool,
     pub bass_get_config: unsafe extern "system" fn(option: Dword) -> Dword,
+    pub bass_set_config_ptr: unsafe extern "system" fn(option: Dword, value: *const c_void) -> Bool,
     pub bass_get_device_info:
         unsafe extern "system" fn(device: Dword, info: *mut BassDeviceInfo) -> Bool,
     pub bass_plugin_load: unsafe extern "system" fn(file: *const c_void, flags: Dword) -> HPlugin,
@@ -131,6 +132,7 @@ impl RawBindings {
             bass_get_version: "BASS_GetVersion",
             bass_set_config: "BASS_SetConfig",
             bass_get_config: "BASS_GetConfig",
+            bass_set_config_ptr: "BASS_SetConfigPtr",
             bass_get_device_info: "BASS_GetDeviceInfo",
             bass_plugin_load: "BASS_PluginLoad",
             bass_stream_create_file: "BASS_StreamCreateFile",

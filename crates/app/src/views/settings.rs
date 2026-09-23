@@ -75,7 +75,7 @@ fn visualizer(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 /// Playback tab: session resume (#190) followed by the tracker module
-/// options.
+/// and MIDI options.
 fn playback(ui: &mut egui::Ui, state: &mut AppState) {
     ui.checkbox(&mut state.resume_playback, "Resume playback on startup")
         .on_hover_text(
@@ -87,6 +87,11 @@ fn playback(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(8.0);
     ui.label(egui::RichText::new("Tracker modules").weak());
     crate::settings::tracker::show(ui, state);
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("MIDI playback").weak());
+    crate::settings::midi::show(ui, state);
 }
 
 /// One filled button per preset; the active preset gets a strong border.
