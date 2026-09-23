@@ -31,6 +31,7 @@
 //! # }
 //! ```
 
+mod midi_tags;
 mod module_tags;
 mod moves;
 pub(crate) mod paths;
@@ -223,6 +224,19 @@ fn scan_file(
     progress: &Sender<ScanEvent>,
 ) -> ScanOutcome {
     let outcome = match item.file.kind {
+        TrackKind::Stream if paths::is_midi(&item.file.path) => match bass {
+            Some(bass) => match midi_tags::read_midi(bass, &item.file, now) {
+                Ok(track) => ScanOutcome::Stored(Box::new(ScannedTrack {
+                    track,
+                    prior_path: item.prior_path.clone(),
+                })),
+                Err(error) => {
+                    warn!(path = %item.file.path.display(), %error, "skipping unreadable MIDI file");
+                    ScanOutcome::SkippedUnreadable
+                }
+            },
+            None => ScanOutcome::SkippedNoBass,
+        },
         TrackKind::Stream => match tags::read_stream(&item.file, now) {
             Ok(track) => ScanOutcome::Stored(Box::new(ScannedTrack {
                 track,

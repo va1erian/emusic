@@ -72,6 +72,7 @@ fn non_default_config() -> Config {
             end: EndBehavior::LoopTimes(3),
             resampling_quality: 4,
         },
+        midi_soundfont: Some(PathBuf::from(r"C:onts\gm.sf2")),
     }
 }
 

@@ -8,4 +8,5 @@ pub mod about;
 pub mod associations;
 pub mod folder_picker;
 pub mod library;
+pub mod midi;
 pub mod tracker;

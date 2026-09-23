@@ -296,6 +296,10 @@ impl PlayerApi for PlayerAdapter {
         self.player.apply_tracker_settings(settings);
     }
 
+    fn set_midi_soundfont(&mut self, path: Option<&Path>) {
+        self.player.set_midi_soundfont(path);
+    }
+
     fn queue_jump(&mut self, index: usize) {
         if let Some(&item_index) = self.queue_item_indices.get(index) {
             self.player.jump_to(item_index);

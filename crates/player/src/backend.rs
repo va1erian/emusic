@@ -2,13 +2,14 @@
 //! logic can be unit-tested with a mock instead of a real BASS device.
 
 use std::any::Any;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, MusicFlags, PositionMode, StreamFlags};
 
 use crate::error::PlayerError;
+use crate::midi::resolve_soundfont;
 use crate::sid::SidChannel;
 use crate::tracker::TrackerSettings;
 
@@ -25,6 +26,14 @@ pub trait AudioBackend: Send + Sync {
 
     /// Sets the global `BASS_CONFIG_SRC` resampler quality (`0..=4`).
     fn set_tracker_resampling_quality(&self, quality: u8) -> Result<(), PlayerError>;
+
+    /// Chooses the soundfont MIDI files are rendered with: `configured`
+    /// when usable, else one discovered by the backend. Applies to MIDI
+    /// channels that are already open as well as new ones. The default does
+    /// nothing, for backends without MIDI support.
+    fn set_midi_soundfont(&self, _configured: Option<&Path>) -> Result<(), PlayerError> {
+        Ok(())
+    }
 }
 
 /// A single open, playable audio channel.
@@ -102,6 +111,7 @@ pub fn is_sid_file(path: &Path) -> bool {
 /// Real playback backend, built on the `bass` crate.
 pub struct BassBackend {
     bass: Arc<bass::Bass>,
+    soundfont_dirs: Vec<PathBuf>,
 }
 
 impl BassBackend {
@@ -116,7 +126,17 @@ impl BassBackend {
     /// scanner threads sound — see the `SAFETY` comment on
     /// `bass::ffi::BassLib`'s `Send`/`Sync` impls.
     pub fn new(bass: Arc<bass::Bass>) -> Self {
-        Self { bass }
+        Self {
+            bass,
+            soundfont_dirs: Vec::new(),
+        }
+    }
+
+    /// Sets the directories searched for a soundfont when none is
+    /// configured (see [`crate::midi::resolve_soundfont`]).
+    pub fn with_soundfont_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.soundfont_dirs = dirs;
+        self
     }
 }
 
@@ -143,6 +163,19 @@ impl AudioBackend for BassBackend {
             .config()
             .set_resampling_quality(u32::from(quality))
             .map_err(PlayerError::Bass)
+    }
+
+    fn set_midi_soundfont(&self, configured: Option<&Path>) -> Result<(), PlayerError> {
+        // BASS can't clear the default soundfont once set, so with nothing
+        // to resolve the previous one (if any) stays until restart.
+        match resolve_soundfont(configured, &self.soundfont_dirs) {
+            Some(font) => self
+                .bass
+                .config()
+                .set_midi_default_font(&font)
+                .map_err(PlayerError::Bass),
+            None => Ok(()),
+        }
     }
 }
 

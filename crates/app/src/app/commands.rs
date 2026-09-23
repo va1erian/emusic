@@ -134,6 +134,7 @@ pub(super) fn apply_player_command(
             }
         }
         Command::SetTrackerSettings(settings) => player.set_tracker_settings(settings),
+        Command::SetMidiSoundfont(path) => player.set_midi_soundfont(path.as_deref()),
         _ => {}
     }
 }
