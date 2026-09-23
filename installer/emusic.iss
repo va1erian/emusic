@@ -137,9 +137,14 @@ Filename: "{app}\{#AppExeName}"; Parameters: "--unregister"; Flags: runhidden; R
 Type: files; Name: "{app}\bass\README.txt"
 
 [Code]
-; Attribution bundled with the BASS DLLs (#124). Not required by BASS's
-; free-for-non-commercial license, but good practice; the names stay the
-; property of their owners.
+// [Code] is real Pascal Script, not the INI-style sections above it: use //
+// or { } here, never ";" — a ";" comment silently breaks the parser instead
+// of being skipped (confirmed against Inno Setup 7.1.0; reported as a
+// misleading "'BEGIN' expected" pointing at an unrelated later line).
+//
+// Attribution bundled with the BASS DLLs (#124). Not required by BASS's
+// free-for-non-commercial license, but good practice; the names stay the
+// property of their owners.
 const
   BassNotice = 'Audio playback uses the BASS library by un4seen developments' + #13#10 +
     '(https://www.un4seen.com). BASS is free for non-commercial use; see the' + #13#10 +
