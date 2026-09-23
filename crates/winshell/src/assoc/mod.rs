@@ -15,10 +15,7 @@ pub use roots::AssocRoots;
 /// best an app can do is register (see [`AssocManager::register`]) and then
 /// point the user here.
 pub fn open_default_apps_settings(app_name: &str) -> io::Result<()> {
-    std::process::Command::new("explorer")
-        .arg(format!(
-            "ms-settings:defaultapps?registeredAppUser={app_name}"
-        ))
-        .spawn()
-        .map(|_| ())
+    crate::sys::shell_open(&format!(
+        "ms-settings:defaultapps?registeredAppUser={app_name}"
+    ))
 }

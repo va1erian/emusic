@@ -72,11 +72,34 @@ impl AssocManager {
             .map(|dir| dir.join(ICONS_DIR))
             .filter(|dir| dir.is_dir());
         let exe = exe.display().to_string();
+        self.register_application(&exe)?;
         for ext in exts {
             self.register_extension(&exe, icons_dir.as_deref(), ext)?;
         }
         self.register_capabilities(exts)?;
         sys::notify_assoc_changed();
+        Ok(())
+    }
+
+    /// Registers the `Applications\<exe>` entry Explorer's "Open with" and
+    /// "Choose another app" surfaces use, giving emusic a friendly name and
+    /// the command to launch it. Without these, the app can still appear via
+    /// its ProgIDs but shows up as a bare executable name and may fail to
+    /// launch from those dialogs.
+    fn register_application(&self, exe: &str) -> Result<()> {
+        let app = CURRENT_USER.create(format!(
+            r"{}\Applications\{}",
+            self.roots.classes, self.exe_key
+        ))?;
+        app.set_string("FriendlyAppName", &self.app_name)?;
+
+        CURRENT_USER
+            .create(format!(
+                r"{}\Applications\{}\shell\open\command",
+                self.roots.classes, self.exe_key
+            ))?
+            .set_string("", format!("\"{exe}\" \"%1\""))?;
+
         Ok(())
     }
 

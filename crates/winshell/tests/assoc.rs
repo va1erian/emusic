@@ -143,18 +143,45 @@ fn default_icon_falls_back_to_the_exe_without_an_icons_folder() {
     });
 }
 
+#[test]
+fn applications_entry_has_friendly_name_and_open_command() {
+    with_manager("applications", |namespace, manager| {
+        let exe = PathBuf::from(r"C:\emusic\emusic.exe");
+        manager.register(&exe, &["mp3"]).expect("register");
+
+        let key = format!(r"HKCU\Software\{namespace}\Classes\Applications\emusic.exe");
+        assert_eq!(query_value(&key, "FriendlyAppName"), "emusic");
+        assert_eq!(
+            query_value(&format!(r"{key}\shell\open\command"), ""),
+            r#""C:\emusic\emusic.exe" "%1""#
+        );
+    });
+}
+
 /// Reads a ProgID's `DefaultIcon` value from the throwaway namespace with
 /// `reg.exe`, unquoted.
 fn default_icon(namespace: &str, ext: &str) -> String {
     let key = format!(r"HKCU\Software\{namespace}\Classes\emusic.{ext}\DefaultIcon");
+    query_value(&key, "").trim_matches('"').to_string()
+}
+
+/// Reads a registry value (`""` for the key's default value) with `reg.exe`.
+fn query_value(key: &str, value_name: &str) -> String {
+    let mut args = vec!["query", key];
+    if value_name.is_empty() {
+        args.push("/ve");
+    } else {
+        args.extend(["/v", value_name]);
+    }
     let output = std::process::Command::new("reg")
-        .args(["query", &key, "/ve"])
+        .args(&args)
         .output()
         .expect("run reg query");
     let text = String::from_utf8_lossy(&output.stdout);
-    let value = text
-        .lines()
-        .find_map(|line| line.split_once("REG_SZ").map(|(_, value)| value.trim()))
-        .unwrap_or_default();
-    value.trim_matches('"').to_string()
+    text.lines()
+        .find_map(|line| {
+            line.split_once("REG_SZ")
+                .map(|(_, value)| value.trim().to_string())
+        })
+        .unwrap_or_default()
 }

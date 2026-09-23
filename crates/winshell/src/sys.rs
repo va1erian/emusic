@@ -14,9 +14,9 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows::Win32::System::WindowsProgramming::DRIVE_REMOTE;
-use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
+use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, SW_RESTORE, SetForegroundWindow, ShowWindow,
+    AllowSetForegroundWindow, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, ShowWindow,
 };
 
 /// Grants the process `pid` the right to call `SetForegroundWindow`, even
@@ -80,6 +80,39 @@ pub fn is_remote_drive(path: &std::path::Path) -> bool {
             drive_type == DRIVE_REMOTE
         }
         _ => false,
+    }
+}
+
+/// Opens `target` — a file, folder or URI such as `ms-settings:...` — with
+/// whatever handler the shell has registered for it, exactly as double-
+/// clicking it in Explorer would.
+///
+/// `explorer.exe` cannot launch a `ms-settings:` URI: it treats the argument
+/// as a filesystem path, fails to resolve it and opens Documents instead. The
+/// URI therefore has to go through `ShellExecuteW`.
+pub fn shell_open(target: &str) -> io::Result<()> {
+    let operation = windows::core::HSTRING::from("open");
+    let file = windows::core::HSTRING::from(target);
+    // SAFETY: `ShellExecuteW` only reads the two valid, null-terminated
+    // HSTRINGs for the duration of the call; a null `hwnd` is the documented
+    // way to open a URI without an owning window. The returned `HINSTANCE` is
+    // not an owned handle for this call — only its value matters, and any
+    // value <= 32 is a documented error code rather than a handle.
+    let result = unsafe {
+        ShellExecuteW(
+            HWND::default(),
+            &operation,
+            &file,
+            windows::core::PCWSTR::null(),
+            windows::core::PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    let code = result.0 as isize;
+    if code <= 32 {
+        Err(io::Error::from_raw_os_error(code as i32))
+    } else {
+        Ok(())
     }
 }
 
