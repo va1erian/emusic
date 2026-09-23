@@ -18,4 +18,10 @@ pub enum PlayerError {
     /// thread (see the network-drive note on the tracking issue).
     #[error("failed to spawn player worker thread: {0}")]
     SpawnFailed(String),
+    /// A track's file couldn't be read from disk.
+    #[error("failed to read file: {0}")]
+    ReadFailed(String),
+    /// The SID engine failed to load or run a tune.
+    #[error(transparent)]
+    Sid(#[from] emusic_sid::SidError),
 }

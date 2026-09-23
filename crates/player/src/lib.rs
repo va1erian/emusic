@@ -37,6 +37,7 @@ pub mod events;
 mod listen;
 mod player;
 pub mod queue;
+pub mod sid;
 pub mod tracker;
 pub mod volume;
 
@@ -45,3 +46,4 @@ pub use error::PlayerError;
 pub use events::{PlaybackState, PlayerEvent};
 pub use player::Player;
 pub use queue::{Queue, QueueSource, RepeatMode, ShuffleSource};
+pub use sid::{SidChannel, SidDecoder};

@@ -9,12 +9,13 @@ emusic is a Windows music player & library in Rust + egui, audio via BASS. The f
 - Match the existing style of the surrounding code.
 
 ## Unsafe
-- **Avoid `unsafe`.** Every crate except `bass` and `winshell` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
-- In `bass` and `winshell`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
+- **Avoid `unsafe`.** Every crate except `bass`, `winshell` and `sid` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
+- In `bass`, `winshell` and `sid`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. In `sid`, every module outside `src/ffi.rs` starts with `#![forbid(unsafe_code)]`. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.
 - BASS DLLs are never committed. Loaded at runtime from `<exe dir>/bass/` (override: env `EMUSIC_BASS_DIR`). Tests that need BASS must skip gracefully when the DLLs are absent.
+- `crates/sid` vendors the cRSID C engine and builds it with a MinGW-w64 GCC via the `cc` crate (cRSID uses GCC nested functions, which MSVC/clang reject); `EMUSIC_SID_CC` overrides the compiler. The vendored sources are unmodified — do not patch them for one toolchain.
 - Stay within the issue's scope; list follow-ups in the PR description.
 
 ## Git workflow (no merge commits)

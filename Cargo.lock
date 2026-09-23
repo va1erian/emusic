@@ -1349,6 +1349,7 @@ version = "0.1.0"
 dependencies = [
  "bass",
  "crossbeam-channel",
+ "emusic-sid",
  "rand",
  "serde",
  "thiserror 2.0.20",
@@ -1363,6 +1364,14 @@ dependencies = [
  "deunicode",
  "emusic-core",
  "memchr",
+]
+
+[[package]]
+name = "emusic-sid"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

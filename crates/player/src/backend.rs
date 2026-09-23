@@ -9,6 +9,7 @@ use std::time::Duration;
 use bass::{Attribute, Channel, FftSize, MusicFlags, StreamFlags};
 
 use crate::error::PlayerError;
+use crate::sid::SidChannel;
 use crate::tracker::TrackerSettings;
 
 /// Something that can open a playable channel for a file path.
@@ -77,6 +78,20 @@ pub fn is_tracker_module(path: &Path) -> bool {
         })
 }
 
+/// File extensions handled by the SID decoder rather than BASS.
+const SID_EXTENSIONS: &[&str] = &["sid", "psid", "rsid"];
+
+/// Whether `path`'s extension names a Commodore 64 SID tune.
+pub fn is_sid_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            SID_EXTENSIONS
+                .iter()
+                .any(|sid| sid.eq_ignore_ascii_case(ext))
+        })
+}
+
 /// Real playback backend, built on the `bass` crate.
 pub struct BassBackend {
     bass: Arc<bass::Bass>,
@@ -100,6 +115,12 @@ impl BassBackend {
 
 impl AudioBackend for BassBackend {
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError> {
+        // SID tunes aren't decodable by BASS: the SID engine renders PCM into
+        // a push stream instead (see `crate::sid`).
+        if is_sid_file(path) {
+            return Ok(Box::new(SidChannel::open(&self.bass, path)?));
+        }
+
         // FLOAT decodes to `f32`, which the visualizer (#25) needs for its
         // oscilloscope; `get_data_fft` works regardless.
         let channel = if is_tracker_module(path) {
@@ -277,6 +298,21 @@ mod tests {
     #[test]
     fn no_extension_is_not_a_tracker_module() {
         assert!(!is_tracker_module(Path::new("no_extension")));
+    }
+
+    #[test]
+    fn sid_extensions_are_recognized_case_insensitively() {
+        for ext in ["sid", "SID", "Psid", "rSiD"] {
+            assert!(is_sid_file(Path::new(&format!("tune.{ext}"))));
+        }
+    }
+
+    #[test]
+    fn other_extensions_are_not_sid_files() {
+        for ext in ["mp3", "mod", "xm"] {
+            assert!(!is_sid_file(Path::new(&format!("tune.{ext}"))));
+        }
+        assert!(!is_sid_file(Path::new("no_extension")));
     }
 
     #[test]
