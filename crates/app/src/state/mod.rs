@@ -57,6 +57,12 @@ pub struct AppState {
     ///
     /// [`View::Settings`]: crate::state::View
     pub settings_tab: SettingsTab,
+    /// Whether closing and reopening the app should restore the last played
+    /// track and position (#190). Mirrored from [`crate::config::Config`] so
+    /// the setting round-trips through [`Config::capture`].
+    ///
+    /// [`Config::capture`]: crate::config::Config::capture
+    pub resume_playback: bool,
     /// Whether the status-bar visualizer strip (#25) is shown at all. Off by
     /// default: an animated strip needs a continuous repaint while playing,
     /// which costs CPU even when the user is not looking at it.
@@ -110,6 +116,7 @@ impl Default for AppState {
             search_popup: SearchPopupState::default(),
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
+            resume_playback: true,
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),

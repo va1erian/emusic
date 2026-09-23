@@ -14,8 +14,8 @@ pub enum SettingsTab {
     Appearance,
     /// Which file types open with emusic (#11).
     Associations,
-    /// Tracker module playback options (interpolation, ramping, emulation,
-    /// ...).
+    /// Playback options: session resume (#190) and tracker module settings
+    /// (interpolation, ramping, emulation, ...).
     Playback,
     /// Version, revision and credits (#188).
     About,
@@ -36,7 +36,7 @@ impl SettingsTab {
             Self::Library => "Library",
             Self::Appearance => "Appearance",
             Self::Associations => "File associations",
-            Self::Playback => "Tracker playback",
+            Self::Playback => "Playback",
             Self::About => "About",
         }
     }

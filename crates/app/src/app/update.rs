@@ -194,7 +194,12 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let current = Config::capture(&self.state, self.player.as_ref());
+        let mut current = Config::capture(&self.state, self.player.as_ref());
+        // The session (#190) is only snapshotted here, not every frame, so
+        // the advancing playback position never dirties the settings.
+        if self.state.resume_playback {
+            current.last_played = crate::config::LastPlayed::capture(self.player.as_ref());
+        }
         self.write_config(current);
     }
 }

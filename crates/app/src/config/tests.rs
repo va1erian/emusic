@@ -4,14 +4,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use eframe::egui::Color32;
 use emusic_player::tracker::{
     Emulation, EndBehavior, Interpolation, Ramping, Surround, TrackerSettings,
 };
 
-use crate::config::{Config, load, save};
-use crate::player_api::RepeatMode;
+use crate::config::{Config, LastPlayed, load, save};
+use crate::mock::MockPlayer;
+use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 /// Unique scratch directory per test, so parallel tests never collide and
@@ -50,6 +52,12 @@ fn non_default_config() -> Config {
         column_browser_visible: false,
         column_browser_height: 222.0,
         last_view: View::MostPlayed,
+        resume_playback: false,
+        last_played: Some(LastPlayed {
+            path: PathBuf::from(r"C:\music\song.flac"),
+            position_secs: 42.5,
+            playing: true,
+        }),
         visualizer_enabled: true,
         visualizer: VisualizerMode::Oscilloscope,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
@@ -123,6 +131,10 @@ fn missing_fields_fall_back_to_defaults() {
         Config::default().column_browser_height
     );
     assert_eq!(config.last_view, View::default());
+    // Resuming is on by default, and an older config has no session to
+    // restore.
+    assert!(config.resume_playback);
+    assert_eq!(config.last_played, None);
     // The visualizer is opt-in, so an older config without the field keeps it
     // off (and thus keeps the app from repainting continuously while playing).
     assert!(!config.visualizer_enabled);
@@ -214,4 +226,79 @@ fn save_creates_missing_directories() {
     assert_eq!(load(&path), Config::default());
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn capture_leaves_the_volatile_session_out_of_the_settings_snapshot() {
+    let mut player = MockPlayer::default();
+    player.restore_track(
+        Path::new(r"C:\music\song.flac"),
+        Duration::from_secs(12),
+        true,
+    );
+
+    let config = Config::capture(&AppState::default(), &player);
+
+    // The session position changes every frame, so it must not take part in
+    // the per-frame dirty check.
+    assert_eq!(config.last_played, None);
+    assert!(config.resume_playback);
+}
+
+#[test]
+fn last_played_capture_reads_the_player() {
+    let mut player = MockPlayer::default();
+    player.restore_track(
+        Path::new(r"C:\music\song.flac"),
+        Duration::from_secs(7),
+        false,
+    );
+
+    let session = LastPlayed::capture(&player).expect("a loaded track is a session");
+
+    assert_eq!(session.path(), Path::new(r"C:\music\song.flac"));
+    assert_eq!(session.position(), Duration::from_secs(7));
+    assert!(!session.playing);
+    // Nothing loaded means nothing to resume.
+    assert_eq!(LastPlayed::capture(&MockPlayer::default()), None);
+}
+
+#[test]
+fn apply_to_player_restores_the_saved_session() {
+    let config = Config {
+        last_played: Some(LastPlayed {
+            path: PathBuf::from(r"C:\music\song.flac"),
+            position_secs: 12.0,
+            playing: true,
+        }),
+        ..Config::default()
+    };
+    let mut player = MockPlayer::default();
+
+    config.apply_to_player(&mut player);
+
+    assert_eq!(player.status(), PlaybackStatus::Playing);
+    assert_eq!(player.position(), Duration::from_secs(12));
+    assert_eq!(
+        player.now_playing().map(|np| np.path.as_str()),
+        Some(r"C:\music\song.flac")
+    );
+}
+
+#[test]
+fn apply_to_player_skips_the_session_when_resuming_is_off() {
+    let config = Config {
+        resume_playback: false,
+        last_played: Some(LastPlayed {
+            path: PathBuf::from(r"C:\music\song.flac"),
+            position_secs: 12.0,
+            playing: true,
+        }),
+        ..Config::default()
+    };
+    let mut player = MockPlayer::default();
+
+    config.apply_to_player(&mut player);
+
+    assert!(player.now_playing().is_none());
 }

@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{TryRecvError, bounded};
 
@@ -35,6 +35,9 @@ impl Player {
         }
         self.listen = ListenAccounting::new();
         self.last_tick = None;
+        // A resume applies only to the open it was set for; dropping the
+        // current track cancels any still-pending one.
+        self.pending_resume = None;
     }
 
     /// Spawns a worker thread to open `path` off the calling (UI) thread —
@@ -90,12 +93,26 @@ impl Player {
                 guard,
             }) => {
                 self.pending_open = None;
+                let resume = self.pending_resume.take();
+                let (position, play) =
+                    resume.map_or((Duration::ZERO, true), |r| (r.position, r.play));
                 if let Err(error) = channel.set_volume(perceptual_to_gain(self.volume)) {
+                    self.emit(PlayerEvent::Error(error));
+                }
+                if position > Duration::ZERO
+                    && let Err(error) = channel.seek(position)
+                {
                     self.emit(PlayerEvent::Error(error));
                 }
                 if let Err(error) = channel.play(false) {
                     self.emit(PlayerEvent::Error(error));
                     return;
+                }
+                // A restored track may have been paused when the app closed;
+                // load it (so its position/duration read back) but hold it
+                // there instead of playing.
+                if !play && let Err(error) = channel.pause() {
+                    self.emit(PlayerEvent::Error(error));
                 }
                 let duration = channel.duration().ok();
                 self.current = Some(CurrentTrack {
@@ -104,12 +121,17 @@ impl Player {
                     path: path.clone(),
                     duration,
                 });
-                self.last_tick = Some(Instant::now());
-                self.set_state(PlaybackState::Playing);
+                self.last_tick = play.then(Instant::now);
+                self.set_state(if play {
+                    PlaybackState::Playing
+                } else {
+                    PlaybackState::Paused
+                });
                 self.emit(PlayerEvent::TrackStarted { path, queue_index });
             }
             Ok(OpenMessage::Failed { path, error }) => {
                 self.pending_open = None;
+                self.pending_resume = None;
                 if self.queue.is_shuffle() {
                     // A scoped shuffle must survive an unreadable file (an
                     // offline NAS, a deleted track): skip it and try the next
@@ -129,7 +151,10 @@ impl Player {
                 }
             }
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => self.pending_open = None,
+            Err(TryRecvError::Disconnected) => {
+                self.pending_open = None;
+                self.pending_resume = None;
+            }
         }
     }
 

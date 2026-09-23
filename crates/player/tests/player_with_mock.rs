@@ -224,6 +224,76 @@ fn replace_and_play_opens_off_thread_and_starts_playing() {
 }
 
 #[test]
+fn replace_and_play_at_resumes_playing_from_the_saved_position() {
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play_at(
+        vec![PathBuf::from("a.mp3")],
+        0,
+        Duration::from_secs(5),
+        true,
+    );
+
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    assert_eq!(player.current_path(), Some(Path::new("a.mp3")));
+    let position = player.position().expect("a loaded track has a position");
+    assert!(
+        position >= Duration::from_secs(5),
+        "should have resumed at 5s, got {position:?}"
+    );
+}
+
+#[test]
+fn replace_and_play_at_can_restore_a_paused_track() {
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play_at(
+        vec![PathBuf::from("a.mp3")],
+        0,
+        Duration::from_secs(5),
+        false,
+    );
+
+    wait_until(&mut player, |p| p.state() == PlaybackState::Paused);
+
+    assert_eq!(player.current_path(), Some(Path::new("a.mp3")));
+    let position = player.position().expect("a loaded track has a position");
+    assert!(
+        position >= Duration::from_secs(5) && position < Duration::from_secs(6),
+        "should have restored the 5s position, got {position:?}"
+    );
+}
+
+#[test]
+fn a_failed_resume_does_not_seek_a_later_track() {
+    let backend = MockBackend::new(Duration::from_secs(30));
+    backend.fail_for("missing.mp3");
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play_at(
+        vec![PathBuf::from("missing.mp3")],
+        0,
+        Duration::from_secs(5),
+        true,
+    );
+
+    // Give the worker time to report the failure and clear the pending
+    // resume.
+    for _ in 0..500 {
+        player.tick();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(player.state(), PlaybackState::Stopped);
+
+    player.replace_and_play(vec![PathBuf::from("good.mp3")], 0);
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+    assert!(
+        player.position().unwrap() < Duration::from_secs(1),
+        "the failed resume must not carry its seek onto the next track"
+    );
+}
+
+#[test]
 fn play_pause_toggles_state_without_reopening() {
     let backend = MockBackend::new(Duration::from_secs(10));
     let mut player = Player::new(Arc::new(backend));

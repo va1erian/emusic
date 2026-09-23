@@ -7,7 +7,8 @@ use emusic_player::tracker::{
 
 use crate::state::{AppState, Command};
 
-/// Settings → Tracker playback tab: edits [`AppState::tracker_settings`] and
+/// Settings → Playback tab's "Tracker modules" section: edits
+/// [`AppState::tracker_settings`] and
 /// pushes [`Command::SetTrackerSettings`] when it changes, so the shell
 /// applies it live to the player and persists it with the rest of the
 /// config.

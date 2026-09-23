@@ -284,6 +284,28 @@ impl PlayerApi for MockPlayer {
             .collect();
     }
 
+    fn restore_track(&mut self, path: &Path, position: Duration, play: bool) {
+        let title = label(path);
+        let path = path.to_string_lossy().into_owned();
+        self.now_playing = Some(NowPlayingInfo {
+            title: title.clone(),
+            artist: String::new(),
+            album: String::new(),
+            path: path.clone(),
+            duration: Duration::ZERO,
+        });
+        self.status = if play {
+            PlaybackStatus::Playing
+        } else {
+            PlaybackStatus::Paused
+        };
+        self.position = position;
+        self.module_info = tracker_module_info(&path, &title, position);
+        self.queue = Vec::new();
+        self.shuffle_scope = None;
+        self.status_message = None;
+    }
+
     fn play_next(&mut self, path: &Path) {
         self.queue.insert(
             0,
