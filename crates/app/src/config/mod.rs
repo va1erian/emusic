@@ -39,6 +39,10 @@ pub struct Config {
     pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
+    /// Whether the status-bar visualizer strip (#25) is shown. Defaults to
+    /// `false` so an idle/playing app never repaints continuously unless the
+    /// user opts in.
+    pub visualizer_enabled: bool,
     /// Visualizer strip mode (#25): spectrum, oscilloscope or off.
     pub visualizer: VisualizerMode,
     /// Library folders to scan at startup, edited in Settings → Library
@@ -59,6 +63,7 @@ impl Default for Config {
             column_browser_visible: true,
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             last_view: View::default(),
+            visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
         }
@@ -80,6 +85,7 @@ impl Config {
             column_browser_visible: state.column_browser.visible,
             column_browser_height: state.column_browser.height,
             last_view: state.view,
+            visualizer_enabled: state.visualizer_enabled,
             visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
         }
@@ -94,6 +100,7 @@ impl Config {
         state.column_browser.visible = self.column_browser_visible;
         state.column_browser.height = self.column_browser_height;
         state.view = self.last_view;
+        state.visualizer_enabled = self.visualizer_enabled;
         state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
     }

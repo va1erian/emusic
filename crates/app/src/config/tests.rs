@@ -47,6 +47,7 @@ fn non_default_config() -> Config {
         column_browser_visible: false,
         column_browser_height: 222.0,
         last_view: View::MostPlayed,
+        visualizer_enabled: true,
         visualizer: VisualizerMode::Oscilloscope,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
     }
@@ -108,6 +109,9 @@ fn missing_fields_fall_back_to_defaults() {
         Config::default().column_browser_height
     );
     assert_eq!(config.last_view, View::default());
+    // The visualizer is opt-in, so an older config without the field keeps it
+    // off (and thus keeps the app from repainting continuously while playing).
+    assert!(!config.visualizer_enabled);
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
 }
