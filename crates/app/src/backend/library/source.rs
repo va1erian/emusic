@@ -10,13 +10,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use emusic_library::index::{Album, Artist, DirNode, LibraryIndex};
+use emusic_library::index::{Album, Artist, DirNode, Genre, LibraryIndex};
 use emusic_library::stats::{PlayRecord, StatsWindow, history_page, most_played};
 use emusic_library::{Folder, Store, Track, TrackId, TrackKind, TrackStats};
 
 use super::stats;
 
-use crate::library_api::{AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo};
+use crate::library_api::{
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, TrackInfo,
+};
 
 /// A complete, UI-ready view of the library at one point in time.
 #[derive(Debug, Default)]
@@ -24,7 +26,7 @@ pub(crate) struct Snapshot {
     pub tracks: Vec<TrackInfo>,
     pub albums: Vec<AlbumInfo>,
     pub artists: Vec<ArtistInfo>,
-    pub genres: Vec<String>,
+    pub genres: Vec<GenreInfo>,
     pub folders: Vec<FolderInfo>,
     pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
@@ -69,7 +71,7 @@ impl Snapshot {
             .iter()
             .map(|artist| artist_to_info(artist, index.albums()))
             .collect();
-        let genres = index.genres().iter().map(|g| g.name.clone()).collect();
+        let genres = index.genres().iter().map(genre_to_info).collect();
         let folders = folders_to_info(folders, &index);
         let dirs = dir_tree_to_info(index.root_dirs());
         let now = unix_now();
@@ -217,6 +219,13 @@ fn artist_to_info(artist: &Artist, albums: &[Album]) -> ArtistInfo {
         name: artist.name.clone(),
         track_count: artist.track_count(),
         album_count,
+    }
+}
+
+fn genre_to_info(genre: &Genre) -> GenreInfo {
+    GenreInfo {
+        name: genre.name.clone(),
+        track_count: genre.track_count(),
     }
 }
 

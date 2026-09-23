@@ -83,6 +83,13 @@ pub struct ArtistInfo {
     pub album_count: usize,
 }
 
+/// A genre with its track count, mirroring [`ArtistInfo`]/[`AlbumInfo`].
+#[derive(Debug, Clone, Default)]
+pub struct GenreInfo {
+    pub name: String,
+    pub track_count: usize,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct FolderInfo {
     pub path: String,
@@ -131,7 +138,7 @@ pub trait LibraryDataSource {
     fn tracks(&self) -> &[TrackInfo];
     fn albums(&self) -> &[AlbumInfo];
     fn artists(&self) -> &[ArtistInfo];
-    fn genres(&self) -> &[String];
+    fn genres(&self) -> &[GenreInfo];
     fn folders(&self) -> &[FolderInfo];
     /// Root nodes of the library's directory tree (Folders view, #18).
     fn dir_tree(&self) -> &[DirNodeInfo];

@@ -136,7 +136,7 @@ mod tests {
         fn artists(&self) -> &[crate::library_api::ArtistInfo] {
             &[]
         }
-        fn genres(&self) -> &[String] {
+        fn genres(&self) -> &[crate::library_api::GenreInfo] {
             &[]
         }
         fn folders(&self) -> &[crate::library_api::FolderInfo] {
