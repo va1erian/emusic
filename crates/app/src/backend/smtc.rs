@@ -11,9 +11,10 @@
 //! with a logged warning when SMTC cannot be initialised (no window handle,
 //! no COM/WinRT, ...), so playback never depends on the OS integration.
 
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use souvlaki::{
@@ -34,9 +35,14 @@ pub struct Smtc {
     /// frame by [`Smtc::sync`]. The handler runs on a WinRT callback thread,
     /// hence the channel instead of shared state.
     events: Option<Receiver<MediaControlEvent>>,
-    /// Path whose metadata is currently on the overlay, to skip redundant
-    /// `set_metadata` calls.
-    published_path: Option<String>,
+    /// Cover-art lookup for the current track, resolved off the UI thread so
+    /// a slow or network path can never stall a frame (see [`CoverLookup`]).
+    cover: CoverLookup,
+    /// Metadata currently on the overlay: the track path plus the cover URL
+    /// published with it. `None` means no track metadata is published. Used
+    /// to skip redundant `set_metadata` calls, including the second publish
+    /// once the async cover lookup finishes.
+    published_metadata: Option<(String, Option<String>)>,
     /// Last published `(status, whole-second position, whole-second
     /// duration)`, so the overlay's scrubber updates about once a second
     /// instead of every frame.
@@ -79,7 +85,8 @@ impl Smtc {
         Self {
             controls: Some(controls),
             events: Some(rx),
-            published_path: None,
+            cover: CoverLookup::default(),
+            published_metadata: None,
             published_playback: None,
         }
     }
@@ -93,7 +100,8 @@ impl Smtc {
         Self {
             controls: None,
             events: None,
-            published_path: None,
+            cover: CoverLookup::default(),
+            published_metadata: None,
             published_playback: None,
         }
     }
@@ -125,28 +133,41 @@ impl Smtc {
     }
 
     fn publish(&mut self, player: &dyn PlayerApi, library: &dyn LibraryDataSource) {
-        let Some(controls) = self.controls.as_mut() else {
+        if self.controls.is_none() {
             return;
-        };
+        }
+
+        // Never resolve a cover inline: `cover_url` can do several network
+        // round-trips plus a `lofty` read and image decode. It runs on a
+        // worker thread instead, and its result lands in `self.cover`.
+        self.cover.drain();
 
         let now_playing = player.now_playing();
         let path = now_playing.map(|info| info.path.clone());
-        if path != self.published_path {
+        if let Some(path) = &path {
+            self.cover.request(path);
+        }
+        let desired = path.map(|path| {
+            let cover = self.cover.url(&path);
+            (path, cover)
+        });
+
+        if self.published_metadata != desired {
             let track = now_playing.and_then(|info| library.track_by_path(&info.path));
             let meta = metadata(now_playing, track);
-            let cover = now_playing
-                .map(|info| Path::new(&info.path))
-                .and_then(cover_url);
-            if let Err(err) = controls.set_metadata(MediaMetadata {
-                title: meta.title.as_deref(),
-                artist: meta.artist.as_deref(),
-                album: meta.album.as_deref(),
-                cover_url: cover.as_deref(),
-                duration: meta.duration,
-            }) {
+            let cover = desired.as_ref().and_then(|(_, url)| url.as_deref());
+            if let Some(controls) = self.controls.as_mut()
+                && let Err(err) = controls.set_metadata(MediaMetadata {
+                    title: meta.title.as_deref(),
+                    artist: meta.artist.as_deref(),
+                    album: meta.album.as_deref(),
+                    cover_url: cover,
+                    duration: meta.duration,
+                })
+            {
                 warn!(%err, "could not update SMTC metadata");
             }
-            self.published_path = path;
+            self.published_metadata = desired;
         }
 
         let status = player.status();
@@ -166,7 +187,9 @@ impl Smtc {
                 },
                 PlaybackStatus::Stopped => MediaPlayback::Stopped,
             };
-            if let Err(err) = controls.set_playback(playback) {
+            if let Some(controls) = self.controls.as_mut()
+                && let Err(err) = controls.set_playback(playback)
+            {
                 warn!(%err, "could not update SMTC playback state");
             }
             self.published_playback = Some(playback_key);
@@ -235,6 +258,76 @@ fn transport_command(event: MediaControlEvent, player: &dyn PlayerApi) -> Option
     }
 }
 
+/// A finished cover lookup: the track path it was for, and its `file://` URL
+/// (`None` when no cover was found).
+struct CoverResult {
+    path: String,
+    url: Option<String>,
+}
+
+/// Off-UI-thread cover lookup for the OS overlay.
+///
+/// Resolving a cover can hit the network (sibling-image probes plus a full
+/// `lofty` read and image decode when there is no folder image), so each path
+/// is looked up on a worker thread and the result is cached here.
+/// [`CoverLookup::request`] starts at most one lookup per path and never
+/// blocks; [`CoverLookup::drain`] collects finished lookups once per frame.
+#[derive(Default)]
+struct CoverLookup {
+    /// Resolved covers by path; an entry with `None` means the lookup ran and
+    /// found no cover.
+    cache: HashMap<String, Option<String>>,
+    /// Paths with a lookup currently in flight.
+    loading: HashSet<String>,
+    tx: Option<Sender<CoverResult>>,
+    rx: Option<Receiver<CoverResult>>,
+}
+
+impl CoverLookup {
+    /// The resolved `file://` cover URL for `path`, if the lookup has
+    /// finished and found one. Also `None` while a lookup is in flight.
+    fn url(&self, path: &str) -> Option<String> {
+        self.cache.get(path).and_then(|url| url.clone())
+    }
+
+    /// Starts a lookup for `path` on a worker thread, unless one is already
+    /// in flight or already cached.
+    fn request(&mut self, path: &str) {
+        if self.cache.contains_key(path) || !self.loading.insert(path.to_string()) {
+            return;
+        }
+        let tx = self.sender();
+        let key = path.to_string();
+        let path = PathBuf::from(path);
+        std::thread::spawn(move || {
+            let url = cover_url(&path);
+            let _ = tx.send(CoverResult { path: key, url });
+        });
+    }
+
+    /// Collects finished lookups so [`CoverLookup::url`] can return them.
+    fn drain(&mut self) {
+        let Some(rx) = self.rx.as_ref() else {
+            return;
+        };
+        while let Ok(result) = rx.try_recv() {
+            self.loading.remove(&result.path);
+            self.cache.insert(result.path, result.url);
+        }
+    }
+
+    /// The result channel's sender, creating the channel on first use.
+    fn sender(&mut self) -> Sender<CoverResult> {
+        if let Some(tx) = &self.tx {
+            return tx.clone();
+        }
+        let (tx, rx) = mpsc::channel();
+        self.tx = Some(tx.clone());
+        self.rx = Some(rx);
+        tx
+    }
+}
+
 /// `file://` URL for the current track's cover, the form Windows SMTC wants.
 fn cover_url(path: &Path) -> Option<String> {
     let file = cover_file(path)?;
@@ -283,49 +376,4 @@ fn hash(value: &str) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn player_info(title: &str, artist: &str, album: &str) -> NowPlayingInfo {
-        NowPlayingInfo {
-            title: title.to_string(),
-            artist: artist.to_string(),
-            album: album.to_string(),
-            path: "C:\\music\\song.mp3".to_string(),
-            duration: Duration::from_secs(180),
-        }
-    }
-
-    #[test]
-    fn library_tags_win_over_player_labels() {
-        let player = player_info("song", "", "");
-        let track = TrackInfo {
-            title: "Real Title".to_string(),
-            artist: "Real Artist".to_string(),
-            album: "Real Album".to_string(),
-            duration: Duration::from_secs(200),
-            ..TrackInfo::default()
-        };
-        let meta = metadata(Some(&player), Some(&track));
-        assert_eq!(meta.title.as_deref(), Some("Real Title"));
-        assert_eq!(meta.artist.as_deref(), Some("Real Artist"));
-        assert_eq!(meta.album.as_deref(), Some("Real Album"));
-        assert_eq!(meta.duration, Some(Duration::from_secs(180)));
-    }
-
-    #[test]
-    fn missing_tags_fall_back_to_player_labels() {
-        let player = player_info("song", "unknown", "");
-        let meta = metadata(Some(&player), None);
-        assert_eq!(meta.title.as_deref(), Some("song"));
-        assert_eq!(meta.artist.as_deref(), Some("unknown"));
-        assert_eq!(meta.album, None);
-    }
-
-    #[test]
-    fn nothing_playing_blanks_the_title() {
-        let meta = metadata(None, None);
-        assert_eq!(meta.title.as_deref(), Some(""));
-        assert_eq!(meta.artist, None);
-    }
-}
+mod tests;
