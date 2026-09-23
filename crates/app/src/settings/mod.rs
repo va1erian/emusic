@@ -4,6 +4,7 @@
 //! [`library`] for library folders, #19, [`folder_picker`] for the
 //! non-blocking native folder dialog, #69).
 
+pub mod about;
 pub mod associations;
 pub mod folder_picker;
 pub mod library;

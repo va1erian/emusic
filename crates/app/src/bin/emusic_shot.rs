@@ -124,7 +124,7 @@ fn parse_visualizer(s: &str) -> Result<VisualizerMode, String> {
 
 fn parse_settings_tab(s: &str) -> Result<SettingsTab, String> {
     SettingsTab::from_slug(s).ok_or_else(|| {
-        format!("invalid settings tab {s:?}: expected library, appearance or associations")
+        format!("invalid settings tab {s:?}: expected library, appearance, associations, playback or about")
     })
 }
 
