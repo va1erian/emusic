@@ -33,6 +33,8 @@ pub const MIN_TILE_SIZE: f32 = 96.0;
 /// Maximum cover edge length selected with the size slider.
 pub const MAX_TILE_SIZE: f32 = 256.0;
 const DEFAULT_TILE_SIZE: f32 = 148.0;
+/// Smallest height the cover grid is given, whatever space is left.
+const MIN_GRID_HEIGHT: f32 = 160.0;
 
 /// Order the album grid is sorted by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -144,9 +146,13 @@ pub fn show(
     ui.separator();
 
     let selected_tracks = selected_album(grid, &albums).map(|album| album_tracks(library, album));
+    // The central view wraps this in a scroll area, so `available_height` is
+    // unbounded; the visible height is what is left of the clip rect. Without
+    // a bound the grid would lay out (and load covers for) every tile.
+    let visible_height = (ui.clip_rect().bottom() - ui.cursor().top()).max(MIN_GRID_HEIGHT);
     match selected_tracks {
         Some(tracks) => {
-            let grid_height = (ui.available_height() * 0.45).clamp(160.0, 360.0);
+            let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
             ui.allocate_ui(egui::vec2(ui.available_width(), grid_height), |ui| {
                 grid_view(ui, grid, &albums, &meta, library, &mut commands);
             });
@@ -157,7 +163,11 @@ pub fn show(
                 commands.push(track_command(action));
             }
         }
-        None => grid_view(ui, grid, &albums, &meta, library, &mut commands),
+        None => {
+            ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
+                grid_view(ui, grid, &albums, &meta, library, &mut commands);
+            });
+        }
     }
 
     state.pending.append(&mut commands);
@@ -214,11 +224,15 @@ fn grid_view(
 
     let spacing = ui.spacing().item_spacing.x;
     let tile = grid.tile_size;
-    let columns = (((ui.available_width() + spacing) / (tile + spacing)).floor() as usize).max(1);
+    // Reserve the vertical scroll bar's width, or the last column of each row
+    // overflows the scroll area and triggers a horizontal scroll bar.
+    let width = ui.available_width() - ui.spacing().scroll.allocated_width();
+    let columns = (((width + spacing) / (tile + spacing)).floor() as usize).max(1);
     let rows = albums.len().div_ceil(columns);
 
     egui::ScrollArea::vertical()
         .id_salt("album_grid_scroll")
+        .auto_shrink([false, false])
         .show_rows(ui, tile + tile::CAPTION_HEIGHT, rows, |ui, row_range| {
             for row in row_range {
                 ui.horizontal(|ui| {

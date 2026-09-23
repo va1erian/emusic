@@ -92,6 +92,11 @@ pub(super) fn belongs_to(track: &TrackInfo, album: &AlbumInfo) -> bool {
     track.album == album.name && (track.artist == album.artist || track.artist.is_empty())
 }
 
+/// Case-insensitive comparison that lowercases lazily instead of allocating,
+/// since it runs O(n log n) times per sort (every frame).
 fn ci_cmp(a: &str, b: &str) -> Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase())
+    fn lower(s: &str) -> impl Iterator<Item = char> + '_ {
+        s.chars().flat_map(char::to_lowercase)
+    }
+    lower(a).cmp(lower(b))
 }

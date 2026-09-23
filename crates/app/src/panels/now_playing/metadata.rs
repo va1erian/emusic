@@ -4,7 +4,8 @@ use eframe::egui;
 
 use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::NowPlayingInfo;
-use crate::state::AppState;
+use crate::state::{AppState, Command};
+use crate::views::track_table::columns;
 
 use super::links;
 
@@ -18,7 +19,12 @@ pub fn show(
     library: &dyn LibraryDataSource,
     state: &mut AppState,
 ) {
-    ui.heading(&np.title);
+    ui.horizontal(|ui| {
+        if columns::star_cell(ui, track) {
+            state.push(Command::ToggleStarred(track.id));
+        }
+        ui.add(egui::Label::new(egui::RichText::new(&np.title).heading()).truncate());
+    });
     links::artist(ui, state, &np.artist, 15.0);
     album_line(ui, state, track, library);
 
@@ -115,17 +121,24 @@ fn metadata_details(track: &TrackInfo) -> String {
     parts.join("  ·  ")
 }
 
-/// The path link plus the "Properties" link that opens the track dialog.
+/// The path link, then the "Properties" and "Edit tags" links.
 fn footer(ui: &mut egui::Ui, state: &mut AppState, track: &TrackInfo) {
-    ui.horizontal_wrapped(|ui| {
-        path_row(ui, &track.path);
-        ui.label(egui::RichText::new("·").weak());
+    path_row(ui, &track.path);
+    ui.horizontal(|ui| {
         if links::link(
             ui,
             egui::RichText::new("Properties…").small(),
             "Show all track properties",
         ) {
             state.now_playing.properties = Some(track.clone());
+        }
+        ui.label(egui::RichText::new("·").weak());
+        if links::link(
+            ui,
+            egui::RichText::new("Edit tags…").small(),
+            "Edit this track's tags",
+        ) {
+            state.push(Command::OpenTagEditor(track.id));
         }
     });
 }
