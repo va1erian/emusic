@@ -196,6 +196,7 @@ impl PlayerApi for UnavailablePlayer {
     fn queue_jump(&mut self, _index: usize) {}
     fn queue_remove(&mut self, _index: usize) {}
     fn replace_and_play(&mut self, _paths: &[PathBuf], _start_index: usize) {}
+    fn restore_track(&mut self, _path: &Path, _position: std::time::Duration, _play: bool) {}
     fn play_shuffled(&mut self, _paths: &[PathBuf], _label: &str) {}
     fn play_next(&mut self, _path: &Path) {}
     fn enqueue(&mut self, _path: &Path) {}

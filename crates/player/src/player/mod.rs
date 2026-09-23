@@ -40,6 +40,15 @@ struct CurrentTrack {
     duration: Option<Duration>,
 }
 
+/// A position (and play/pause intent) to apply to the next track that
+/// finishes opening. Set by [`Player::replace_and_play_at`] so a restored
+/// session resumes at the saved spot instead of the start.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PendingResume {
+    pub position: Duration,
+    pub play: bool,
+}
+
 /// Result of an in-flight, off-UI-thread `AudioBackend::open` call.
 enum OpenMessage {
     Ready {
@@ -76,6 +85,9 @@ pub struct Player {
     volume: f32,
     current: Option<CurrentTrack>,
     pending_open: Option<Receiver<OpenMessage>>,
+    /// Set by [`Player::replace_and_play_at`] and consumed once that open
+    /// completes, to seek to a saved position and decide whether to play.
+    pending_resume: Option<PendingResume>,
     end_tx: Sender<()>,
     end_rx: Receiver<()>,
     events_tx: Sender<PlayerEvent>,
@@ -100,6 +112,7 @@ impl Player {
             volume: 1.0,
             current: None,
             pending_open: None,
+            pending_resume: None,
             end_tx,
             end_rx,
             events_tx,
@@ -205,6 +218,28 @@ impl Player {
         self.shuffle_scope = None;
         let path = self.queue.replace(items, start_index);
         self.emit(PlayerEvent::QueueChanged);
+        self.open_current_or_stop(path);
+    }
+
+    /// Like [`Player::replace_and_play`], but positions the opened track at
+    /// `position` and, when `play` is `false`, leaves it loaded and paused
+    /// rather than playing. Used to reopen the previous session on startup.
+    ///
+    /// The seek and play/pause intent are applied when the off-thread open
+    /// completes (see [`Player::process_pending_open`]); a failed open drops
+    /// them, so they never leak onto a later track.
+    pub fn replace_and_play_at(
+        &mut self,
+        items: Vec<PathBuf>,
+        start_index: usize,
+        position: Duration,
+        play: bool,
+    ) {
+        self.drop_current_and_account();
+        self.shuffle_scope = None;
+        let path = self.queue.replace(items, start_index);
+        self.emit(PlayerEvent::QueueChanged);
+        self.pending_resume = Some(PendingResume { position, play });
         self.open_current_or_stop(path);
     }
 

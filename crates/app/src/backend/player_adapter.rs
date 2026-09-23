@@ -312,6 +312,12 @@ impl PlayerApi for PlayerAdapter {
         self.player.replace_and_play(paths.to_vec(), start_index);
     }
 
+    fn restore_track(&mut self, path: &Path, position: Duration, play: bool) {
+        self.status_message = None;
+        self.player
+            .replace_and_play_at(vec![path.to_path_buf()], 0, position, play);
+    }
+
     fn play_shuffled(&mut self, paths: &[PathBuf], label: &str) {
         self.status_message = None;
         self.player.play_shuffled(paths.to_vec(), label);

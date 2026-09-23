@@ -6,15 +6,61 @@ mod io;
 #[cfg(test)]
 mod tests;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
-use crate::player_api::{PlayerApi, RepeatMode};
+use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 pub use io::{ConfigError, config_path, load, save};
+
+/// The playback session as it was when the app last closed (#190): the
+/// track that was loaded, how far into it playback had got, and whether it
+/// was playing. Written on exit only, so it never takes part in the
+/// debounced settings save (see [`Config::capture`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LastPlayed {
+    /// Full path to the loaded track. Defaults to empty (and is then
+    /// ignored) if a hand-edited config drops the field.
+    #[serde(default)]
+    pub path: PathBuf,
+    /// Playback position, in seconds.
+    #[serde(default)]
+    pub position_secs: f64,
+    /// Whether the track was playing (vs. paused/stopped) at exit.
+    #[serde(default)]
+    pub playing: bool,
+}
+
+impl LastPlayed {
+    /// Snapshots the player's current session, or `None` when no track is
+    /// loaded (nothing to resume).
+    pub fn capture(player: &dyn PlayerApi) -> Option<Self> {
+        let now = player.now_playing()?;
+        if now.path.is_empty() {
+            return None;
+        }
+        Some(Self {
+            path: PathBuf::from(&now.path),
+            position_secs: player.position().as_secs_f64(),
+            playing: player.status() == PlaybackStatus::Playing,
+        })
+    }
+
+    /// The saved position as a [`Duration`], clamped away from negative
+    /// values (a hand-edited config could contain one).
+    pub fn position(&self) -> Duration {
+        Duration::from_secs_f64(self.position_secs.max(0.0))
+    }
+
+    /// The track path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 /// Everything persisted across runs. Unknown fields in the file are
 /// ignored and missing ones fall back to [`Config::default`], so configs
@@ -40,6 +86,13 @@ pub struct Config {
     pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
+    /// Reopen the last played track where it left off on startup (#190).
+    /// On by default; turn it off to always start with an empty player.
+    pub resume_playback: bool,
+    /// The playback session captured when the app last closed (#190), if
+    /// resuming is enabled. Restored on startup by [`Self::apply_to_player`].
+    #[serde(default)]
+    pub last_played: Option<LastPlayed>,
     /// Whether the status-bar visualizer strip (#25) is shown. Defaults to
     /// `false` so an idle/playing app never repaints continuously unless the
     /// user opts in.
@@ -67,6 +120,8 @@ impl Default for Config {
             column_browser_visible: true,
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             last_view: View::default(),
+            resume_playback: true,
+            last_played: None,
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
@@ -79,6 +134,11 @@ impl Config {
     /// Snapshots the settings worth persisting from the live app state and
     /// player. Everything here round-trips through [`Self::apply_to_state`]
     /// / [`Self::apply_to_player`], so saving is lossless for these fields.
+    ///
+    /// The [`Self::last_played`] session is deliberately left `None`: its
+    /// position changes every frame while playing, so including it would
+    /// make the settings compare dirty continuously and rewrite the file
+    /// every debounce interval. It is captured separately, on exit.
     pub fn capture(state: &AppState, player: &dyn PlayerApi) -> Self {
         Self {
             volume: player.volume(),
@@ -90,6 +150,8 @@ impl Config {
             column_browser_visible: state.column_browser.visible,
             column_browser_height: state.column_browser.height,
             last_view: state.view,
+            resume_playback: state.resume_playback,
+            last_played: None,
             visualizer_enabled: state.visualizer_enabled,
             visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
@@ -106,6 +168,7 @@ impl Config {
         state.column_browser.visible = self.column_browser_visible;
         state.column_browser.height = self.column_browser_height;
         state.view = self.last_view;
+        state.resume_playback = self.resume_playback;
         state.visualizer_enabled = self.visualizer_enabled;
         state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
@@ -113,11 +176,17 @@ impl Config {
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker
-    /// settings).
+    /// settings) and, when resuming is enabled, the last session (#190).
     pub fn apply_to_player(&self, player: &mut dyn PlayerApi) {
         player.set_volume(self.volume);
         player.set_repeat_mode(self.repeat_mode);
         player.set_shuffle(self.shuffle);
         player.set_tracker_settings(&self.tracker_settings);
+        if self.resume_playback
+            && let Some(session) = &self.last_played
+            && !session.path().as_os_str().is_empty()
+        {
+            player.restore_track(session.path(), session.position(), session.playing);
+        }
     }
 }

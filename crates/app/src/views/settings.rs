@@ -1,6 +1,7 @@
-//! "Settings" view: a tab strip over three independent sub-pages — Library
+//! "Settings" view: a tab strip over independent sub-pages — Library
 //! folders (#19), Appearance (theme toggle, accent colour presets and a
-//! custom picker, #40) and File associations (#11).
+//! custom picker, #40), File associations (#11), Playback (session resume,
+//! #190, plus tracker module settings) and About (#188).
 //!
 //! Tabs (#137) keep each concern from pushing the others off-screen: the
 //! Library tab's folder list scrolls within its own bounded area, so a
@@ -24,7 +25,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             SettingsTab::Library => crate::settings::library::show(ui, state),
             SettingsTab::Appearance => appearance(ui, state),
             SettingsTab::Associations => crate::settings::associations::show(ui),
-            SettingsTab::Playback => crate::settings::tracker::show(ui, state),
+            SettingsTab::Playback => playback(ui, state),
             SettingsTab::About => crate::settings::about::show(ui),
         },
     );
@@ -71,6 +72,21 @@ fn visualizer(ui: &mut egui::Ui, state: &mut AppState) {
             }
         });
     }
+}
+
+/// Playback tab: session resume (#190) followed by the tracker module
+/// options.
+fn playback(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.checkbox(&mut state.resume_playback, "Resume playback on startup")
+        .on_hover_text(
+            "Reopen the last played track where you left off. \
+             Turn this off to always start with an empty player.",
+        );
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Tracker modules").weak());
+    crate::settings::tracker::show(ui, state);
 }
 
 /// One filled button per preset; the active preset gets a strong border.

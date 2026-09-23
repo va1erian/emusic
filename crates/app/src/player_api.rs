@@ -149,6 +149,14 @@ pub trait PlayerApi {
     /// way.
     fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize);
 
+    /// Loads `path` at `position` and either starts playing it or leaves it
+    /// paused, without disturbing the queue beyond a single-item one.
+    ///
+    /// Used to reopen the previous session on startup (#190): the seek is
+    /// applied once the (off-thread) open completes, and a path that can no
+    /// longer be opened is simply ignored.
+    fn restore_track(&mut self, path: &Path, position: Duration, play: bool);
+
     /// Starts a lazy shuffled playback over `paths`, showing `label` as the
     /// active scope (e.g. `"Album — Purple Motion"`). The player pulls tracks
     /// from the scope on demand and skips unreadable ones instead of

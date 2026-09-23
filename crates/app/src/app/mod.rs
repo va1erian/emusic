@@ -107,7 +107,7 @@ impl App {
         cc: &eframe::CreationContext<'_>,
         mut library: Box<dyn LibraryDataSource>,
         mut player: Box<dyn PlayerApi>,
-        config: Config,
+        mut config: Config,
         config_path: Option<PathBuf>,
     ) -> Self {
         fonts::install(&cc.egui_ctx);
@@ -117,6 +117,11 @@ impl App {
         theme::apply(&cc.egui_ctx, state.theme, state.accent.color());
         config.apply_to_player(player.as_mut());
         library.set_folders(&config.library_folders);
+        // The session was just applied to the player; drop it from the
+        // baseline so the per-frame settings compare doesn't treat the
+        // (now-consumed) session as a pending change. It is written again on
+        // exit (#190).
+        config.last_played = None;
         Self {
             state,
             library,
