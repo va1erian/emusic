@@ -21,12 +21,19 @@ pub struct TrackInfo {
     pub id: u64,
     pub title: String,
     pub artist: String,
+    /// Tagged album artist, used for grouping compilations; empty when the
+    /// tag is absent (the Properties dialog then shows nothing for it).
+    pub album_artist: String,
     pub album: String,
     pub genre: String,
     pub track_no: Option<u32>,
     /// Release year, when known (usually inherited from the album).
     pub year: Option<u32>,
     pub disc_no: Option<u32>,
+    /// Tagged composer, empty when absent.
+    pub composer: String,
+    /// Free-form tagged comment, empty when absent.
+    pub comment: String,
     pub duration: Duration,
     pub path: String,
     /// e.g. "mp3", "flac", "xm", "it" ...

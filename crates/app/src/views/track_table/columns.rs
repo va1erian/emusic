@@ -148,36 +148,72 @@ pub fn show_cell(ui: &mut egui::Ui, id: ColumnId, track: &TrackInfo, is_playing:
                 if is_playing {
                     playing_marker(ui);
                 }
-                ui.add(egui::Label::new(tint(title_text(track))).truncate());
+                ui.add(
+                    egui::Label::new(tint(title_text(track)))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Artist => {
-                ui.add(egui::Label::new(tint(artist_text(track))).truncate());
+                ui.add(
+                    egui::Label::new(tint(artist_text(track)))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Album => {
-                ui.add(egui::Label::new(tint(&track.album)).truncate());
+                ui.add(
+                    egui::Label::new(tint(&track.album))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Year => {
                 let text = track.year.map(|y| y.to_string()).unwrap_or_default();
-                ui.add(egui::Label::new(weak_tint(text)).truncate());
+                ui.add(
+                    egui::Label::new(weak_tint(text))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Genre => {
-                ui.add(egui::Label::new(tint(&track.genre)).truncate());
+                ui.add(
+                    egui::Label::new(tint(&track.genre))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Time => {
-                ui.add(egui::Label::new(tint(&format_duration(track.duration))).truncate());
+                ui.add(
+                    egui::Label::new(tint(&format_duration(track.duration)))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Format => {
-                ui.add(egui::Label::new(weak_tint(track.format.clone())).truncate());
+                ui.add(
+                    egui::Label::new(weak_tint(track.format.clone()))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::Plays => {
-                ui.add(egui::Label::new(tint(&track.play_count.to_string())).truncate());
+                ui.add(
+                    egui::Label::new(tint(&track.play_count.to_string()))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::LastPlayed => {
                 let text = track
                     .last_played_minutes_ago
                     .map(format_minutes_ago)
                     .unwrap_or_default();
-                ui.add(egui::Label::new(weak_tint(text)).truncate());
+                ui.add(
+                    egui::Label::new(weak_tint(text))
+                        .truncate()
+                        .selectable(false),
+                );
             }
             ColumnId::File => {
                 ui.add(

@@ -39,6 +39,19 @@ const GENRES: &[&str] = &[
 const FORMATS: &[&str] = &["mp3", "flac", "ogg", "m4a", "wav", "xm", "it", "mod", "s3m"];
 const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
 
+/// Fake free-form comments shown in the Properties dialog. Picked by track
+/// id rather than the generator's RNG, so adding them doesn't shift the
+/// seeded sequence that every other mock value (and the snapshot tests)
+/// depends on.
+const COMMENTS: &[&str] = &[
+    "Ripped from CD",
+    "Remastered 2024",
+    "Demo recording",
+    "Live bootleg",
+    "Bonus track",
+    "Personal favourite",
+];
+
 /// Name fragments used to build pronounceable-ish fake artist/album/track
 /// names, including some unicode/CJK entries so text-rendering and font
 /// fallback get exercised.
@@ -154,11 +167,26 @@ pub fn generate() -> GeneratedLibrary {
             } else {
                 album.artist.clone()
             },
+            album_artist: if missing_tags {
+                String::new()
+            } else {
+                album.artist.clone()
+            },
             album: album.name.clone(),
             genre: genres.choose(&mut rng).unwrap().clone(),
             track_no: (!missing_tags).then(|| rng.gen_range(1..=18)),
             year: album.year,
             disc_no: (!missing_tags && rng.gen_bool(0.15)).then(|| rng.gen_range(1..=2)),
+            composer: if missing_tags || is_tracker {
+                String::new()
+            } else {
+                album.artist.clone()
+            },
+            comment: if missing_tags {
+                String::new()
+            } else {
+                COMMENTS[id as usize % COMMENTS.len()].to_string()
+            },
             duration: Duration::from_secs(rng.gen_range(45..=420)),
             path: format!("{folder}/{:03}.{format}", id % 1000),
             format: format.to_string(),

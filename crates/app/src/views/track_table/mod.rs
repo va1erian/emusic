@@ -11,10 +11,12 @@
 //! `app::apply_player_command`. `TrackAction::Play` carries the table's
 //! current visible/sorted order alongside the clicked id (#134), so the
 //! resulting command can replace the queue with the whole list rather than
-//! just the one track.
+//! just the one track. The context menu's Copy path / Open file location /
+//! Properties are handled directly by the table (#136).
 
 pub(crate) mod columns;
 mod context_menu;
+mod properties;
 mod selection;
 mod sort;
 
@@ -35,6 +37,10 @@ use crate::library_api::TrackInfo;
 pub struct TrackTableState {
     pub sort: SortState,
     pub selection: selection::SelectionState,
+    /// The track whose Properties dialog is open, if any. Owned here (rather
+    /// than by the shell) so each embedding table gets its own dialog; the
+    /// dialog is rendered by [`show`] itself.
+    pub properties: Option<TrackInfo>,
 }
 
 /// A playback action requested from a row this frame (double-click, Enter,
@@ -143,7 +149,7 @@ pub fn show(
     builder
         .header(HEADER_HEIGHT, |mut header| {
             header.col(|ui| {
-                ui.add(egui::Label::new(egui::RichText::new("#").weak()));
+                ui.add(egui::Label::new(egui::RichText::new("#").weak()).selectable(false));
             });
             header.col(|ui| header_cell(ui, &mut state.sort, &TITLE_COLUMN));
             for col in columns::COLUMNS {
@@ -158,9 +164,10 @@ pub fn show(
                 row.set_selected(state.selection.is_selected(track.id));
 
                 row.col(|ui| {
-                    ui.add(egui::Label::new(
-                        egui::RichText::new((pos + 1).to_string()).weak(),
-                    ));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new((pos + 1).to_string()).weak())
+                            .selectable(false),
+                    );
                 });
                 row.col(|ui| columns::show_cell(ui, columns::ColumnId::Title, track, is_playing));
                 for col in columns::COLUMNS {
@@ -182,17 +189,24 @@ pub fn show(
                     });
                 }
                 if let Some(context_action) = context_menu::show(&response, track) {
-                    action = Some(match context_action {
-                        ContextAction::Play => TrackAction::Play {
-                            id: track.id,
-                            context: order_ids.clone(),
-                        },
-                        ContextAction::PlayNext => TrackAction::PlayNext(track.id),
-                        ContextAction::AddToQueue => TrackAction::AddToQueue(track.id),
-                    });
+                    match context_action {
+                        ContextAction::Play => {
+                            action = Some(TrackAction::Play {
+                                id: track.id,
+                                context: order_ids.clone(),
+                            });
+                        }
+                        ContextAction::PlayNext => action = Some(TrackAction::PlayNext(track.id)),
+                        ContextAction::AddToQueue => {
+                            action = Some(TrackAction::AddToQueue(track.id));
+                        }
+                        ContextAction::Properties => state.properties = Some(track.clone()),
+                    }
                 }
             });
         });
+
+    properties::show(ui.ctx(), &mut state.properties);
 
     action
 }
