@@ -76,6 +76,12 @@ fn run_ui(
         options.event_loop_builder = Some(Box::new(move |builder| {
             use winit::platform::windows::EventLoopBuilderExtWindows as _;
 
+            // Register the shell's `TaskbarButtonCreated` message before the
+            // window exists, so the hook below recognises it even if the
+            // taskbar announces the button while the window is being created.
+            // The buttons are added by `ThumbBar::sync` once the hook wakes
+            // the app.
+            winshell::thumbbar::taskbar_button_created_message();
             let wake = repaint_hook.waker();
             builder.with_msg_hook(move |msg| {
                 let claimed = winshell::thumbbar::msg_hook(msg);

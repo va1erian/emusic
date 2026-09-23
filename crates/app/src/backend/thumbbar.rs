@@ -7,6 +7,12 @@
 //! instead of repeating the transport logic. The play-pause button's glyph
 //! and tooltip follow the player's state.
 //!
+//! The buttons are only added once the shell announces the taskbar button via
+//! `TaskbarButtonCreated` (see [`winshell::thumbbar::take_buttons_requested`],
+//! filled by the message hook in `main.rs`): adding them at startup silently
+//! does nothing. The same announcement re-arrives after an `explorer.exe`
+//! restart, at which point the buttons are added again.
+//!
 //! Like SMTC, creation degrades to a no-op with a logged warning when the
 //! shell object cannot be built (no window yet, Explorer not running, ...),
 //! so playback never depends on the taskbar integration.
@@ -30,7 +36,8 @@ pub struct ThumbBar {
 }
 
 impl ThumbBar {
-    /// Creates the taskbar buttons for `hwnd`.
+    /// Creates the shell object for `hwnd`; the buttons appear later, when
+    /// the shell announces the taskbar button (see [`ThumbBar::sync`]).
     ///
     /// A missing window handle disables the integration (logged) rather than
     /// panicking, mirroring [`crate::backend::smtc::Smtc::new`].
@@ -39,13 +46,10 @@ impl ThumbBar {
             return Self::disabled("no window handle");
         };
         match winshell::thumbbar::ThumbBar::new(hwnd as isize) {
-            Ok(inner) => {
-                info!("taskbar thumbnail toolbar active");
-                Self {
-                    inner: Some(inner),
-                    playing: false,
-                }
-            }
+            Ok(inner) => Self {
+                inner: Some(inner),
+                playing: false,
+            },
             Err(err) => Self::disabled(&err.to_string()),
         }
     }
@@ -59,12 +63,25 @@ impl ThumbBar {
         }
     }
 
-    /// Runs once per frame: turns queued button presses into [`Command`]s,
-    /// then mirrors the player's play/pause state onto the button.
+    /// Runs once per frame: adds the buttons when the shell announces the
+    /// taskbar button, turns queued button presses into [`Command`]s, then
+    /// mirrors the player's play/pause state onto the button.
     pub fn sync(&mut self, player: &dyn PlayerApi, state: &mut AppState) {
         let Some(inner) = self.inner.as_mut() else {
             return;
         };
+        if thumbbar::take_buttons_requested() {
+            match inner.add_buttons() {
+                Ok(()) => {
+                    // `add_buttons` shows the play glyph, so the mirrored
+                    // state restarts as not-playing; the check below re-pushes
+                    // the real state if the player is already playing.
+                    self.playing = false;
+                    info!("taskbar thumbnail toolbar buttons added");
+                }
+                Err(err) => warn!(%err, "could not add taskbar thumbnail toolbar buttons"),
+            }
+        }
         for button in thumbbar::take_clicks() {
             state.push(transport_command(button));
         }
