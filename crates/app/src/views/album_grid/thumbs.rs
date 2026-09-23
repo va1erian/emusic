@@ -11,7 +11,7 @@
 //! keeps headless screenshots deterministic.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -25,6 +25,13 @@ use crate::panels::now_playing::load_artwork;
 const THUMB_SIZE: u32 = 200;
 /// Maximum number of GPU textures kept alive; older ones are evicted.
 const MAX_TEXTURES: usize = 300;
+/// Maximum number of texture uploads (`ctx.load_texture`) performed per frame.
+///
+/// A fast scroll reveals a burst of tiles at once, so many decodes can finish
+/// around the same time. Uploading all of them in one frame stalls it, so the
+/// rest stay queued in [`ThumbnailCache::pending`] and are uploaded over the
+/// following frames instead.
+const MAX_UPLOADS_PER_FRAME: usize = 4;
 /// Number of threads decoding/encoding thumbnails.
 const WORKERS: usize = 2;
 
@@ -55,6 +62,9 @@ pub struct ThumbnailCache {
     failed: HashSet<u64>,
     jobs: Option<Sender<Job>>,
     finished: Option<Receiver<Finished>>,
+    /// Decodes finished but not yet uploaded, kept across frames so the
+    /// per-frame upload cap can be respected without losing work.
+    pending: VecDeque<Finished>,
     /// Monotonic LRU clock; a larger value means more recently used.
     clock: u64,
 }
@@ -62,24 +72,41 @@ pub struct ThumbnailCache {
 impl ThumbnailCache {
     /// Uploads thumbnails the workers finished and trims the LRU. Call once
     /// per frame before [`Self::get`].
+    ///
+    /// At most [`MAX_UPLOADS_PER_FRAME`] textures are uploaded per call; the
+    /// rest stay queued and a repaint is requested while work remains, so a
+    /// burst of decodes is spread over several frames instead of stalling one.
     pub fn drain(&mut self, ctx: &egui::Context) {
-        let Some(finished) = self.finished.as_ref() else {
-            return;
-        };
-        let mut ready = Vec::new();
-        while let Ok(result) = finished.try_recv() {
-            ready.push(result);
+        if let Some(finished) = self.finished.as_ref() {
+            while let Ok(result) = finished.try_recv() {
+                self.pending.push_back(result);
+            }
         }
-        for result in ready {
-            self.loading.remove(&result.key);
+
+        let mut uploaded = 0;
+        while let Some(result) = self.pending.pop_front() {
             match result.image {
-                Some(image) => self.insert(result.key, image, ctx),
+                Some(image) if uploaded < MAX_UPLOADS_PER_FRAME => {
+                    self.loading.remove(&result.key);
+                    self.insert(result.key, image, ctx);
+                    uploaded += 1;
+                }
+                Some(_) => {
+                    // Cap reached: keep this one and the rest for later frames.
+                    self.pending.push_front(result);
+                    break;
+                }
                 None => {
+                    self.loading.remove(&result.key);
                     self.failed.insert(result.key);
                 }
             }
         }
+
         self.evict();
+        if !self.pending.is_empty() {
+            ctx.request_repaint();
+        }
     }
 
     /// Returns the texture for `source` if ready, requesting it otherwise.
@@ -245,4 +272,59 @@ fn hash(value: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image() -> ColorImage {
+        ColorImage::from_rgba_unmultiplied([1, 1], &[255, 0, 0, 255])
+    }
+
+    fn queue(
+        cache: &mut ThumbnailCache,
+        keys: impl IntoIterator<Item = (u64, Option<ColorImage>)>,
+    ) {
+        for (key, image) in keys {
+            cache.pending.push_back(Finished { key, image });
+        }
+    }
+
+    #[test]
+    fn drain_caps_uploads_per_call_and_keeps_the_rest_queued() {
+        let ctx = egui::Context::default();
+        let mut cache = ThumbnailCache::default();
+        let total = MAX_UPLOADS_PER_FRAME * 3;
+        queue(
+            &mut cache,
+            (0..total as u64).map(|key| (key, Some(image()))),
+        );
+
+        cache.drain(&ctx);
+        assert_eq!(cache.entries.len(), MAX_UPLOADS_PER_FRAME);
+        assert_eq!(cache.pending.len(), total - MAX_UPLOADS_PER_FRAME);
+
+        cache.drain(&ctx);
+        assert_eq!(cache.entries.len(), MAX_UPLOADS_PER_FRAME * 2);
+
+        cache.drain(&ctx);
+        assert_eq!(cache.entries.len(), total);
+        assert!(cache.pending.is_empty());
+    }
+
+    #[test]
+    fn drain_records_failures_without_counting_them_as_uploads() {
+        let ctx = egui::Context::default();
+        let mut cache = ThumbnailCache::default();
+        let successes = (0..MAX_UPLOADS_PER_FRAME as u64).map(|key| (key, Some(image())));
+        let failures = (100..110u64).map(|key| (key, None));
+        queue(&mut cache, successes.chain(failures));
+
+        cache.drain(&ctx);
+
+        assert_eq!(cache.entries.len(), MAX_UPLOADS_PER_FRAME);
+        assert_eq!(cache.failed.len(), 10);
+        assert!(cache.pending.is_empty());
+    }
 }
