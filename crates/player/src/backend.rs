@@ -3,6 +3,7 @@
 
 use std::any::Any;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, MusicFlags, StreamFlags};
@@ -78,14 +79,21 @@ pub fn is_tracker_module(path: &Path) -> bool {
 
 /// Real playback backend, built on the `bass` crate.
 pub struct BassBackend {
-    bass: bass::Bass,
+    bass: Arc<bass::Bass>,
 }
 
 impl BassBackend {
-    /// Wraps an already-initialized [`bass::Bass`] instance. The caller
-    /// owns `Bass::init`/plugin loading/device selection; this just opens
-    /// channels through it.
-    pub fn new(bass: bass::Bass) -> Self {
+    /// Wraps an already-initialized [`bass::Bass`] instance, shared with the
+    /// library scanner (which uses it to read tracker module tags). The
+    /// caller owns `Bass::init`/plugin loading/device selection; this just
+    /// opens channels through it.
+    ///
+    /// BASS's own documentation states the library is thread-safe (its
+    /// functions may be called from any thread once initialized), which is
+    /// what makes sharing one instance between the player and background
+    /// scanner threads sound — see the `SAFETY` comment on
+    /// `bass::ffi::BassLib`'s `Send`/`Sync` impls.
+    pub fn new(bass: Arc<bass::Bass>) -> Self {
         Self { bass }
     }
 }

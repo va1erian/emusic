@@ -34,6 +34,7 @@ pub(crate) struct ScanHandle {
 
 /// Spawns a scan of `roots` on a background thread, first purging tracks
 /// under any `purge` prefixes (folders removed from the library).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn(
     store: Arc<Mutex<Store>>,
     folders: Vec<Folder>,
@@ -41,9 +42,10 @@ pub(crate) fn spawn(
     updates: Sender<Update>,
     handle: ScanHandle,
     purge: Vec<PathBuf>,
+    bass: Option<Arc<bass::Bass>>,
 ) {
     std::thread::spawn(move || {
-        if let Err(err) = run(&store, &folders, &roots, &updates, &handle, &purge) {
+        if let Err(err) = run(&store, &folders, &roots, &updates, &handle, &purge, bass) {
             warn!(%err, "library scan failed");
         }
     });
@@ -51,6 +53,7 @@ pub(crate) fn spawn(
 
 /// Runs one scan to completion, reporting progress, a final snapshot and the
 /// [`Update::ScanFinished`] that clears the scanning state.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
@@ -58,8 +61,9 @@ pub(crate) fn run(
     updates: &Sender<Update>,
     handle: &ScanHandle,
     purge: &[PathBuf],
+    bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {
-    let result = run_inner(store, folders, roots, updates, handle, purge);
+    let result = run_inner(store, folders, roots, updates, handle, purge, bass);
     if result.is_err() {
         let _ = updates.send(Update::Status(String::new()));
     }
@@ -67,6 +71,7 @@ pub(crate) fn run(
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_inner(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
@@ -74,6 +79,7 @@ fn run_inner(
     updates: &Sender<Update>,
     handle: &ScanHandle,
     purge: &[PathBuf],
+    bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {
     // Real deployments scan through a private connection, so the shared lock
     // stays free for the UI. In-memory stores (unit tests) cannot be
@@ -83,7 +89,7 @@ fn run_inner(
         Some(mut scan_store) => {
             purge_removed_roots(&mut scan_store, purge)?;
             if !roots.is_empty() {
-                scan_roots(&mut scan_store, roots, updates, &handle.cancel)?;
+                scan_roots(&mut scan_store, roots, updates, &handle.cancel, bass)?;
             }
         }
         None => {
@@ -92,7 +98,7 @@ fn run_inner(
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             purge_removed_roots(&mut shared, purge)?;
             if !roots.is_empty() {
-                scan_roots(&mut shared, roots, updates, &handle.cancel)?;
+                scan_roots(&mut shared, roots, updates, &handle.cancel, bass)?;
             }
         }
     }
@@ -129,6 +135,7 @@ fn scan_roots(
     roots: &[PathBuf],
     updates: &Sender<Update>,
     cancel: &CancelToken,
+    bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     let roots = roots.to_vec();
@@ -137,7 +144,7 @@ fn scan_roots(
         // `move` so `progress_tx` is owned by the scan thread and dropped
         // when it finishes, which ends the `progress_rx` loop below.
         let scan_handle =
-            scope.spawn(move || scan(store, &roots, &scan_options(), &progress_tx, &cancel));
+            scope.spawn(move || scan(store, &roots, &scan_options(bass), &progress_tx, &cancel));
 
         while let Ok(event) = progress_rx.recv() {
             if let ScanEvent::FileProcessed {

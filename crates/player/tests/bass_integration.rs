@@ -82,7 +82,7 @@ fn plays_a_generated_wav_through_the_real_backend() {
     };
 
     let path = write_temp_wav("plays_a_generated_wav_through_the_real_backend");
-    let backend = Arc::new(BassBackend::new(bass));
+    let backend = Arc::new(BassBackend::new(Arc::new(bass)));
     let mut player = Player::new(backend);
 
     player.replace_and_play(vec![path.clone()], 0);

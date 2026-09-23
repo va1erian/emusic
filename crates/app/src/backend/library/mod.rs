@@ -65,18 +65,25 @@ pub struct LibraryBackend {
     next_scan_id: u64,
     /// The scan currently running (cancel handle + id), if any.
     active_scan: Option<ScanHandle>,
+    /// Shared with the player backend; used to read tracker module tags
+    /// during scans. `None` when BASS failed to initialize, in which case
+    /// modules are counted but skipped (see [`emusic_library::scanner`]).
+    bass: Option<Arc<bass::Bass>>,
 }
 
 impl Default for LibraryBackend {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl LibraryBackend {
     /// Opens the default store (`%LOCALAPPDATA%\emusic\library.db`), falling
     /// back to an in-memory store if the default path is unavailable.
-    pub fn new() -> Self {
+    ///
+    /// `bass` is the instance shared with the player, used to read tracker
+    /// module tags during scans; pass `None` when BASS is unavailable.
+    pub fn new(bass: Option<Arc<bass::Bass>>) -> Self {
         let store = match Store::open_default() {
             Ok(store) => {
                 info!("opened library store");
@@ -87,11 +94,11 @@ impl LibraryBackend {
                 Store::open_in_memory().expect("in-memory store always opens")
             }
         };
-        Self::with_store(store)
+        Self::with_store(store, bass)
     }
 
     /// Creates a backend around an existing store. Useful in tests.
-    pub fn with_store(store: Store) -> Self {
+    pub fn with_store(store: Store, bass: Option<Arc<bass::Bass>>) -> Self {
         let store = Arc::new(Mutex::new(store));
         let stats_recorder = StatsRecorder::spawn(store.clone());
 
@@ -123,6 +130,7 @@ impl LibraryBackend {
             loader_started: false,
             next_scan_id: 0,
             active_scan: None,
+            bass,
         }
     }
 
@@ -214,6 +222,7 @@ impl LibraryDataSource for LibraryBackend {
                         self.update_tx.clone(),
                         handle,
                         Vec::new(),
+                        self.bass.clone(),
                     );
                 }
             }
@@ -257,6 +266,7 @@ impl LibraryDataSource for LibraryBackend {
             self.update_tx.clone(),
             handle,
             Vec::new(),
+            self.bass.clone(),
         );
     }
 
@@ -305,11 +315,15 @@ pub(crate) fn enabled_roots(folders: &[Folder]) -> Vec<PathBuf> {
 
 /// Scanner options reused for startup and watch-driven scans.
 ///
-/// BASS is owned by the player backend ([`emusic_player::BassBackend`] takes
-/// the handle), so module files are counted but skipped during scanning;
-/// streamed formats still get their tags read by lofty.
-pub(crate) fn scan_options() -> emusic_library::scanner::ScanOptions {
-    emusic_library::scanner::ScanOptions::default()
+/// `bass` is the instance shared with the player backend
+/// ([`emusic_player::BassBackend`] holds a clone too); when `None` (BASS
+/// failed to initialize) module files are still counted but skipped during
+/// scanning, while streamed formats keep getting their tags read by lofty.
+pub(crate) fn scan_options(bass: Option<Arc<bass::Bass>>) -> emusic_library::scanner::ScanOptions {
+    emusic_library::scanner::ScanOptions {
+        bass,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]

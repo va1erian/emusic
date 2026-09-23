@@ -52,17 +52,16 @@ pub fn build(mock: bool) -> Backends {
         };
     }
 
-    let library = LibraryBackend::new();
-    let play_record_tx = library.play_record_tx();
-
-    let (player, notice): (Box<dyn PlayerApi>, Option<String>) = match init_bass() {
+    // BASS is initialized before the library backend so one instance can be
+    // shared: a clone goes to the player for playback, another to the
+    // library backend so the scanner can read tracker module tags (#138).
+    // When BASS fails to init, both fall back to their BASS-less behavior
+    // (no playback; modules counted but skipped during scans).
+    let (bass, notice) = match init_bass() {
         Ok(bass) => {
             info!("BASS initialized");
             load_bass_plugins(&bass);
-            let backend = Arc::new(emusic_player::BassBackend::new(bass));
-            let player =
-                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_record_tx));
-            (Box::new(player), None)
+            (Some(Arc::new(bass)), None)
         }
         Err(err) => {
             warn!(%err, "audio backend unavailable; starting without playback");
@@ -70,8 +69,21 @@ pub fn build(mock: bool) -> Backends {
                 "Audio unavailable: {err} (looked in {}; set EMUSIC_BASS_DIR to override)",
                 bass_dir().display()
             );
-            (Box::new(UnavailablePlayer), Some(notice))
+            (None, Some(notice))
         }
+    };
+
+    let library = LibraryBackend::new(bass.clone());
+    let play_record_tx = library.play_record_tx();
+
+    let player: Box<dyn PlayerApi> = match bass {
+        Some(bass) => {
+            let backend = Arc::new(emusic_player::BassBackend::new(bass));
+            let player =
+                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_record_tx));
+            Box::new(player)
+        }
+        None => Box::new(UnavailablePlayer),
     };
 
     Backends {
