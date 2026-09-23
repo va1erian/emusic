@@ -64,3 +64,49 @@ fn dragging_the_tree_panel_edge_widens_it() {
          central view over (before {heading_before:?}, after {heading_after:?})"
     );
 }
+
+/// The tree panel's max width used to be a fixed 460px, tuned around the
+/// mock library's short names — too narrow for a real library's longer
+/// paths. It's now sized dynamically off the window width (minus room for
+/// the track table), so a wide window should let it grow well past 460px.
+#[test]
+fn the_tree_panel_can_grow_past_the_old_fixed_cap() {
+    let mut harness = Harness::builder()
+        .with_size(egui::Vec2::new(1600.0, 900.0))
+        .build_eframe(|cc| {
+            let library = MockLibrary::new();
+            let player = Box::new(MockPlayer::default());
+            App::with_config(cc, Box::new(library), player, Config::default())
+        });
+    harness.state_mut().set_view(View::Folders);
+    harness.run_steps(2);
+
+    let heading_before = harness
+        .query_by_label("All folders")
+        .expect("the Folders view shows an 'All folders' heading by default")
+        .rect();
+    let edge_x = heading_before.min.x - 8.0;
+    let y = 400.0;
+
+    // Drag 500px right: 260 (default) + 500 = 760, well past the old 460
+    // fixed cap.
+    harness.drag_at(egui::pos2(edge_x, y));
+    harness.run_steps(1);
+    for step in 1..=5 {
+        harness.hover_at(egui::pos2(edge_x + step as f32 * 100.0, y));
+        harness.run_steps(1);
+    }
+    harness.drop_at(egui::pos2(edge_x + 500.0, y));
+    harness.run_steps(3);
+
+    let heading_after = harness
+        .query_by_label("All folders")
+        .expect("the heading is still there after resizing")
+        .rect();
+
+    assert!(
+        heading_after.min.x > heading_before.min.x + 300.0,
+        "the tree panel should be able to grow well past the old 460px cap \
+         on a wide window (before {heading_before:?}, after {heading_after:?})"
+    );
+}
