@@ -1,0 +1,71 @@
+name: Release
+
+# Builds the installer and a portable zip and attaches them to a GitHub
+# Release whenever a `v*` tag is pushed. BASS is never committed to the repo
+# (see docs/installer.md); this workflow downloads the redistributable x64
+# DLLs from un4seen at build time, the same set the README lists under
+# "BASS DLLs".
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release --workspace
+
+      # Redistributable x64 BASS DLLs (free for non-commercial use), fetched
+      # fresh each release instead of being committed to git (#124).
+      - name: Download BASS DLLs
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p target/release/bass
+          for pkg in bass24 bassflac24 bassopus24 bassmidi24; do
+            curl -sSfL -o "$pkg.zip" "https://www.un4seen.com/files/$pkg.zip"
+            7z e -y "$pkg.zip" -o"target/release/bass" "x64/*.dll"
+          done
+          ls target/release/bass
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+        shell: pwsh
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -ErrorAction Stop | Select-Object -First 1
+          & $iscc.FullName installer\emusic.iss
+
+      - name: Package portable zip
+        shell: bash
+        run: |
+          set -eu
+          stage=emusic-portable
+          mkdir -p "$stage/bass" "$stage/icons"
+          cp target/release/emusic.exe "$stage/"
+          cp target/release/bass/*.dll "$stage/bass/"
+          cp assets/ico/*.ico "$stage/icons/"
+          7z a "emusic-${GITHUB_REF_NAME#v}-portable.zip" "$stage"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/Output/emusic-*-setup.exe
+            emusic-*-portable.zip
+          generate_release_notes: true
