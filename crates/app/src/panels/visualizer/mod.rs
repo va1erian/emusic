@@ -16,6 +16,8 @@
 mod scope;
 mod spectrum;
 
+use std::time::Duration;
+
 use eframe::egui;
 
 use crate::player_api::{PlaybackStatus, PlayerApi};
@@ -24,10 +26,21 @@ use crate::state::{AppState, Command, VisualizerMode};
 /// Strip size in the status bar, in points.
 const STRIP_SIZE: egui::Vec2 = egui::vec2(150.0, 18.0);
 
-/// Fixed per-frame decay of the spectrum's peak-hold caps. At the
-/// compositor's ~60 fps this drains a full-height cap in a little over a
-/// second.
-const PEAK_DECAY_PER_FRAME: f32 = 0.015;
+/// Target animation rate for the strip while a mode is active, decoupled
+/// from the compositor's own refresh rate (#25 follow-up). A full frame
+/// re-lays out and repaints the whole window, so chasing vsync on a
+/// 120/144 Hz display multiplied that cost for no visible benefit — the
+/// strip is 18 px tall and doesn't need to be smoother than this to read as
+/// reactive. [`App::update`](crate::app::App::update) uses this to bound
+/// `request_repaint_after` instead of calling `request_repaint()`.
+pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+
+/// Decay rate of the spectrum's peak-hold caps, in units/second (a
+/// full-height cap drains in a little over a second). Applied scaled by the
+/// actual frame delta rather than a fixed per-frame amount, so the caps
+/// fall at the same visual speed regardless of [`FRAME_INTERVAL`] or any
+/// frame that arrives late.
+const PEAK_DECAY_PER_SECOND: f32 = 0.9;
 
 /// Transient visualizer state that must survive across frames: the
 /// spectrum's peak-hold caps. UI-only, so it is deliberately not persisted.
@@ -65,10 +78,18 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     if !VisualizerState::wishes_repaint(mode, playing) {
         return;
     }
+    let dt = ui.input(|i| i.stable_dt);
     match mode {
         VisualizerMode::Spectrum => {
             let bins = player.fft();
-            spectrum::draw(ui, painter, rect, &bins, &mut state.visualizer_state.peaks);
+            spectrum::draw(
+                ui,
+                painter,
+                rect,
+                &bins,
+                &mut state.visualizer_state.peaks,
+                dt,
+            );
         }
         VisualizerMode::Oscilloscope => {
             let samples = player.samples();

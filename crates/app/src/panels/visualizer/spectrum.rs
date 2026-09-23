@@ -6,7 +6,7 @@ use eframe::egui;
 
 use crate::theme;
 
-use super::PEAK_DECAY_PER_FRAME;
+use super::PEAK_DECAY_PER_SECOND;
 
 /// Number of bars across the strip. Kept low (24, the coarse end of the
 /// issue's 24–48 range) so the bars read as chunky blocks rather than a
@@ -24,17 +24,20 @@ const SCALE_EXPONENT: f32 = 0.4;
 const GAIN: f32 = 1.8;
 
 /// Draws `bins` as log-spaced bars. `peaks` is the peak-hold state, resized
-/// and decayed in place.
+/// and decayed in place; `dt` is the elapsed time since the last frame, in
+/// seconds, so the decay rate holds regardless of the actual frame rate.
 pub fn draw(
     ui: &egui::Ui,
     painter: &egui::Painter,
     rect: egui::Rect,
     bins: &[f32],
     peaks: &mut Vec<f32>,
+    dt: f32,
 ) {
     resize_peaks(peaks, BAR_COUNT);
+    let decay = PEAK_DECAY_PER_SECOND * dt;
     for peak in peaks.iter_mut() {
-        *peak = (*peak - PEAK_DECAY_PER_FRAME).max(0.0);
+        *peak = (*peak - decay).max(0.0);
     }
     if bins.is_empty() {
         return;

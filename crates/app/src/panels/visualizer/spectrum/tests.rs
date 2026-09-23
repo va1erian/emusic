@@ -85,13 +85,15 @@ fn resize_peaks_grows_and_keeps_existing() {
 
 #[test]
 fn peak_decay_is_linear_and_never_negative() {
+    let dt = 1.0 / 60.0;
+    let decay = PEAK_DECAY_PER_SECOND * dt;
     let mut peak = 1.0_f32;
     for _ in 0..3 {
-        peak = (peak - PEAK_DECAY_PER_FRAME).max(0.0);
+        peak = (peak - decay).max(0.0);
     }
-    assert!((peak - (1.0 - 3.0 * PEAK_DECAY_PER_FRAME)).abs() < 1e-6);
+    assert!((peak - (1.0 - 3.0 * decay)).abs() < 1e-6);
     for _ in 0..200 {
-        peak = (peak - PEAK_DECAY_PER_FRAME).max(0.0);
+        peak = (peak - decay).max(0.0);
     }
     assert_eq!(peak, 0.0);
 }
