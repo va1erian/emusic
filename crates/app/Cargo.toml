@@ -3,6 +3,7 @@ name = "emusic"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [[bin]]
 name = "emusic"
@@ -41,6 +42,9 @@ winshell = { path = "../winshell" }
 
 [features]
 shot = ["dep:egui_kittest"]
+
+[build-dependencies]
+embed-resource = "3.0"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"] }

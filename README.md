@@ -44,6 +44,16 @@ Note that each Windows BASS download zip contains both 32-bit and 64-bit builds 
 
 Note: BASS is free for non-commercial use; see the license on the un4seen website.
 
+### Icons
+
+The app's icon set lives in `assets/` (`ico/`, `png/`, `svg/` — see
+`assets/README.txt`). Unlike the BASS DLLs it is committed. The app icon is
+embedded into `emusic.exe` at build time (via `crates/app/build.rs` and
+`embed-resource`) and set as the egui window icon; the per-extension
+`file-<ext>.ico` files ship in an `icons/` folder next to the installed exe
+and back the file-association `DefaultIcon` entries. The installer packages
+them — see [docs/installer.md](docs/installer.md).
+
 ### Fonts
 
 The app ships **no bundled fonts**: it uses the fonts already installed on the machine (`C:\Windows\Fonts`), with Segoe UI as the primary UI font and the CJK/symbol/emoji fonts as fallbacks. If none of them are found (e.g. a non-Windows dev box) it logs a warning and falls back to egui's defaults.

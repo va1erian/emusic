@@ -3,9 +3,10 @@
 The installer is an [Inno Setup 7](https://jrsoftware.org/isdl.php) script
 (`installer/emusic.iss`) that performs a **per-user** install of the 64-bit
 build into `%LOCALAPPDATA%\Programs\emusic` — no admin rights, nothing
-machine-wide. It copies `emusic.exe` and, when present, a `bass/` folder, adds
-a Start Menu shortcut, registers the file associations after install and
-removes them again on uninstall.
+machine-wide. It copies `emusic.exe`, an `icons/` folder (the committed icon
+set, #125) and, when present, a `bass/` folder, adds a Start Menu shortcut,
+registers the file associations after install and removes them again on
+uninstall.
 
 ## Prerequisites
 
@@ -61,11 +62,30 @@ ISCC.exe /DBuildDir=C:\path\to\release /DBassDir=C:\path\to\bass\  installer\emu
 
 - Installs to `{localappdata}\Programs\emusic` (`PrivilegesRequired=lowest`,
   so no UAC prompt).
-- Copies `emusic.exe` and `bass\*.dll` (skipped when absent).
+- Copies `emusic.exe`, `icons\*.ico` (the committed icon set, #125) and
+  `bass\*.dll` (skipped when absent).
 - Creates a Start Menu shortcut.
 - Runs `emusic.exe --register-associations` after install (silently), and
   `emusic.exe --unregister` before uninstall, matching the flags parsed in
   `crates/app/src/cli.rs`.
+
+## Icons
+
+`assets/` holds the icon set (#125): `ico/` multi-resolution `.ico` files
+(the app, setup and uninstall icons plus one `file-<ext>.ico` per supported
+extension, with `file-audio.ico` as the generic fallback), `png/` renders at
+16–256 px and `svg/` sources. Unlike the BASS DLLs it is committed to the
+repository, so no download step is needed.
+
+The installer embeds `assets\ico\emusic-setup.ico` as its own icon, copies
+every `assets\ico\*.ico` into `{app}\icons\`, and points
+`UninstallDisplayIcon` at `{app}\icons\emusic-uninstall.ico`. At registration
+time `emusic.exe` resolves that `icons\` folder relative to itself and sets
+each extension's `DefaultIcon` to its `file-<ext>.ico` (or `file-audio.ico`),
+so Explorer shows the right icon per file type.
+
+`AssetsDir` defaults to `<repo>\assets` and can be overridden with
+`/DAssetsDir=<path>` if the icon set lives elsewhere.
 
 ## Inno Setup 7 notes
 

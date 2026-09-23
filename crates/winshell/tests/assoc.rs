@@ -21,19 +21,20 @@ fn unique_namespace(case: &str) -> String {
 
 /// Runs `f` against a manager scoped to a fresh throwaway namespace, then
 /// unconditionally wipes that entire namespace (`HKCU\Software\<namespace>`),
-/// even if `f` panics.
+/// even if `f` panics. `f` receives the namespace so it can query values
+/// written under it.
 ///
 /// `AssocManager::unregister` only removes what production registration
 /// writes (it deliberately leaves shared parents like `Classes` and
 /// `RegisteredApplications` alone, since those are real, shared registry
 /// locations in production). Tests additionally delete the whole per-test
 /// namespace directly so nothing throwaway is left behind.
-fn with_manager(case: &str, f: impl FnOnce(&AssocManager)) {
+fn with_manager(case: &str, f: impl FnOnce(&str, &AssocManager)) {
     let namespace = unique_namespace(case);
     let manager =
         AssocManager::with_roots("emusic", AssocRoots::under_namespace(&namespace, "emusic"));
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| f(&manager)));
+    let result = panic::catch_unwind(AssertUnwindSafe(|| f(&namespace, &manager)));
     let _ = manager.unregister();
     remove_namespace(&namespace);
     if let Err(payload) = result {
@@ -51,7 +52,7 @@ fn remove_namespace(namespace: &str) {
 
 #[test]
 fn register_then_unregister_round_trips() {
-    with_manager("round-trip", |manager| {
+    with_manager("round-trip", |_, manager| {
         let exe = PathBuf::from(r"C:\Program Files\emusic\emusic.exe");
         manager.register(&exe, &["mp3", "flac"]).expect("register");
 
@@ -63,7 +64,7 @@ fn register_then_unregister_round_trips() {
 
 #[test]
 fn unregister_removes_everything_registered() {
-    with_manager("unregister", |manager| {
+    with_manager("unregister", |_, manager| {
         let exe = PathBuf::from(r"C:\emusic\emusic.exe");
         manager.register(&exe, &["mp3", "flac"]).expect("register");
         manager.unregister().expect("unregister");
@@ -75,7 +76,7 @@ fn unregister_removes_everything_registered() {
 
 #[test]
 fn unregister_is_idempotent_without_prior_registration() {
-    with_manager("idempotent", |manager| {
+    with_manager("idempotent", |_, manager| {
         // No `register` call: unregistering an untouched namespace must not
         // error even though none of the keys exist yet.
         manager
@@ -87,7 +88,7 @@ fn unregister_is_idempotent_without_prior_registration() {
 
 #[test]
 fn full_extension_list_registers_and_is_queryable() {
-    with_manager("full-list", |manager| {
+    with_manager("full-list", |_, manager| {
         let exe = PathBuf::from(r"C:\emusic\emusic.exe");
         manager
             .register(&exe, EXTENSIONS)
@@ -97,4 +98,63 @@ fn full_extension_list_registers_and_is_queryable() {
             assert!(manager.is_registered(ext), "{ext} should be registered");
         }
     });
+}
+
+#[test]
+fn default_icon_uses_shipped_icons_when_present() {
+    with_manager("icons", |namespace, manager| {
+        // A throwaway "install dir" holding emusic.exe plus the icons folder
+        // the installer ships (#125).
+        let dir = std::env::temp_dir().join(unique_namespace("icons-files"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("icons")).expect("create icons dir");
+        let exe = dir.join("emusic.exe");
+        std::fs::write(&exe, b"").expect("write placeholder exe");
+        std::fs::write(dir.join("icons").join("file-mp3.ico"), b"ico").expect("write mp3 icon");
+        std::fs::write(dir.join("icons").join("file-audio.ico"), b"ico")
+            .expect("write fallback icon");
+
+        manager.register(&exe, &["mp3", "webm"]).expect("register");
+
+        // mp3 has a dedicated icon; webm does not, so it falls back.
+        assert!(
+            default_icon(namespace, "mp3").ends_with(r"icons\file-mp3.ico"),
+            "{}",
+            default_icon(namespace, "mp3")
+        );
+        assert!(
+            default_icon(namespace, "webm").ends_with(r"icons\file-audio.ico"),
+            "{}",
+            default_icon(namespace, "webm")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    });
+}
+
+#[test]
+fn default_icon_falls_back_to_the_exe_without_an_icons_folder() {
+    with_manager("no-icons", |namespace, manager| {
+        let exe = PathBuf::from(r"C:\emusic\emusic.exe");
+        manager.register(&exe, &["mp3"]).expect("register");
+
+        let icon = default_icon(namespace, "mp3");
+        assert!(icon.ends_with(r#"emusic.exe",0"#), "{icon}");
+    });
+}
+
+/// Reads a ProgID's `DefaultIcon` value from the throwaway namespace with
+/// `reg.exe`, unquoted.
+fn default_icon(namespace: &str, ext: &str) -> String {
+    let key = format!(r"HKCU\Software\{namespace}\Classes\emusic.{ext}\DefaultIcon");
+    let output = std::process::Command::new("reg")
+        .args(["query", &key, "/ve"])
+        .output()
+        .expect("run reg query");
+    let text = String::from_utf8_lossy(&output.stdout);
+    let value = text
+        .lines()
+        .find_map(|line| line.split_once("REG_SZ").map(|(_, value)| value.trim()))
+        .unwrap_or_default();
+    value.trim_matches('"').to_string()
 }
