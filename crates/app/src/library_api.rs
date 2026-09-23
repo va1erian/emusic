@@ -6,7 +6,7 @@
 //! this trait, not touching view code.
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 /// A "most played" time window (all time / last 30 days / last year).
 ///
@@ -144,6 +144,17 @@ pub struct HistoryEntry {
     pub finished: bool,
 }
 
+/// Facts about the library database file, shown by File -> Database info.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DatabaseInfo {
+    /// The database file; `None` for backends without one (mock, in-memory).
+    pub path: Option<PathBuf>,
+    /// Size of the database file in bytes, when it could be read.
+    pub size_bytes: Option<u64>,
+    /// When the most recent scan finished during this session, if any.
+    pub last_scan: Option<SystemTime>,
+}
+
 /// Read-only view over the music library, as needed by the shell's views.
 pub trait LibraryDataSource {
     fn tracks(&self) -> &[TrackInfo];
@@ -220,6 +231,12 @@ pub trait LibraryDataSource {
 
     /// Rescans every enabled folder, even if the folder set is unchanged.
     fn rescan(&mut self) {}
+
+    /// Describes the database file behind the library, for the Database info
+    /// dialog. Empty for backends that don't persist a library.
+    fn database_info(&self) -> DatabaseInfo {
+        DatabaseInfo::default()
+    }
 
     /// Requests cancellation of the scan currently running, if any.
     fn cancel_scan(&mut self) {}

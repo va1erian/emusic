@@ -96,6 +96,9 @@ pub struct AppState {
     /// shell (not a track table) because the shell drains the backend's
     /// tag-edit results into it.
     pub tag_editor: Option<crate::tag_editor::TagEditorState>,
+    /// Whether the File -> Database info dialog is open. Transient, not
+    /// persisted.
+    pub database_info_open: bool,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
     /// collapsible section flags, ...).
     pub now_playing: crate::panels::now_playing::PanelState,
@@ -130,6 +133,7 @@ impl Default for AppState {
             history: HistoryState::default(),
             pending: Vec::new(),
             tag_editor: None,
+            database_info_open: false,
             now_playing: crate::panels::now_playing::PanelState::default(),
             tracker_settings: TrackerSettings::default(),
         }

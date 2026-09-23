@@ -4,6 +4,7 @@
 //! rather than mutating state directly, so panels never need to know about
 //! each other.
 
+pub mod database_info;
 pub mod navigator;
 pub mod now_playing;
 pub mod right_panel;

@@ -153,6 +153,7 @@ impl eframe::App for App {
         // The now-playing "Properties" link can be clicked from any view, so
         // its dialog is rendered once here rather than by a single view.
         crate::views::track_table::show_properties(&ctx, &mut self.state.now_playing.properties);
+        panels::database_info::show(&ctx, &mut self.state, self.library.as_ref());
         panels::search_popup::show(
             &ctx,
             &mut self.state,

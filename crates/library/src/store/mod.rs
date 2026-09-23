@@ -83,6 +83,11 @@ impl Store {
         Self::open(path)
     }
 
+    /// The database file backing this store; `None` for in-memory stores.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
     /// Opens a private in-memory database. Intended for tests.
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
