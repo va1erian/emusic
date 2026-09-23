@@ -84,6 +84,12 @@ impl eframe::App for App {
             smtc.sync(self.player.as_ref(), self.library.as_ref(), &mut self.state);
         }
 
+        // Mirror the player's transport state onto the taskbar thumbnail
+        // buttons and fold their presses into this frame's commands (#42).
+        if let Some(thumbbar) = self.thumbbar.as_mut() {
+            thumbbar.sync(self.player.as_ref(), &mut self.state);
+        }
+
         theme::apply(&ctx, self.state.theme, self.state.accent.color());
 
         self.handle_shortcuts(&ctx);

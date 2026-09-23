@@ -21,10 +21,13 @@ windows-result = "0.4"
 # Kept to the handful of calls with no safe wrapper elsewhere: SHChangeNotify,
 # AllowSetForegroundWindow, GetNamedPipeServerProcessId,
 # ShowWindow/SetForegroundWindow for `bring_to_front`, and GetDriveTypeW for
-# `is_remote_drive`. All confined to `src/sys.rs`.
+# `is_remote_drive` (all in `src/sys.rs`), plus the taskbar thumbnail-toolbar
+# COM calls in `src/thumbbar/` (ITaskbarList3 + icon creation, via
+# Win32_System_Com).
 windows = { version = "0.58", default-features = false, features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
+    "Win32_System_Com",
     "Win32_System_Pipes",
     "Win32_System_WindowsProgramming",
     "Win32_UI_Shell",

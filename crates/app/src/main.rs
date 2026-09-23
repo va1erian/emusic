@@ -14,7 +14,7 @@ use eframe::egui;
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::App;
-use emusic::backend::{self, ipc, smtc};
+use emusic::backend::{self, ipc, smtc, thumbbar};
 use emusic::cli::Cli;
 
 fn main() -> anyhow::Result<()> {
@@ -60,10 +60,32 @@ fn run_ui(
     if let Some(icon) = emusic::window_icon::window_icon() {
         viewport = viewport.with_icon(icon);
     }
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport,
         ..Default::default()
     };
+    // Install the taskbar thumbnail-toolbar message hook (#42) before winit
+    // runs its loop. It claims button presses and, crucially, wakes egui so
+    // the click is drained even while the app is otherwise idle (there is no
+    // continuous repaint when paused). The hook runs before the window/egui
+    // context exist, so it goes through the same late-bound repaint handle as
+    // IPC (#11).
+    #[cfg(target_os = "windows")]
+    {
+        let repaint_hook = repaint.clone();
+        options.event_loop_builder = Some(Box::new(move |builder| {
+            use winit::platform::windows::EventLoopBuilderExtWindows as _;
+
+            let wake = repaint_hook.waker();
+            builder.with_msg_hook(move |msg| {
+                let claimed = winshell::thumbbar::msg_hook(msg);
+                if claimed {
+                    wake();
+                }
+                claimed
+            });
+        }));
+    }
 
     eframe::run_native(
         "emusic",
@@ -75,7 +97,8 @@ fn run_ui(
             if let Some(notice) = backends.notice {
                 app.set_backend_notice(notice);
             }
-            app.attach_smtc(smtc::Smtc::new(smtc_hwnd(cc)));
+            app.attach_smtc(smtc::Smtc::new(window_handle(cc)));
+            app.attach_thumbbar(thumbbar::ThumbBar::new(window_handle(cc)));
             app.attach_ipc(ipc::IpcBridge::primary(listener));
             if !startup_message.files.is_empty() {
                 app.handle_ipc_message(startup_message);
@@ -86,11 +109,11 @@ fn run_ui(
     .map_err(|err| anyhow::anyhow!("eframe: {err}"))
 }
 
-/// Native window handle SMTC binds to on Windows; `None` elsewhere (where
-/// souvlaki ignores it). Extracted through `raw-window-handle`, the same
-/// abstraction eframe uses, so no unsafe pointer juggling is needed here.
+/// Native window handle the OS integrations (SMTC, taskbar buttons) bind to
+/// on Windows; `None` elsewhere. Extracted through `raw-window-handle`, the
+/// same abstraction eframe uses, so no unsafe pointer juggling is needed here.
 #[cfg(target_os = "windows")]
-fn smtc_hwnd(cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
+fn window_handle(cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
     use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
 
     let handle = cc.window_handle().ok()?;
@@ -101,7 +124,7 @@ fn smtc_hwnd(cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> 
 }
 
 #[cfg(not(target_os = "windows"))]
-fn smtc_hwnd(_cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
+fn window_handle(_cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
     None
 }
 

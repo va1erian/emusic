@@ -51,6 +51,10 @@ pub struct App {
     /// OS media controls / hardware media keys (#26). `None` in `emusic-shot`
     /// and the snapshot tests, so headless runs never touch SMTC.
     smtc: Option<crate::backend::smtc::Smtc>,
+    /// Windows taskbar thumbnail-toolbar transport buttons (#42). `None` in
+    /// `emusic-shot` and the snapshot tests so headless runs never touch the
+    /// shell.
+    thumbbar: Option<crate::backend::thumbbar::ThumbBar>,
 }
 
 impl App {
@@ -104,6 +108,7 @@ impl App {
             search: SearchEngine::new(),
             popup_search: SearchEngine::new(),
             smtc: None,
+            thumbbar: None,
         }
     }
 
@@ -122,6 +127,15 @@ impl App {
     /// [`Smtc`]: crate::backend::smtc::Smtc
     pub fn attach_smtc(&mut self, smtc: crate::backend::smtc::Smtc) {
         self.smtc = Some(smtc);
+    }
+
+    /// Registers the Windows taskbar thumbnail-toolbar buttons (#42). Only
+    /// the real binary calls this; shot/tests leave it unset so they never
+    /// touch the shell.
+    ///
+    /// [`ThumbBar`]: crate::backend::thumbbar::ThumbBar
+    pub fn attach_thumbbar(&mut self, thumbbar: crate::backend::thumbbar::ThumbBar) {
+        self.thumbbar = Some(thumbbar);
     }
 
     /// Sets a one-line startup notice (e.g. "Audio unavailable: ...") shown
