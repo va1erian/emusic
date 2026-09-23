@@ -8,6 +8,7 @@
 pub mod ipc;
 pub mod library;
 pub mod player_adapter;
+pub mod smtc;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

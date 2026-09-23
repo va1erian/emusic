@@ -14,7 +14,7 @@ use eframe::egui;
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::App;
-use emusic::backend::{self, ipc};
+use emusic::backend::{self, ipc, smtc};
 use emusic::cli::Cli;
 
 fn main() -> anyhow::Result<()> {
@@ -71,6 +71,7 @@ fn run_ui(
             if let Some(notice) = backends.notice {
                 app.set_backend_notice(notice);
             }
+            app.attach_smtc(smtc::Smtc::new(smtc_hwnd(cc)));
             app.attach_ipc(ipc::IpcBridge::primary(listener));
             if !startup_message.files.is_empty() {
                 app.handle_ipc_message(startup_message);
@@ -79,6 +80,25 @@ fn run_ui(
         }),
     )
     .map_err(|err| anyhow::anyhow!("eframe: {err}"))
+}
+
+/// Native window handle SMTC binds to on Windows; `None` elsewhere (where
+/// souvlaki ignores it). Extracted through `raw-window-handle`, the same
+/// abstraction eframe uses, so no unsafe pointer juggling is needed here.
+#[cfg(target_os = "windows")]
+fn smtc_hwnd(cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+
+    let handle = cc.window_handle().ok()?;
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return None;
+    };
+    Some(win32.hwnd.get() as *mut std::ffi::c_void)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn smtc_hwnd(_cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
+    None
 }
 
 fn register_associations() -> anyhow::Result<()> {
