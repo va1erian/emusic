@@ -48,6 +48,10 @@ Note: BASS is free for non-commercial use; see the license on the un4seen websit
 
 The app ships **no bundled fonts**: it uses the fonts already installed on the machine (`C:\Windows\Fonts`), with Segoe UI as the primary UI font and the CJK/symbol/emoji fonts as fallbacks. If none of them are found (e.g. a non-Windows dev box) it logs a warning and falls back to egui's defaults.
 
+## Packaging (Windows installer)
+
+A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\`, then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). BASS is third-party software with its own license.
