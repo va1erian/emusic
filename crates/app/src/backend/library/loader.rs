@@ -26,6 +26,7 @@ pub(crate) fn spawn(
     folders: Vec<Folder>,
     updates: Sender<Update>,
     scan: Option<ScanHandle>,
+    bass: Option<Arc<bass::Bass>>,
 ) {
     thread::spawn(move || {
         let private = {
@@ -40,7 +41,7 @@ pub(crate) fn spawn(
                 }
             }
         };
-        if let Err(err) = run(&store, private, &folders, &updates, scan) {
+        if let Err(err) = run(&store, private, &folders, &updates, scan, bass) {
             warn!(%err, "library startup load failed");
         }
     });
@@ -52,6 +53,7 @@ fn run(
     folders: &[Folder],
     updates: &Sender<Update>,
     scan: Option<ScanHandle>,
+    bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {
     match private {
         Some(private) => send_initial_snapshot(&private, folders, updates)?,
@@ -65,7 +67,7 @@ fn run(
         return Ok(());
     };
     let roots = enabled_roots(folders);
-    scan::run(store, folders, &roots, updates, &handle, &[])
+    scan::run(store, folders, &roots, updates, &handle, &[], bass)
 }
 
 fn send_initial_snapshot(

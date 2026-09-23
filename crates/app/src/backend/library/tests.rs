@@ -17,7 +17,7 @@ use crate::library_api::LibraryDataSource;
 #[test]
 fn backend_starts_empty_and_accepts_folders() {
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store);
+    let mut backend = LibraryBackend::with_store(store, None);
     assert!(backend.tracks().is_empty());
 
     // A folder that does not exist yields no tracks, but the backend stays
@@ -34,7 +34,7 @@ fn scans_generated_wav_and_tracks_play() {
     write_wav(&dir.join("track.wav"), 8_000, 1);
 
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store);
+    let mut backend = LibraryBackend::with_store(store, None);
     backend.set_folders(std::slice::from_ref(&dir));
 
     let tracks = wait_for_tracks(&mut backend);
@@ -68,7 +68,7 @@ fn rescan_picks_up_files_added_after_startup() {
     write_wav(&dir.join("first.wav"), 8_000, 1);
 
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store);
+    let mut backend = LibraryBackend::with_store(store, None);
     backend.set_folders(std::slice::from_ref(&dir));
     assert_eq!(wait_for_tracks(&mut backend).len(), 1);
 
@@ -86,7 +86,7 @@ fn removing_a_folder_purges_its_tracks() {
     write_wav(&dir.join("track.wav"), 8_000, 1);
 
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store);
+    let mut backend = LibraryBackend::with_store(store, None);
     backend.set_folders(std::slice::from_ref(&dir));
     assert_eq!(wait_for_tracks(&mut backend).len(), 1);
 
@@ -133,6 +133,7 @@ fn scan_does_not_hold_the_shared_store_lock() {
         tx,
         handle,
         Vec::new(),
+        None,
     );
 
     let mut scanning = false;

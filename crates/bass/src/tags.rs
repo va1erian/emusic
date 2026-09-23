@@ -28,19 +28,28 @@ pub(crate) fn read_music_tags(lib: &BassLib, channel: Dword) -> MusicTags {
     }
 }
 
-/// Reads a single UTF-16 tag string, or `None` if BASS has nothing for it.
+/// Reads a single tag string, or `None` if BASS has nothing for it.
+///
+/// Unlike most other `BASS_ChannelGetTags` types (ID3, RIFF INFO, ...), the
+/// MOD-specific tags (`BASS_TAG_MUSIC_*`) do not support `BASS_UNICODE`:
+/// requesting one with that flag OR'd in returns null with
+/// `BASS_ErrorGetCode() == BASS_ERROR_NOTAVAIL`, confirmed empirically
+/// against a real `bass.dll` while verifying #138 (every module tag was
+/// silently empty). BASS always returns these as a narrow, NUL-terminated
+/// C string instead.
 fn read_tag(lib: &BassLib, channel: Dword, tag: Dword) -> Option<String> {
-    // SAFETY: OR-ing in `BASS_UNICODE` asks BASS to return a `wchar_t*`
-    // instead of `char*`; the returned pointer (if non-null) is owned by
-    // BASS and remains valid until the channel is freed or the tag is
+    // SAFETY: `tag` is one of the `BASS_TAG_MUSIC_*` constants; per the
+    // doc comment above, BASS returns a `char*` for these regardless of
+    // `BASS_UNICODE`. The returned pointer (if non-null) is owned by BASS
+    // and remains valid until the channel is freed or the tag is
     // re-queried, which is longer than we need it for here.
-    let ptr = unsafe { (lib.raw.bass_channel_get_tags)(channel, tag | c::BASS_UNICODE) };
+    let ptr = unsafe { (lib.raw.bass_channel_get_tags)(channel, tag) };
     if ptr.is_null() {
         return None;
     }
-    // SAFETY: `ptr` is a non-null, NUL-terminated UTF-16 string per the
-    // `BASS_UNICODE` request above.
-    let text = unsafe { wide_cstr_to_string(ptr as *const u16) };
+    // SAFETY: `ptr` is a non-null, NUL-terminated narrow C string per the
+    // doc comment above.
+    let text = unsafe { narrow_cstr_to_string(ptr as *const std::ffi::c_char) };
     if text.is_empty() { None } else { Some(text) }
 }
 
@@ -50,34 +59,32 @@ fn read_tag_list(lib: &BassLib, channel: Dword, base: Dword) -> Vec<String> {
     let mut items = Vec::new();
     let mut index: Dword = 0;
     loop {
-        // SAFETY: same reasoning as `read_tag`; `BASS_UNICODE` requests a
-        // wide string, and a null return ends the list per BASS's
-        // documented behaviour for indexed tags.
-        let ptr =
-            unsafe { (lib.raw.bass_channel_get_tags)(channel, (base + index) | c::BASS_UNICODE) };
+        // SAFETY: same reasoning as `read_tag`; a null return ends the
+        // list per BASS's documented behaviour for indexed tags.
+        let ptr = unsafe { (lib.raw.bass_channel_get_tags)(channel, base + index) };
         if ptr.is_null() {
             break;
         }
         // SAFETY: see `read_tag`.
-        items.push(unsafe { wide_cstr_to_string(ptr as *const u16) });
+        items.push(unsafe { narrow_cstr_to_string(ptr as *const std::ffi::c_char) });
         index += 1;
     }
     items
 }
 
 /// # Safety
-/// `ptr` must be non-null and point to a NUL-terminated UTF-16 string that
-/// remains valid for the duration of this call.
-unsafe fn wide_cstr_to_string(ptr: *const u16) -> String {
-    let mut len = 0usize;
-    // SAFETY: caller guarantees `ptr` points to a NUL-terminated UTF-16
-    // buffer; we only read up to and including the terminator.
-    while unsafe { *ptr.add(len) } != 0 {
-        len += 1;
-    }
-    // SAFETY: `ptr..ptr+len` was just proven readable above.
-    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
-    String::from_utf16_lossy(slice)
+/// `ptr` must be non-null and point to a NUL-terminated narrow C string
+/// that remains valid for the duration of this call.
+///
+/// Decoded as UTF-8 (lossily): module tags are usually plain ASCII, so this
+/// is correct in the common case; a tracker that wrote extended/accented
+/// characters in a DOS-era codepage (e.g. CP437) may show replacement
+/// characters instead of the intended glyphs. Properly honoring the
+/// original codepage is a possible follow-up, not attempted here.
+unsafe fn narrow_cstr_to_string(ptr: *const std::ffi::c_char) -> String {
+    // SAFETY: caller guarantees `ptr` is non-null and NUL-terminated.
+    let cstr = unsafe { std::ffi::CStr::from_ptr(ptr) };
+    cstr.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
@@ -85,13 +92,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wide_cstr_reads_up_to_terminator() {
-        let mut buf: Vec<u16> = "hello".encode_utf16().collect();
+    fn narrow_cstr_reads_up_to_terminator() {
+        let mut buf: Vec<std::ffi::c_char> =
+            "hello".bytes().map(|b| b as std::ffi::c_char).collect();
         buf.push(0);
-        buf.push('!' as u16); // must not be read
-        // SAFETY: `buf` is a valid NUL-terminated UTF-16 buffer for the
+        buf.push(b'!' as std::ffi::c_char); // must not be read
+        // SAFETY: `buf` is a valid NUL-terminated narrow C string for the
         // duration of this call.
-        let text = unsafe { wide_cstr_to_string(buf.as_ptr()) };
+        let text = unsafe { narrow_cstr_to_string(buf.as_ptr()) };
         assert_eq!(text, "hello");
     }
 }
