@@ -6,7 +6,7 @@
 //! edited — add a new one instead.
 
 /// The schema version this build of `emusic-library` expects.
-pub const CURRENT_VERSION: i64 = 4;
+pub const CURRENT_VERSION: i64 = 5;
 
 pub const MIGRATIONS: &[&str] = &[
     // v1: initial schema.
@@ -75,5 +75,11 @@ pub const MIGRATIONS: &[&str] = &[
     // v4: per-track star (favorite) flag (#131).
     r"
     ALTER TABLE tracks ADD COLUMN starred INTEGER NOT NULL DEFAULT 0;
+    ",
+    // v5: a play is inserted when a track *starts* (so the History view can
+    // show it live) and finalized when it stops; `finished` marks the rows
+    // that have been finalized. Pre-existing rows are already finished.
+    r"
+    ALTER TABLE plays ADD COLUMN finished INTEGER NOT NULL DEFAULT 1;
     ",
 ];

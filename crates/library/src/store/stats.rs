@@ -27,6 +27,10 @@ pub struct PlayHistoryEntry {
     pub played_at: i64,
     pub duration_played_ms: u32,
     pub completed: bool,
+    /// `false` for a play that has started but not stopped yet (see
+    /// [`Store::begin_play`]); such a row is finalized by
+    /// [`Store::record_play`].
+    pub finished: bool,
 }
 
 /// A track's play count within some window, for "most played" listings.
@@ -37,17 +41,34 @@ pub struct MostPlayedEntry {
 }
 
 impl Store {
-    /// Records a play event and updates the track's aggregated stats.
+    /// Inserts a history row for a play that has just started and returns
+    /// its primary key.
     ///
-    /// Inserts one row into `plays` and, in the same transaction, bumps
-    /// either `play_count` (when [`PlayEvent::completed`] is `true`) or
-    /// `skip_count` on `track_stats`, refreshing `last_played_at` either
-    /// way.
+    /// The row is unfinished (`duration_played_ms = 0`, `completed = 0`,
+    /// `finished = 0`) until [`Store::record_play`] finalizes it, which lets
+    /// the History view list a track the moment playback begins.
+    pub fn begin_play(&mut self, track_id: TrackId, played_at: i64) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO plays (track_id, played_at, duration_played_ms, completed, finished)
+             VALUES (?1, ?2, 0, 0, 0)",
+            params![track_id.0, played_at],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Finalizes a play event and updates the track's aggregated stats.
+    ///
+    /// Updates the row [`Store::begin_play`] inserted for the same track and
+    /// start time, or inserts a finished row when there is none, then — in
+    /// the same transaction — bumps either `play_count` (when
+    /// [`PlayEvent::completed`] is `true`) or `skip_count` on `track_stats`,
+    /// refreshing `last_played_at` either way.
     pub fn record_play(&mut self, event: &PlayEvent) -> Result<()> {
         let tx = self.conn.transaction()?;
-        tx.execute(
-            "INSERT INTO plays (track_id, played_at, duration_played_ms, completed)
-             VALUES (?1, ?2, ?3, ?4)",
+        let updated = tx.execute(
+            "UPDATE plays
+             SET duration_played_ms = ?3, completed = ?4, finished = 1
+             WHERE track_id = ?1 AND played_at = ?2 AND finished = 0",
             params![
                 event.track_id.0,
                 event.played_at,
@@ -55,6 +76,18 @@ impl Store {
                 event.completed,
             ],
         )?;
+        if updated == 0 {
+            tx.execute(
+                "INSERT INTO plays (track_id, played_at, duration_played_ms, completed, finished)
+                 VALUES (?1, ?2, ?3, ?4, 1)",
+                params![
+                    event.track_id.0,
+                    event.played_at,
+                    event.duration_played_ms,
+                    event.completed,
+                ],
+            )?;
+        }
         let (play_delta, skip_delta) = if event.completed { (1, 0) } else { (0, 1) };
         tx.execute(
             "INSERT INTO track_stats (track_id, play_count, skip_count, last_played_at)
@@ -122,7 +155,7 @@ impl Store {
     /// rows to skip (`offset = page * page_size` for simple pagination).
     pub fn play_history_page(&self, limit: u32, offset: u32) -> Result<Vec<PlayHistoryEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, track_id, played_at, duration_played_ms, completed
+            "SELECT id, track_id, played_at, duration_played_ms, completed, finished
              FROM plays
              ORDER BY played_at DESC, id DESC
              LIMIT ?1 OFFSET ?2",
@@ -134,6 +167,7 @@ impl Store {
                 played_at: row.get(2)?,
                 duration_played_ms: row.get(3)?,
                 completed: row.get(4)?,
+                finished: row.get(5)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

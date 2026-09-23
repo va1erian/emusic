@@ -13,15 +13,16 @@ pub(crate) mod scan;
 pub(crate) mod source;
 pub(crate) mod stats;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use emusic_library::stats::{PlayRecord, StatsRecorder};
+use emusic_library::stats::StatsRecorder;
 use emusic_library::watch::{WatchEvent, Watcher};
 use emusic_library::{Folder, Store, TrackId};
 use tracing::{info, warn};
 
+use crate::backend::PlayMessage;
 use crate::library_api::{
     AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
     StatsWindow, TrackInfo,
@@ -54,8 +55,8 @@ pub struct LibraryBackend {
     updates: Receiver<Update>,
     update_tx: Sender<Update>,
     watch_events: Receiver<WatchEvent>,
-    play_records: Receiver<PlayRecord>,
-    play_record_tx: Sender<PlayRecord>,
+    play_messages: Receiver<PlayMessage>,
+    play_message_tx: Sender<PlayMessage>,
     stats_recorder: StatsRecorder,
     watcher: Option<Watcher>,
     status: Option<String>,
@@ -104,7 +105,7 @@ impl LibraryBackend {
 
         let (update_tx, updates) = std::sync::mpsc::channel();
         let (watch_tx, watch_events) = std::sync::mpsc::channel();
-        let (play_record_tx, play_records) = std::sync::mpsc::channel();
+        let (play_message_tx, play_messages) = std::sync::mpsc::channel();
 
         let watcher = match Watcher::new(Default::default(), watch_tx) {
             Ok(watcher) => Some(watcher),
@@ -122,8 +123,8 @@ impl LibraryBackend {
             updates,
             update_tx,
             watch_events,
-            play_records,
-            play_record_tx,
+            play_messages,
+            play_message_tx,
             stats_recorder,
             watcher,
             status: None,
@@ -134,9 +135,40 @@ impl LibraryBackend {
         }
     }
 
-    /// Sender the player adapter uses to report completed plays.
-    pub fn play_record_tx(&self) -> Sender<PlayRecord> {
-        self.play_record_tx.clone()
+    /// Sender the player adapter uses to report track starts and finishes.
+    pub(crate) fn play_message_tx(&self) -> Sender<PlayMessage> {
+        self.play_message_tx.clone()
+    }
+
+    /// Writes a just-started play's history row and mirrors it into the
+    /// snapshot, so the History view shows the track immediately.
+    ///
+    /// The store write is synchronous (an indexed lookup plus one insert,
+    /// like the other user-action store calls) because the snapshot needs
+    /// the assigned row id right away for "remove entry".
+    fn begin_play(&mut self, path: &Path, started_at: i64) {
+        let mut store = self
+            .store
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let track_id = match store.resolve_track_id(path) {
+            Ok(Some(track_id)) => track_id,
+            Ok(None) => {
+                warn!(path = %path.display(), "no library track for started path, dropping record");
+                return;
+            }
+            Err(err) => {
+                warn!(%err, "failed to resolve started path");
+                return;
+            }
+        };
+        match store.begin_play(track_id, started_at) {
+            Ok(play_id) => {
+                self.snapshot
+                    .record_play_started(track_id.0 as u64, play_id, started_at);
+            }
+            Err(err) => warn!(%err, "failed to record started play"),
+        }
     }
 }
 
@@ -241,9 +273,16 @@ impl LibraryDataSource for LibraryBackend {
             }
         }
 
-        while let Ok(record) = self.play_records.try_recv() {
-            self.stats_recorder.record(record.clone());
-            self.snapshot.record_play(&record);
+        while let Ok(message) = self.play_messages.try_recv() {
+            match message {
+                PlayMessage::Started { path, started_at } => {
+                    self.begin_play(&path, started_at);
+                }
+                PlayMessage::Finished(record) => {
+                    self.stats_recorder.record(record.clone());
+                    self.snapshot.record_play_finished(&record);
+                }
+            }
         }
 
         while let Some(path) = crate::settings::folder_picker::try_recv() {

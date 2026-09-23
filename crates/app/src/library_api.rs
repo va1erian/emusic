@@ -133,6 +133,10 @@ pub struct HistoryEntry {
     pub played_ms: u32,
     /// Whether the player's completion threshold was met.
     pub completed: bool,
+    /// `false` while the play is still in progress (it is recorded when the
+    /// track starts, so the History view can list it live, and finalized
+    /// when it stops).
+    pub finished: bool,
 }
 
 /// Read-only view over the music library, as needed by the shell's views.

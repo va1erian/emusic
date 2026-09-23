@@ -142,7 +142,44 @@ fn from_store_maps_history_and_most_played_windows() {
 }
 
 #[test]
-fn record_play_updates_snapshot_play_count() {
+fn record_play_started_lists_the_track_live_then_finishes_it() {
+    let mut snapshot = Snapshot::default();
+    snapshot.tracks.push(TrackInfo {
+        id: 1,
+        path: r"C:\music\song.flac".to_string(),
+        title: "Song".to_string(),
+        artist: "Artist".to_string(),
+        ..Default::default()
+    });
+
+    snapshot.record_play_started(1, 42, 1_700_000_000);
+    assert_eq!(snapshot.history.len(), 1);
+    let entry = &snapshot.history[0];
+    assert_eq!(entry.id, 42);
+    assert_eq!(entry.track_id, 1);
+    assert_eq!(entry.title, "Song");
+    assert_eq!(entry.artist, "Artist");
+    assert!(!entry.finished);
+    assert!(!entry.completed);
+
+    let record = emusic_library::stats::PlayRecord {
+        path: PathBuf::from(r"C:\music\song.flac"),
+        started_at: 1_700_000_000,
+        listened_ms: 120_000,
+        completed: true,
+    };
+    snapshot.record_play_finished(&record);
+
+    // The live entry is finalized in place rather than duplicated.
+    assert_eq!(snapshot.history.len(), 1);
+    assert!(snapshot.history[0].finished);
+    assert!(snapshot.history[0].completed);
+    assert_eq!(snapshot.history[0].played_ms, 120_000);
+    assert_eq!(snapshot.tracks[0].play_count, 1);
+}
+
+#[test]
+fn record_play_finished_updates_snapshot_play_count() {
     let mut snapshot = Snapshot::default();
     snapshot.tracks.push(TrackInfo {
         id: 1,
@@ -157,7 +194,7 @@ fn record_play_updates_snapshot_play_count() {
         listened_ms: 120_000,
         completed: true,
     };
-    snapshot.record_play(&record);
+    snapshot.record_play_finished(&record);
 
     assert_eq!(snapshot.tracks[0].play_count, 4);
     assert!(snapshot.tracks[0].last_played_minutes_ago.is_some());

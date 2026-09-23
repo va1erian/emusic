@@ -15,6 +15,7 @@ use std::time::Duration;
 use emusic_library::stats::PlayRecord;
 use emusic_player::{PlaybackState, Player, PlayerEvent, RepeatMode as PlayerRepeatMode};
 
+use super::PlayMessage;
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
 };
@@ -31,7 +32,7 @@ pub struct PlayerAdapter {
     queue_item_indices: Vec<usize>,
     /// Channel to the library backend's stats recorder. `None` in mock mode
     /// or when the library backend is unavailable.
-    play_record_tx: Option<Sender<PlayRecord>>,
+    play_record_tx: Option<Sender<PlayMessage>>,
     /// Unix timestamp (seconds, UTC) when the current track started playing.
     current_track_started_at: Option<i64>,
     /// Cached label of the active scoped shuffle (#57).
@@ -41,7 +42,7 @@ pub struct PlayerAdapter {
 }
 
 impl PlayerAdapter {
-    pub fn new(player: Player, play_record_tx: Option<Sender<PlayRecord>>) -> Self {
+    pub(crate) fn new(player: Player, play_record_tx: Option<Sender<PlayMessage>>) -> Self {
         Self {
             player,
             now_playing: None,
@@ -122,9 +123,13 @@ fn map_repeat_to_player(mode: RepeatMode) -> PlayerRepeatMode {
 impl PlayerAdapter {
     fn handle_event(&mut self, event: PlayerEvent) {
         match event {
-            PlayerEvent::TrackStarted { .. } => {
-                self.current_track_started_at = Some(unix_now());
+            PlayerEvent::TrackStarted { path, .. } => {
+                let started_at = unix_now();
+                self.current_track_started_at = Some(started_at);
                 self.status_message = None;
+                if let Some(tx) = &self.play_record_tx {
+                    let _ = tx.send(PlayMessage::Started { path, started_at });
+                }
             }
             PlayerEvent::TrackSkipped { path } => {
                 self.status_message =
@@ -154,7 +159,7 @@ impl PlayerAdapter {
             listened_ms: listened.as_millis() as u32,
             completed,
         };
-        let _ = tx.send(record);
+        let _ = tx.send(PlayMessage::Finished(record));
     }
 }
 
