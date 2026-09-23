@@ -246,7 +246,7 @@ fn grid_view(
 
 fn track_command(action: TrackAction) -> Command {
     match action {
-        TrackAction::Play(id) => Command::PlayTrack(id),
+        TrackAction::Play { id, context } => Command::play_track(id, context),
         TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
         TrackAction::AddToQueue(id) => Command::QueueTrack(id),
     }

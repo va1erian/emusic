@@ -5,14 +5,13 @@
 //! Rows are virtualized via `egui_extras::TableBuilder` (only visible rows
 //! are laid out/painted), so it stays smooth even at large library sizes.
 //!
-//! Playback isn't wired up yet: [`PlayerApi`](crate::player_api::PlayerApi)
-//! has no way to load an arbitrary track or replace its queue (that lands
-//! with the real player, #4). Double-click, Enter and the context menu's
-//! Play/Play next/Add to queue therefore surface as [`TrackAction`]s that
-//! the caller turns into [`crate::state::Command`]s; those commands are
-//! currently no-ops in the shell (see `app::apply_player_command`) until #4
-//! lands. Selection, sorting, keyboard navigation, resizing and the context
-//! menu's Copy path / Open file location are fully functional today.
+//! Double-click, Enter and the context menu's Play/Play next/Add to queue
+//! surface as [`TrackAction`]s that the caller turns into
+//! [`crate::state::Command`]s, applied to the real player by
+//! `app::apply_player_command`. `TrackAction::Play` carries the table's
+//! current visible/sorted order alongside the clicked id (#134), so the
+//! resulting command can replace the queue with the whole list rather than
+//! just the one track.
 
 pub(crate) mod columns;
 mod context_menu;
@@ -40,9 +39,15 @@ pub struct TrackTableState {
 
 /// A playback action requested from a row this frame (double-click, Enter,
 /// or a context-menu item), to be turned into a `Command` by the caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrackAction {
-    Play(u64),
+    /// `context` is the table's current visible/sorted track ids (#134), so
+    /// the caller can hand it straight to [`crate::state::Command::play_track`]
+    /// and every embedding view gets a correctly populated queue for free.
+    Play {
+        id: u64,
+        context: Vec<u64>,
+    },
     PlayNext(u64),
     AddToQueue(u64),
 }
@@ -106,7 +111,10 @@ pub fn show(
         && let Some(focus) = state.selection.focus
         && let Some(&track_idx) = order.get(focus)
     {
-        action = Some(TrackAction::Play(tracks[track_idx].id));
+        action = Some(TrackAction::Play {
+            id: tracks[track_idx].id,
+            context: order_ids.clone(),
+        });
     }
 
     let available_height = ui.available_height();
@@ -168,11 +176,17 @@ pub fn show(
                     state.selection.click(&order_ids, pos, track.id, modifiers);
                 }
                 if response.double_clicked() {
-                    action = Some(TrackAction::Play(track.id));
+                    action = Some(TrackAction::Play {
+                        id: track.id,
+                        context: order_ids.clone(),
+                    });
                 }
                 if let Some(context_action) = context_menu::show(&response, track) {
                     action = Some(match context_action {
-                        ContextAction::Play => TrackAction::Play(track.id),
+                        ContextAction::Play => TrackAction::Play {
+                            id: track.id,
+                            context: order_ids.clone(),
+                        },
                         ContextAction::PlayNext => TrackAction::PlayNext(track.id),
                         ContextAction::AddToQueue => TrackAction::AddToQueue(track.id),
                     });

@@ -27,10 +27,19 @@ pub enum Command {
     PlayerSetVolume(f32),
     PlayerToggleRepeat,
     PlayerToggleShuffle,
-    /// Start playing this track. A stand-in for real queue control (#4):
-    /// currently a no-op in the shell, kept here so the track table's
-    /// double-click/Enter/context menu have somewhere to send intent.
-    PlayTrack(u64),
+    /// Start playing `id`, replacing the queue with `context` (the ids of
+    /// the view it was clicked from, in that view's current visible/sorted
+    /// order) and starting at `id`'s position within it (#134). An empty
+    /// `context` falls back to a one-track queue.
+    ///
+    /// Build this with [`Command::play_track`] rather than the variant
+    /// directly, so a bare id — and the one-entry queue that made
+    /// Next/Previous act like Stop (#134) — isn't the easy path for a
+    /// future call site.
+    PlayTrack {
+        id: u64,
+        context: Vec<u64>,
+    },
     /// Play a whole album (#17): replaces the queue with these tracks, in
     /// order, and starts at the first. The ids are resolved to paths by the
     /// shell, same as [`Command::PlayTrack`].
@@ -65,4 +74,18 @@ pub enum Command {
     /// Clear the whole playback history (History view, #24), after the
     /// confirmation dialog.
     HistoryClear,
+}
+
+impl Command {
+    /// Builds a [`Command::PlayTrack`] from a clicked track's id and the
+    /// surrounding order it was clicked from (#134) — e.g. a view's current
+    /// filtered/sorted track ids. This is the only intended way to construct
+    /// `PlayTrack`: it keeps "pass the whole list" the path of least
+    /// resistance instead of a bare id that silently empties the queue.
+    pub fn play_track(id: u64, context: impl IntoIterator<Item = u64>) -> Self {
+        Command::PlayTrack {
+            id,
+            context: context.into_iter().collect(),
+        }
+    }
 }
