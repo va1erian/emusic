@@ -40,7 +40,10 @@ pub fn show(
         // view's content has an intrinsic minimum width larger than the
         // panel. Wrapping the view body keeps that content reachable when the
         // window (or the right panel) leaves little room.
-        egui::ScrollArea::both()
+        // The Albums view scrolls its grid and track table itself, so the outer
+        // area only scrolls sideways; a vertical bar here would draw over theirs.
+        let vertical = state.view != View::Albums;
+        egui::ScrollArea::new([true, vertical])
             .id_salt("central_view_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| match state.view {
