@@ -75,6 +75,11 @@ struct Cli {
     #[arg(long)]
     search_popup: bool,
 
+    /// Opens the Music table's track Properties dialog for the first track
+    /// before rendering (#136), so the dialog can be screenshotted headlessly.
+    #[arg(long)]
+    properties: bool,
+
     /// Visualizer strip mode to render (#25): `spectrum` (the default),
     /// `oscilloscope` or `off`.
     #[arg(long, value_parser = parse_visualizer, default_value = "spectrum")]
@@ -128,6 +133,7 @@ fn main() {
             mode,
             search: &search,
             visualizer: cli.visualizer,
+            properties: cli.properties,
         };
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
@@ -151,6 +157,7 @@ fn main() {
         mode,
         search: &search,
         visualizer: cli.visualizer,
+        properties: cli.properties,
     };
     render_one(view, &args, &cli.out);
 }
@@ -205,6 +212,8 @@ struct RenderArgs<'a> {
     mode: LibraryMode,
     search: &'a SearchArgs,
     visualizer: VisualizerMode,
+    /// Open the track Properties dialog before rendering (#136).
+    properties: bool,
 }
 
 fn render_one(view: View, args: &RenderArgs, out: &Path) {
@@ -238,6 +247,9 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
             .state_mut()
             .open_search_popup(args.search.query.clone().unwrap_or_default());
     }
+    if args.properties {
+        harness.state_mut().open_track_properties();
+    }
     // A single step is enough for a static screenshot; `Harness::run` would
     // wait for the UI to go idle, which it never does here because the
     // shell's repaint policy (#6) keeps requesting frames while "playing".
@@ -246,7 +258,7 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
     // steps so the UI thread polls and renders the result rather than a
     // still-empty "pending" frame.
     harness.run_steps(1);
-    if args.search.query.is_some() || args.search.popup {
+    if args.search.query.is_some() || args.search.popup || args.properties {
         std::thread::sleep(std::time::Duration::from_millis(200));
         harness.run_steps(2);
     }

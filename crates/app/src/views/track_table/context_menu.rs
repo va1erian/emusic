@@ -1,5 +1,5 @@
 //! Right-click context menu for a track row: Play, Play next, Add to queue,
-//! Open file location, Copy path.
+//! Open file location, Copy path, Properties.
 
 use eframe::egui;
 
@@ -7,13 +7,17 @@ use crate::library_api::TrackInfo;
 
 /// What the caller should do after a context menu item is chosen. Playback
 /// actions are handed back as [`crate::state::Command`]s by the caller;
-/// `CopyPath` and `OpenFileLocation` are executed immediately here since
-/// they have no effect on shared app state.
+/// `Properties` is turned into the caller's dialog state; `CopyPath` and
+/// `OpenFileLocation` are executed immediately here since they have no
+/// effect on shared app state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextAction {
     Play,
     PlayNext,
     AddToQueue,
+    /// The user asked to see the track's full metadata; the caller opens the
+    /// Properties dialog for the row.
+    Properties,
 }
 
 /// Shows the context menu for `response` (a track row's response), if the
@@ -41,6 +45,11 @@ pub fn show(response: &egui::Response, track: &TrackInfo) -> Option<ContextActio
         }
         if ui.button("Copy path").clicked() {
             ui.ctx().copy_text(track.path.clone());
+            ui.close();
+        }
+        ui.separator();
+        if ui.button("Properties…").clicked() {
+            action = Some(ContextAction::Properties);
             ui.close();
         }
     });

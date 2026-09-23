@@ -167,6 +167,7 @@ fn track_to_info(track: &Track, stats: &HashMap<TrackId, TrackStats>) -> TrackIn
         id: track.id.0 as u64,
         title: track.display_title().to_string(),
         artist: track.artist.clone().unwrap_or_default(),
+        album_artist: track.album_artist.clone().unwrap_or_default(),
         album: track.album.clone().unwrap_or_default(),
         genre: track.genre.clone().unwrap_or_default(),
         track_no: track.track_no,
@@ -174,6 +175,8 @@ fn track_to_info(track: &Track, stats: &HashMap<TrackId, TrackStats>) -> TrackIn
             .year
             .and_then(|y| if y >= 0 { Some(y as u32) } else { None }),
         disc_no: track.disc_no,
+        composer: track.composer.clone().unwrap_or_default(),
+        comment: track.comment.clone().unwrap_or_default(),
         duration: Duration::from_millis(u64::from(track.duration_ms)),
         path: track.path.to_string_lossy().into_owned(),
         format: track.ext.clone(),

@@ -184,4 +184,14 @@ impl App {
         self.state.search_popup.open();
         self.state.search_popup.query = query.into();
     }
+
+    /// Opens the Music table's track Properties dialog for the library's
+    /// first track, as the row's context menu would (#136). Used by
+    /// `emusic-shot` (`--properties`) so the dialog can be screenshotted
+    /// headlessly.
+    pub fn open_track_properties(&mut self) {
+        if let Some(track) = self.library.tracks().first() {
+            self.state.music_table.properties = Some(track.clone());
+        }
+    }
 }
