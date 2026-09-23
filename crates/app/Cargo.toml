@@ -16,6 +16,8 @@ required-features = ["shot"]
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = ["glow", "accesskit"] }
 egui_extras = "0.36"
+raw-window-handle = "0.6"
+souvlaki = "0.8"
 emusic-player = { path = "../player" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

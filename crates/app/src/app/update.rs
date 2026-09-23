@@ -78,6 +78,12 @@ impl eframe::App for App {
         let dt = ctx.input(|i| i.stable_dt);
         self.player.tick(Duration::from_secs_f32(dt.max(0.0)));
 
+        // Mirror the current track to the OS media overlay and fold any
+        // transport events from it into this frame's queued commands (#26).
+        if let Some(smtc) = self.smtc.as_mut() {
+            smtc.sync(self.player.as_ref(), self.library.as_ref(), &mut self.state);
+        }
+
         theme::apply(&ctx, self.state.theme, self.state.accent.color());
 
         self.handle_shortcuts(&ctx);

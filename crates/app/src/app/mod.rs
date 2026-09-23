@@ -48,6 +48,9 @@ pub struct App {
     /// A second, independent search engine for the global search popup, so
     /// its query never changes what the Music view underneath is showing.
     popup_search: SearchEngine,
+    /// OS media controls / hardware media keys (#26). `None` in `emusic-shot`
+    /// and the snapshot tests, so headless runs never touch SMTC.
+    smtc: Option<crate::backend::smtc::Smtc>,
 }
 
 impl App {
@@ -100,6 +103,7 @@ impl App {
             backend_notice: None,
             search: SearchEngine::new(),
             popup_search: SearchEngine::new(),
+            smtc: None,
         }
     }
 
@@ -110,6 +114,14 @@ impl App {
     /// [`App::ui`]: eframe::App::ui
     pub fn attach_ipc(&mut self, ipc: crate::backend::ipc::IpcBridge) {
         self.ipc = Some(ipc);
+    }
+
+    /// Registers the OS media-control integration (#26). Only the real binary
+    /// calls this; shot/tests leave it unset so they never touch SMTC.
+    ///
+    /// [`Smtc`]: crate::backend::smtc::Smtc
+    pub fn attach_smtc(&mut self, smtc: crate::backend::smtc::Smtc) {
+        self.smtc = Some(smtc);
     }
 
     /// Sets a one-line startup notice (e.g. "Audio unavailable: ...") shown
