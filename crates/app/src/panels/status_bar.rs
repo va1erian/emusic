@@ -7,7 +7,6 @@ use eframe::egui;
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
-use crate::theme;
 
 pub fn show(
     ui: &mut egui::Ui,
@@ -32,7 +31,7 @@ pub fn show(
                 scan_status(ui, state, library);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    visualizer_strip(ui, player);
+                    super::visualizer::show(ui, state, player);
                 });
             });
         });
@@ -78,28 +77,6 @@ fn shuffle_scope(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi
     ui.label(format!("Shuffling: {scope}"));
     if ui.small_button("Stop").clicked() {
         state.push(Command::PlayerToggleShuffle);
-    }
-}
-
-fn visualizer_strip(ui: &mut egui::Ui, player: &dyn PlayerApi) {
-    let size = egui::vec2(140.0, 18.0);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
-
-    let bins = player.spectrum();
-    if bins.is_empty() {
-        return;
-    }
-    let bar_width = rect.width() / bins.len() as f32;
-    for (i, &v) in bins.iter().enumerate() {
-        let x = rect.left() + i as f32 * bar_width;
-        let height = rect.height() * v.clamp(0.0, 1.0);
-        let bar = egui::Rect::from_min_max(
-            egui::pos2(x, rect.bottom() - height),
-            egui::pos2(x + bar_width * 0.8, rect.bottom()),
-        );
-        painter.rect_filled(bar, 0.0, theme::current_accent());
     }
 }
 

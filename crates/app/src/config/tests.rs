@@ -9,7 +9,7 @@ use eframe::egui::Color32;
 
 use crate::config::{Config, load, save};
 use crate::player_api::RepeatMode;
-use crate::state::{Accent, AppState, PanelVisibility, Theme, View};
+use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 /// Unique scratch directory per test, so parallel tests never collide and
 /// nothing is written to the real `%APPDATA%`.
@@ -47,6 +47,7 @@ fn non_default_config() -> Config {
         column_browser_visible: false,
         column_browser_height: 222.0,
         last_view: View::MostPlayed,
+        visualizer: VisualizerMode::Oscilloscope,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
     }
 }

@@ -156,6 +156,18 @@ impl Player {
         self.volume
     }
 
+    /// FFT magnitude bins from the currently loaded channel, for the
+    /// visualizer's spectrum mode (#25); `None` when nothing is loaded.
+    pub fn fft(&self) -> Option<Vec<f32>> {
+        self.current.as_ref().and_then(|c| c.channel.fft())
+    }
+
+    /// Decoded float samples from the currently loaded channel, for the
+    /// visualizer's oscilloscope mode (#25); `None` when nothing is loaded.
+    pub fn samples(&self) -> Option<Vec<f32>> {
+        self.current.as_ref().and_then(|c| c.channel.samples())
+    }
+
     pub fn repeat_mode(&self) -> RepeatMode {
         self.queue.repeat_mode()
     }

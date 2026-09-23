@@ -109,8 +109,16 @@ pub trait PlayerApi {
     /// Live tracker-module metadata, if the current track is a module.
     fn module_info(&self) -> Option<&ModuleInfo>;
 
-    /// Normalized (0.0..=1.0) magnitude bins for the visualizer strip.
-    fn spectrum(&self) -> &[f32];
+    /// Raw FFT magnitude bins (positive frequencies) for the current track,
+    /// for the visualizer's spectrum mode (#25); empty when nothing is
+    /// playing. Called only while a visualizer is on, so implementations
+    /// don't need to touch the audio engine on every frame.
+    fn fft(&self) -> Vec<f32>;
+
+    /// Raw decoded float samples for the current track, for the visualizer's
+    /// oscilloscope mode (#25); empty when nothing is playing. Called only
+    /// while the oscilloscope is on.
+    fn samples(&self) -> Vec<f32>;
 
     fn play_pause(&mut self);
     fn stop(&mut self);

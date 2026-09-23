@@ -141,6 +141,12 @@ impl eframe::App for App {
         self.apply_pending();
         self.tick_config_persistence();
 
+        // Repaint policy (#6, #25): ~30 fps while something is actually
+        // playing and the window is visible (a minimized window needs no
+        // frames). This is also what animates the status-bar visualizer; the
+        // strip only reads FFT/samples while a mode is active *and* playing
+        // (see `panels::visualizer`), so `Off` costs no audio reads even on
+        // these repaint frames.
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         if self.player.status() == PlaybackStatus::Playing && !minimized {
             ctx.request_repaint_after(PLAYING_REPAINT_INTERVAL);

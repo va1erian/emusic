@@ -5,7 +5,7 @@ use std::any::Any;
 use std::path::Path;
 use std::time::Duration;
 
-use bass::{Attribute, Channel, MusicFlags, StreamFlags};
+use bass::{Attribute, Channel, FftSize, MusicFlags, StreamFlags};
 
 use crate::error::PlayerError;
 use crate::tracker::TrackerSettings;
@@ -46,6 +46,19 @@ pub trait BackendChannel: Send {
     /// end. The returned guard must be kept alive for as long as the
     /// callback should stay registered.
     fn on_end(&self, callback: Box<dyn Fn() + Send>) -> Result<Box<dyn Any + Send>, PlayerError>;
+
+    /// Reads the channel's recent output as FFT magnitude bins (positive
+    /// frequencies only), or `None` when the backend has no live channel /
+    /// no FFT data to offer (e.g. a mock backend).
+    fn fft(&self) -> Option<Vec<f32>> {
+        None
+    }
+
+    /// Reads the channel's recent decoded float samples, or `None` when the
+    /// backend has no live channel / can't supply samples.
+    fn samples(&self) -> Option<Vec<f32>> {
+        None
+    }
 }
 
 /// File extensions BASS decodes as tracker modules (`BASS_MusicLoad`) rather
@@ -79,10 +92,12 @@ impl BassBackend {
 
 impl AudioBackend for BassBackend {
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError> {
+        // FLOAT decodes to `f32`, which the visualizer (#25) needs for its
+        // oscilloscope; `get_data_fft` works regardless.
         let channel = if is_tracker_module(path) {
-            BassChannel::Music(self.bass.open_music(path, MusicFlags::empty(), 0)?)
+            BassChannel::Music(self.bass.open_music(path, MusicFlags::FLOAT, 0)?)
         } else {
-            BassChannel::Stream(self.bass.open_stream(path, StreamFlags::empty())?)
+            BassChannel::Stream(self.bass.open_stream(path, StreamFlags::FLOAT)?)
         };
         Ok(Box::new(channel))
     }
@@ -100,6 +115,17 @@ impl AudioBackend for BassBackend {
 enum BassChannel {
     Stream(bass::Stream),
     Music(bass::Music),
+}
+
+impl BassChannel {
+    /// The underlying channel's format info via the [`bass::Channel`] trait,
+    /// which isn't object-safe enough to call through an enum directly.
+    fn channel_info(&self) -> Result<bass::ChannelInfo, bass::BassError> {
+        match self {
+            Self::Stream(s) => s.info(),
+            Self::Music(m) => m.info(),
+        }
+    }
 }
 
 impl BackendChannel for BassChannel {
@@ -180,6 +206,46 @@ impl BackendChannel for BassChannel {
         };
         Ok(Box::new(guard))
     }
+
+    fn fft(&self) -> Option<Vec<f32>> {
+        let bins = match self {
+            Self::Stream(s) => s.get_data_fft(FftSize::Fft1024),
+            Self::Music(m) => m.get_data_fft(FftSize::Fft1024),
+        };
+        bins.ok()
+    }
+
+    fn samples(&self) -> Option<Vec<f32>> {
+        // Read one interleaved FFT-sized frame and downmix to mono, so the
+        // oscilloscope's single trace doesn't zig-zag between L and R.
+        let mut raw = vec![0f32; FftSize::Fft1024.output_len() * MAX_SAMPLE_CHANNELS];
+        let read = match self {
+            Self::Stream(s) => s.get_data_f32(&mut raw),
+            Self::Music(m) => m.get_data_f32(&mut raw),
+        }
+        .ok()?;
+        if read == 0 {
+            return None;
+        }
+        let channels = match self.channel_info() {
+            Ok(info) => info.channels.clamp(1, MAX_SAMPLE_CHANNELS as u32) as usize,
+            Err(_) => 1,
+        };
+        Some(downmix_mono(&raw[..read], channels))
+    }
+}
+
+/// Upper bound on interleaved channels the oscilloscope buffer reserves for.
+const MAX_SAMPLE_CHANNELS: usize = 2;
+
+/// Averages each frame of `interleaved` (with `channels` samples per frame)
+/// down to a single mono sample, so a stereo channel yields one clean trace.
+fn downmix_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
+    let channels = channels.max(1);
+    interleaved
+        .chunks(channels)
+        .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+        .collect()
 }
 
 #[cfg(test)]
@@ -203,5 +269,25 @@ mod tests {
     #[test]
     fn no_extension_is_not_a_tracker_module() {
         assert!(!is_tracker_module(Path::new("no_extension")));
+    }
+
+    #[test]
+    fn downmix_averages_each_stereo_frame() {
+        let mono = downmix_mono(&[1.0, -1.0, 0.5, 0.5], 2);
+        assert_eq!(mono, vec![0.0, 0.5]);
+    }
+
+    #[test]
+    fn downmix_passes_mono_through() {
+        let mono = downmix_mono(&[0.25, -0.5], 1);
+        assert_eq!(mono, vec![0.25, -0.5]);
+    }
+
+    #[test]
+    fn downmix_averages_a_partial_trailing_frame() {
+        // A 3rd sample with no matching frame partner still contributes its
+        // own (single-value) average rather than panicking.
+        let mono = downmix_mono(&[1.0, 1.0, 0.0], 2);
+        assert_eq!(mono, vec![1.0, 0.0]);
     }
 }
