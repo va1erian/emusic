@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bass::{Attribute, Channel, FftSize, MusicFlags, StreamFlags};
+use bass::{Attribute, Channel, FftSize, MusicFlags, PositionMode, StreamFlags};
 
 use crate::error::PlayerError;
 use crate::sid::SidChannel;
@@ -59,6 +59,13 @@ pub trait BackendChannel: Send {
     /// Reads the channel's recent decoded float samples, or `None` when the
     /// backend has no live channel / can't supply samples.
     fn samples(&self) -> Option<Vec<f32>> {
+        None
+    }
+
+    /// Live tracker-module metadata (name, message, instrument/sample names,
+    /// current order/row), or `None` when `self` isn't a tracker module
+    /// channel.
+    fn module_info(&self) -> Option<crate::tracker::ModuleInfo> {
         None
     }
 }
@@ -261,6 +268,35 @@ impl BackendChannel for BassChannel {
             Err(_) => 1,
         };
         Some(downmix_mono(&raw[..read], channels))
+    }
+
+    fn module_info(&self) -> Option<crate::tracker::ModuleInfo> {
+        let Self::Music(m) = self else {
+            return None;
+        };
+        let info = m.info().ok()?;
+        let tags = m.tags();
+
+        // `BASS_POS_MUSIC_ORDER` packs the current order into the low word
+        // and the current row into the high word of the returned value (see
+        // BASS's docs for `BASS_ChannelGetPosition`); `length` in the same
+        // mode gives the module's total order count.
+        let raw_position = m.position(PositionMode::MusicOrder).unwrap_or(0);
+        let current_order = (raw_position & 0xFFFF) as u32;
+        let current_row = ((raw_position >> 16) & 0xFFFF) as u32;
+        let orders = m.length(PositionMode::MusicOrder).unwrap_or(0) as u32;
+
+        Some(crate::tracker::ModuleInfo {
+            name: tags.name.unwrap_or_default(),
+            format: info.format_name,
+            channels: info.channels,
+            orders,
+            current_order,
+            current_row,
+            message: tags.message.unwrap_or_default(),
+            instruments: tags.instruments,
+            samples: tags.samples,
+        })
     }
 }
 

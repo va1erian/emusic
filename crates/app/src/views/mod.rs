@@ -8,7 +8,7 @@ pub(crate) mod album_grid;
 mod artists;
 pub(crate) mod column_browser;
 pub(crate) mod folder_tree;
-mod folders;
+pub(crate) mod folders;
 mod genres;
 pub(crate) mod history;
 pub(crate) mod most_played;

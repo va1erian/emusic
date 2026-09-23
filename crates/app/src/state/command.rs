@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use emusic_player::tracker::TrackerSettings;
+
 use super::{Accent, PanelKind, View};
 
 /// One-shot request emitted by a panel/view during `ui()`, applied by the
@@ -88,6 +90,9 @@ pub enum Command {
     /// Flip whether the track is starred (favorited), from a row's star
     /// column or Star/Unstar context-menu entry (#131).
     ToggleStarred(u64),
+    /// Replace the tracker module playback settings (interpolation, ramping,
+    /// emulation, ...), applied live to the player and persisted.
+    SetTrackerSettings(TrackerSettings),
 }
 
 impl Command {

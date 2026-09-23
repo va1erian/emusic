@@ -10,12 +10,14 @@ use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
 
-pub fn show(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    library: &dyn LibraryDataSource,
-    player: &dyn PlayerApi,
-) {
+/// Renders the tree's own left panel. Shown as a real top-level panel
+/// (sibling to the navigator/right panel) *before* the `CentralPanel` is
+/// created, not nested inside the central view's `ScrollArea` — nesting a
+/// resizable `Panel` inside a scroll area let it compute its docking rect
+/// from the scroll content's (potentially offset) bounds instead of the
+/// screen, which let it paint over the navigator column instead of stopping
+/// at its edge.
+pub fn tree_panel(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
     let recursive = state.folder_tree.include_subfolders;
     let mut folder_command = None;
     egui::Panel::left("folder_tree")
@@ -43,7 +45,14 @@ pub fn show(
     if let Some(command) = folder_command {
         state.push(command);
     }
+}
 
+pub fn show(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    library: &dyn LibraryDataSource,
+    player: &dyn PlayerApi,
+) {
     let tracks: Vec<&TrackInfo> = library
         .tracks()
         .iter()

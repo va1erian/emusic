@@ -5,9 +5,40 @@ use emusic_player::tracker::{
     Emulation, EndBehavior, Interpolation, Ramping, Surround, TrackerSettings,
 };
 
+use crate::state::{AppState, Command};
+
+/// Settings → Tracker playback tab: edits [`AppState::tracker_settings`] and
+/// pushes [`Command::SetTrackerSettings`] when it changes, so the shell
+/// applies it live to the player and persists it with the rest of the
+/// config.
+pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
+    let mut settings = state.tracker_settings;
+    if tracker_settings_ui(ui, &mut settings) {
+        state.push(Command::SetTrackerSettings(settings));
+    }
+
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new("Presets").weak());
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("BASS default").clicked() {
+            state.push(Command::SetTrackerSettings(
+                TrackerSettings::default_preset(),
+            ));
+        }
+        if ui.button("Amiga authentic").clicked() {
+            state.push(Command::SetTrackerSettings(
+                TrackerSettings::amiga_authentic(),
+            ));
+        }
+        if ui.button("Smooth").clicked() {
+            state.push(Command::SetTrackerSettings(TrackerSettings::smooth()));
+        }
+    });
+}
+
 /// Draws a panel of controls for `settings` and returns whether any value
 /// changed this frame.
-pub fn tracker_settings_ui(ui: &mut egui::Ui, settings: &mut TrackerSettings) -> bool {
+fn tracker_settings_ui(ui: &mut egui::Ui, settings: &mut TrackerSettings) -> bool {
     settings.sanitize();
 
     let mut changed = false;

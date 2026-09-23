@@ -22,6 +22,8 @@ pub use visualizer::VisualizerMode;
 
 use std::path::PathBuf;
 
+use emusic_player::tracker::TrackerSettings;
+
 use crate::views::album_grid::AlbumGridState;
 use crate::views::column_browser::ColumnBrowserState;
 use crate::views::folder_tree::FolderTreeState;
@@ -87,6 +89,9 @@ pub struct AppState {
     /// Persistent state for the right-hand now-playing panel (artwork cache,
     /// collapsible section flags, ...).
     pub now_playing: crate::panels::now_playing::PanelState,
+    /// Tracker module playback settings (Settings → Tracker playback),
+    /// applied live to the player and persisted.
+    pub tracker_settings: TrackerSettings,
 }
 
 impl Default for AppState {
@@ -114,6 +119,7 @@ impl Default for AppState {
             history: HistoryState::default(),
             pending: Vec::new(),
             now_playing: crate::panels::now_playing::PanelState::default(),
+            tracker_settings: TrackerSettings::default(),
         }
     }
 }
@@ -157,6 +163,7 @@ impl AppState {
             Command::LibraryRemoveFolder(path) => {
                 self.library_folders.retain(|folder| folder != path);
             }
+            Command::SetTrackerSettings(settings) => self.tracker_settings = *settings,
             _ => {}
         }
     }

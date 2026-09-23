@@ -221,6 +221,10 @@ impl PlayerApi for MockPlayer {
         self.volume = volume.clamp(0.0, 1.0);
     }
 
+    fn set_tracker_settings(&mut self, _settings: &emusic_player::tracker::TrackerSettings) {
+        // Nothing to apply: mock playback has no real tracker engine.
+    }
+
     fn set_repeat_mode(&mut self, mode: RepeatMode) {
         self.repeat = mode;
     }

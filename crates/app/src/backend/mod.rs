@@ -192,6 +192,7 @@ impl PlayerApi for UnavailablePlayer {
     fn set_volume(&mut self, _volume: f32) {}
     fn set_repeat_mode(&mut self, _mode: RepeatMode) {}
     fn set_shuffle(&mut self, _enabled: bool) {}
+    fn set_tracker_settings(&mut self, _settings: &emusic_player::tracker::TrackerSettings) {}
     fn queue_jump(&mut self, _index: usize) {}
     fn queue_remove(&mut self, _index: usize) {}
     fn replace_and_play(&mut self, _paths: &[PathBuf], _start_index: usize) {}
