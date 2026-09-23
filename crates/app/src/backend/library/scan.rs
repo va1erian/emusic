@@ -18,7 +18,7 @@ use emusic_library::{Folder, Store};
 use tracing::{info, warn};
 
 use super::source::Snapshot;
-use super::{Update, scan_options};
+use super::{Update, private_store, scan_options};
 
 /// How many files to process between status-bar progress updates, so a fast
 /// local scan never floods the UI-thread channel.
@@ -85,7 +85,7 @@ fn run_inner(
     // stays free for the UI. In-memory stores (unit tests) cannot be
     // reopened; for those, fall back to the shared connection and hold its
     // lock for the run, matching the pre-#69 behaviour.
-    match private_scan_store(store) {
+    match private_store(store) {
         Some(mut scan_store) => {
             purge_removed_roots(&mut scan_store, purge)?;
             if !roots.is_empty() {
@@ -112,20 +112,6 @@ fn run_inner(
     let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     let _ = updates.send(Update::Status(String::new()));
     Ok(())
-}
-
-/// Opens the scan's private connection to the same file as the shared store,
-/// if there is one.
-///
-/// The shared lock is held only for the `open_second` call itself, never
-/// while a scan or purge runs, so a UI read can never wait on this. Returns
-/// `None` for an in-memory store (there is no file to reopen), which callers
-/// handle by falling back to the shared connection.
-fn private_scan_store(store: &Arc<Mutex<Store>>) -> Option<Store> {
-    let shared = store
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    shared.open_second().ok()
 }
 
 /// Scans `roots` on a worker thread while this thread forwards coarse

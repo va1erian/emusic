@@ -15,6 +15,11 @@ use std::time::Duration;
 /// `emusic-library`.
 pub use emusic_library::stats::StatsWindow;
 
+/// The tag-editing API of `emusic-library`, re-exported so UI code can build
+/// edit requests and read back outcomes through [`LibraryDataSource`] without
+/// depending on the library crate directly.
+pub use emusic_library::tags::{EditOutcome, EditRequest, EditableTags};
+
 /// Minimal, local stand-in for `emusic_core::Track`.
 #[derive(Debug, Clone, Default)]
 pub struct TrackInfo {
@@ -174,6 +179,21 @@ pub trait LibraryDataSource {
     /// Sets whether the track with `id` is starred (#131). A no-op for
     /// backends that don't persist a library.
     fn set_starred(&mut self, _id: u64, _starred: bool) {}
+
+    /// Requests a batch of tag edits: each rewrites the target file's tags
+    /// and syncs the library index. The work runs in the background; results
+    /// are collected with [`LibraryDataSource::take_tag_edit_results`].
+    ///
+    /// A no-op for backends that don't persist a library (mock/screenshots).
+    fn request_tag_edits(&mut self, _requests: Vec<EditRequest>) {}
+
+    /// Drains the outcomes of tag edits requested with
+    /// [`LibraryDataSource::request_tag_edits`] that have finished since the
+    /// last call, in completion order. Empty for backends that don't persist
+    /// a library.
+    fn take_tag_edit_results(&mut self) -> Vec<EditOutcome> {
+        Vec::new()
+    }
 
     fn track_count(&self) -> usize {
         self.tracks().len()
