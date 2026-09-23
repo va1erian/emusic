@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
 /// Repeat behaviour for the queue.
@@ -128,6 +129,11 @@ pub trait PlayerApi {
     fn set_volume(&mut self, volume: f32);
     fn set_repeat_mode(&mut self, mode: RepeatMode);
     fn set_shuffle(&mut self, enabled: bool);
+
+    /// Applies tracker module playback settings (interpolation, ramping,
+    /// emulation, ...) live to the current channel, if it's a module; a
+    /// no-op otherwise (e.g. the mock backend, or a plain audio stream).
+    fn set_tracker_settings(&mut self, settings: &TrackerSettings);
 
     /// Jump to a queue entry by its current index and start playback.
     fn queue_jump(&mut self, index: usize);

@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use eframe::egui::Color32;
+use emusic_player::tracker::{
+    Emulation, EndBehavior, Interpolation, Ramping, Surround, TrackerSettings,
+};
 
 use crate::config::{Config, load, save};
 use crate::player_api::RepeatMode;
@@ -50,6 +53,17 @@ fn non_default_config() -> Config {
         visualizer_enabled: true,
         visualizer: VisualizerMode::Oscilloscope,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
+        tracker_settings: TrackerSettings {
+            interpolation: Interpolation::Sinc,
+            ramping: Ramping::Sensitive,
+            stereo_separation: 42,
+            amplify: 77,
+            surround: Surround::Mode2,
+            emulation: Emulation::Pt1,
+            ft2_pan: true,
+            end: EndBehavior::LoopTimes(3),
+            resampling_quality: 4,
+        },
     }
 }
 

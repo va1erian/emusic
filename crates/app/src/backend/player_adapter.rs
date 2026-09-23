@@ -13,6 +13,7 @@ use std::sync::mpsc::Sender;
 use std::time::Duration;
 
 use emusic_library::stats::PlayRecord;
+use emusic_player::tracker::TrackerSettings;
 use emusic_player::{PlaybackState, Player, PlayerEvent, RepeatMode as PlayerRepeatMode};
 
 use super::PlayMessage;
@@ -23,6 +24,10 @@ use crate::player_api::{
 pub struct PlayerAdapter {
     player: Player,
     now_playing: Option<NowPlayingInfo>,
+    /// Cached live tracker-module metadata, refreshed once per
+    /// [`PlayerApi::tick`] (see [`PlayerAdapter::refresh_cache`]) so
+    /// [`PlayerApi::module_info`] can return a borrow.
+    module_info: Option<ModuleInfo>,
     queue: Vec<QueueEntry>,
     /// Parallel to `queue`: each displayed entry's index into the player's
     /// original queue list, so `queue_jump`/`queue_remove` (indices over
@@ -46,6 +51,7 @@ impl PlayerAdapter {
         Self {
             player,
             now_playing: None,
+            module_info: None,
             queue: Vec::new(),
             queue_item_indices: Vec::new(),
             play_record_tx,
@@ -69,6 +75,24 @@ impl PlayerAdapter {
         self.queue_item_indices = upcoming.iter().map(|(index, _)| *index).collect();
         self.queue = upcoming.iter().map(|(_, path)| queue_entry(path)).collect();
         self.shuffle_scope = self.player.shuffle_scope().map(str::to_string);
+        self.module_info = self.player.module_info().map(map_module_info);
+    }
+}
+
+/// Converts `emusic_player`'s [`emusic_player::tracker::ModuleInfo`] to the
+/// shell-facing [`ModuleInfo`] (kept as a separate type per this module's own
+/// docs: everything here is a same-shaped forwarding wrapper).
+fn map_module_info(info: emusic_player::tracker::ModuleInfo) -> ModuleInfo {
+    ModuleInfo {
+        name: info.name,
+        format: info.format,
+        channels: info.channels,
+        orders: info.orders,
+        current_order: info.current_order,
+        current_row: info.current_row,
+        message: info.message,
+        instruments: info.instruments,
+        samples: info.samples,
     }
 }
 
@@ -223,11 +247,7 @@ impl PlayerApi for PlayerAdapter {
     }
 
     fn module_info(&self) -> Option<&ModuleInfo> {
-        // Live tracker-module metadata (current order/row, instrument
-        // names, ...) isn't read back from BASS yet — #5 only wired
-        // *applying* tracker settings, not querying playback position
-        // within the module. Follow-up, not #11's scope.
-        None
+        self.module_info.as_ref()
     }
 
     fn fft(&self) -> Vec<f32> {
@@ -270,6 +290,10 @@ impl PlayerApi for PlayerAdapter {
 
     fn set_shuffle(&mut self, enabled: bool) {
         self.player.set_shuffle(enabled);
+    }
+
+    fn set_tracker_settings(&mut self, settings: &TrackerSettings) {
+        self.player.apply_tracker_settings(settings);
     }
 
     fn queue_jump(&mut self, index: usize) {

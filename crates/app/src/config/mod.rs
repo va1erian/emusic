@@ -8,6 +8,7 @@ mod tests;
 
 use std::path::PathBuf;
 
+use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
@@ -49,6 +50,9 @@ pub struct Config {
     /// (#19); can also be set by hand in `config.toml`.
     #[serde(default)]
     pub library_folders: Vec<PathBuf>,
+    /// Tracker module playback settings (Settings → Tracker playback).
+    #[serde(default)]
+    pub tracker_settings: TrackerSettings,
 }
 
 impl Default for Config {
@@ -66,6 +70,7 @@ impl Default for Config {
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
+            tracker_settings: TrackerSettings::default(),
         }
     }
 }
@@ -88,6 +93,7 @@ impl Config {
             visualizer_enabled: state.visualizer_enabled,
             visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
+            tracker_settings: state.tracker_settings,
         }
     }
 
@@ -103,12 +109,15 @@ impl Config {
         state.visualizer_enabled = self.visualizer_enabled;
         state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
+        state.tracker_settings = self.tracker_settings;
     }
 
-    /// Restores the player fields (volume, repeat, shuffle).
+    /// Restores the player fields (volume, repeat, shuffle, tracker
+    /// settings).
     pub fn apply_to_player(&self, player: &mut dyn PlayerApi) {
         player.set_volume(self.volume);
         player.set_repeat_mode(self.repeat_mode);
         player.set_shuffle(self.shuffle);
+        player.set_tracker_settings(&self.tracker_settings);
     }
 }

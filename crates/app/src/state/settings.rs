@@ -14,10 +14,18 @@ pub enum SettingsTab {
     Appearance,
     /// Which file types open with emusic (#11).
     Associations,
+    /// Tracker module playback options (interpolation, ramping, emulation,
+    /// ...).
+    Playback,
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 3] = [Self::Library, Self::Appearance, Self::Associations];
+    pub const ALL: [Self; 4] = [
+        Self::Library,
+        Self::Appearance,
+        Self::Associations,
+        Self::Playback,
+    ];
 
     /// Label shown on the Settings tab strip.
     pub fn label(self) -> &'static str {
@@ -25,6 +33,7 @@ impl SettingsTab {
             Self::Library => "Library",
             Self::Appearance => "Appearance",
             Self::Associations => "File associations",
+            Self::Playback => "Tracker playback",
         }
     }
 
@@ -34,6 +43,7 @@ impl SettingsTab {
             Self::Library => "library",
             Self::Appearance => "appearance",
             Self::Associations => "associations",
+            Self::Playback => "playback",
         }
     }
 

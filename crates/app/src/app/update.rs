@@ -133,6 +133,12 @@ impl eframe::App for App {
                 self.player.as_ref(),
             );
         }
+        // The Folders view's directory tree is a real top-level panel (like
+        // the navigator/right panel above), not nested inside the central
+        // view's ScrollArea — see `views::folders::tree_panel`.
+        if self.state.view == crate::state::View::Folders {
+            views::folders::tree_panel(ui, &mut self.state, self.library.as_ref());
+        }
         views::show(
             ui,
             &mut self.state,

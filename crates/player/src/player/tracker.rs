@@ -1,7 +1,7 @@
 //! Tracker-module setting application on the current [`Player`] channel.
 
 use crate::events::PlayerEvent;
-use crate::tracker::TrackerSettings;
+use crate::tracker::{ModuleInfo, TrackerSettings};
 
 use super::Player;
 
@@ -23,5 +23,12 @@ impl Player {
         {
             self.emit(PlayerEvent::Error(error));
         }
+    }
+
+    /// Live tracker-module metadata for the currently playing track, if it's
+    /// a module (`None` for a plain audio stream or when nothing is
+    /// loaded).
+    pub fn module_info(&self) -> Option<ModuleInfo> {
+        self.current.as_ref()?.channel.module_info()
     }
 }

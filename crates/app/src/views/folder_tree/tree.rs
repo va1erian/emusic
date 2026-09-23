@@ -35,7 +35,7 @@ pub fn show(
     }
     let mut command = None;
     for node in nodes {
-        if let Some(cmd) = node_ui(ui, node, selected, library, recursive) {
+        if let Some(cmd) = node_ui(ui, node, 0, selected, library, recursive) {
             command = Some(cmd);
         }
     }
@@ -45,6 +45,7 @@ pub fn show(
 fn node_ui(
     ui: &mut egui::Ui,
     node: &DirNodeInfo,
+    depth: usize,
     selected: &mut Option<String>,
     library: &dyn LibraryDataSource,
     recursive: bool,
@@ -52,7 +53,15 @@ fn node_ui(
     if node.children.is_empty() {
         return ui
             .horizontal(|ui| {
-                ui.add_space(ui.spacing().indent);
+                // Root-level leaves have no `CollapsingState` body indenting
+                // them, so they need a manual nudge to align with root
+                // folders' text past the arrow. Nested leaves already sit
+                // inside their parent's body indent (below); adding this
+                // again on top of it pushed them a whole extra level to the
+                // right of same-depth folders.
+                if depth == 0 {
+                    ui.add_space(ui.spacing().indent);
+                }
                 let response = row(ui, node, selected.as_deref());
                 if response.clicked() {
                     *selected = Some(node.path.clone());
@@ -69,7 +78,7 @@ fn node_ui(
             .show_header(ui, |ui| row(ui, node, selected.as_deref()))
             .body(|ui| {
                 for child in &node.children {
-                    if let Some(cmd) = node_ui(ui, child, selected, library, recursive) {
+                    if let Some(cmd) = node_ui(ui, child, depth + 1, selected, library, recursive) {
                         body_command = Some(cmd);
                     }
                 }

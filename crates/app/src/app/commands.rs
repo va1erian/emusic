@@ -121,6 +121,7 @@ pub(super) fn apply_player_command(
                 player.enqueue(&path);
             }
         }
+        Command::SetTrackerSettings(settings) => player.set_tracker_settings(settings),
         _ => {}
     }
 }
