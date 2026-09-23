@@ -17,7 +17,7 @@ use crate::store::Store;
 use super::{EditableTags, write_tags};
 
 /// A request to write `tags` to the audio file at `path`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditRequest {
     /// The file to rewrite.
     pub path: PathBuf,

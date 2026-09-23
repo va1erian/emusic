@@ -61,6 +61,9 @@ pub enum TrackAction {
     /// Flip whether `id` is starred (#131), from its star column or the
     /// Star/Unstar context-menu entry.
     ToggleStar(u64),
+    /// Open the tag editor for `id` (#172), from the context menu's "Edit
+    /// tags…" entry.
+    EditTags(u64),
 }
 
 const ROW_HEIGHT: f32 = 20.0;
@@ -236,6 +239,9 @@ pub fn show(
                                     action = Some(TrackAction::ToggleStar(track.id))
                                 }
                                 ContextAction::Properties => state.properties = Some(track.clone()),
+                                ContextAction::EditTags => {
+                                    action = Some(TrackAction::EditTags(track.id));
+                                }
                             }
                         }
                     });

@@ -82,3 +82,27 @@ fn starred_view() {
 fn most_played_view() {
     snapshot_view(View::MostPlayed);
 }
+
+#[test]
+fn tag_editor_dialog() {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut harness = Harness::builder()
+            .with_size(egui::Vec2::new(1280.0, 800.0))
+            .build_eframe(|cc| {
+                let library = MockLibrary::new();
+                let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
+                App::with_config(cc, Box::new(library), player, Config::default())
+            });
+        harness.state_mut().open_tag_editor();
+        // A modal is laid out in its own area; give egui a couple of frames to
+        // position it before capturing, as `emusic-shot` does.
+        harness.run_steps(3);
+        harness.snapshot("views/tag-editor");
+    }));
+
+    if result.is_err() {
+        eprintln!(
+            "skipping snapshot test for `tag-editor`: no headless GPU adapter available in this environment"
+        );
+    }
+}

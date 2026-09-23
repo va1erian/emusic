@@ -68,6 +68,10 @@ impl eframe::App for App {
         // Apply background updates (new library snapshots, scan progress,
         // recorded plays) before any view reads the data.
         self.library.tick();
+        // Route finished tag edits to the editor that requested them (#172),
+        // so it can clear its pending state or show the per-file error.
+        let tag_edit_results = self.library.take_tag_edit_results();
+        crate::tag_editor::deliver(&mut self.state.tag_editor, tag_edit_results);
 
         // Driven by egui's own (deterministic, harness-controllable) frame
         // delta rather than a wall-clock `Instant`, so headless renders
@@ -155,6 +159,14 @@ impl eframe::App for App {
             self.library.as_ref(),
             &self.popup_search,
         );
+
+        // The single-track tag editor (#172); a valid Apply becomes a queued
+        // request, applied to the library with the rest of the frame's
+        // commands below.
+        if let Some(request) = crate::tag_editor::show(&ctx, &mut self.state.tag_editor) {
+            self.state
+                .push(crate::state::Command::RequestTagEdits(vec![request]));
+        }
 
         self.apply_pending();
         self.tick_config_persistence();

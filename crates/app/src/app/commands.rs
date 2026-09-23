@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::library_api::LibraryDataSource;
+use crate::library_api::{EditRequest, LibraryDataSource};
 use crate::player_api::{PlayerApi, RepeatMode};
 use crate::state::{AppState, Command};
 
@@ -25,6 +25,8 @@ pub(super) fn apply_library_commands(
     let mut remove_history = None;
     let mut clear_history = false;
     let mut toggle_starred: Vec<u64> = Vec::new();
+    let mut open_tag_editor = None;
+    let mut tag_edits: Vec<EditRequest> = Vec::new();
     for cmd in commands {
         match cmd {
             Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
@@ -35,6 +37,8 @@ pub(super) fn apply_library_commands(
             Command::HistoryRemove(id) => remove_history = Some(*id),
             Command::HistoryClear => clear_history = true,
             Command::ToggleStarred(id) => toggle_starred.push(*id),
+            Command::OpenTagEditor(id) => open_tag_editor = Some(*id),
+            Command::RequestTagEdits(requests) => tag_edits.extend(requests.iter().cloned()),
             _ => {}
         }
     }
@@ -71,6 +75,14 @@ pub(super) fn apply_library_commands(
         {
             library.set_starred(id, starred);
         }
+    }
+    if let Some(id) = open_tag_editor
+        && let Some(track) = library.tracks().iter().find(|track| track.id == id)
+    {
+        state.tag_editor = Some(crate::tag_editor::TagEditorState::new(track));
+    }
+    if !tag_edits.is_empty() {
+        library.request_tag_edits(tag_edits);
     }
 }
 
@@ -176,6 +188,7 @@ fn next_repeat(mode: RepeatMode) -> RepeatMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library_api::EditableTags;
     use crate::mock::MockLibrary;
 
     #[test]
@@ -204,5 +217,46 @@ mod tests {
             !before,
             "the starred set should follow the flag"
         );
+    }
+
+    #[test]
+    fn open_tag_editor_targets_the_track() {
+        let mut library = MockLibrary::new();
+        let mut state = AppState::default();
+        let id = library.tracks()[0].id;
+
+        apply_library_commands(&mut library, &mut state, &[Command::OpenTagEditor(id)]);
+
+        assert!(state.tag_editor.is_some(), "the editor opens for the id");
+    }
+
+    #[test]
+    fn request_tag_edits_reaches_the_library() {
+        let mut library = MockLibrary::new();
+        let mut state = AppState::default();
+        let path = library.tracks()[0].path.clone();
+        let id = library.tracks()[0].id;
+
+        apply_library_commands(
+            &mut library,
+            &mut state,
+            &[Command::RequestTagEdits(vec![EditRequest::new(
+                path.as_str(),
+                EditableTags {
+                    title: Some("Edited".to_string()),
+                    ..Default::default()
+                },
+            )])],
+        );
+
+        let results = library.take_tag_edit_results();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].result.is_ok());
+        let edited = library
+            .tracks()
+            .iter()
+            .find(|track| track.id == id)
+            .expect("edited track still exists");
+        assert_eq!(edited.title, "Edited");
     }
 }

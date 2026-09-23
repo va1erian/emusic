@@ -80,6 +80,11 @@ struct Cli {
     #[arg(long)]
     properties: bool,
 
+    /// Opens the single-track tag editor for the first track before rendering
+    /// (#172), so the dialog can be screenshotted headlessly.
+    #[arg(long)]
+    tag_editor: bool,
+
     /// Visualizer strip mode to render (#25): `spectrum`, `oscilloscope` or
     /// `off`. Omitted, the strip stays hidden, matching the app's default.
     #[arg(long, value_parser = parse_visualizer)]
@@ -151,6 +156,7 @@ fn main() {
             search: &search,
             visualizer: cli.visualizer,
             properties: cli.properties,
+            tag_editor: cli.tag_editor,
             folders: cli.folders,
             settings_tab: cli.settings_tab,
         };
@@ -177,6 +183,7 @@ fn main() {
         search: &search,
         visualizer: cli.visualizer,
         properties: cli.properties,
+        tag_editor: cli.tag_editor,
         folders: cli.folders,
         settings_tab: cli.settings_tab,
     };
@@ -237,6 +244,8 @@ struct RenderArgs<'a> {
     visualizer: Option<VisualizerMode>,
     /// Open the track Properties dialog before rendering (#136).
     properties: bool,
+    /// Open the single-track tag editor before rendering (#172).
+    tag_editor: bool,
     folders: usize,
     settings_tab: Option<SettingsTab>,
 }
@@ -282,6 +291,9 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
     if args.properties {
         harness.state_mut().open_track_properties();
     }
+    if args.tag_editor {
+        harness.state_mut().open_tag_editor();
+    }
     // A single step is enough for a static screenshot; `Harness::run` would
     // wait for the UI to go idle, which it never does here because the
     // shell's repaint policy (#6) keeps requesting frames while "playing".
@@ -290,7 +302,7 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
     // steps so the UI thread polls and renders the result rather than a
     // still-empty "pending" frame.
     harness.run_steps(1);
-    if args.search.query.is_some() || args.search.popup || args.properties {
+    if args.search.query.is_some() || args.search.popup || args.properties || args.tag_editor {
         std::thread::sleep(std::time::Duration::from_millis(200));
         harness.run_steps(2);
     } else if view == View::Settings {

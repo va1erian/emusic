@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use emusic_player::tracker::TrackerSettings;
 
+use crate::library_api::EditRequest;
+
 use super::{Accent, PanelKind, View};
 
 /// One-shot request emitted by a panel/view during `ui()`, applied by the
@@ -90,6 +92,17 @@ pub enum Command {
     /// Flip whether the track is starred (favorited), from a row's star
     /// column or Star/Unstar context-menu entry (#131).
     ToggleStarred(u64),
+    /// Open the single-track tag editor for `id` (#172), seeded from the
+    /// track's current tags. The shell resolves the id against the library.
+    OpenTagEditor(u64),
+    /// Submit a batch of tag edits to the library backend (#172). The dialog
+    /// builds these from the user's form; the backend applies them off the UI
+    /// thread and reports the outcomes through
+    /// [`LibraryDataSource::take_tag_edit_results`].
+    ///
+    /// [`LibraryDataSource::take_tag_edit_results`]:
+    ///     crate::library_api::LibraryDataSource::take_tag_edit_results
+    RequestTagEdits(Vec<EditRequest>),
     /// Replace the tracker module playback settings (interpolation, ramping,
     /// emulation, ...), applied live to the player and persisted.
     SetTrackerSettings(TrackerSettings),
