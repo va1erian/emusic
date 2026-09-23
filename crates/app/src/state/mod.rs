@@ -8,6 +8,7 @@ mod appearance;
 mod command;
 mod panels;
 mod search;
+mod settings;
 mod view;
 mod visualizer;
 
@@ -15,6 +16,7 @@ pub use appearance::{Accent, Theme};
 pub use command::Command;
 pub use panels::{PanelKind, PanelVisibility};
 pub use search::{SearchPopupItem, SearchPopupState};
+pub use settings::SettingsTab;
 pub use view::View;
 pub use visualizer::VisualizerMode;
 
@@ -48,6 +50,11 @@ pub struct AppState {
     ///
     /// [`Config::capture`]: crate::config::Config::capture
     pub library_folders: Vec<PathBuf>,
+    /// Settings sub-page shown while [`View::Settings`] is active (#137).
+    /// Transient UI state, not persisted.
+    ///
+    /// [`View::Settings`]: crate::state::View
+    pub settings_tab: SettingsTab,
     /// Visualizer strip mode (#25), cycled by clicking the strip.
     pub visualizer: VisualizerMode,
     /// Transient visualizer rendering state (peak-hold caps), not persisted.
@@ -87,6 +94,7 @@ impl Default for AppState {
             search_result_count: None,
             search_popup: SearchPopupState::default(),
             library_folders: Vec::new(),
+            settings_tab: SettingsTab::default(),
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
             music_table: TrackTableState::default(),

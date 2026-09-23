@@ -19,14 +19,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
         .weak(),
     );
     ui.add_space(8.0);
-
-    if state.library_folders.is_empty() {
-        ui.label(egui::RichText::new("No folders yet.").weak().italics());
-    } else {
-        folder_list(ui, state);
-    }
-
-    ui.add_space(8.0);
     ui.horizontal(|ui| {
         if ui.button("Add folder...").clicked() {
             crate::settings::folder_picker::request();
@@ -35,22 +27,37 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             state.push(Command::LibraryRescan);
         }
     });
+    ui.add_space(8.0);
+
+    if state.library_folders.is_empty() {
+        ui.label(egui::RichText::new("No folders yet.").weak().italics());
+    } else {
+        folder_list(ui, state);
+    }
 }
 
 /// One row per configured folder, each with a Remove button. Removals are
 /// queued as commands so the shell updates the backend and config the same
 /// way it does additions.
+///
+/// Bounded to the Library tab's remaining height (#137), so a long list of
+/// roots scrolls in place instead of pushing anything off-screen.
 fn folder_list(ui: &mut egui::Ui, state: &mut AppState) {
-    let mut remove = None;
-    for path in &state.library_folders {
-        ui.horizontal(|ui| {
-            if ui.button("Remove").clicked() {
-                remove = Some(path.clone());
+    egui::ScrollArea::vertical()
+        .max_height(ui.available_height())
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            let mut remove = None;
+            for path in &state.library_folders {
+                ui.horizontal(|ui| {
+                    if ui.button("Remove").clicked() {
+                        remove = Some(path.clone());
+                    }
+                    ui.label(path.display().to_string());
+                });
             }
-            ui.label(path.display().to_string());
+            if let Some(path) = remove {
+                state.push(Command::LibraryRemoveFolder(path));
+            }
         });
-    }
-    if let Some(path) = remove {
-        state.push(Command::LibraryRemoveFolder(path));
-    }
 }

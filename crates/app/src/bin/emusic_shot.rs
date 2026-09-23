@@ -25,7 +25,7 @@ use emusic::app::App;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
-use emusic::state::{Accent, Theme, View, VisualizerMode};
+use emusic::state::{Accent, SettingsTab, Theme, View, VisualizerMode};
 
 #[derive(Parser, Debug)]
 #[command(name = "emusic-shot")]
@@ -84,6 +84,17 @@ struct Cli {
     /// `oscilloscope` or `off`.
     #[arg(long, value_parser = parse_visualizer, default_value = "spectrum")]
     visualizer: VisualizerMode,
+
+    /// Pre-populate the config with this many synthetic library folders, so
+    /// Settings → Library can be screenshotted with a long, scrollable list
+    /// (#137).
+    #[arg(long, default_value = "0")]
+    folders: usize,
+
+    /// Settings sub-page to select when rendering `--view settings` (#137):
+    /// `library` (the default), `appearance` or `associations`.
+    #[arg(long, value_parser = parse_settings_tab)]
+    settings_tab: Option<SettingsTab>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -104,6 +115,12 @@ fn parse_accent(s: &str) -> Result<Accent, String> {
 fn parse_visualizer(s: &str) -> Result<VisualizerMode, String> {
     VisualizerMode::from_slug(s)
         .ok_or_else(|| format!("invalid visualizer {s:?}: expected spectrum, oscilloscope or off"))
+}
+
+fn parse_settings_tab(s: &str) -> Result<SettingsTab, String> {
+    SettingsTab::from_slug(s).ok_or_else(|| {
+        format!("invalid settings tab {s:?}: expected library, appearance or associations")
+    })
 }
 
 fn main() {
@@ -134,6 +151,8 @@ fn main() {
             search: &search,
             visualizer: cli.visualizer,
             properties: cli.properties,
+            folders: cli.folders,
+            settings_tab: cli.settings_tab,
         };
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
@@ -158,6 +177,8 @@ fn main() {
         search: &search,
         visualizer: cli.visualizer,
         properties: cli.properties,
+        folders: cli.folders,
+        settings_tab: cli.settings_tab,
     };
     render_one(view, &args, &cli.out);
 }
@@ -214,6 +235,8 @@ struct RenderArgs<'a> {
     visualizer: VisualizerMode,
     /// Open the track Properties dialog before rendering (#136).
     properties: bool,
+    folders: usize,
+    settings_tab: Option<SettingsTab>,
 }
 
 fn render_one(view: View, args: &RenderArgs, out: &Path) {
@@ -228,6 +251,7 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
         },
         accent: args.accent.unwrap_or(defaults.accent),
         visualizer: args.visualizer,
+        library_folders: synthetic_folders(args.folders),
         ..defaults
     };
 
@@ -239,6 +263,9 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
         });
 
     harness.state_mut().set_view(view);
+    if let Some(tab) = args.settings_tab {
+        harness.state_mut().set_settings_tab(tab);
+    }
     if let Some(query) = &args.search.query {
         harness.state_mut().set_search_query(query.clone());
     }
@@ -261,11 +288,24 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
     if args.search.query.is_some() || args.search.popup || args.properties {
         std::thread::sleep(std::time::Duration::from_millis(200));
         harness.run_steps(2);
+    } else if view == View::Settings {
+        // The Settings folder list's scroll bar is sized from the previous
+        // frame's content and fades in over a few frames, so run several
+        // more steps before the screenshot (#137).
+        harness.run_steps(8);
     }
 
     let image = harness.render().expect("headless render failed");
     image.save(out).expect("write screenshot PNG");
     eprintln!("wrote {}", out.display());
+}
+
+/// Synthetic library folders for `--folders N` (#137): a long, deterministic
+/// list that exercises the Settings folder list's scroll area.
+fn synthetic_folders(count: usize) -> Vec<PathBuf> {
+    (0..count)
+        .map(|i| PathBuf::from(format!("D:/Music/Library/album-{i:03}")))
+        .collect()
 }
 
 fn parse_size(spec: &str) -> (f32, f32) {

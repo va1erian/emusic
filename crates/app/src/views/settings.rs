@@ -1,18 +1,45 @@
-//! "Settings" view: Library folders (#19), Appearance (theme toggle, accent
-//! colour presets and a custom picker, #40) and File associations (#11).
+//! "Settings" view: a tab strip over three independent sub-pages — Library
+//! folders (#19), Appearance (theme toggle, accent colour presets and a
+//! custom picker, #40) and File associations (#11).
+//!
+//! Tabs (#137) keep each concern from pushing the others off-screen: the
+//! Library tab's folder list scrolls within its own bounded area, so a
+//! library with many roots can never hide the Appearance or File association
+//! controls.
 
 use eframe::egui::{self, Color32, Stroke};
 
-use crate::state::{Accent, AppState, Command};
+use crate::state::{Accent, AppState, Command, SettingsTab};
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
-    crate::settings::library::show(ui, state);
-
-    ui.add_space(16.0);
+    tab_strip(ui, state);
     ui.separator();
     ui.add_space(8.0);
-    ui.label("Appearance");
-    ui.separator();
+
+    // The tab body fills the page's remaining height, so the Library tab's
+    // scroll area can bound itself to it (#137).
+    ui.scope_builder(
+        egui::UiBuilder::new().max_rect(ui.available_rect_before_wrap()),
+        |ui| match state.settings_tab {
+            SettingsTab::Library => crate::settings::library::show(ui, state),
+            SettingsTab::Appearance => appearance(ui, state),
+            SettingsTab::Associations => crate::settings::associations::show(ui),
+        },
+    );
+}
+
+/// One selectable label per sub-page; the active one is highlighted by
+/// `selectable_value` itself.
+fn tab_strip(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.horizontal_wrapped(|ui| {
+        for tab in SettingsTab::ALL {
+            ui.selectable_value(&mut state.settings_tab, tab, tab.label());
+        }
+    });
+}
+
+/// Theme toggle plus accent presets and a free-form picker (#40).
+fn appearance(ui: &mut egui::Ui, state: &mut AppState) {
     if ui.button("Toggle dark / light theme").clicked() {
         state.push(Command::ToggleTheme);
     }
@@ -21,11 +48,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label("Accent colour");
     ui.horizontal_wrapped(|ui| preset_buttons(ui, state));
     custom_picker(ui, state);
-
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-    crate::settings::associations::show(ui);
 }
 
 /// One filled button per preset; the active preset gets a strong border.
