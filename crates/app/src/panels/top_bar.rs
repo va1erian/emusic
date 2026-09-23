@@ -190,7 +190,11 @@ fn search_box(ui: &mut egui::Ui, state: &mut AppState) {
         egui::TextEdit::singleline(&mut query)
             .id(search_box_id())
             .hint_text("Search library... (Ctrl+F)")
-            .desired_width(200.0),
+            .desired_width(200.0)
+            .margin(egui::Margin {
+                right: 20,
+                ..egui::Margin::symmetric(4, 2)
+            }),
     );
     if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         query.clear();
@@ -213,13 +217,14 @@ fn clear_button(ui: &mut egui::Ui, field: egui::Rect) -> bool {
         egui::pos2(field.right() - side / 2.0 - 3.0, field.center().y),
         egui::Vec2::splat(side),
     );
-    ui.put(
-        rect,
-        egui::Button::new(egui::RichText::new("✕").small().weak()).frame(false),
-    )
-    .on_hover_text("Clear search")
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-    .clicked()
+    // A child ui, so the button doesn't advance the right-to-left layout cursor
+    // and shove the neighbouring controls around.
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    child
+        .add(egui::Button::new(egui::RichText::new("✕").small().weak()).frame(false))
+        .on_hover_text("Clear search")
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 fn format_time(seconds: f64) -> String {
