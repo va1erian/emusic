@@ -6,10 +6,19 @@ use rusqlite::{OptionalExtension, Row, params};
 
 use super::Store;
 use crate::error::Result;
+use crate::tags::EditableTags;
 
 const TRACK_COLUMNS: &str = "id, path, dir, filename, ext, size, mtime, kind, duration_ms, \
      bitrate, sample_rate, channels, title, artist, album_artist, album, genre, year, \
      track_no, disc_no, composer, comment, art_source_kind, art_source_path, added_at, starred";
+
+const UPDATE_TAGS_SQL: &str = "
+    UPDATE tracks SET
+        size = ?1, mtime = ?2,
+        title = ?3, artist = ?4, album_artist = ?5, album = ?6, genre = ?7,
+        year = ?8, track_no = ?9, disc_no = ?10, composer = ?11, comment = ?12
+    WHERE path = ?13
+";
 
 const UPSERT_SQL: &str = "
     INSERT INTO tracks (
@@ -210,6 +219,45 @@ impl Store {
         let updated = self.conn.execute(
             "UPDATE tracks SET starred = ?1 WHERE id = ?2",
             params![starred, track_id.0],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Updates the tag columns of the row at `path` from `tags`, together
+    /// with its `size` and `mtime`, leaving the row's `id`, `added_at` and
+    /// `starred` (and play history) untouched.
+    ///
+    /// The tag editor calls this after writing `tags` back to the file with
+    /// [`write_tags`](crate::tags::write_tags): the refreshed `size`/`mtime`
+    /// match the edited file, so the next scan does not treat it as changed.
+    /// Unlike [`Store::upsert_tracks`], which is path-keyed and rewrites the
+    /// whole row, this preserves the row's identity and star flag.
+    ///
+    /// Returns `false` if no row currently lives at `path`.
+    pub fn update_track_tags(
+        &self,
+        path: &Path,
+        tags: &EditableTags,
+        size: u64,
+        mtime: i64,
+    ) -> Result<bool> {
+        let updated = self.conn.execute(
+            UPDATE_TAGS_SQL,
+            params![
+                size,
+                mtime,
+                tags.title,
+                tags.artist,
+                tags.album_artist,
+                tags.album,
+                tags.genre,
+                tags.year,
+                tags.track_no,
+                tags.disc_no,
+                tags.composer,
+                tags.comment,
+                path_to_string(path),
+            ],
         )?;
         Ok(updated > 0)
     }

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use emusic_core::{ArtSource, Track, TrackId, TrackKind};
 
 use super::Store;
+use crate::tags::EditableTags;
 
 fn sample_track(path: &str) -> Track {
     Track {
@@ -92,6 +93,71 @@ fn set_starred_round_trips_and_survives_upsert() {
 fn set_starred_reports_unknown_track() {
     let store = Store::open_in_memory().unwrap();
     assert!(!store.set_starred(TrackId(42), true).unwrap());
+}
+
+#[test]
+fn update_track_tags_changes_tags_and_stats_only() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut tracks = vec![sample_track(r"C:\music\a.flac")];
+    store.upsert_tracks(&mut tracks).unwrap();
+    let id = tracks[0].id;
+    assert!(store.set_starred(id, true).unwrap());
+
+    let tags = EditableTags {
+        title: Some("Edited".to_string()),
+        artist: Some("New Artist".to_string()),
+        album: None,
+        album_artist: Some("Various".to_string()),
+        genre: Some("Jazz".to_string()),
+        year: Some(1999),
+        track_no: Some(7),
+        disc_no: Some(2),
+        composer: Some("Composer".to_string()),
+        comment: Some("Hello".to_string()),
+    };
+    assert!(
+        store
+            .update_track_tags(Path::new(r"C:\music\a.flac"), &tags, 2_048, 1_800_000_000)
+            .unwrap()
+    );
+
+    let loaded = store
+        .get_track_by_path(Path::new(r"C:\music\a.flac"))
+        .unwrap()
+        .unwrap();
+    // Identity and star survive the tag edit.
+    assert_eq!(loaded.id, id);
+    assert_eq!(loaded.added_at, 1_700_000_000);
+    assert!(loaded.starred);
+    // File stats are refreshed.
+    assert_eq!(loaded.size, 2_048);
+    assert_eq!(loaded.mtime, 1_800_000_000);
+    // Every editable tag column is rewritten, including a cleared one.
+    assert_eq!(loaded.title.as_deref(), Some("Edited"));
+    assert_eq!(loaded.artist.as_deref(), Some("New Artist"));
+    assert_eq!(loaded.album, None);
+    assert_eq!(loaded.album_artist.as_deref(), Some("Various"));
+    assert_eq!(loaded.genre.as_deref(), Some("Jazz"));
+    assert_eq!(loaded.year, Some(1999));
+    assert_eq!(loaded.track_no, Some(7));
+    assert_eq!(loaded.disc_no, Some(2));
+    assert_eq!(loaded.composer.as_deref(), Some("Composer"));
+    assert_eq!(loaded.comment.as_deref(), Some("Hello"));
+    // Columns outside the tag set are untouched.
+    assert_eq!(loaded.path, PathBuf::from(r"C:\music\a.flac"));
+    assert_eq!(loaded.duration_ms, 200_000);
+    assert_eq!(loaded.bitrate, Some(900));
+}
+
+#[test]
+fn update_track_tags_returns_false_for_unknown_path() {
+    let store = Store::open_in_memory().unwrap();
+    let tags = EditableTags::default();
+    assert!(
+        !store
+            .update_track_tags(Path::new(r"C:\nope.flac"), &tags, 1, 1)
+            .unwrap()
+    );
 }
 
 #[test]
