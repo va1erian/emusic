@@ -43,6 +43,12 @@ winshell = { path = "../winshell" }
 [features]
 shot = ["dep:egui_kittest"]
 
+[target.'cfg(windows)'.dependencies]
+# Only to name winit's `EventLoopBuilderExtWindows` when installing the taskbar
+# message hook (#42); eframe re-exports the event-loop builder but not the
+# platform-specific extension trait.
+winit = { version = "0.30", default-features = false }
+
 [build-dependencies]
 embed-resource = "3.0"
 
