@@ -157,13 +157,18 @@ impl eframe::App for App {
         // is visible (a minimized window needs no frames), keep the elapsed
         // time / progress readouts roughly in step with a coarse one-second
         // tick. Only when the optional visualizer strip is both enabled and
-        // animating (mode != Off) do we follow the compositor's own rate, since
-        // that is the one thing that needs a frame every vsync. This keeps an
-        // idle-looking player at ~0% CPU even though it is "playing".
+        // animating (mode != Off) do we animate faster, at
+        // `panels::visualizer::FRAME_INTERVAL` — a fixed, low rate rather than
+        // the compositor's own refresh rate. Chasing vsync repainted the
+        // *entire* window (immediate-mode redraws everything, not just the
+        // 18 px strip) as fast as the monitor allowed, which on a 120/144 Hz
+        // display burned CPU for no visible benefit and could miss frames
+        // under load, showing up as flicker. This keeps an idle-looking
+        // player at ~0% CPU even though it is "playing".
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         if self.player.status() == PlaybackStatus::Playing && !minimized {
             if self.state.visualizer_enabled && self.state.visualizer != VisualizerMode::Off {
-                ctx.request_repaint();
+                ctx.request_repaint_after(panels::visualizer::FRAME_INTERVAL);
             } else {
                 ctx.request_repaint_after(Duration::from_secs(1));
             }
