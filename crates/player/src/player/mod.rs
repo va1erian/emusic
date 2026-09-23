@@ -26,6 +26,7 @@ use crate::error::PlayerError;
 use crate::events::{PlaybackState, PlayerEvent};
 use crate::listen::ListenAccounting;
 use crate::queue::{QueueSource, RepeatMode};
+use crate::sid::{HvscIndex, SidConfig, SidInfo};
 
 /// Maximum number of upcoming tracks materialised for the queue panel. Keeps
 /// a 100k-track shuffle scope from ever building a full visible queue.
@@ -84,6 +85,10 @@ pub struct Player {
     listen: ListenAccounting,
     /// When listen accounting last accrued time; `None` while not playing.
     last_tick: Option<Instant>,
+    /// SID settings consulted when opening a SID tune.
+    sid_config: SidConfig,
+    /// Optional HVSC index supplying SID song lengths.
+    hvsc: Option<Arc<HvscIndex>>,
 }
 
 impl Player {
@@ -107,6 +112,8 @@ impl Player {
             waker: None,
             listen: ListenAccounting::new(),
             last_tick: None,
+            sid_config: SidConfig::default(),
+            hvsc: None,
         }
     }
 
@@ -166,6 +173,35 @@ impl Player {
     /// visualizer's oscilloscope mode (#25); `None` when nothing is loaded.
     pub fn samples(&self) -> Option<Vec<f32>> {
         self.current.as_ref().and_then(|c| c.channel.samples())
+    }
+
+    /// Replaces the SID settings used for future opens (chip model, clock,
+    /// fallback length). Takes effect the next time a SID file is opened.
+    pub fn set_sid_config(&mut self, config: SidConfig) {
+        self.sid_config = config;
+    }
+
+    /// The current SID settings.
+    pub fn sid_config(&self) -> &SidConfig {
+        &self.sid_config
+    }
+
+    /// Sets (or clears) the HVSC index used for SID song lengths.
+    pub fn set_hvsc_index(&mut self, index: Option<Arc<HvscIndex>>) {
+        self.hvsc = index;
+    }
+
+    /// Live metadata for the current SID tune, if one is loaded.
+    pub fn sid_info(&self) -> Option<SidInfo> {
+        self.current.as_ref().and_then(|c| c.channel.sid_info())
+    }
+
+    /// Switches the current SID tune's subtune; a no-op when nothing is loaded.
+    pub fn select_subtune(&mut self, subtune: u16) -> Result<(), PlayerError> {
+        match &self.current {
+            Some(current) => current.channel.select_subtune(subtune),
+            None => Ok(()),
+        }
     }
 
     pub fn repeat_mode(&self) -> RepeatMode {

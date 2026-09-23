@@ -32,6 +32,9 @@ pub trait SidDecoder {
 
     /// The header's default subtune.
     fn default_subtune(&self) -> u16;
+
+    /// The subtune currently selected.
+    fn current_subtune(&self) -> u16;
 }
 
 /// The default [`SidDecoder`], backed by the vendored cRSID engine.
@@ -76,5 +79,9 @@ impl SidDecoder for CrsidDecoder {
 
     fn default_subtune(&self) -> u16 {
         self.inner.default_subtune()
+    }
+
+    fn current_subtune(&self) -> u16 {
+        self.inner.current_subtune()
     }
 }

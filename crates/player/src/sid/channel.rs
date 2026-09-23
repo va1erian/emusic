@@ -4,29 +4,30 @@
 //!
 //! [`SidChannel`] opens the tune and starts a feeder thread that renders PCM
 //! into a `bass::PushStream` (see #63). Rendering never happens on the UI
-//! thread: the channel only forwards transport calls and, for seek-to-start,
-//! sends a [`FeederCommand`] the feeder applies between render chunks.
+//! thread: the channel only forwards transport calls and subtune changes as
+//! [`FeederCommand`]s the feeder applies between render chunks.
 
 use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, PushFlags, PushStream};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
+use emusic_sid::HvscIndex;
 
 use crate::backend::BackendChannel;
 use crate::error::PlayerError;
 use crate::tracker::TrackerSettings;
 
 use super::decoder::{CrsidDecoder, SidDecoder};
+use super::info::SidInfo;
+use super::settings::SidSettings;
 
 /// Sample rate the engine renders at and the push stream is created with.
 pub const SID_SAMPLE_RATE: u32 = 44_100;
-
-/// Fixed tune length used until HVSC song lengths land (#65).
-pub const DEFAULT_TUNE_LENGTH: Duration = Duration::from_secs(180);
 
 /// Samples rendered per feeder iteration.
 const RENDER_CHUNK: usize = 2_048;
@@ -44,6 +45,8 @@ enum FeederCommand {
     /// Reset the engine to the start of the current subtune and drop the
     /// already-queued PCM (seek-to-start).
     Restart,
+    /// Switch to another subtune and restart it.
+    SelectSubtune(u16),
     /// Stop rendering and let the feeder thread exit.
     Stop,
 }
@@ -52,30 +55,72 @@ enum FeederCommand {
 pub struct SidChannel {
     stream: Arc<PushStream>,
     commands: Sender<FeederCommand>,
+    /// Static metadata plus the default subtune; the live subtune is read from
+    /// `current` in [`BackendChannel::sid_info`].
+    info: SidInfo,
+    /// The subtune the feeder is currently playing.
+    current: Arc<AtomicU16>,
 }
 
 impl SidChannel {
     /// Opens `path` as a SID tune and starts its feeder thread.
     ///
-    /// Returns once the engine has loaded the tune, so load errors surface
-    /// synchronously (on the caller's worker thread, never the UI thread).
-    pub fn open(bass: &bass::Bass, path: &Path) -> Result<Self, PlayerError> {
+    /// `settings` supplies the chip/clock overrides and the fallback length;
+    /// `hvsc`, when set, supplies per-subtune lengths. Returns once the engine
+    /// has loaded the tune, so load errors surface synchronously (on the
+    /// caller's worker thread, never the UI thread).
+    pub fn open(
+        bass: &bass::Bass,
+        path: &Path,
+        settings: SidSettings,
+        hvsc: Option<Arc<HvscIndex>>,
+    ) -> Result<Self, PlayerError> {
         let data =
             std::fs::read(path).map_err(|error| PlayerError::ReadFailed(error.to_string()))?;
+        let header = emusic_sid::SidHeader::parse(&data)?;
+
+        let lengths = hvsc
+            .as_ref()
+            .and_then(|index| index.lengths(&data))
+            .map(<[Duration]>::to_vec);
+        let fallback = settings.default_length();
+        let subtune = header.default_subtune;
+        let initial_length = length_for(subtune, lengths.as_deref(), fallback);
 
         let stream = Arc::new(bass.open_push_stream(SID_SAMPLE_RATE, 1, PushFlags::FLOAT)?);
-        stream.set_duration(DEFAULT_TUNE_LENGTH.as_secs_f64());
+        stream.set_duration(initial_length.as_secs_f64());
+
+        let current = Arc::new(AtomicU16::new(subtune));
+        let info = SidInfo::from_header(&header, settings, subtune);
 
         let (commands, command_rx) = unbounded();
         let (ready_tx, ready_rx) = bounded(1);
         let feeder_stream = Arc::clone(&stream);
+        let feeder_current = Arc::clone(&current);
+        let engine_config = settings.to_engine_config();
         thread::Builder::new()
             .name("emusic-sid-feeder".to_string())
-            .spawn(move || run_feeder(feeder_stream, data, command_rx, ready_tx))
+            .spawn(move || {
+                run_feeder(
+                    feeder_stream,
+                    data,
+                    engine_config,
+                    lengths,
+                    fallback,
+                    feeder_current,
+                    command_rx,
+                    ready_tx,
+                )
+            })
             .map_err(|error| PlayerError::SpawnFailed(error.to_string()))?;
 
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { stream, commands }),
+            Ok(Ok(())) => Ok(Self {
+                stream,
+                commands,
+                info,
+                current,
+            }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(PlayerError::SpawnFailed(
                 "SID feeder exited before loading the tune".to_string(),
@@ -153,6 +198,17 @@ impl BackendChannel for SidChannel {
         }
         Some(raw[..read].to_vec())
     }
+
+    fn sid_info(&self) -> Option<SidInfo> {
+        let mut info = self.info.clone();
+        info.current_subtune = self.current.load(Ordering::Relaxed);
+        Some(info)
+    }
+
+    fn select_subtune(&self, subtune: u16) -> Result<(), PlayerError> {
+        let _ = self.commands.send(FeederCommand::SelectSubtune(subtune));
+        Ok(())
+    }
 }
 
 impl Drop for SidChannel {
@@ -163,13 +219,18 @@ impl Drop for SidChannel {
 
 /// The feeder thread: loads the tune, reports the result through `ready`, then
 /// renders into `stream` until it ends or is told to stop.
+#[allow(clippy::too_many_arguments)]
 fn run_feeder(
     stream: Arc<PushStream>,
     data: Vec<u8>,
+    engine_config: emusic_sid::SidConfig,
+    lengths: Option<Vec<Duration>>,
+    fallback: Duration,
+    current: Arc<AtomicU16>,
     commands: Receiver<FeederCommand>,
     ready: Sender<Result<(), PlayerError>>,
 ) {
-    let mut decoder = match CrsidDecoder::from_bytes(data, SID_SAMPLE_RATE, Default::default()) {
+    let mut decoder = match CrsidDecoder::from_bytes(data, SID_SAMPLE_RATE, engine_config) {
         Ok(decoder) => {
             let _ = ready.send(Ok(()));
             decoder
@@ -180,8 +241,10 @@ fn run_feeder(
         }
     };
 
-    let total_frames = (DEFAULT_TUNE_LENGTH.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64;
-    let mut remaining = total_frames;
+    let mut subtune = decoder.current_subtune();
+    current.store(subtune, Ordering::Relaxed);
+    let mut remaining = frames_of(length_for(subtune, lengths.as_deref(), fallback));
+
     let mut pcm = vec![0i16; RENDER_CHUNK];
     let mut bytes = Vec::with_capacity(RENDER_CHUNK * size_of::<f32>());
 
@@ -192,9 +255,19 @@ fn run_feeder(
                     let _ = stream.end_of_stream();
                     return;
                 }
-                remaining = total_frames;
+                remaining = frames_of(length_for(subtune, lengths.as_deref(), fallback));
                 // Clears the push stream's queue and resets its position.
                 let _ = stream.set_position_bytes(0);
+            }
+            Ok(FeederCommand::SelectSubtune(requested)) => {
+                if decoder.select_subtune(requested).is_ok() {
+                    subtune = decoder.current_subtune();
+                    current.store(subtune, Ordering::Relaxed);
+                    let length = length_for(subtune, lengths.as_deref(), fallback);
+                    stream.set_duration(length.as_secs_f64());
+                    remaining = frames_of(length);
+                    let _ = stream.set_position_bytes(0);
+                }
             }
             Ok(FeederCommand::Stop) | Err(TryRecvError::Disconnected) => return,
             Err(TryRecvError::Empty) => {}
@@ -226,4 +299,16 @@ fn run_feeder(
         }
         remaining -= frames as u64;
     }
+}
+
+/// The length to use for `subtune`: the HVSC value if known, else `fallback`.
+fn length_for(subtune: u16, lengths: Option<&[Duration]>, fallback: Duration) -> Duration {
+    lengths
+        .and_then(|lengths| lengths.get(usize::from(subtune.saturating_sub(1))).copied())
+        .unwrap_or(fallback)
+}
+
+/// Converts a duration to a frame count at [`SID_SAMPLE_RATE`].
+fn frames_of(length: Duration) -> u64 {
+    (length.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64
 }

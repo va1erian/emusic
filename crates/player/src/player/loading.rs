@@ -44,11 +44,15 @@ impl Player {
         let (tx, rx) = bounded(1);
         let backend = Arc::clone(&self.backend);
         let end_tx = self.end_tx.clone();
+        // Resolve SID settings now; they're load-time only, and the backend
+        // applies them when the path is a SID tune.
+        let sid_settings = self.sid_config.resolve(&path);
+        let hvsc = self.hvsc.clone();
         let spawned = thread::Builder::new()
             .name("emusic-player-open".to_string())
             .spawn(move || {
                 let failed_path = path.clone();
-                let outcome = backend.open(&path).and_then(|channel| {
+                let outcome = backend.open_sid(&path, &sid_settings, hvsc).and_then(|channel| {
                     let guard = channel.on_end(Box::new(move || {
                         let _ = end_tx.send(());
                     }))?;

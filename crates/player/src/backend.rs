@@ -9,7 +9,7 @@ use std::time::Duration;
 use bass::{Attribute, Channel, FftSize, MusicFlags, StreamFlags};
 
 use crate::error::PlayerError;
-use crate::sid::SidChannel;
+use crate::sid::{HvscIndex, SidChannel, SidInfo, SidSettings};
 use crate::tracker::TrackerSettings;
 
 /// Something that can open a playable channel for a file path.
@@ -22,6 +22,21 @@ pub trait AudioBackend: Send + Sync {
     /// Opens `path` as a playable channel, choosing a decoder based on the
     /// file extension (tracker modules vs. plain audio streams).
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError>;
+
+    /// Opens `path`, applying SID settings when it names a SID tune.
+    ///
+    /// The default implementation ignores `settings`/`hvsc` and falls back to
+    /// [`AudioBackend::open`]; [`BassBackend`] overrides it to route SID tunes
+    /// through [`SidChannel`] with the resolved settings and HVSC lengths.
+    fn open_sid(
+        &self,
+        path: &Path,
+        settings: &SidSettings,
+        hvsc: Option<Arc<HvscIndex>>,
+    ) -> Result<Box<dyn BackendChannel>, PlayerError> {
+        let _ = (settings, hvsc);
+        self.open(path)
+    }
 
     /// Sets the global `BASS_CONFIG_SRC` resampler quality (`0..=4`).
     fn set_tracker_resampling_quality(&self, quality: u8) -> Result<(), PlayerError>;
@@ -60,6 +75,18 @@ pub trait BackendChannel: Send {
     /// backend has no live channel / can't supply samples.
     fn samples(&self) -> Option<Vec<f32>> {
         None
+    }
+
+    /// Live metadata for a SID tune, or `None` for non-SID channels.
+    fn sid_info(&self) -> Option<SidInfo> {
+        None
+    }
+
+    /// Switches the current SID tune's subtune (1-based, clamped); a no-op for
+    /// other channels.
+    fn select_subtune(&self, subtune: u16) -> Result<(), PlayerError> {
+        let _ = subtune;
+        Ok(())
     }
 }
 
@@ -116,9 +143,10 @@ impl BassBackend {
 impl AudioBackend for BassBackend {
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError> {
         // SID tunes aren't decodable by BASS: the SID engine renders PCM into
-        // a push stream instead (see `crate::sid`).
+        // a push stream instead (see `crate::sid`). Callers that have resolved
+        // SID settings go through `open_sid`; direct callers get defaults.
         if is_sid_file(path) {
-            return Ok(Box::new(SidChannel::open(&self.bass, path)?));
+            return self.open_sid(path, &SidSettings::default(), None);
         }
 
         // FLOAT decodes to `f32`, which the visualizer (#25) needs for its
@@ -129,6 +157,23 @@ impl AudioBackend for BassBackend {
             BassChannel::Stream(self.bass.open_stream(path, StreamFlags::FLOAT)?)
         };
         Ok(Box::new(channel))
+    }
+
+    fn open_sid(
+        &self,
+        path: &Path,
+        settings: &SidSettings,
+        hvsc: Option<Arc<HvscIndex>>,
+    ) -> Result<Box<dyn BackendChannel>, PlayerError> {
+        if is_sid_file(path) {
+            return Ok(Box::new(SidChannel::open(
+                &self.bass,
+                path,
+                *settings,
+                hvsc,
+            )?));
+        }
+        self.open(path)
     }
 
     fn set_tracker_resampling_quality(&self, quality: u8) -> Result<(), PlayerError> {

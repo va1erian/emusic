@@ -46,4 +46,7 @@ pub use error::PlayerError;
 pub use events::{PlaybackState, PlayerEvent};
 pub use player::Player;
 pub use queue::{Queue, QueueSource, RepeatMode, ShuffleSource};
-pub use sid::{SidChannel, SidDecoder};
+pub use sid::{
+    HvscError, HvscIndex, SidChannel, SidChipModel, SidClock, SidConfig, SidDecoder, SidFormat,
+    SidInfo, SidSettings,
+};
