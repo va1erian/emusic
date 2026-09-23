@@ -17,14 +17,17 @@ pub enum SettingsTab {
     /// Tracker module playback options (interpolation, ramping, emulation,
     /// ...).
     Playback,
+    /// Version, revision and credits (#188).
+    About,
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Library,
         Self::Appearance,
         Self::Associations,
         Self::Playback,
+        Self::About,
     ];
 
     /// Label shown on the Settings tab strip.
@@ -34,6 +37,7 @@ impl SettingsTab {
             Self::Appearance => "Appearance",
             Self::Associations => "File associations",
             Self::Playback => "Tracker playback",
+            Self::About => "About",
         }
     }
 
@@ -44,6 +48,7 @@ impl SettingsTab {
             Self::Appearance => "appearance",
             Self::Associations => "associations",
             Self::Playback => "playback",
+            Self::About => "about",
         }
     }
 

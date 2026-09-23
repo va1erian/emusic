@@ -26,6 +26,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # The tag is the source of truth for the version (#188): stamp it into
+      # the crate manifest (shown in About) and the installer script.
+      - name: Stamp version from tag
+        shell: bash
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "0,/^version = \".*\"/s//version = \"$version\"/" crates/app/Cargo.toml
+          sed -i "s/^#define AppVersion \".*\"/#define AppVersion \"$version\"/" installer/emusic.iss
+          sed -i "s/^VersionInfoVersion=.*/VersionInfoVersion=${version%%[-+]*}.0/" installer/emusic.iss
+          cargo update -p emusic --offline || true
+
       - run: cargo build --release --workspace
 
       # Redistributable x64 BASS DLLs (free for non-commercial use), fetched

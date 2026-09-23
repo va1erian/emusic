@@ -25,6 +25,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             SettingsTab::Appearance => appearance(ui, state),
             SettingsTab::Associations => crate::settings::associations::show(ui),
             SettingsTab::Playback => crate::settings::tracker::show(ui, state),
+            SettingsTab::About => crate::settings::about::show(ui),
         },
     );
 }
