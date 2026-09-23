@@ -142,6 +142,31 @@ fn play_history_page_orders_newest_first_and_paginates() {
 }
 
 #[test]
+fn begin_play_lists_an_unfinished_row_until_finalized() {
+    let (mut store, track_id) = store_with_one_track();
+    let id = store.begin_play(track_id, 1_000).unwrap();
+
+    let page = store.play_history_page(10, 0).unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].id, id);
+    assert!(!page[0].finished);
+    assert_eq!(page[0].duration_played_ms, 0);
+    // A started-but-unfinished play has not bumped any stats yet.
+    assert!(store.track_stats(track_id).unwrap().is_none());
+
+    store
+        .record_play(&PlayEvent::new(track_id, 1_000, 30_000, true))
+        .unwrap();
+    let page = store.play_history_page(10, 0).unwrap();
+    assert_eq!(page.len(), 1, "finalizing must not insert a second row");
+    assert!(page[0].finished);
+    assert!(page[0].completed);
+    assert_eq!(page[0].duration_played_ms, 30_000);
+    let stats = store.track_stats(track_id).unwrap().unwrap();
+    assert_eq!(stats.play_count, 1);
+}
+
+#[test]
 fn history_entries_carry_the_play_row_id() {
     let (mut store, track_id) = store_with_one_track();
     store

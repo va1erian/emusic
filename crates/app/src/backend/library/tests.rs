@@ -12,6 +12,7 @@ use emusic_library::stats::PlayRecord;
 
 use super::scan::ScanHandle;
 use super::{LibraryBackend, Update, scan};
+use crate::backend::PlayMessage;
 use crate::library_api::LibraryDataSource;
 
 #[test]
@@ -45,18 +46,36 @@ fn scans_generated_wav_and_tracks_play() {
     assert_eq!(backend.folders()[0].track_count, 1);
 
     let path = PathBuf::from(&track.path);
+    let started_at = unix_now();
+    // A track is logged the moment it starts, so it is visible in History
+    // before it has finished.
     backend
-        .play_record_tx()
-        .send(PlayRecord {
+        .play_message_tx()
+        .send(PlayMessage::Started {
+            path: path.clone(),
+            started_at,
+        })
+        .unwrap();
+    backend.tick();
+    assert_eq!(backend.history().len(), 1);
+    assert_eq!(backend.history()[0].track_id, track.id);
+    assert!(!backend.history()[0].finished);
+
+    backend
+        .play_message_tx()
+        .send(PlayMessage::Finished(PlayRecord {
             path,
-            started_at: unix_now(),
+            started_at,
             listened_ms: 1_000,
             completed: true,
-        })
+        }))
         .unwrap();
     backend.tick();
     assert_eq!(backend.tracks()[0].play_count, 1);
     assert!(backend.tracks()[0].last_played_minutes_ago.is_some());
+    assert_eq!(backend.history().len(), 1);
+    assert!(backend.history()[0].finished);
+    assert!(backend.history()[0].completed);
 
     std::fs::remove_dir_all(&dir).ok();
 }

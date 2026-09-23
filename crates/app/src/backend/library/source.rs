@@ -142,20 +142,62 @@ impl Snapshot {
         }
     }
 
+    /// Appends a just-started play to the in-memory history so the History
+    /// view lists it immediately, without waiting for it to finish.
+    ///
+    /// `play_id` is the `plays` row id the store assigned, used for removal.
+    /// Only reflects tracks already in this snapshot; the store (via the
+    /// recorder) remains the source of truth, so the next full reload picks
+    /// up anything missed here.
+    pub(crate) fn record_play_started(&mut self, track_id: u64, play_id: i64, played_at: i64) {
+        let Some(track) = self.tracks.iter().find(|t| t.id == track_id) else {
+            return;
+        };
+        let (title, artist) = (track.title.clone(), track.artist.clone());
+        self.history.insert(
+            0,
+            HistoryEntry {
+                id: play_id,
+                track_id,
+                title,
+                artist,
+                played_at,
+                played_ms: 0,
+                completed: false,
+                finished: false,
+            },
+        );
+        if let Some(track) = self.tracks.iter_mut().find(|t| t.id == track_id) {
+            track.last_played_minutes_ago = Some(minutes_ago(played_at));
+        }
+    }
+
     /// Applies a finished play to the in-memory stats without rebuilding the
-    /// whole snapshot.
+    /// whole snapshot: finalizes the matching history entry (by track and
+    /// start time) and updates play counts/rankings.
     ///
     /// Only reflects plays that hit a track already in this snapshot; the
     /// store (via the recorder) remains the source of truth, so the next
     /// full reload picks up anything missed here.
-    pub(crate) fn record_play(&mut self, record: &PlayRecord) {
+    pub(crate) fn record_play_finished(&mut self, record: &PlayRecord) {
         let path = record.path.to_string_lossy();
-        if let Some(track) = self.tracks.iter_mut().find(|t| t.path == path.as_ref()) {
-            if record.completed {
-                track.play_count += 1;
-            }
-            let minutes_ago = ((unix_now() - record.started_at).max(0) / 60) as u32;
-            track.last_played_minutes_ago = Some(minutes_ago);
+        let Some(track) = self.tracks.iter_mut().find(|t| t.path == path.as_ref()) else {
+            return;
+        };
+        let track_id = track.id;
+        if record.completed {
+            track.play_count += 1;
+        }
+        track.last_played_minutes_ago = Some(minutes_ago(record.started_at));
+
+        if let Some(entry) = self
+            .history
+            .iter_mut()
+            .find(|entry| entry.track_id == track_id && entry.played_at == record.started_at)
+        {
+            entry.played_ms = record.listened_ms;
+            entry.completed = record.completed;
+            entry.finished = true;
         }
 
         if !record.completed {
@@ -171,6 +213,12 @@ impl Snapshot {
             }
         }
     }
+}
+
+/// Whole minutes between `played_at` and now, saturating at zero for
+/// clock-skewed timestamps.
+fn minutes_ago(played_at: i64) -> u32 {
+    ((unix_now() - played_at).max(0) / 60) as u32
 }
 
 fn track_to_info(track: &Track, stats: &HashMap<TrackId, TrackStats>) -> TrackInfo {
@@ -304,6 +352,7 @@ fn history_from_store(
                 played_at: entry.played_at,
                 played_ms: entry.duration_played_ms,
                 completed: entry.completed,
+                finished: entry.finished,
             })
         })
         .collect())

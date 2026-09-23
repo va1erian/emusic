@@ -192,7 +192,11 @@ fn entry_row(
         LISTENED_WIDTH,
         egui::RichText::new(listened).weak(),
     );
-    text_cell(&mut row, COMPLETED_WIDTH, completed_text(entry.completed));
+    text_cell(
+        &mut row,
+        COMPLETED_WIDTH,
+        status_text(entry.finished, entry.completed, is_playing),
+    );
 
     let remove = row.add_sized([REMOVE_WIDTH, ROW_HEIGHT], egui::Button::new("✕").small());
     if remove.clicked() {
@@ -227,10 +231,39 @@ fn tinted(text: &str, is_playing: bool) -> egui::RichText {
     }
 }
 
-fn completed_text(completed: bool) -> egui::RichText {
-    if completed {
-        egui::RichText::new("Completed")
+/// Status text for a history row: a play that is still in progress reads
+/// "Playing" while its track is the current one, otherwise it is classified
+/// by the player's completion verdict once it has finished.
+fn status_text(finished: bool, completed: bool, is_playing: bool) -> egui::RichText {
+    let (label, weak) = status_label(finished, completed, is_playing);
+    let text = egui::RichText::new(label);
+    if weak { text.weak() } else { text }
+}
+
+/// The status label and whether it is styled as secondary (weak) text.
+fn status_label(finished: bool, completed: bool, is_playing: bool) -> (&'static str, bool) {
+    if !finished && is_playing {
+        ("Playing", true)
+    } else if completed {
+        ("Completed", false)
     } else {
-        egui::RichText::new("Skipped").weak()
+        ("Skipped", true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_label_prioritises_a_live_play_then_completion() {
+        // A play in progress, on the current track, is "Playing" even though
+        // it has no completion verdict yet.
+        assert_eq!(status_label(false, false, true), ("Playing", true));
+        // Unfinished but not the current track (e.g. after a restart): it is
+        // treated as a skip rather than shown as playing forever.
+        assert_eq!(status_label(false, false, false), ("Skipped", true));
+        assert_eq!(status_label(true, true, true), ("Completed", false));
+        assert_eq!(status_label(true, false, false), ("Skipped", true));
     }
 }

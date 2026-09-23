@@ -309,6 +309,7 @@ fn build_history(rng: &mut ChaCha8Rng, tracks: &[TrackInfo]) -> Vec<HistoryEntry
                 played_at: now - minutes * 60,
                 played_ms: rng.gen_range(20..=duration_secs) as u32 * 1000,
                 completed: rng.gen_bool(0.7),
+                finished: true,
             })
         })
         .collect();

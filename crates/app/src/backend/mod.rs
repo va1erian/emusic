@@ -14,6 +14,7 @@ pub mod thumbbar;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use emusic_library::stats::PlayRecord;
 use tracing::{info, warn};
 
 use crate::library_api::LibraryDataSource;
@@ -23,6 +24,17 @@ use crate::player_api::{
 };
 use library::LibraryBackend;
 use player_adapter::PlayerAdapter;
+
+/// A play-lifecycle message from the player adapter to the library backend.
+///
+/// A play is recorded the moment a track *starts* (so the History view can
+/// list it live) and finalized when it stops, hence the two variants.
+pub(crate) enum PlayMessage {
+    /// A track started playing; `started_at` is a Unix timestamp.
+    Started { path: PathBuf, started_at: i64 },
+    /// A track stopped: its final listened time and completion verdict.
+    Finished(PlayRecord),
+}
 
 /// The library/player pair the app runs with, plus a startup notice (e.g.
 /// "no audio device") the shell should surface instead of silently limping
@@ -74,13 +86,13 @@ pub fn build(mock: bool) -> Backends {
     };
 
     let library = LibraryBackend::new(bass.clone());
-    let play_record_tx = library.play_record_tx();
+    let play_message_tx = library.play_message_tx();
 
     let player: Box<dyn PlayerApi> = match bass {
         Some(bass) => {
             let backend = Arc::new(emusic_player::BassBackend::new(bass));
             let player =
-                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_record_tx));
+                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_message_tx));
             Box::new(player)
         }
         None => Box::new(UnavailablePlayer),
