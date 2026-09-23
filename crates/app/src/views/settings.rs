@@ -9,7 +9,7 @@
 
 use eframe::egui::{self, Color32, Stroke};
 
-use crate::state::{Accent, AppState, Command, SettingsTab};
+use crate::state::{Accent, AppState, Command, SettingsTab, VisualizerMode};
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     tab_strip(ui, state);
@@ -48,6 +48,27 @@ fn appearance(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label("Accent colour");
     ui.horizontal_wrapped(|ui| preset_buttons(ui, state));
     custom_picker(ui, state);
+
+    ui.add_space(12.0);
+    visualizer(ui, state);
+}
+
+/// The optional status-bar visualizer strip (#25). Disabled by default: an
+/// animated strip forces a continuous repaint while playing, so it stays off
+/// unless the user explicitly turns it on.
+fn visualizer(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.checkbox(&mut state.visualizer_enabled, "Visualizer")
+        .on_hover_text(
+            "Animated spectrum/oscilloscope strip in the status bar. \
+             Kept off by default because it repaints continuously while playing.",
+        );
+    if state.visualizer_enabled {
+        ui.horizontal_wrapped(|ui| {
+            for mode in VisualizerMode::ALL {
+                ui.selectable_value(&mut state.visualizer, mode, mode.label());
+            }
+        });
+    }
 }
 
 /// One filled button per preset; the active preset gets a strong border.

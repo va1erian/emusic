@@ -55,6 +55,10 @@ pub struct AppState {
     ///
     /// [`View::Settings`]: crate::state::View
     pub settings_tab: SettingsTab,
+    /// Whether the status-bar visualizer strip (#25) is shown at all. Off by
+    /// default: an animated strip needs a continuous repaint while playing,
+    /// which costs CPU even when the user is not looking at it.
+    pub visualizer_enabled: bool,
     /// Visualizer strip mode (#25), cycled by clicking the strip.
     pub visualizer: VisualizerMode,
     /// Transient visualizer rendering state (peak-hold caps), not persisted.
@@ -97,6 +101,7 @@ impl Default for AppState {
             search_popup: SearchPopupState::default(),
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
+            visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
             music_table: TrackTableState::default(),

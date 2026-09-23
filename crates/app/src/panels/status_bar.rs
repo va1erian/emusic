@@ -1,6 +1,5 @@
 //! Bottom status bar: track count, total library duration, a short status
-//! text, and a reserved strip for the visualizer (drawn from the player's
-//! spectrum data; a real visualizer widget lands in a later issue).
+//! text, and (when enabled in Settings) the optional visualizer strip.
 
 use eframe::egui;
 
@@ -31,7 +30,9 @@ pub fn show(
                 scan_status(ui, state, library);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    super::visualizer::show(ui, state, player);
+                    if state.visualizer_enabled {
+                        super::visualizer::show(ui, state, player);
+                    }
                 });
             });
         });

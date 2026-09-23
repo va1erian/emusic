@@ -80,10 +80,10 @@ struct Cli {
     #[arg(long)]
     properties: bool,
 
-    /// Visualizer strip mode to render (#25): `spectrum` (the default),
-    /// `oscilloscope` or `off`.
-    #[arg(long, value_parser = parse_visualizer, default_value = "spectrum")]
-    visualizer: VisualizerMode,
+    /// Visualizer strip mode to render (#25): `spectrum`, `oscilloscope` or
+    /// `off`. Omitted, the strip stays hidden, matching the app's default.
+    #[arg(long, value_parser = parse_visualizer)]
+    visualizer: Option<VisualizerMode>,
 
     /// Pre-populate the config with this many synthetic library folders, so
     /// Settings → Library can be screenshotted with a long, scrollable list
@@ -232,7 +232,9 @@ struct RenderArgs<'a> {
     accent: Option<Accent>,
     mode: LibraryMode,
     search: &'a SearchArgs,
-    visualizer: VisualizerMode,
+    /// Visualizer strip mode to render; `None` leaves the strip hidden, as in
+    /// a default app run.
+    visualizer: Option<VisualizerMode>,
     /// Open the track Properties dialog before rendering (#136).
     properties: bool,
     folders: usize,
@@ -250,7 +252,10 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
             ThemeArg::Light => Theme::Light,
         },
         accent: args.accent.unwrap_or(defaults.accent),
-        visualizer: args.visualizer,
+        // The strip is opt-in, so it is only shown when `--visualizer` asked
+        // for a mode; otherwise the shot matches a default app run.
+        visualizer_enabled: args.visualizer.is_some(),
+        visualizer: args.visualizer.unwrap_or(defaults.visualizer),
         library_folders: synthetic_folders(args.folders),
         ..defaults
     };
