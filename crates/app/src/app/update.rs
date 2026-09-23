@@ -8,6 +8,7 @@ use tracing::warn;
 
 use crate::config::{self, Config};
 use crate::player_api::PlaybackStatus;
+use crate::state::VisualizerMode;
 use crate::{panels, theme, views};
 
 use super::{App, commands};
@@ -152,19 +153,20 @@ impl eframe::App for App {
         self.apply_pending();
         self.tick_config_persistence();
 
-        // Repaint policy (#6, #25): keep repainting at the compositor's own
-        // rate while something is actually playing and the window is visible
-        // (a minimized window needs no frames). The visualizer animates on
-        // these frames; the strip only reads FFT/samples while a mode is
-        // active *and* playing (see `panels::visualizer`), so `Off` costs no
-        // audio reads.
-        //
-        // A timed `request_repaint_after` used to cap this at ~30 fps, but
-        // the off-vsync schedule made the visualizer flicker on some systems;
-        // a plain repaint request follows vsync instead.
+        // Repaint policy (#6, #25): while something is playing and the window
+        // is visible (a minimized window needs no frames), keep the elapsed
+        // time / progress readouts roughly in step with a coarse one-second
+        // tick. Only when the optional visualizer strip is both enabled and
+        // animating (mode != Off) do we follow the compositor's own rate, since
+        // that is the one thing that needs a frame every vsync. This keeps an
+        // idle-looking player at ~0% CPU even though it is "playing".
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         if self.player.status() == PlaybackStatus::Playing && !minimized {
-            ctx.request_repaint();
+            if self.state.visualizer_enabled && self.state.visualizer != VisualizerMode::Off {
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(Duration::from_secs(1));
+            }
         }
     }
 
