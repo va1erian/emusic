@@ -23,8 +23,8 @@ use emusic_library::{Folder, Store};
 use tracing::{info, warn};
 
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, StatsWindow,
-    TrackInfo,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
+    StatsWindow, TrackInfo,
 };
 
 use scan::ScanHandle;
@@ -153,7 +153,7 @@ impl LibraryDataSource for LibraryBackend {
         &self.snapshot.artists
     }
 
-    fn genres(&self) -> &[String] {
+    fn genres(&self) -> &[GenreInfo] {
         &self.snapshot.genres
     }
 

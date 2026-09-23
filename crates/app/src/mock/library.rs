@@ -2,8 +2,8 @@
 
 use super::data::{self, GeneratedLibrary};
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, LibraryDataSource, StatsWindow,
-    TrackInfo,
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
+    StatsWindow, TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -77,7 +77,7 @@ impl LibraryDataSource for MockLibrary {
         &self.data.artists
     }
 
-    fn genres(&self) -> &[String] {
+    fn genres(&self) -> &[GenreInfo] {
         &self.data.genres
     }
 

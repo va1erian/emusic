@@ -9,7 +9,9 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
-use crate::library_api::{AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, HistoryEntry, TrackInfo};
+use crate::library_api::{
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, TrackInfo,
+};
 
 use super::dirs;
 use super::generators::*;
@@ -92,7 +94,7 @@ pub struct GeneratedLibrary {
     pub tracks: Vec<TrackInfo>,
     pub albums: Vec<AlbumInfo>,
     pub artists: Vec<ArtistInfo>,
-    pub genres: Vec<String>,
+    pub genres: Vec<GenreInfo>,
     pub folders: Vec<FolderInfo>,
     pub dirs: Vec<DirNodeInfo>,
     pub history: Vec<HistoryEntry>,
@@ -111,7 +113,7 @@ pub fn generate() -> GeneratedLibrary {
     let artist_names: Vec<String> = (0..80)
         .map(|i| person_name(NAME_WORDS, NAME_NOUNS, &mut rng, i))
         .collect();
-    let genres: Vec<String> = GENRES.iter().map(|s| s.to_string()).collect();
+    let genre_names: Vec<String> = GENRES.iter().map(|s| s.to_string()).collect();
 
     let mut albums = Vec::new();
     for i in 0..200u32 {
@@ -173,7 +175,7 @@ pub fn generate() -> GeneratedLibrary {
                 album.artist.clone()
             },
             album: album.name.clone(),
-            genre: genres.choose(&mut rng).unwrap().clone(),
+            genre: genre_names.choose(&mut rng).unwrap().clone(),
             track_no: (!missing_tags).then(|| rng.gen_range(1..=18)),
             year: album.year,
             disc_no: (!missing_tags && rng.gen_bool(0.15)).then(|| rng.gen_range(1..=2)),
@@ -225,6 +227,16 @@ pub fn generate() -> GeneratedLibrary {
             FolderInfo { path, track_count }
         })
         .collect();
+
+    let mut genres: Vec<GenreInfo> = genre_names
+        .iter()
+        .map(|name| GenreInfo {
+            name: name.clone(),
+            track_count: tracks.iter().filter(|t| &t.genre == name).count(),
+        })
+        .filter(|genre| genre.track_count > 0)
+        .collect();
+    genres.sort_by(|a, b| a.name.cmp(&b.name));
 
     let dirs = dirs::build(&tracks);
 
