@@ -8,16 +8,20 @@ use crate::theme;
 
 use super::PEAK_DECAY_PER_FRAME;
 
-/// Number of bars across the strip. Within the issue's 24–48 range; the
-/// strip is narrow, so 40 keeps each bar ~2 px wide.
-const BAR_COUNT: usize = 40;
+/// Number of bars across the strip. Kept low (24, the coarse end of the
+/// issue's 24–48 range) so the bars read as chunky blocks rather than a
+/// fine-grained comb.
+const BAR_COUNT: usize = 24;
 /// Fraction of each bar's slot filled by the bar (the rest is a gap).
 const BAR_FILL: f32 = 0.72;
 /// Peak cap thickness in points.
 const CAP_HEIGHT: f32 = 1.5;
 /// Perceptual scaling exponent: < 1 lifts quiet bins so most of the range
 /// doesn't sit flat at the bottom.
-const SCALE_EXPONENT: f32 = 0.5;
+const SCALE_EXPONENT: f32 = 0.4;
+/// Overall gain applied after the perceptual scaling, so bars react strongly
+/// to quiet passages instead of hugging the bottom of the strip.
+const GAIN: f32 = 1.8;
 
 /// Draws `bins` as log-spaced bars. `peaks` is the peak-hold state, resized
 /// and decayed in place.
@@ -108,7 +112,7 @@ fn bars_from_fft(bins: &[f32], bar_count: usize) -> Vec<f32> {
                 0.0
             } else {
                 let mean = slice.iter().sum::<f32>() / slice.len() as f32;
-                mean.max(0.0).powf(SCALE_EXPONENT).min(1.0)
+                (mean.max(0.0).powf(SCALE_EXPONENT) * GAIN).min(1.0)
             }
         })
         .collect()

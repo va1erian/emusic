@@ -19,6 +19,17 @@ pub enum Command {
     /// Show/hide the Music view's column browser (#16).
     ToggleColumnBrowser,
     SetSearchQuery(String),
+    /// Jump to the Artists view, filtered to `name` (seeding the top-bar
+    /// search box, matching the global search popup). Emitted by clicking an
+    /// artist name in the now-playing surfaces.
+    GoToArtist(String),
+    /// Jump to the Albums view with the named album selected, so its tracks
+    /// are shown. Emitted by clicking an album name in the now-playing
+    /// surfaces.
+    GoToAlbum {
+        name: String,
+        artist: String,
+    },
     PlayerPlayPause,
     PlayerStop,
     PlayerNext,

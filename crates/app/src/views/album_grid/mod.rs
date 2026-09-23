@@ -109,6 +109,18 @@ impl Default for AlbumGridState {
     }
 }
 
+impl AlbumGridState {
+    /// Selects the album identified by `name`/`artist`, as a click on its
+    /// tile would, so the view shows its tracks. Used when jumping here from
+    /// an album name elsewhere (e.g. the now-playing panel).
+    pub fn select_album(&mut self, name: impl Into<String>, artist: impl Into<String>) {
+        self.selected = Some(AlbumKey {
+            name: name.into(),
+            artist: artist.into(),
+        });
+    }
+}
+
 /// Renders the album grid and, when an album is selected, its track table.
 pub fn show(
     ui: &mut egui::Ui,

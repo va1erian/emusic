@@ -12,7 +12,7 @@ use emusic_search::normalize_text;
 
 use crate::library_api::LibraryDataSource;
 use crate::search::{QUERY_HELP, SearchEngine};
-use crate::state::{AppState, Command, SearchPopupItem, View};
+use crate::state::{AppState, Command, SearchPopupItem};
 
 /// Results shown per section.
 const SECTION_LIMIT: usize = 5;
@@ -194,12 +194,13 @@ fn activate_item(
 ) {
     match item {
         SearchPopupItem::Artist(name) => {
-            state.push(Command::SetView(View::Artists));
-            state.push(Command::SetSearchQuery(name.clone()));
+            state.push(Command::GoToArtist(name.clone()));
         }
-        SearchPopupItem::Album { name, .. } => {
-            state.push(Command::SetView(View::Albums));
-            state.push(Command::SetSearchQuery(name.clone()));
+        SearchPopupItem::Album { name, artist } => {
+            state.push(Command::GoToAlbum {
+                name: name.clone(),
+                artist: artist.clone(),
+            });
         }
         SearchPopupItem::Track(id) => {
             // Context: every track this query matches, not just the

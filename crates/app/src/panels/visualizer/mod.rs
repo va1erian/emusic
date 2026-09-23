@@ -24,9 +24,10 @@ use crate::state::{AppState, Command, VisualizerMode};
 /// Strip size in the status bar, in points.
 const STRIP_SIZE: egui::Vec2 = egui::vec2(150.0, 18.0);
 
-/// Fixed per-frame decay of the spectrum's peak-hold caps. At the shell's
-/// ≤30 fps this drains a full-height cap in a little over a second.
-const PEAK_DECAY_PER_FRAME: f32 = 0.025;
+/// Fixed per-frame decay of the spectrum's peak-hold caps. At the
+/// compositor's ~60 fps this drains a full-height cap in a little over a
+/// second.
+const PEAK_DECAY_PER_FRAME: f32 = 0.015;
 
 /// Transient visualizer state that must survive across frames: the
 /// spectrum's peak-hold caps. UI-only, so it is deliberately not persisted.
