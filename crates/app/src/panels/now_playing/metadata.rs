@@ -147,12 +147,18 @@ fn path_row(ui: &mut egui::Ui, path: &str) {
     response.on_hover_text(format!("Open folder:\n{path}"));
 }
 
+/// Keep the last ~45 characters of a path, prefixed with an ellipsis.
+///
+/// `MAX` and the slice offset are bytes, but the cut has to land on a `char`
+/// boundary: slicing at a fixed byte offset panics on paths with multi-byte
+/// characters (e.g. Japanese filenames) landing on the cut.
 fn truncate_path(path: &str) -> String {
     const MAX: usize = 48;
     if path.len() <= MAX {
         return path.to_string();
     }
-    format!("...{}", &path[path.len() - MAX + 3..])
+    let start = path.floor_char_boundary(path.len() - MAX + 3);
+    format!("...{}", &path[start..])
 }
 
 #[cfg(target_os = "windows")]
@@ -165,4 +171,28 @@ fn open_containing_folder(path: &str) {
 #[cfg(not(target_os = "windows"))]
 fn open_containing_folder(path: &str) {
     let _ = path;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_path;
+
+    #[test]
+    fn truncate_path_cuts_on_a_char_boundary() {
+        // The byte cut (`len - MAX + 3` == 47) lands inside 'テ' (bytes
+        // 46..49); the old byte slice panicked here.
+        let path =
+            "C:\\music\\情報デスクVIRTUAL - 札幌コンテンポラリー - 26 Untitled STRETCHED.ogg";
+        let truncated = truncate_path(path);
+        let tail = truncated
+            .strip_prefix("...")
+            .expect("truncated paths start with an ellipsis");
+        assert!(path.ends_with(tail));
+        assert!(!tail.is_empty());
+    }
+
+    #[test]
+    fn truncate_path_keeps_short_paths_intact() {
+        assert_eq!(truncate_path("C:\\music\\a.mp3"), "C:\\music\\a.mp3");
+    }
 }
