@@ -10,6 +10,17 @@ use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
 
+/// The tree panel's resizable width bounds.
+const MIN_TREE_WIDTH: f32 = 180.0;
+/// Generous upper bound so a real library's deeper/longer paths (unlike the
+/// short mock ones) have somewhere to grow; still bounded below by
+/// [`MIN_CENTRAL_WIDTH`] so the track table can't be squeezed to nothing.
+const MAX_TREE_WIDTH: f32 = 900.0;
+const DEFAULT_TREE_WIDTH: f32 = 260.0;
+/// Width the central view (track table) keeps for itself, same rationale as
+/// the now-playing panel's own `MIN_CENTRAL_WIDTH`.
+const MIN_CENTRAL_WIDTH: f32 = 320.0;
+
 /// Renders the tree's own left panel. Shown as a real top-level panel
 /// (sibling to the navigator/right panel) *before* the `CentralPanel` is
 /// created, not nested inside the central view's `ScrollArea` — nesting a
@@ -20,10 +31,15 @@ use crate::state::{AppState, Command};
 pub fn tree_panel(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
     let recursive = state.folder_tree.include_subfolders;
     let mut folder_command = None;
+    // `ui.available_width()` here already excludes the navigator and right
+    // panel (shown earlier this frame), so this is genuinely the width left
+    // to split between the tree and the track table.
+    let max_width =
+        (ui.available_width() - MIN_CENTRAL_WIDTH).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
     egui::Panel::left("folder_tree")
         .resizable(true)
-        .default_size(260.0)
-        .size_range(180.0..=460.0)
+        .default_size(DEFAULT_TREE_WIDTH)
+        .size_range(MIN_TREE_WIDTH..=max_width)
         .show(ui, |ui| {
             // Vertical only (#163): directory rows must stay inside the
             // panel. Horizontal scrolling let a wide, deeply-indented row
