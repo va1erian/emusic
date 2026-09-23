@@ -47,15 +47,20 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
                 repeat_label(player.repeat_mode()),
             );
             toggle_button_bool(ui, state, "🔀", "Shuffle", player.shuffle());
-
             ui.separator();
-            seek_area(ui, state, player);
 
-            ui.separator();
-            volume_area(ui, state, player);
-
-            ui.separator();
-            search_box(ui, state);
+            // Lay the right-hand controls out from the right edge so the
+            // volume slider and search box stay pinned there; the seek area
+            // then fills whatever space is left in the middle.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                search_box(ui, state);
+                ui.separator();
+                volume_area(ui, state, player);
+                ui.separator();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    seek_area(ui, state, player);
+                });
+            });
         });
     });
 }
@@ -135,17 +140,35 @@ fn toggle_button_bool(
 fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     let position = player.position().as_secs_f64();
     let total = player.duration().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    let elapsed = format_time(position);
+    let remaining = format_time(total);
 
-    ui.label(format_time(position));
+    // Stretch the slider across the centre section: reserve the two time
+    // labels plus the item spacing around them and give the rest to the
+    // slider, so the whole bar uses the available width.
+    let spacing = ui.spacing().item_spacing.x;
+    let font_id = egui::TextStyle::Body.resolve(ui.style());
+    let labels_width = ui.fonts_mut(|fonts| {
+        let mut width = |text: &str| {
+            fonts
+                .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE)
+                .size()
+                .x
+        };
+        width(&elapsed) + width(&remaining)
+    });
+    let slider_width = (ui.available_width() - labels_width - 2.0 * spacing).max(80.0);
+
+    ui.label(&elapsed);
     let mut value = position;
-    ui.spacing_mut().slider_width = 320.0;
+    ui.spacing_mut().slider_width = slider_width;
     let slider = ui.add(egui::Slider::new(&mut value, 0.0..=total.max(0.001)).show_value(false));
     if slider.changed() {
         state.push(Command::PlayerSeek(std::time::Duration::from_secs_f64(
             value,
         )));
     }
-    ui.label(format_time(total));
+    ui.label(&remaining);
 }
 
 fn volume_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
