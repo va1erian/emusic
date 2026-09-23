@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
-use crate::state::{Accent, AppState, PanelVisibility, Theme, View};
+use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 pub use io::{ConfigError, config_path, load, save};
 
@@ -39,6 +39,8 @@ pub struct Config {
     pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
+    /// Visualizer strip mode (#25): spectrum, oscilloscope or off.
+    pub visualizer: VisualizerMode,
     /// Library folders to scan at startup, edited in Settings → Library
     /// (#19); can also be set by hand in `config.toml`.
     #[serde(default)]
@@ -57,6 +59,7 @@ impl Default for Config {
             column_browser_visible: true,
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             last_view: View::default(),
+            visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
         }
     }
@@ -77,6 +80,7 @@ impl Config {
             column_browser_visible: state.column_browser.visible,
             column_browser_height: state.column_browser.height,
             last_view: state.view,
+            visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
         }
     }
@@ -90,6 +94,7 @@ impl Config {
         state.column_browser.visible = self.column_browser_visible;
         state.column_browser.height = self.column_browser_height;
         state.view = self.last_view;
+        state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
     }
 

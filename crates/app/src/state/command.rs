@@ -12,6 +12,9 @@ pub enum Command {
     SetView(View),
     ToggleTheme,
     SetAccent(Accent),
+    /// Cycle the visualizer strip's mode (spectrum → oscilloscope → off),
+    /// emitted by clicking the strip (#25).
+    CycleVisualizer,
     TogglePanel(PanelKind),
     /// Show/hide the Music view's column browser (#16).
     ToggleColumnBrowser,

@@ -9,12 +9,14 @@ mod command;
 mod panels;
 mod search;
 mod view;
+mod visualizer;
 
 pub use appearance::{Accent, Theme};
 pub use command::Command;
 pub use panels::{PanelKind, PanelVisibility};
 pub use search::{SearchPopupItem, SearchPopupState};
 pub use view::View;
+pub use visualizer::VisualizerMode;
 
 use std::path::PathBuf;
 
@@ -46,6 +48,10 @@ pub struct AppState {
     ///
     /// [`Config::capture`]: crate::config::Config::capture
     pub library_folders: Vec<PathBuf>,
+    /// Visualizer strip mode (#25), cycled by clicking the strip.
+    pub visualizer: VisualizerMode,
+    /// Transient visualizer rendering state (peak-hold caps), not persisted.
+    pub visualizer_state: crate::panels::visualizer::VisualizerState,
     /// The Music view's track table (sort + selection). Other views that
     /// embed a track table later (albums, artists, genres, folders,
     /// history) will each get their own field here.
@@ -81,6 +87,8 @@ impl Default for AppState {
             search_result_count: None,
             search_popup: SearchPopupState::default(),
             library_folders: Vec::new(),
+            visualizer: VisualizerMode::default(),
+            visualizer_state: crate::panels::visualizer::VisualizerState::default(),
             music_table: TrackTableState::default(),
             column_browser: ColumnBrowserState::default(),
             album_grid: AlbumGridState::default(),
@@ -107,6 +115,7 @@ impl AppState {
             Command::SetView(view) => self.view = *view,
             Command::ToggleTheme => self.theme = self.theme.toggled(),
             Command::SetAccent(accent) => self.accent = *accent,
+            Command::CycleVisualizer => self.visualizer = self.visualizer.next(),
             Command::TogglePanel(kind) => match kind {
                 PanelKind::Navigator => self.panels.navigator = !self.panels.navigator,
                 PanelKind::RightPanel => self.panels.right_panel = !self.panels.right_panel,

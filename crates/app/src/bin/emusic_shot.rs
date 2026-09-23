@@ -25,7 +25,7 @@ use emusic::app::App;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
-use emusic::state::{Accent, Theme, View};
+use emusic::state::{Accent, Theme, View, VisualizerMode};
 
 #[derive(Parser, Debug)]
 #[command(name = "emusic-shot")]
@@ -74,6 +74,11 @@ struct Cli {
     /// before rendering (#22).
     #[arg(long)]
     search_popup: bool,
+
+    /// Visualizer strip mode to render (#25): `spectrum` (the default),
+    /// `oscilloscope` or `off`.
+    #[arg(long, value_parser = parse_visualizer, default_value = "spectrum")]
+    visualizer: VisualizerMode,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -89,6 +94,11 @@ fn parse_accent(s: &str) -> Result<Accent, String> {
              (presets: orange, blue, green, purple, red, teal)"
         )
     })
+}
+
+fn parse_visualizer(s: &str) -> Result<VisualizerMode, String> {
+    VisualizerMode::from_slug(s)
+        .ok_or_else(|| format!("invalid visualizer {s:?}: expected spectrum, oscilloscope or off"))
 }
 
 fn main() {
@@ -111,17 +121,17 @@ fn main() {
             cli.out.clone()
         };
         std::fs::create_dir_all(&dir).expect("create output directory");
+        let args = RenderArgs {
+            size: (width, height),
+            theme: cli.theme,
+            accent: cli.accent,
+            mode,
+            search: &search,
+            visualizer: cli.visualizer,
+        };
         for view in View::ALL {
             let out = dir.join(format!("{}.png", view.slug()));
-            render_one(
-                view,
-                (width, height),
-                cli.theme,
-                cli.accent,
-                mode,
-                &search,
-                &out,
-            );
+            render_one(view, &args, &out);
         }
         return;
     }
@@ -134,15 +144,15 @@ fn main() {
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent).expect("create output directory");
     }
-    render_one(
-        view,
-        (width, height),
-        cli.theme,
-        cli.accent,
+    let args = RenderArgs {
+        size: (width, height),
+        theme: cli.theme,
+        accent: cli.accent,
         mode,
-        &search,
-        &cli.out,
-    );
+        search: &search,
+        visualizer: cli.visualizer,
+    };
+    render_one(view, &args, &cli.out);
 }
 
 /// Search state (#22) to apply before rendering: a top-bar query and/or the
@@ -186,43 +196,47 @@ impl LibraryMode {
     }
 }
 
-fn render_one(
-    view: View,
+/// Bundles the CLI-derived rendering settings so [`render_one`] stays a
+/// small, single-purpose function.
+struct RenderArgs<'a> {
     size: (f32, f32),
     theme: ThemeArg,
     accent: Option<Accent>,
     mode: LibraryMode,
-    search: &SearchArgs,
-    out: &Path,
-) {
-    let (width, height) = size;
+    search: &'a SearchArgs,
+    visualizer: VisualizerMode,
+}
+
+fn render_one(view: View, args: &RenderArgs, out: &Path) {
+    let (width, height) = args.size;
     // Theme/accent go through the config so the shell applies them the
     // same way it applies user settings.
     let defaults = Config::default();
     let config = Config {
-        theme: match theme {
+        theme: match args.theme {
             ThemeArg::Dark => Theme::Dark,
             ThemeArg::Light => Theme::Light,
         },
-        accent: accent.unwrap_or(defaults.accent),
+        accent: args.accent.unwrap_or(defaults.accent),
+        visualizer: args.visualizer,
         ..defaults
     };
 
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(width, height))
         .build_eframe(|cc| {
-            let (library, player) = mode.build();
+            let (library, player) = args.mode.build();
             App::with_config(cc, Box::new(library), Box::new(player), config)
         });
 
     harness.state_mut().set_view(view);
-    if let Some(query) = &search.query {
+    if let Some(query) = &args.search.query {
         harness.state_mut().set_search_query(query.clone());
     }
-    if search.popup {
+    if args.search.popup {
         harness
             .state_mut()
-            .open_search_popup(search.query.clone().unwrap_or_default());
+            .open_search_popup(args.search.query.clone().unwrap_or_default());
     }
     // A single step is enough for a static screenshot; `Harness::run` would
     // wait for the UI to go idle, which it never does here because the
@@ -232,7 +246,7 @@ fn render_one(
     // steps so the UI thread polls and renders the result rather than a
     // still-empty "pending" frame.
     harness.run_steps(1);
-    if search.query.is_some() || search.popup {
+    if args.search.query.is_some() || args.search.popup {
         std::thread::sleep(std::time::Duration::from_millis(200));
         harness.run_steps(2);
     }

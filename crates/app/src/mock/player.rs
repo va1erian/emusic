@@ -21,7 +21,8 @@ fn label(path: &Path) -> String {
         .to_string()
 }
 
-const SPECTRUM_BINS: usize = 32;
+const SPECTRUM_BINS: usize = 512;
+const SCOPE_SAMPLES: usize = 512;
 const TRACKER_FORMATS: &[&str] = &["xm", "it", "mod", "s3m"];
 /// Number of upcoming entries the mock materialises for a shuffle scope.
 const SHUFFLE_PREVIEW: usize = 20;
@@ -36,6 +37,7 @@ pub struct MockPlayer {
     queue: Vec<QueueEntry>,
     module_info: Option<ModuleInfo>,
     spectrum: [f32; SPECTRUM_BINS],
+    samples: [f32; SCOPE_SAMPLES],
     /// Monotonically increasing phase used to animate the fake spectrum
     /// deterministically (no wall-clock reads).
     phase: f32,
@@ -94,6 +96,7 @@ impl Default for MockPlayer {
             queue: Vec::new(),
             module_info: None,
             spectrum: [0.0; SPECTRUM_BINS],
+            samples: [0.0; SCOPE_SAMPLES],
             phase: 0.0,
             shuffle_scope: None,
             status_message: None,
@@ -110,9 +113,17 @@ impl PlayerApi for MockPlayer {
             self.position = (self.position + dt).min(np.duration);
         }
         self.phase += dt.as_secs_f32();
+        // A pink-noise-ish, bass-heavy spectrum with a few moving partials,
+        // so the visualizer's log-spaced bars look like real music.
         for (i, bin) in self.spectrum.iter_mut().enumerate() {
             let f = i as f32 / SPECTRUM_BINS as f32;
-            *bin = (0.5 + 0.5 * (self.phase * (2.0 + f * 5.0) + f * 10.0).sin()).clamp(0.0, 1.0);
+            let rolloff = (1.0 - f).powf(1.6);
+            let wiggle = 0.5 + 0.5 * (self.phase * (2.0 + f * 5.0) + f * 10.0).sin();
+            *bin = (rolloff * (0.35 + 0.65 * wiggle)).clamp(0.0, 1.0);
+        }
+        for (i, sample) in self.samples.iter_mut().enumerate() {
+            let t = i as f32 / SCOPE_SAMPLES as f32;
+            *sample = (t * std::f32::consts::TAU * 4.0 + self.phase * 6.0).sin() * 0.6;
         }
         if let Some(np) = &self.now_playing {
             self.module_info = tracker_module_info(&np.path, &np.title, self.position);
@@ -163,8 +174,12 @@ impl PlayerApi for MockPlayer {
         self.module_info.as_ref()
     }
 
-    fn spectrum(&self) -> &[f32] {
-        &self.spectrum
+    fn fft(&self) -> Vec<f32> {
+        self.spectrum.to_vec()
+    }
+
+    fn samples(&self) -> Vec<f32> {
+        self.samples.to_vec()
     }
 
     fn play_pause(&mut self) {

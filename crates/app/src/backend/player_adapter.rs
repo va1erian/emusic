@@ -225,10 +225,14 @@ impl PlayerApi for PlayerAdapter {
         None
     }
 
-    fn spectrum(&self) -> &[f32] {
-        // Real-time FFT data from BASS isn't wired up yet (no issue covers
-        // it); the visualizer strip just renders empty until it is.
-        &[]
+    fn fft(&self) -> Vec<f32> {
+        // Only reached while the visualizer is on (#25), so the FFT read
+        // happens at most ~30 fps and never when the strip is off.
+        self.player.fft().unwrap_or_default()
+    }
+
+    fn samples(&self) -> Vec<f32> {
+        self.player.samples().unwrap_or_default()
     }
 
     fn play_pause(&mut self) {

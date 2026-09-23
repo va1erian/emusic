@@ -130,6 +130,28 @@ fn push_decode_stream_decodes_pushed_samples() {
 }
 
 #[test]
+fn fft_reports_one_bin_per_positive_frequency() {
+    let Some((_guard, bass)) = init_silent() else {
+        return;
+    };
+    let path = temp::write_file("bass_fft_test", "wav", &wav::mono_file_1s().0);
+
+    let stream = bass
+        .open_stream(&path, StreamFlags::DECODE | StreamFlags::FLOAT)
+        .expect("decoding a valid WAV file should succeed");
+
+    // Feed the FFT some decoded data first, then read the magnitudes.
+    let mut samples = vec![0f32; 1024];
+    stream.get_data_f32(&mut samples).expect("get_data");
+
+    let bins = stream
+        .get_data_fft(bass::FftSize::Fft1024)
+        .expect("BASS_ChannelGetData should return FFT data");
+    assert_eq!(bins.len(), bass::FftSize::Fft1024.output_len());
+    assert!(bins.iter().all(|b| b.is_finite()));
+}
+
+#[test]
 fn push_limit_round_trips() {
     let Some((_guard, bass)) = init_silent() else {
         return;

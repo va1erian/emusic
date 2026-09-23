@@ -152,8 +152,11 @@ impl PlayerApi for UnavailablePlayer {
     fn module_info(&self) -> Option<&ModuleInfo> {
         None
     }
-    fn spectrum(&self) -> &[f32] {
-        &[]
+    fn fft(&self) -> Vec<f32> {
+        Vec::new()
+    }
+    fn samples(&self) -> Vec<f32> {
+        Vec::new()
     }
     fn play_pause(&mut self) {}
     fn stop(&mut self) {}
