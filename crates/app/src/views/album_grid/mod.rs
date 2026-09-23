@@ -146,10 +146,9 @@ pub fn show(
     ui.separator();
 
     let selected_tracks = selected_album(grid, &albums).map(|album| album_tracks(library, album));
-    // The central view wraps this in a scroll area, so `available_height` is
-    // unbounded; the visible height is what is left of the clip rect. Without
-    // a bound the grid would lay out (and load covers for) every tile.
-    let visible_height = (ui.clip_rect().bottom() - ui.cursor().top()).max(MIN_GRID_HEIGHT);
+    // Give the grid a definite height so its virtualization only lays out (and
+    // loads covers for) the visible tiles.
+    let visible_height = ui.available_height().max(MIN_GRID_HEIGHT);
     match selected_tracks {
         Some(tracks) => {
             let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
