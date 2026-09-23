@@ -12,12 +12,14 @@ pub(crate) mod loader;
 pub(crate) mod scan;
 pub(crate) mod source;
 pub(crate) mod stats;
+pub(crate) mod tag_edit;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use emusic_library::stats::StatsRecorder;
+use emusic_library::tags::{EditOutcome, EditRequest};
 use emusic_library::watch::{WatchEvent, Watcher};
 use emusic_library::{Folder, Store, TrackId};
 use tracing::{info, warn};
@@ -41,6 +43,9 @@ pub(crate) enum Update {
     /// A scan with this id finished; clears the scanning state if it is still
     /// the current one (an older scan's completion is ignored).
     ScanFinished(u64),
+    /// The outcomes of one completed tag-edit batch, held for the UI to drain
+    /// via [`LibraryDataSource::take_tag_edit_results`].
+    TagEdits(Vec<EditOutcome>),
 }
 
 /// [`LibraryDataSource`] implementation backed by `emusic-library`.
@@ -66,6 +71,8 @@ pub struct LibraryBackend {
     next_scan_id: u64,
     /// The scan currently running (cancel handle + id), if any.
     active_scan: Option<ScanHandle>,
+    /// Completed tag-edit outcomes waiting for the UI to drain them.
+    tag_edit_results: Vec<EditOutcome>,
     /// Shared with the player backend; used to read tracker module tags
     /// during scans. `None` when BASS failed to initialize, in which case
     /// modules are counted but skipped (see [`emusic_library::scanner`]).
@@ -131,6 +138,7 @@ impl LibraryBackend {
             loader_started: false,
             next_scan_id: 0,
             active_scan: None,
+            tag_edit_results: Vec::new(),
             bass,
         }
     }
@@ -240,6 +248,23 @@ impl LibraryDataSource for LibraryBackend {
         self.snapshot.set_starred(id, starred);
     }
 
+    fn request_tag_edits(&mut self, requests: Vec<EditRequest>) {
+        if requests.is_empty() {
+            return;
+        }
+        info!(count = requests.len(), "tag edit batch requested");
+        tag_edit::spawn(
+            self.store.clone(),
+            self.folders.clone(),
+            requests,
+            self.update_tx.clone(),
+        );
+    }
+
+    fn take_tag_edit_results(&mut self) -> Vec<EditOutcome> {
+        std::mem::take(&mut self.tag_edit_results)
+    }
+
     fn tick(&mut self) {
         while let Ok(update) = self.updates.try_recv() {
             match update {
@@ -252,6 +277,7 @@ impl LibraryDataSource for LibraryBackend {
                         self.active_scan = None;
                     }
                 }
+                Update::TagEdits(outcomes) => self.tag_edit_results.extend(outcomes),
             }
         }
 
@@ -378,5 +404,21 @@ pub(crate) fn scan_options(bass: Option<Arc<bass::Bass>>) -> emusic_library::sca
     }
 }
 
+/// Opens a private connection to the same database file as the shared store,
+/// if there is one.
+///
+/// The shared lock is held only for the `open_second` call itself, never
+/// while a background worker reads or writes, so UI reads never wait behind
+/// it. Returns `None` for an in-memory store (there is no file to reopen),
+/// which callers handle by falling back to the shared connection.
+pub(crate) fn private_store(store: &Arc<Mutex<Store>>) -> Option<Store> {
+    let shared = store
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    shared.open_second().ok()
+}
+
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
