@@ -46,6 +46,15 @@ pub enum LibraryError {
         #[source]
         source: lofty::error::FileEncodingError,
     },
+
+    /// An edited audio file's size or modification time could not be read
+    /// back, so its store row cannot be refreshed.
+    #[error("failed to stat {path}: {source}")]
+    StatFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Convenience alias for results returned by this crate.

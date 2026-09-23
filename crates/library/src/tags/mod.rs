@@ -10,11 +10,15 @@
 //! [`EditableTags`] and save it back, so embedded artwork and any tag items
 //! the editor does not expose are preserved.
 
+pub(crate) mod edit;
 pub(crate) mod read;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 mod write;
 
+pub use edit::{EditOutcome, EditRequest, edit_tags};
 pub use read::read_tags;
 pub use write::write_tags;
 

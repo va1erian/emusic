@@ -7,6 +7,7 @@ use rusqlite::{OptionalExtension, Row, params};
 use super::Store;
 use crate::error::Result;
 use crate::tags::EditableTags;
+use crate::tags::edit::EditedFile;
 
 const TRACK_COLUMNS: &str = "id, path, dir, filename, ext, size, mtime, kind, duration_ms, \
      bitrate, sample_rate, channels, title, artist, album_artist, album, genre, year, \
@@ -241,25 +242,28 @@ impl Store {
         size: u64,
         mtime: i64,
     ) -> Result<bool> {
-        let updated = self.conn.execute(
-            UPDATE_TAGS_SQL,
-            params![
-                size,
-                mtime,
-                tags.title,
-                tags.artist,
-                tags.album_artist,
-                tags.album,
-                tags.genre,
-                tags.year,
-                tags.track_no,
-                tags.disc_no,
-                tags.composer,
-                tags.comment,
-                path_to_string(path),
-            ],
-        )?;
-        Ok(updated > 0)
+        let mut stmt = self.conn.prepare_cached(UPDATE_TAGS_SQL)?;
+        Ok(execute_tag_update(&mut stmt, path, tags, size, mtime)? > 0)
+    }
+
+    /// Applies a batch of already-performed file edits to their rows in a
+    /// single transaction.
+    ///
+    /// Each [`EditedFile`] carries the tags written to disk together with the
+    /// file's refreshed `size`/`mtime`, exactly what
+    /// [`Store::update_track_tags`] needs. Paths with no matching row are
+    /// skipped. The tag editor uses this so a batch of edits reaches the
+    /// database as one atomic write instead of one commit per file.
+    pub(crate) fn store_tag_edits(&mut self, edits: &[EditedFile]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare_cached(UPDATE_TAGS_SQL)?;
+            for edit in edits {
+                execute_tag_update(&mut stmt, &edit.path, &edit.tags, edit.size, edit.mtime)?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Fetches a single track by its file path, if present.
@@ -285,6 +289,32 @@ impl Store {
         })?;
         Ok(rows.collect::<rusqlite::Result<HashMap<_, _>>>()?)
     }
+}
+
+/// Runs one [`UPDATE_TAGS_SQL`] statement, returning the number of rows
+/// changed.
+fn execute_tag_update(
+    stmt: &mut rusqlite::CachedStatement<'_>,
+    path: &Path,
+    tags: &EditableTags,
+    size: u64,
+    mtime: i64,
+) -> rusqlite::Result<usize> {
+    stmt.execute(params![
+        size,
+        mtime,
+        tags.title,
+        tags.artist,
+        tags.album_artist,
+        tags.album,
+        tags.genre,
+        tags.year,
+        tags.track_no,
+        tags.disc_no,
+        tags.composer,
+        tags.comment,
+        path_to_string(path),
+    ])
 }
 
 fn path_to_string(path: &Path) -> String {
