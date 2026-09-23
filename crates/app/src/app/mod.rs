@@ -202,4 +202,13 @@ impl App {
             self.state.music_table.properties = Some(track.clone());
         }
     }
+
+    /// Opens the single-track tag editor for the library's first track, as
+    /// the row's context menu would (#172). Used by `emusic-shot`
+    /// (`--tag-editor`) so the dialog can be screenshotted headlessly.
+    pub fn open_tag_editor(&mut self) {
+        if let Some(track) = self.library.tracks().first() {
+            self.state.tag_editor = Some(crate::tag_editor::TagEditorState::new(track));
+        }
+    }
 }

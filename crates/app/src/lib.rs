@@ -20,6 +20,7 @@ mod search;
 pub mod settings;
 pub mod shuffle;
 pub mod state;
+pub mod tag_editor;
 pub mod theme;
 pub mod views;
 pub mod window_icon;

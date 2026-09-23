@@ -86,6 +86,10 @@ pub struct AppState {
     pub history: HistoryState,
     /// Commands queued during this frame's `ui()`, drained at the end.
     pub pending: Vec<Command>,
+    /// The open single-track tag editor dialog (#172), if any. Owned by the
+    /// shell (not a track table) because the shell drains the backend's
+    /// tag-edit results into it.
+    pub tag_editor: Option<crate::tag_editor::TagEditorState>,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
     /// collapsible section flags, ...).
     pub now_playing: crate::panels::now_playing::PanelState,
@@ -118,6 +122,7 @@ impl Default for AppState {
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
             pending: Vec::new(),
+            tag_editor: None,
             now_playing: crate::panels::now_playing::PanelState::default(),
             tracker_settings: TrackerSettings::default(),
         }

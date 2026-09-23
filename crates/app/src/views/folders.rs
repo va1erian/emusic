@@ -107,6 +107,7 @@ pub fn show(
             TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
             TrackAction::AddToQueue(id) => Command::QueueTrack(id),
             TrackAction::ToggleStar(id) => Command::ToggleStarred(id),
+            TrackAction::EditTags(id) => Command::OpenTagEditor(id),
         });
     }
 }

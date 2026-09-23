@@ -1,5 +1,5 @@
 //! Right-click context menu for a track row: Play, Play next, Add to queue,
-//! Star/Unstar, Open file location, Copy path, Properties.
+//! Star/Unstar, Open file location, Copy path, Edit tags, Properties.
 
 use eframe::egui;
 
@@ -21,6 +21,9 @@ pub enum ContextAction {
     /// The user asked to see the track's full metadata; the caller opens the
     /// Properties dialog for the row.
     Properties,
+    /// The user asked to edit the track's tags; the caller opens the tag
+    /// editor dialog for the row (#172).
+    EditTags,
 }
 
 /// Shows the context menu for `response` (a track row's response), if the
@@ -57,6 +60,10 @@ pub fn show(response: &egui::Response, track: &TrackInfo) -> Option<ContextActio
             ui.close();
         }
         ui.separator();
+        if ui.button("Edit tags…").clicked() {
+            action = Some(ContextAction::EditTags);
+            ui.close();
+        }
         if ui.button("Properties…").clicked() {
             action = Some(ContextAction::Properties);
             ui.close();
