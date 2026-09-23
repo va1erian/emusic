@@ -1,10 +1,10 @@
 ; emusic installer script (#29), written for Inno Setup 7.
 ;
 ; Per-user (no admin) install of the 64-bit emusic build into
-; {localappdata}\Programs\emusic. BASS DLLs are never committed; they are
-; picked up from the `bass\` folder next to the built exe when present, and
-; the installer degrades to a BASS-less build with a compiler warning when
-; they are absent (see docs/installer.md).
+; {localappdata}\Programs\emusic. BASS is a required packaging input (#124):
+; the DLLs are never committed to git, but they must be present in the `bass\`
+; folder next to the built exe, and the compile fails with an #error when the
+; folder is missing or has no `bass*.dll` (see docs/installer.md).
 ;
 ; The icon set (#125) is committed under assets\ and installed into an
 ; `icons\` subfolder of the install dir, where emusic.exe's file-association
@@ -30,9 +30,10 @@
   #define BuildDir AddBackslash(SourcePath) + "..\target\release"
 #endif
 
-; BASS DLL folder. Defaults to the `bass\` folder next to the built exe,
-; which is where the README tells developers to put the (never committed)
-; x64 DLLs. Override with /DBassDir=... if you keep them elsewhere.
+; BASS DLL folder, a required input (#124). Defaults to the `bass\` folder
+; next to the built exe, which is where the README tells developers to put the
+; (never committed) x64 DLLs. Override with /DBassDir=... if you keep them
+; elsewhere; the folder must be non-empty or the compile fails.
 #ifndef BassDir
   #define BassDir AddBackslash(BuildDir) + "bass"
 #endif
@@ -55,6 +56,16 @@
 #if FileExists(AddBackslash(BuildDir) + AppExeName)
 #else
   #error emusic.exe not found in the release build folder. Run `cargo build --release` first, or pass /DBuildDir=<path>.
+#endif
+
+; BASS is required at packaging time (#124): emusic needs the x64 BASS DLLs at
+; runtime, so fail the compile with an actionable message rather than shipping
+; an installer that cannot play audio. The `bass*.dll` mask catches the
+; runtime (bass.dll) plus the codec add-ons the app auto-loads, and also an
+; empty `bass\` folder.
+#if DirExists(BassDir) && FindFirst(AddBackslash(BassDir) + "bass*.dll", 0)
+#else
+  #error BASS DLLs not found in the bass folder. Put the x64 BASS DLLs (bass.dll plus any codec add-ons) in the build's bass folder, or pass /DBassDir=<path> - see docs/installer.md.
 #endif
 
 [Setup]
@@ -99,11 +110,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#BuildDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-#if DirExists(BassDir)
-Source: "{#BassDir}\*.dll"; DestDir: "{app}\bass"; Flags: ignoreversion skipifsourcedoesntexist
-#else
-  #pragma warning "BASS DLLs not found in the build's bass folder; building an installer without BASS. Place the x64 DLLs next to the built exe and rebuild - see docs/installer.md."
-#endif
+; BASS is required (#124): the early #error above guarantees this matches at
+; least bass.dll, so no skipifsourcedoesntexist fallback is needed.
+Source: "{#BassDir}\*.dll"; DestDir: "{app}\bass"; Flags: ignoreversion
 #if DirExists(AddBackslash(AssetsDir) + "ico")
 Source: "{#AssetsDir}\ico\*.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 #else
@@ -121,3 +130,24 @@ Filename: "{app}\{#AppExeName}"; Parameters: "--register-associations"; Flags: r
 [UninstallRun]
 ; Runs before the files are removed, while emusic.exe is still present.
 Filename: "{app}\{#AppExeName}"; Parameters: "--unregister"; Flags: runhidden; RunOnceId: "UnregisterAssociations"
+
+[UninstallDelete]
+; The attribution notice is written by [Code] below, so the uninstaller does
+; not know about it and must remove it explicitly.
+Type: files; Name: "{app}\bass\README.txt"
+
+[Code]
+; Attribution bundled with the BASS DLLs (#124). Not required by BASS's
+; free-for-non-commercial license, but good practice; the names stay the
+; property of their owners.
+const
+  BassNotice = 'Audio playback uses the BASS library by un4seen developments' + #13#10 +
+    '(https://www.un4seen.com). BASS is free for non-commercial use; see the' + #13#10 +
+    'bass.txt license files in the BASS download. A commercial build needs its' + #13#10 +
+    'own BASS license. BASS and un4seen remain the property of their owners.';
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    SaveStringToFile(ExpandConstant('{app}\bass\README.txt'), BassNotice, False);
+end;

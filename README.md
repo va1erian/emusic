@@ -23,11 +23,12 @@ cargo test --workspace
 
 ### BASS DLLs
 
-Audio playback uses the native BASS library. You must download the BASS DLLs (x64) yourself from <https://www.un4seen.com> and place them in a `bass/` directory next to the built executable:
+Audio playback uses the native BASS library. You must download the BASS DLLs (x64) yourself from <https://www.un4seen.com> and place them in a `bass/` directory next to the built executable. `bass.dll` (the audio engine) is required; the codec add-ons are optional, and the app loads one for every other `bass*.dll` it finds in that directory (`crates/bass/src/ffi/loader.rs`):
 
-- `bass.dll`
+- `bass.dll` (required)
 - `bassflac.dll`
 - `bassopus.dll`
+- `bassmidi.dll`
 - `bassalac.dll`
 - `basswv.dll`
 - `bassape.dll`
@@ -42,7 +43,7 @@ set EMUSIC_BASS_DIR=C:\path\to\BASS\x64
 
 Note that each Windows BASS download zip contains both 32-bit and 64-bit builds — the x64 DLLs live in the `x64/` subfolder, so point the player (or `EMUSIC_BASS_DIR`, e.g. for `cargo test -p bass`) at that subfolder, not the zip root.
 
-Note: BASS is free for non-commercial use; see the license on the un4seen website.
+The installer needs these DLLs at packaging time and fails to compile if the `bass/` folder is missing or empty — see [docs/installer.md](docs/installer.md).
 
 ### Icons
 
@@ -60,11 +61,13 @@ The app ships **no bundled fonts**: it uses the fonts already installed on the m
 
 ## Packaging (Windows installer)
 
-A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\`, then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
+A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). BASS is third-party software with its own license.
+emusic's own code is MIT — see [LICENSE](LICENSE).
+
+Audio playback uses the third-party [BASS](https://www.un4seen.com) library by un4seen developments, which is **free for non-commercial use**. emusic is personal freeware, so it is covered by those terms; the BASS DLLs ship with the installer under that license and are never committed to git. emusic's MIT license does not change BASS's terms: a **commercial** fork or build would need its own BASS license from un4seen. See the `bass.txt` license files bundled with the BASS download.
 
 ## How this project is built
 
