@@ -11,6 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 bass = { path = "../bass" }
+emusic-sid = { path = "../sid" }
 thiserror = "2"
 crossbeam-channel = "0.5"
 rand = "0.8"
