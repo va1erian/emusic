@@ -171,6 +171,13 @@ impl App {
         self.state.view = view;
     }
 
+    /// Selects a Settings sub-page (#137), bypassing the tab click. Used by
+    /// `emusic-shot` (`--settings-tab`) so each sub-page can be
+    /// screenshotted directly.
+    pub fn set_settings_tab(&mut self, tab: crate::state::SettingsTab) {
+        self.state.settings_tab = tab;
+    }
+
     /// Sets the top-bar search box's query text directly, bypassing the
     /// widget. Used by `emusic-shot` (`--query`) so a filtered Music view
     /// can be screenshotted headlessly.
