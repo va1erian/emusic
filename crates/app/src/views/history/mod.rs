@@ -50,7 +50,14 @@ pub fn show(
         let playing_id = currently_playing_id(library, player);
         if let Some(action) = table::show(ui, "history_table", history, now, playing_id) {
             state.push(match action {
-                HistoryAction::Play(track_id) => Command::PlayTrack(track_id),
+                // Context: the history list itself, newest-first, as shown
+                // (#134). Repeated plays of the same track appear more than
+                // once, same as the list on screen; "Play again" queues up
+                // the visible history rather than the deduplicated library.
+                HistoryAction::Play(track_id) => {
+                    let context = history.iter().map(|entry| entry.track_id);
+                    Command::play_track(track_id, context)
+                }
                 HistoryAction::Remove(id) => Command::HistoryRemove(id),
             });
         }

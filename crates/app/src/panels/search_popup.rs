@@ -114,7 +114,7 @@ pub fn show(
     }
 
     if activate && let Some(row) = items.get(state.search_popup.selected) {
-        activate_item(state, &row.item);
+        activate_item(state, &row.item, library, search);
     }
 }
 
@@ -186,7 +186,12 @@ fn section_label(item: &SearchPopupItem) -> &'static str {
 /// Enter or a click on an item: tracks play directly; artists/albums
 /// navigate to their view and seed the top-bar search box with the name so
 /// the destination view is filtered down to the picked item.
-fn activate_item(state: &mut AppState, item: &SearchPopupItem) {
+fn activate_item(
+    state: &mut AppState,
+    item: &SearchPopupItem,
+    library: &dyn LibraryDataSource,
+    search: &SearchEngine,
+) {
     match item {
         SearchPopupItem::Artist(name) => {
             state.push(Command::SetView(View::Artists));
@@ -197,7 +202,17 @@ fn activate_item(state: &mut AppState, item: &SearchPopupItem) {
             state.push(Command::SetSearchQuery(name.clone()));
         }
         SearchPopupItem::Track(id) => {
-            state.push(Command::PlayTrack(*id));
+            // Context: every track this query matches, not just the
+            // section's on-screen top `SECTION_LIMIT` (#134) — the same set
+            // the Music view would show filtered to this query, so playing a
+            // search hit queues up the whole match set rather than a
+            // one-track/five-track sliver of it.
+            let context = library
+                .tracks()
+                .iter()
+                .filter(|t| search.is_match(t.id))
+                .map(|t| t.id);
+            state.push(Command::play_track(*id, context));
         }
     }
     state.search_popup.close();

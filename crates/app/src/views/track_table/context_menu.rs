@@ -6,8 +6,7 @@ use eframe::egui;
 use crate::library_api::TrackInfo;
 
 /// What the caller should do after a context menu item is chosen. Playback
-/// actions are handed back as [`crate::state::Command`]s by the caller (the
-/// player queue isn't wired up yet - see the track table module docs);
+/// actions are handed back as [`crate::state::Command`]s by the caller;
 /// `CopyPath` and `OpenFileLocation` are executed immediately here since
 /// they have no effect on shared app state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

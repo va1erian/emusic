@@ -78,10 +78,8 @@ pub(super) fn apply_player_command(
         Command::PlayerToggleShuffle => player.set_shuffle(!player.shuffle()),
         Command::PlayerQueueJump(index) => player.queue_jump(*index),
         Command::PlayerQueueRemove(index) => player.queue_remove(*index),
-        Command::PlayTrack(id) => {
-            if let Some(path) = track_path(library, *id) {
-                player.replace_and_play(std::slice::from_ref(&path), 0);
-            }
+        Command::PlayTrack { id, context } => {
+            play_track_with_context(player, library, *id, context)
         }
         Command::PlayAlbum(ids) => {
             let paths: Vec<PathBuf> = ids
@@ -113,6 +111,39 @@ pub(super) fn apply_player_command(
         }
         _ => {}
     }
+}
+
+/// Resolves `context` (falling back to just `id` when it's empty) to
+/// filesystem paths and replaces the queue with them, starting at `id`'s
+/// position — the shared logic behind [`Command::PlayTrack`] (#134), so the
+/// queue actually has something for `next()`/`previous()` to walk through
+/// instead of the one-entry queue that made them act like Stop.
+///
+/// Ids that no longer resolve to a track (stale context, e.g. a track
+/// removed from the library between click and apply) are silently dropped;
+/// `id`'s position is found in the resolved list, or defaults to the start
+/// if `id` itself didn't resolve.
+fn play_track_with_context(
+    player: &mut dyn PlayerApi,
+    library: &dyn LibraryDataSource,
+    id: u64,
+    context: &[u64],
+) {
+    let ids: &[u64] = if context.is_empty() {
+        std::slice::from_ref(&id)
+    } else {
+        context
+    };
+    let resolved: Vec<(u64, PathBuf)> = ids
+        .iter()
+        .filter_map(|tid| track_path(library, *tid).map(|path| (*tid, path)))
+        .collect();
+    if resolved.is_empty() {
+        return;
+    }
+    let start = resolved.iter().position(|(tid, _)| *tid == id).unwrap_or(0);
+    let paths: Vec<PathBuf> = resolved.into_iter().map(|(_, path)| path).collect();
+    player.replace_and_play(&paths, start);
 }
 
 /// Resolves a library track id (as sent by the track table's context menu,
