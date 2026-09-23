@@ -91,7 +91,15 @@ fn node_ui(
 
 fn row(ui: &mut egui::Ui, node: &DirNodeInfo, selected: Option<&str>) -> egui::Response {
     let text = format!("{} ({})", node.name, node.total_track_count);
-    ui.selectable_label(selected == Some(node.path.as_str()), text)
+    // `ui.selectable_label` doesn't truncate: an untruncated `Button`/`Label`
+    // inside a plain (non-wrapping) horizontal layout requests its full
+    // natural width regardless of the panel's bounds, and that overflow
+    // then feeds back into `egui::Panel`'s own size measurement (its outer
+    // rect is the *rendered* content rect, clamped only against the range's
+    // *max*) — so a long real-library name silently overrode the width the
+    // user had dragged the panel down to, and the panel could never shrink
+    // narrower than its widest row.
+    ui.add(egui::Button::selectable(selected == Some(node.path.as_str()), text).truncate())
         .on_hover_text(format!(
             "{}\n{} track(s) here, {} including subfolders",
             node.path, node.direct_track_count, node.total_track_count

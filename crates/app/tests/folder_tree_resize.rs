@@ -18,15 +18,68 @@ use egui_kittest::kittest::Queryable;
 
 use emusic::app::App;
 use emusic::config::Config;
-use emusic::mock::{MockLibrary, MockPlayer};
+use emusic::library_api::{
+    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
+    StatsWindow, TrackInfo,
+};
+use emusic::mock::MockPlayer;
 use emusic::state::View;
+
+/// A single-node library whose one folder has a name much longer than any
+/// mock name (#18's real-library complaint: `Config::default()` names are
+/// short, so tests using [`emusic::mock::MockLibrary`] never exercised a row
+/// wide enough to trigger this).
+struct LongNameLibrary {
+    dirs: Vec<DirNodeInfo>,
+}
+
+impl LongNameLibrary {
+    fn new() -> Self {
+        Self {
+            dirs: vec![DirNodeInfo {
+                path: "Z:/Music/1979 A Single Man in Moscow".into(),
+                name: "1979 A Single Man in Moscow (Bootleg Moscow 1979-05-28 Radio Broadcast, 2 CD) @320".into(),
+                direct_track_count: 26,
+                total_track_count: 26,
+                children: Vec::new(),
+            }],
+        }
+    }
+}
+
+impl LibraryDataSource for LongNameLibrary {
+    fn tracks(&self) -> &[TrackInfo] {
+        &[]
+    }
+    fn albums(&self) -> &[AlbumInfo] {
+        &[]
+    }
+    fn artists(&self) -> &[ArtistInfo] {
+        &[]
+    }
+    fn genres(&self) -> &[GenreInfo] {
+        &[]
+    }
+    fn folders(&self) -> &[FolderInfo] {
+        &[]
+    }
+    fn dir_tree(&self) -> &[DirNodeInfo] {
+        &self.dirs
+    }
+    fn history(&self) -> &[HistoryEntry] {
+        &[]
+    }
+    fn most_played(&self, _window: StatsWindow) -> &[TrackInfo] {
+        &[]
+    }
+}
 
 #[test]
 fn dragging_the_tree_panel_edge_widens_it() {
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(1280.0, 800.0))
         .build_eframe(|cc| {
-            let library = MockLibrary::new();
+            let library = emusic::mock::MockLibrary::new();
             let player = Box::new(MockPlayer::default());
             App::with_config(cc, Box::new(library), player, Config::default())
         });
@@ -74,7 +127,7 @@ fn the_tree_panel_can_grow_past_the_old_fixed_cap() {
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(1600.0, 900.0))
         .build_eframe(|cc| {
-            let library = MockLibrary::new();
+            let library = emusic::mock::MockLibrary::new();
             let player = Box::new(MockPlayer::default());
             App::with_config(cc, Box::new(library), player, Config::default())
         });
@@ -108,5 +161,53 @@ fn the_tree_panel_can_grow_past_the_old_fixed_cap() {
         heading_after.min.x > heading_before.min.x + 300.0,
         "the tree panel should be able to grow well past the old 460px cap \
          on a wide window (before {heading_before:?}, after {heading_after:?})"
+    );
+}
+
+/// A long real-library folder name (unlike the mock library's short ones)
+/// used to silently override a narrower width the user dragged the panel
+/// down to: `ui.selectable_label`'s un-truncated `Button` requested its full
+/// natural width in the row's plain (non-wrapping) `ui.horizontal`, and that
+/// overflow fed back into `egui::Panel`'s own size measurement (its outer
+/// rect is the *rendered* content rect, only clamped against the range's
+/// *max*), pinning the panel at whatever its widest row needed — so once
+/// widened to fit a long name, it could never shrink back down.
+#[test]
+fn a_long_folder_name_does_not_pin_the_panel_open() {
+    let mut harness = Harness::builder()
+        .with_size(egui::Vec2::new(1280.0, 800.0))
+        .build_eframe(|cc| {
+            let library = LongNameLibrary::new();
+            let player = Box::new(MockPlayer::default());
+            App::with_config(cc, Box::new(library), player, Config::default())
+        });
+    harness.state_mut().set_view(View::Folders);
+    harness.run_steps(2);
+
+    let heading = harness
+        .query_by_label("All folders")
+        .expect("the Folders view shows an 'All folders' heading by default")
+        .rect();
+    let edge_x = heading.min.x - 8.0;
+    let y = 400.0;
+
+    // Drag the panel down toward its 180px minimum — well narrower than the
+    // long folder name's natural rendered width.
+    harness.drag_at(egui::pos2(edge_x, y));
+    harness.run_steps(1);
+    harness.hover_at(egui::pos2(edge_x - 200.0, y));
+    harness.run_steps(1);
+    harness.drop_at(egui::pos2(edge_x - 200.0, y));
+    harness.run_steps(3);
+
+    let heading_after = harness
+        .query_by_label("All folders")
+        .expect("the heading is still there after resizing")
+        .rect();
+
+    assert!(
+        heading_after.min.x < heading.min.x - 40.0,
+        "a long folder name shouldn't stop the tree panel from shrinking \
+         (before {heading:?}, after {heading_after:?})"
     );
 }
