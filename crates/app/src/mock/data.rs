@@ -199,6 +199,10 @@ pub fn generate() -> GeneratedLibrary {
             channels,
             play_count,
             last_played_minutes_ago: (play_count > 0).then(|| *minutes_ago(&mut rng)),
+            // A deterministic, id-based slice is starred so `emusic-shot`
+            // always shows the star column and a populated Starred view,
+            // without touching the seeded RNG sequence (#131).
+            starred: id % 17 == 0,
         });
     }
 

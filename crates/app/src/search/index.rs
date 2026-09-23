@@ -101,6 +101,7 @@ fn to_search_track(info: &TrackInfo, id: TrackId) -> Track {
             .elapsed()
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0),
+        starred: false,
     }
 }
 

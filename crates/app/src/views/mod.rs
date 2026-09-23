@@ -15,6 +15,7 @@ pub(crate) mod most_played;
 mod music;
 mod now_playing;
 mod settings;
+pub(crate) mod starred;
 pub(crate) mod track_table;
 
 use eframe::egui;
@@ -40,6 +41,7 @@ pub fn show(
             View::Artists => artists::show(ui, state, library),
             View::Genres => genres::show(ui, state, library),
             View::Folders => folders::show(ui, state, library, player),
+            View::Starred => starred::show(ui, state, library, player),
             View::MostPlayed => most_played::show(ui, state, library, player),
             View::History => history::show(ui, state, library, player),
             View::NowPlaying => now_playing::show(ui, player),

@@ -292,6 +292,7 @@ pub(super) fn untagged_track(file: &FoundFile, now: i64) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: now,
+        starred: false,
     }
 }
 

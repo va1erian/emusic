@@ -34,6 +34,7 @@ fn sample_track(path: &str) -> Track {
         comment: None,
         art_source: ArtSource::ExternalFile(PathBuf::from(r"C:\music\Artist\Album\folder.jpg")),
         added_at: 1_700_000_000,
+        starred: false,
     }
 }
 
@@ -65,6 +66,32 @@ fn upsert_updates_existing_row_matched_by_path() {
         .unwrap()
         .unwrap();
     assert_eq!(loaded.title.as_deref(), Some("New Title"));
+}
+
+#[test]
+fn set_starred_round_trips_and_survives_upsert() {
+    let mut store = Store::open_in_memory().unwrap();
+    let mut tracks = vec![sample_track(r"C:\music\a.flac")];
+    store.upsert_tracks(&mut tracks).unwrap();
+    let id = tracks[0].id;
+    assert!(!store.load_all_tracks().unwrap()[0].starred);
+
+    assert!(store.set_starred(id, true).unwrap());
+    assert!(store.load_all_tracks().unwrap()[0].starred);
+    assert_eq!(store.load_starred_tracks().unwrap().len(), 1);
+
+    // The scanner's path-keyed upsert must not clear the star.
+    store.upsert_tracks(&mut tracks).unwrap();
+    assert!(store.load_all_tracks().unwrap()[0].starred);
+
+    assert!(store.set_starred(id, false).unwrap());
+    assert!(store.load_starred_tracks().unwrap().is_empty());
+}
+
+#[test]
+fn set_starred_reports_unknown_track() {
+    let store = Store::open_in_memory().unwrap();
+    assert!(!store.set_starred(TrackId(42), true).unwrap());
 }
 
 #[test]

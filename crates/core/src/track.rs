@@ -89,6 +89,8 @@ pub struct Track {
     /// When this track was first added to the library, as a Unix timestamp
     /// (seconds, UTC).
     pub added_at: i64,
+    /// Whether the user has starred (favorited) this track (#131).
+    pub starred: bool,
 }
 
 impl Track {
@@ -141,6 +143,7 @@ mod tests {
             comment: None,
             art_source: ArtSource::None,
             added_at: 1_700_000_000,
+            starred: false,
         }
     }
 

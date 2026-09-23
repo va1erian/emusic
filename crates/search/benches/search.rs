@@ -61,6 +61,7 @@ fn synthetic_track(index: usize) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: 1_700_000_000,
+        starred: false,
     }
 }
 

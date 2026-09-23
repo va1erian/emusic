@@ -1,5 +1,5 @@
 //! Right-click context menu for a track row: Play, Play next, Add to queue,
-//! Open file location, Copy path, Properties.
+//! Star/Unstar, Open file location, Copy path, Properties.
 
 use eframe::egui;
 
@@ -15,6 +15,9 @@ pub enum ContextAction {
     Play,
     PlayNext,
     AddToQueue,
+    /// Flip the row's starred state (#131); the caller turns this into a
+    /// [`crate::state::Command::ToggleStarred`].
+    ToggleStar,
     /// The user asked to see the track's full metadata; the caller opens the
     /// Properties dialog for the row.
     Properties,
@@ -36,6 +39,12 @@ pub fn show(response: &egui::Response, track: &TrackInfo) -> Option<ContextActio
         }
         if ui.button("Add to queue").clicked() {
             action = Some(ContextAction::AddToQueue);
+            ui.close();
+        }
+        ui.separator();
+        let star_label = if track.starred { "Unstar" } else { "Star" };
+        if ui.button(star_label).clicked() {
+            action = Some(ContextAction::ToggleStar);
             ui.close();
         }
         ui.separator();

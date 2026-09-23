@@ -102,6 +102,11 @@ impl LibraryIndex {
         self.tracks.iter().filter_map(|t| t.as_ref())
     }
 
+    /// Returns the starred (favorited) tracks, in slot order (#131).
+    pub fn starred(&self) -> impl Iterator<Item = &Track> {
+        self.tracks().filter(|track| track.starred)
+    }
+
     /// Returns the number of tracks in the index.
     pub fn track_count(&self) -> usize {
         self.id_to_slot.len()

@@ -5,8 +5,10 @@
 //! Rows are virtualized via `egui_extras::TableBuilder` (only visible rows
 //! are laid out/painted), so it stays smooth even at large library sizes.
 //!
-//! Double-click, Enter and the context menu's Play/Play next/Add to queue
-//! surface as [`TrackAction`]s that the caller turns into
+//! Every row starts with a star toggle (#131): a filled star when starred,
+//! an outline otherwise. Double-click, Enter and the context menu's
+//! Play/Play next/Add to queue/Star-Unstar surface as [`TrackAction`]s that
+//! the caller turns into
 //! [`crate::state::Command`]s, applied to the real player by
 //! `app::apply_player_command`. `TrackAction::Play` carries the table's
 //! current visible/sorted order alongside the clicked id (#134), so the
@@ -56,11 +58,15 @@ pub enum TrackAction {
     },
     PlayNext(u64),
     AddToQueue(u64),
+    /// Flip whether `id` is starred (#131), from its star column or the
+    /// Star/Unstar context-menu entry.
+    ToggleStar(u64),
 }
 
 const ROW_HEIGHT: f32 = 20.0;
 const HEADER_HEIGHT: f32 = 22.0;
 const INDEX_COL_WIDTH: f32 = 34.0;
+const STAR_COL_WIDTH: f32 = 24.0;
 
 /// Placeholder spec for the Title column, which is sized separately (it
 /// fills the remaining space rather than taking a fixed initial width) but
@@ -132,6 +138,7 @@ pub fn show(
         .min_scrolled_height(0.0)
         .max_scroll_height(available_height)
         .column(Column::exact(INDEX_COL_WIDTH))
+        .column(Column::exact(STAR_COL_WIDTH))
         .column(
             Column::remainder()
                 .at_least(columns::TITLE_MIN_WIDTH)
@@ -151,6 +158,7 @@ pub fn show(
             header.col(|ui| {
                 ui.add(egui::Label::new(egui::RichText::new("#").weak()).selectable(false));
             });
+            header.col(|_ui| {});
             header.col(|ui| header_cell(ui, &mut state.sort, &TITLE_COLUMN));
             for col in columns::COLUMNS {
                 header.col(|ui| header_cell(ui, &mut state.sort, col));
@@ -169,20 +177,29 @@ pub fn show(
                             .selectable(false),
                     );
                 });
+                let mut star_clicked = false;
+                row.col(|ui| {
+                    if columns::star_cell(ui, track) {
+                        star_clicked = true;
+                        action = Some(TrackAction::ToggleStar(track.id));
+                    }
+                });
                 row.col(|ui| columns::show_cell(ui, columns::ColumnId::Title, track, is_playing));
                 for col in columns::COLUMNS {
                     row.col(|ui| columns::show_cell(ui, col.id, track, is_playing));
                 }
 
+                // A click on the star is that cell's toggle, not a row
+                // selection or a double-click-to-play.
                 let response = row.response();
-                if response.clicked() {
+                if !star_clicked && response.clicked() {
                     let modifiers = response.ctx.input(|i| ClickModifiers {
                         ctrl: i.modifiers.command,
                         shift: i.modifiers.shift,
                     });
                     state.selection.click(&order_ids, pos, track.id, modifiers);
                 }
-                if response.double_clicked() {
+                if !star_clicked && response.double_clicked() {
                     action = Some(TrackAction::Play {
                         id: track.id,
                         context: order_ids.clone(),
@@ -199,6 +216,9 @@ pub fn show(
                         ContextAction::PlayNext => action = Some(TrackAction::PlayNext(track.id)),
                         ContextAction::AddToQueue => {
                             action = Some(TrackAction::AddToQueue(track.id));
+                        }
+                        ContextAction::ToggleStar => {
+                            action = Some(TrackAction::ToggleStar(track.id))
                         }
                         ContextAction::Properties => state.properties = Some(track.clone()),
                     }

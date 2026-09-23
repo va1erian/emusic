@@ -112,6 +112,21 @@ impl LibraryDataSource for MockLibrary {
         self.data.most_played_year.clear();
     }
 
+    fn set_starred(&mut self, id: u64, starred: bool) {
+        for track in self.data.tracks.iter_mut().filter(|track| track.id == id) {
+            track.starred = starred;
+        }
+        for list in [
+            &mut self.data.most_played_all,
+            &mut self.data.most_played_30d,
+            &mut self.data.most_played_year,
+        ] {
+            for track in list.iter_mut().filter(|track| track.id == id) {
+                track.starred = starred;
+            }
+        }
+    }
+
     fn is_scanning(&self) -> bool {
         self.scanning
     }

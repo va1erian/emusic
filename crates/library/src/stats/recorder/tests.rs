@@ -30,6 +30,7 @@ fn sample_track(path: &str) -> Track {
         comment: None,
         art_source: ArtSource::None,
         added_at: 1_700_000_000,
+        starred: false,
     }
 }
 

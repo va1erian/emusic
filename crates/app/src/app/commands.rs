@@ -24,6 +24,7 @@ pub(super) fn apply_library_commands(
     let mut cancel = false;
     let mut remove_history = None;
     let mut clear_history = false;
+    let mut toggle_starred: Vec<u64> = Vec::new();
     for cmd in commands {
         match cmd {
             Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
@@ -33,6 +34,7 @@ pub(super) fn apply_library_commands(
             Command::LibraryCancelScan => cancel = true,
             Command::HistoryRemove(id) => remove_history = Some(*id),
             Command::HistoryClear => clear_history = true,
+            Command::ToggleStarred(id) => toggle_starred.push(*id),
             _ => {}
         }
     }
@@ -59,6 +61,16 @@ pub(super) fn apply_library_commands(
     }
     if clear_history {
         library.clear_history();
+    }
+    for id in toggle_starred {
+        if let Some(starred) = library
+            .tracks()
+            .iter()
+            .find(|track| track.id == id)
+            .map(|track| !track.starred)
+        {
+            library.set_starred(id, starred);
+        }
     }
 }
 
@@ -158,4 +170,38 @@ fn track_path(library: &dyn LibraryDataSource, id: u64) -> Option<PathBuf> {
 
 fn next_repeat(mode: RepeatMode) -> RepeatMode {
     mode.next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mock::MockLibrary;
+
+    #[test]
+    fn toggle_starred_flips_the_track_flag() {
+        let mut library = MockLibrary::new();
+        let mut state = AppState::default();
+        let id = library.tracks()[0].id;
+        let before = library
+            .tracks()
+            .iter()
+            .find(|track| track.id == id)
+            .expect("first mock track exists")
+            .starred;
+
+        apply_library_commands(&mut library, &mut state, &[Command::ToggleStarred(id)]);
+
+        let after = library
+            .tracks()
+            .iter()
+            .find(|track| track.id == id)
+            .expect("first mock track still exists")
+            .starred;
+        assert_eq!(after, !before);
+        assert_eq!(
+            library.starred_tracks().iter().any(|track| track.id == id),
+            !before,
+            "the starred set should follow the flag"
+        );
+    }
 }

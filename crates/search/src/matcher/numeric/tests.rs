@@ -99,5 +99,6 @@ fn test_track() -> emusic_core::Track {
         comment: None,
         art_source: emusic_core::ArtSource::None,
         added_at: 0,
+        starred: false,
     }
 }

@@ -9,7 +9,7 @@ use crate::error::Result;
 
 const TRACK_COLUMNS: &str = "id, path, dir, filename, ext, size, mtime, kind, duration_ms, \
      bitrate, sample_rate, channels, title, artist, album_artist, album, genre, year, \
-     track_no, disc_no, composer, comment, art_source_kind, art_source_path, added_at";
+     track_no, disc_no, composer, comment, art_source_kind, art_source_path, added_at, starred";
 
 const UPSERT_SQL: &str = "
     INSERT INTO tracks (
@@ -187,6 +187,33 @@ impl Store {
         Ok(tracks)
     }
 
+    /// Loads the starred (favorited) tracks, ordered by path the same way
+    /// [`Store::load_all_tracks`] is.
+    ///
+    /// The same flag is also carried on every track from
+    /// [`Store::load_all_tracks`], so this dedicated query is only needed
+    /// when the starred set is wanted on its own (e.g. the "Starred" view).
+    pub fn load_starred_tracks(&self) -> Result<Vec<Track>> {
+        let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE starred = 1 ORDER BY path");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let tracks = stmt
+            .query_map([], row_to_track)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(tracks)
+    }
+
+    /// Sets whether `track_id` is starred, returning whether a row matched.
+    ///
+    /// Unrelated to the scanner's upserts, which never touch `starred`, so
+    /// the flag survives rescans and moves.
+    pub fn set_starred(&self, track_id: TrackId, starred: bool) -> Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE tracks SET starred = ?1 WHERE id = ?2",
+            params![starred, track_id.0],
+        )?;
+        Ok(updated > 0)
+    }
+
     /// Fetches a single track by its file path, if present.
     pub fn get_track_by_path(&self, path: &Path) -> Result<Option<Track>> {
         let sql = format!("SELECT {TRACK_COLUMNS} FROM tracks WHERE path = ?1");
@@ -280,6 +307,7 @@ fn row_to_track(row: &Row) -> rusqlite::Result<Track> {
         comment: row.get("comment")?,
         art_source: art_source_from_columns(art_source_kind, art_source_path),
         added_at: row.get("added_at")?,
+        starred: row.get("starred")?,
     })
 }
 

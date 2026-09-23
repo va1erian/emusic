@@ -72,6 +72,8 @@ pub struct AppState {
     pub folder_tree: FolderTreeState,
     /// The Folders view's track table (sort + selection).
     pub folders_table: TrackTableState,
+    /// The Starred view's track table (#131).
+    pub starred_table: TrackTableState,
     /// The Most Played view's window selector + track table (#24).
     pub most_played: MostPlayedState,
     /// The History view's confirmation flag (#24).
@@ -102,6 +104,7 @@ impl Default for AppState {
             album_grid: AlbumGridState::default(),
             folder_tree: FolderTreeState::default(),
             folders_table: TrackTableState::default(),
+            starred_table: TrackTableState::default(),
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
             pending: Vec::new(),
