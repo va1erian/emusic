@@ -41,9 +41,14 @@ jobs:
           done
           ls target/release/bass
 
-      - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
+      # Chocolatey's `innosetup` package only ships Inno Setup 6, but the
+      # script requires 7 (SetupArchitecture); install the real thing
+      # unattended from its GitHub release instead.
+      - name: Install Inno Setup 7
         shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe" -OutFile innosetup.exe
+          Start-Process -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
 
       - name: Build installer
         shell: pwsh
