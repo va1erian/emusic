@@ -30,6 +30,22 @@ pub enum LibraryError {
         "library database schema version {found} is newer than the {supported} supported by this build"
     )]
     UnsupportedSchemaVersion { found: i64, supported: i64 },
+
+    /// An audio file's tags could not be read or parsed.
+    #[error("failed to read tags from {path}: {source}")]
+    ReadTags {
+        path: PathBuf,
+        #[source]
+        source: lofty::error::FileParseError,
+    },
+
+    /// An audio file's updated tags could not be written back.
+    #[error("failed to write tags to {path}: {source}")]
+    WriteTags {
+        path: PathBuf,
+        #[source]
+        source: lofty::error::FileEncodingError,
+    },
 }
 
 /// Convenience alias for results returned by this crate.

@@ -7,6 +7,7 @@ pub mod index;
 pub mod scanner;
 pub mod stats;
 mod store;
+pub mod tags;
 pub mod watch;
 
 pub use error::{LibraryError, Result};
