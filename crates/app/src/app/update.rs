@@ -12,10 +12,6 @@ use crate::{panels, theme, views};
 
 use super::{App, commands};
 
-/// Cap on repaint rate while playing, per #6 ("`request_repaint_after(33ms)`
-/// only while playing and window not minimized").
-const PLAYING_REPAINT_INTERVAL: Duration = Duration::from_millis(33);
-
 /// How long after a settings change the config is written, per #8; further
 /// changes within the window restart the countdown.
 const SAVE_DEBOUNCE: Duration = Duration::from_secs(2);
@@ -143,6 +139,9 @@ impl eframe::App for App {
             self.player.as_ref(),
             &self.search,
         );
+        // The now-playing "Properties" link can be clicked from any view, so
+        // its dialog is rendered once here rather than by a single view.
+        crate::views::track_table::show_properties(&ctx, &mut self.state.now_playing.properties);
         panels::search_popup::show(
             &ctx,
             &mut self.state,
@@ -153,15 +152,19 @@ impl eframe::App for App {
         self.apply_pending();
         self.tick_config_persistence();
 
-        // Repaint policy (#6, #25): ~30 fps while something is actually
-        // playing and the window is visible (a minimized window needs no
-        // frames). This is also what animates the status-bar visualizer; the
-        // strip only reads FFT/samples while a mode is active *and* playing
-        // (see `panels::visualizer`), so `Off` costs no audio reads even on
-        // these repaint frames.
+        // Repaint policy (#6, #25): keep repainting at the compositor's own
+        // rate while something is actually playing and the window is visible
+        // (a minimized window needs no frames). The visualizer animates on
+        // these frames; the strip only reads FFT/samples while a mode is
+        // active *and* playing (see `panels::visualizer`), so `Off` costs no
+        // audio reads.
+        //
+        // A timed `request_repaint_after` used to cap this at ~30 fps, but
+        // the off-vsync schedule made the visualizer flicker on some systems;
+        // a plain repaint request follows vsync instead.
         let minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         if self.player.status() == PlaybackStatus::Playing && !minimized {
-            ctx.request_repaint_after(PLAYING_REPAINT_INTERVAL);
+            ctx.request_repaint();
         }
     }
 

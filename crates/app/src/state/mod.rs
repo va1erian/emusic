@@ -133,6 +133,14 @@ impl AppState {
                 PanelKind::StatusBar => self.panels.status_bar = !self.panels.status_bar,
             },
             Command::SetSearchQuery(query) => self.search_query = query.clone(),
+            Command::GoToArtist(name) => {
+                self.view = View::Artists;
+                self.search_query = name.clone();
+            }
+            Command::GoToAlbum { name, artist } => {
+                self.view = View::Albums;
+                self.album_grid.select_album(name, artist);
+            }
             Command::ToggleColumnBrowser => {
                 self.column_browser.visible = !self.column_browser.visible;
             }

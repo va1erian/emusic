@@ -1,7 +1,8 @@
 //! The [`eframe::App`] implementation: owns the app's state and backends,
 //! wires the menu bar, panels and central view router together, applies
 //! queued [`Command`]s and implements the repaint policy from #6 (no
-//! continuous repaint; ~30 fps only while something is actually playing).
+//! continuous repaint; repaint at the compositor's rate only while something
+//! is actually playing).
 //!
 //! The pieces are split by responsibility: [`update`] is the per-frame
 //! `eframe::App` loop and config persistence, [`events`] handles input and

@@ -35,17 +35,25 @@ pub fn show(
     egui::CentralPanel::default().show(ui, |ui| {
         ui.heading(state.view.label());
         ui.add_space(4.0);
-        match state.view {
-            View::Music => music::show(ui, state, library, player, search),
-            View::Albums => album_grid::show(ui, state, library, player),
-            View::Artists => artists::show(ui, state, library),
-            View::Genres => genres::show(ui, state, library),
-            View::Folders => folders::show(ui, state, library, player),
-            View::Starred => starred::show(ui, state, library, player),
-            View::MostPlayed => most_played::show(ui, state, library, player),
-            View::History => history::show(ui, state, library, player),
-            View::NowPlaying => now_playing::show(ui, player),
-            View::Settings => settings::show(ui, state),
-        }
+        // Views lay themselves out to the available width (tables shrink and
+        // clip their columns), so a horizontal scrollbar only appears when a
+        // view's content has an intrinsic minimum width larger than the
+        // panel. Wrapping the view body keeps that content reachable when the
+        // window (or the right panel) leaves little room.
+        egui::ScrollArea::both()
+            .id_salt("central_view_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| match state.view {
+                View::Music => music::show(ui, state, library, player, search),
+                View::Albums => album_grid::show(ui, state, library, player),
+                View::Artists => artists::show(ui, state, library),
+                View::Genres => genres::show(ui, state, library),
+                View::Folders => folders::show(ui, state, library, player),
+                View::Starred => starred::show(ui, state, library, player),
+                View::MostPlayed => most_played::show(ui, state, library, player),
+                View::History => history::show(ui, state, library, player),
+                View::NowPlaying => now_playing::show(ui, state, library, player),
+                View::Settings => settings::show(ui, state),
+            });
     });
 }

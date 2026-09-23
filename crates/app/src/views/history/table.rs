@@ -1,9 +1,10 @@
-//! Rendering of the History view's grouped, virtualized table.
+//! Rendering of the History view's grouped table.
 //!
 //! Rows are laid out by hand (rather than through `egui_extras`) because the
 //! list is interspersed with full-width day headers, which the shared track
-//! table's column model has no room for. The track table's duration helper is
-//! reused for a consistent "Listened" column (#15, #24).
+//! table's column model has no room for. The look still matches the other
+//! list views: left-aligned cells and alternating row backgrounds, with
+//! double-click / context-menu playback (#24).
 
 use std::time::Duration;
 
@@ -16,9 +17,9 @@ use crate::views::track_table::columns;
 /// A playback action requested from a history row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryAction {
-    /// The row was double-clicked: play the track this entry recorded.
+    /// The row was double-clicked (or Play chosen): play the recorded track.
     Play(u64),
-    /// The row's remove button was clicked.
+    /// The row's remove button (or Remove chosen) was clicked.
     Remove(i64),
 }
 
@@ -45,6 +46,7 @@ pub fn show(
     playing_id: Option<u64>,
 ) -> Option<HistoryAction> {
     let rows = grouping::build_rows(entries, now);
+    let stripes = entry_stripes(&rows);
     header(ui);
 
     let mut action = None;
@@ -52,11 +54,11 @@ pub fn show(
         .id_salt(id_salt)
         .auto_shrink([false, false])
         .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
-            for row in &rows[range] {
-                match row {
+            for i in range {
+                match &rows[i] {
                     Row::Day(label) => day_header(ui, label),
                     Row::Entry(entry) => {
-                        if let Some(requested) = entry_row(ui, entry, now, playing_id) {
+                        if let Some(requested) = entry_row(ui, entry, now, playing_id, stripes[i]) {
                             action = Some(requested);
                         }
                     }
@@ -66,6 +68,23 @@ pub fn show(
     action
 }
 
+/// Whether each row should get the darker stripe, alternating between entry
+/// rows only (day headers never stripe, and don't disturb the alternation,
+/// matching the shared track table's `striped` look).
+fn entry_stripes(rows: &[Row<'_>]) -> Vec<bool> {
+    let mut ordinal = 0;
+    rows.iter()
+        .map(|row| match row {
+            Row::Day(_) => false,
+            Row::Entry(_) => {
+                let stripe = ordinal % 2 == 1;
+                ordinal += 1;
+                stripe
+            }
+        })
+        .collect()
+}
+
 /// Width available to the title cell, measured from the full row width so
 /// the header and every entry row line up.
 fn title_width(ui: &egui::Ui) -> f32 {
@@ -73,33 +92,47 @@ fn title_width(ui: &egui::Ui) -> f32 {
     (ui.available_width() - FIXED_WIDTH - gaps).max(80.0)
 }
 
-/// A fixed-size text cell. `add_sized` reserves the full width even when the
-/// text is shorter (which keeps the columns aligned); egui centres the text
-/// within the cell.
-fn text_cell(ui: &mut egui::Ui, width: f32, text: egui::RichText) -> egui::Response {
-    ui.add_sized(
-        [width, ROW_HEIGHT],
-        egui::Label::new(text).truncate().selectable(false),
-    )
+/// A fixed-size, left-aligned text cell. The exact width is allocated (so
+/// the columns stay aligned even for short values), then the text is drawn
+/// flush left inside it.
+fn text_cell(ui: &mut egui::Ui, width: f32, text: egui::RichText) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, ROW_HEIGHT), egui::Sense::hover());
+    let mut cell = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    cell.add(egui::Label::new(text).truncate().selectable(false));
+}
+
+/// A left-aligned, strong header cell, matching the entry cells' alignment.
+fn header_cell(ui: &mut egui::Ui, width: f32, name: &str) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, ROW_HEIGHT), egui::Sense::hover());
+    let mut cell = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    cell.add(egui::Label::new(egui::RichText::new(name).strong()).selectable(false));
 }
 
 fn header(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        let title = title_width(ui);
-        for (width, name) in [
-            (TIME_WIDTH, "Time"),
-            (title, "Title"),
-            (ARTIST_WIDTH, "Artist"),
-            (LISTENED_WIDTH, "Listened"),
-            (COMPLETED_WIDTH, "Completed"),
-            (REMOVE_WIDTH, ""),
-        ] {
-            ui.add_sized(
-                [width, ROW_HEIGHT],
-                egui::Label::new(egui::RichText::new(name).strong()).selectable(false),
-            );
-        }
-    });
+    let title = title_width(ui);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ROW_HEIGHT),
+        egui::Sense::hover(),
+    );
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    header_cell(&mut row, TIME_WIDTH, "Time");
+    header_cell(&mut row, title, "Title");
+    header_cell(&mut row, ARTIST_WIDTH, "Artist");
+    header_cell(&mut row, LISTENED_WIDTH, "Listened");
+    header_cell(&mut row, COMPLETED_WIDTH, "Completed");
+    header_cell(&mut row, REMOVE_WIDTH, "");
 }
 
 /// A full-width, left-aligned header row introducing one day's entries.
@@ -115,6 +148,7 @@ fn entry_row(
     entry: &HistoryEntry,
     now: i64,
     playing_id: Option<u64>,
+    striped: bool,
 ) -> Option<HistoryAction> {
     let title = if entry.title.is_empty() {
         "(unknown title)"
@@ -130,33 +164,56 @@ fn entry_row(
     let listened = columns::format_duration(Duration::from_millis(u64::from(entry.played_ms)));
     let is_playing = playing_id == Some(entry.track_id);
 
-    let mut action = None;
-    let response = ui
-        .horizontal(|ui| {
-            let title_w = title_width(ui);
-            text_cell(
-                ui,
-                TIME_WIDTH,
-                egui::RichText::new(format_minutes_ago(minutes)).weak(),
-            );
-            text_cell(ui, title_w, tinted(title, is_playing));
-            text_cell(ui, ARTIST_WIDTH, tinted(artist, is_playing));
-            text_cell(ui, LISTENED_WIDTH, egui::RichText::new(listened).weak());
-            text_cell(ui, COMPLETED_WIDTH, completed_text(entry.completed));
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ROW_HEIGHT),
+        egui::Sense::click(),
+    );
+    if striped {
+        ui.painter()
+            .rect_filled(rect, 0.0, ui.visuals().faint_bg_color);
+    }
 
-            let remove = ui.add_sized([REMOVE_WIDTH, ROW_HEIGHT], egui::Button::new("✕").small());
-            if remove.clicked() {
-                action = Some(HistoryAction::Remove(entry.id));
-            }
-            remove.on_hover_text("Remove this entry");
-        })
-        .response;
+    let mut action = None;
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let title_w = title_width(&row);
+    text_cell(
+        &mut row,
+        TIME_WIDTH,
+        egui::RichText::new(format_minutes_ago(minutes)).weak(),
+    );
+    text_cell(&mut row, title_w, tinted(title, is_playing));
+    text_cell(&mut row, ARTIST_WIDTH, tinted(artist, is_playing));
+    text_cell(
+        &mut row,
+        LISTENED_WIDTH,
+        egui::RichText::new(listened).weak(),
+    );
+    text_cell(&mut row, COMPLETED_WIDTH, completed_text(entry.completed));
+
+    let remove = row.add_sized([REMOVE_WIDTH, ROW_HEIGHT], egui::Button::new("✕").small());
+    if remove.clicked() {
+        action = Some(HistoryAction::Remove(entry.id));
+    }
+    remove.on_hover_text("Remove this entry");
 
     if action.is_none() {
-        let response = response.interact(egui::Sense::click());
         if response.double_clicked() {
             action = Some(HistoryAction::Play(entry.track_id));
         }
+        response.context_menu(|ui| {
+            if ui.button("Play").clicked() {
+                action = Some(HistoryAction::Play(entry.track_id));
+                ui.close();
+            }
+            if ui.button("Remove").clicked() {
+                action = Some(HistoryAction::Remove(entry.id));
+                ui.close();
+            }
+        });
     }
     action
 }

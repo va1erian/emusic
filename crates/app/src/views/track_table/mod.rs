@@ -130,105 +130,138 @@ pub fn show(
     }
 
     let available_height = ui.available_height();
-    let mut builder = TableBuilder::new(ui)
-        .id_salt(id_salt)
-        .striped(true)
-        .sense(egui::Sense::click())
-        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .min_scrolled_height(0.0)
-        .max_scroll_height(available_height)
-        .column(Column::exact(INDEX_COL_WIDTH))
-        .column(Column::exact(STAR_COL_WIDTH))
-        .column(
-            Column::remainder()
-                .at_least(columns::TITLE_MIN_WIDTH)
-                .clip(true),
-        );
-    for col in columns::COLUMNS {
-        builder = builder.column(
-            Column::initial(col.initial_width)
-                .at_least(col.min_width)
-                .resizable(true)
-                .clip(true),
-        );
-    }
-
-    builder
-        .header(HEADER_HEIGHT, |mut header| {
-            header.col(|ui| {
-                ui.add(egui::Label::new(egui::RichText::new("#").weak()).selectable(false));
-            });
-            header.col(|_ui| {});
-            header.col(|ui| header_cell(ui, &mut state.sort, &TITLE_COLUMN));
+    // The table lays its columns out to whatever width it is given and clips
+    // any that don't fit. Give it at least the sum of the columns' minimum
+    // widths, so a narrow window scrolls horizontally (the central view wraps
+    // this in a `ScrollArea`) instead of crushing the columns away.
+    let table_width = ui
+        .available_width()
+        .max(min_table_width(ui.spacing().item_spacing.x));
+    ui.allocate_ui_with_layout(
+        egui::vec2(table_width, available_height),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            let mut builder = TableBuilder::new(ui)
+                .id_salt(id_salt)
+                .striped(true)
+                .sense(egui::Sense::click())
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .min_scrolled_height(0.0)
+                .max_scroll_height(available_height)
+                .column(Column::exact(INDEX_COL_WIDTH))
+                .column(Column::exact(STAR_COL_WIDTH))
+                .column(
+                    Column::remainder()
+                        .at_least(columns::TITLE_MIN_WIDTH)
+                        .clip(true),
+                );
             for col in columns::COLUMNS {
-                header.col(|ui| header_cell(ui, &mut state.sort, col));
+                builder = builder.column(
+                    Column::initial(col.initial_width)
+                        .at_least(col.min_width)
+                        .resizable(true)
+                        .clip(true),
+                );
             }
-        })
-        .body(|body| {
-            body.rows(ROW_HEIGHT, order.len(), |mut row| {
-                let pos = row.index();
-                let track = tracks[order[pos]];
-                let is_playing = playing_id == Some(track.id);
-                row.set_selected(state.selection.is_selected(track.id));
 
-                row.col(|ui| {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new((pos + 1).to_string()).weak())
-                            .selectable(false),
-                    );
-                });
-                let mut star_clicked = false;
-                row.col(|ui| {
-                    if columns::star_cell(ui, track) {
-                        star_clicked = true;
-                        action = Some(TrackAction::ToggleStar(track.id));
+            builder
+                .header(HEADER_HEIGHT, |mut header| {
+                    header.col(|ui| {
+                        ui.add(egui::Label::new(egui::RichText::new("#").weak()).selectable(false));
+                    });
+                    header.col(|_ui| {});
+                    header.col(|ui| header_cell(ui, &mut state.sort, &TITLE_COLUMN));
+                    for col in columns::COLUMNS {
+                        header.col(|ui| header_cell(ui, &mut state.sort, col));
                     }
-                });
-                row.col(|ui| columns::show_cell(ui, columns::ColumnId::Title, track, is_playing));
-                for col in columns::COLUMNS {
-                    row.col(|ui| columns::show_cell(ui, col.id, track, is_playing));
-                }
+                })
+                .body(|body| {
+                    body.rows(ROW_HEIGHT, order.len(), |mut row| {
+                        let pos = row.index();
+                        let track = tracks[order[pos]];
+                        let is_playing = playing_id == Some(track.id);
+                        row.set_selected(state.selection.is_selected(track.id));
 
-                // A click on the star is that cell's toggle, not a row
-                // selection or a double-click-to-play.
-                let response = row.response();
-                if !star_clicked && response.clicked() {
-                    let modifiers = response.ctx.input(|i| ClickModifiers {
-                        ctrl: i.modifiers.command,
-                        shift: i.modifiers.shift,
-                    });
-                    state.selection.click(&order_ids, pos, track.id, modifiers);
-                }
-                if !star_clicked && response.double_clicked() {
-                    action = Some(TrackAction::Play {
-                        id: track.id,
-                        context: order_ids.clone(),
-                    });
-                }
-                if let Some(context_action) = context_menu::show(&response, track) {
-                    match context_action {
-                        ContextAction::Play => {
+                        row.col(|ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new((pos + 1).to_string()).weak())
+                                    .selectable(false),
+                            );
+                        });
+                        let mut star_clicked = false;
+                        row.col(|ui| {
+                            if columns::star_cell(ui, track) {
+                                star_clicked = true;
+                                action = Some(TrackAction::ToggleStar(track.id));
+                            }
+                        });
+                        row.col(|ui| {
+                            columns::show_cell(ui, columns::ColumnId::Title, track, is_playing)
+                        });
+                        for col in columns::COLUMNS {
+                            row.col(|ui| columns::show_cell(ui, col.id, track, is_playing));
+                        }
+
+                        // A click on the star is that cell's toggle, not a row
+                        // selection or a double-click-to-play.
+                        let response = row.response();
+                        if !star_clicked && response.clicked() {
+                            let modifiers = response.ctx.input(|i| ClickModifiers {
+                                ctrl: i.modifiers.command,
+                                shift: i.modifiers.shift,
+                            });
+                            state.selection.click(&order_ids, pos, track.id, modifiers);
+                        }
+                        if !star_clicked && response.double_clicked() {
                             action = Some(TrackAction::Play {
                                 id: track.id,
                                 context: order_ids.clone(),
                             });
                         }
-                        ContextAction::PlayNext => action = Some(TrackAction::PlayNext(track.id)),
-                        ContextAction::AddToQueue => {
-                            action = Some(TrackAction::AddToQueue(track.id));
+                        if let Some(context_action) = context_menu::show(&response, track) {
+                            match context_action {
+                                ContextAction::Play => {
+                                    action = Some(TrackAction::Play {
+                                        id: track.id,
+                                        context: order_ids.clone(),
+                                    });
+                                }
+                                ContextAction::PlayNext => {
+                                    action = Some(TrackAction::PlayNext(track.id))
+                                }
+                                ContextAction::AddToQueue => {
+                                    action = Some(TrackAction::AddToQueue(track.id));
+                                }
+                                ContextAction::ToggleStar => {
+                                    action = Some(TrackAction::ToggleStar(track.id))
+                                }
+                                ContextAction::Properties => state.properties = Some(track.clone()),
+                            }
                         }
-                        ContextAction::ToggleStar => {
-                            action = Some(TrackAction::ToggleStar(track.id))
-                        }
-                        ContextAction::Properties => state.properties = Some(track.clone()),
-                    }
-                }
-            });
-        });
+                    });
+                });
+        },
+    );
 
     properties::show(ui.ctx(), &mut state.properties);
 
     action
+}
+
+/// Minimum width the table can be laid out at without clipping columns: the
+/// `#`/star/title minimums, every data column's minimum, and the gaps
+/// between them.
+fn min_table_width(spacing: f32) -> f32 {
+    let data: f32 = columns::COLUMNS.iter().map(|col| col.min_width).sum();
+    let gaps = spacing * (columns::COLUMNS.len() as f32 + 2.0);
+    INDEX_COL_WIDTH + STAR_COL_WIDTH + columns::TITLE_MIN_WIDTH + data + gaps
+}
+
+/// Renders the track Properties dialog for `track`, if any. Exposed so the
+/// shell can show it from surfaces that don't embed a track table (e.g. the
+/// now-playing panel's "Properties" link).
+pub fn show_properties(ctx: &egui::Context, track: &mut Option<TrackInfo>) {
+    properties::show(ctx, track);
 }
 
 fn header_cell(ui: &mut egui::Ui, sort: &mut SortState, col: &columns::ColumnSpec) {
@@ -245,4 +278,24 @@ fn header_cell(ui: &mut egui::Ui, sort: &mut SortState, col: &columns::ColumnSpe
         sort.toggle(col.id);
     }
     let _ = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn min_table_width_covers_every_column_minimum() {
+        let sum = INDEX_COL_WIDTH
+            + STAR_COL_WIDTH
+            + columns::TITLE_MIN_WIDTH
+            + columns::COLUMNS
+                .iter()
+                .map(|col| col.min_width)
+                .sum::<f32>();
+        // No spacing means exactly the sum of the columns' minimums...
+        assert_eq!(min_table_width(0.0), sum);
+        // ...and positive spacing only ever widens it.
+        assert!(min_table_width(8.0) > sum);
+    }
 }
