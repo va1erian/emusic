@@ -9,6 +9,14 @@ use eframe::egui;
 use crate::library_api::{DirNodeInfo, LibraryDataSource};
 use crate::state::Command;
 
+/// Horizontal indent added per tree level.
+///
+/// egui's default (`18.0`) is tuned for checkbox alignment, not for a narrow
+/// tree panel; stacked across a few levels it leaves little room for folder
+/// names and counts. A tighter indent keeps nesting legible while reclaiming
+/// width in the 180-460px Folders panel (#162).
+const LEVEL_INDENT: f32 = 12.0;
+
 /// Renders `nodes` as a collapsible tree, highlighting `selected` and setting
 /// it when a row is clicked. Returns a shuffle command if one was requested.
 pub fn show(
@@ -18,6 +26,9 @@ pub fn show(
     library: &dyn LibraryDataSource,
     recursive: bool,
 ) -> Option<Command> {
+    // Applies to the whole tree: leaf rows and `CollapsingState` bodies both
+    // read `indent` from the ui they render into.
+    ui.spacing_mut().indent = LEVEL_INDENT;
     if nodes.is_empty() {
         ui.label(egui::RichText::new("No folders").weak());
         return None;
