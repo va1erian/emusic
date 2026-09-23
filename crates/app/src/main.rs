@@ -99,7 +99,7 @@ fn run_ui(
         Box::new(move |cc| {
             repaint.bind(cc.egui_ctx.clone());
             let backends = backend::build(cli.mock);
-            let mut app = App::new(cc, backends.library, backends.player);
+            let mut app = App::for_run(cc, backends.library, backends.player, cli.mock);
             if let Some(notice) = backends.notice {
                 app.set_backend_notice(notice);
             }
