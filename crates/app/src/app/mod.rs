@@ -82,6 +82,26 @@ impl App {
         Self::build(cc, library, player, config, None)
     }
 
+    /// Builds the app for this run. A normal launch ([`Self::new`]) restores
+    /// and persists `%APPDATA%\emusic\config.toml`; a `--mock` launch (#135)
+    /// instead starts from [`Config::default`] with persistence disabled
+    /// ([`Self::with_config`]). The mock library's synthetic folders must
+    /// never leak into the real user's config, and mock reads nothing from
+    /// it either: `config::load` can rename an unparsable file to
+    /// `config.toml.bak`, which a preview mode has no business doing.
+    pub fn for_run(
+        cc: &eframe::CreationContext<'_>,
+        library: Box<dyn LibraryDataSource>,
+        player: Box<dyn PlayerApi>,
+        mock: bool,
+    ) -> Self {
+        if mock {
+            Self::with_config(cc, library, player, Config::default())
+        } else {
+            Self::new(cc, library, player)
+        }
+    }
+
     fn build(
         cc: &eframe::CreationContext<'_>,
         mut library: Box<dyn LibraryDataSource>,
