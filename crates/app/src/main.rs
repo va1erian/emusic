@@ -54,10 +54,14 @@ fn run_ui(
     repaint: ipc::RepaintHandle,
     listener: winshell::Listener,
 ) -> anyhow::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("emusic")
+        .with_inner_size([1200.0, 760.0]);
+    if let Some(icon) = emusic::window_icon::window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("emusic")
-            .with_inner_size([1200.0, 760.0]),
+        viewport,
         ..Default::default()
     };
 

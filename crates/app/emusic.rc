@@ -1,0 +1,4 @@
+// Windows resources compiled into emusic.exe by build.rs (#125).
+// The icon makes Explorer, the taskbar and Alt-Tab show the app icon; the
+// path is relative to this file, i.e. to the crate root.
+1 ICON "../../assets/ico/emusic-app.ico"
