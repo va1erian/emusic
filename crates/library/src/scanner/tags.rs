@@ -7,12 +7,14 @@
 use std::time::Duration;
 
 use lofty::file::{AudioFile, TaggedFileExt};
-use lofty::tag::{ItemKey, Tag};
+use lofty::tag::ItemKey;
 
 use emusic_core::{ArtSource, Track};
 
 #[cfg(test)]
 use emusic_core::TrackKind;
+
+use crate::tags::read::{joined, number_of, year_of};
 
 use super::walk::FoundFile;
 
@@ -54,42 +56,6 @@ pub(crate) fn read_stream(
     Ok(track)
 }
 
-/// All non-blank text values of `key`, trimmed and joined with `"; "`.
-fn joined(tag: &Tag, key: ItemKey) -> Option<String> {
-    let joined = tag
-        .get_strings(key)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ");
-    (!joined.is_empty()).then_some(joined)
-}
-
-/// The release year, accepting both plain years (`1999`) and full dates
-/// (`2021-05-03`), from the `Year` or `Date` fields.
-fn year_of(tag: &Tag) -> Option<i32> {
-    let raw = tag
-        .get_strings(ItemKey::Year)
-        .chain(tag.get_strings(ItemKey::RecordingDate))
-        .find(|value| !value.trim().is_empty())?;
-    leading_number(raw)
-}
-
-/// A track/disc number, accepting `NN` and `NN/TT` forms.
-fn number_of(tag: &Tag, key: ItemKey) -> Option<u32> {
-    leading_number(tag.get_strings(key).next()?).and_then(|number| u32::try_from(number).ok())
-}
-
-/// Parses the leading ASCII digits of `raw` as a number.
-fn leading_number(raw: &str) -> Option<i32> {
-    let digits: String = raw
-        .trim()
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect();
-    digits.parse().ok()
-}
-
 /// A duration in milliseconds, clamped to what a `u32` can hold.
 fn duration_ms(duration: Duration) -> u32 {
     duration.as_millis().min(u32::MAX as u128) as u32
@@ -108,15 +74,6 @@ mod tests {
             mtime: 1_700_000_000,
             kind: TrackKind::Stream,
         }
-    }
-
-    #[test]
-    fn leading_number_parses_plain_and_slash_suffixed_forms() {
-        assert_eq!(leading_number("12"), Some(12));
-        assert_eq!(leading_number(" 3/12 "), Some(3));
-        assert_eq!(leading_number("1999-05-03"), Some(1999));
-        assert_eq!(leading_number(""), None);
-        assert_eq!(leading_number("n/a"), None);
     }
 
     #[test]
