@@ -26,8 +26,8 @@ use tracing::{info, warn};
 
 use crate::backend::PlayMessage;
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
-    StatsWindow, TrackInfo,
+    AlbumInfo, ArtistInfo, DatabaseInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry,
+    LibraryDataSource, StatsWindow, TrackInfo,
 };
 
 use scan::ScanHandle;
@@ -77,6 +77,11 @@ pub struct LibraryBackend {
     /// during scans. `None` when BASS failed to initialize, in which case
     /// modules are counted but skipped (see [`emusic_library::scanner`]).
     bass: Option<Arc<bass::Bass>>,
+    /// The database file, cached at construction so the Database info dialog
+    /// never needs the store lock.
+    db_path: Option<PathBuf>,
+    /// When the last scan finished in this session.
+    last_scan: Option<std::time::SystemTime>,
 }
 
 impl Default for LibraryBackend {
@@ -107,6 +112,7 @@ impl LibraryBackend {
 
     /// Creates a backend around an existing store. Useful in tests.
     pub fn with_store(store: Store, bass: Option<Arc<bass::Bass>>) -> Self {
+        let db_path = store.path().map(Path::to_path_buf);
         let store = Arc::new(Mutex::new(store));
         let stats_recorder = StatsRecorder::spawn(store.clone());
 
@@ -140,6 +146,8 @@ impl LibraryBackend {
             active_scan: None,
             tag_edit_results: Vec::new(),
             bass,
+            db_path,
+            last_scan: None,
         }
     }
 
@@ -275,6 +283,7 @@ impl LibraryDataSource for LibraryBackend {
                 Update::ScanFinished(id) => {
                     if self.active_scan.as_ref().is_some_and(|scan| scan.id == id) {
                         self.active_scan = None;
+                        self.last_scan = Some(std::time::SystemTime::now());
                     }
                 }
                 Update::TagEdits(outcomes) => self.tag_edit_results.extend(outcomes),
@@ -346,6 +355,18 @@ impl LibraryDataSource for LibraryBackend {
             Vec::new(),
             self.bass.clone(),
         );
+    }
+
+    fn database_info(&self) -> DatabaseInfo {
+        DatabaseInfo {
+            size_bytes: self
+                .db_path
+                .as_ref()
+                .and_then(|path| std::fs::metadata(path).ok())
+                .map(|meta| meta.len()),
+            path: self.db_path.clone(),
+            last_scan: self.last_scan,
+        }
     }
 
     fn cancel_scan(&mut self) {

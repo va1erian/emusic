@@ -2,8 +2,8 @@
 
 use super::data::{self, GeneratedLibrary};
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DirNodeInfo, EditOutcome, EditRequest, EditableTags, FolderInfo,
-    GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
+    AlbumInfo, ArtistInfo, DatabaseInfo, DirNodeInfo, EditOutcome, EditRequest, EditableTags,
+    FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -90,6 +90,18 @@ impl LibraryDataSource for MockLibrary {
 
     fn folders(&self) -> &[FolderInfo] {
         &self.data.folders
+    }
+
+    fn database_info(&self) -> DatabaseInfo {
+        DatabaseInfo {
+            path: Some(std::path::PathBuf::from(
+                "C:/Users/you/AppData/Local/emusic/library.db",
+            )),
+            size_bytes: Some(18_350_080),
+            last_scan: Some(
+                std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_767_225_600),
+            ),
+        }
     }
 
     fn dir_tree(&self) -> &[DirNodeInfo] {

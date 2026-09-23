@@ -66,6 +66,21 @@ impl App {
     pub(super) fn menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("menu_bar").show(ui, |ui| {
             egui::containers::menu::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Database info...").clicked() {
+                        self.state.database_info_open = true;
+                        ui.close();
+                    }
+                    if ui.button("Settings").clicked() {
+                        self.state.push(Command::SetView(View::Settings));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Quit").clicked() {
+                        ui.send_viewport_cmd(egui::ViewportCommand::Close);
+                        ui.close();
+                    }
+                });
                 ui.menu_button("View", |ui| {
                     self.panel_menu_item(ui, "Navigator", PanelKind::Navigator);
                     self.panel_menu_item(ui, "Now playing panel", PanelKind::RightPanel);

@@ -101,6 +101,10 @@ pub const TITLE_MIN_WIDTH: f32 = 120.0;
 /// so the marker stays proportional to the title at any DPI.
 const PLAYING_MARKER_SCALE: f32 = 0.8;
 
+/// Side of the star toggle's click target as a fraction of the row's text
+/// height (#193); larger than the playing marker so the star reads clearly.
+const STAR_CELL_SCALE: f32 = 1.0;
+
 /// Horizontal gap between the "now playing" marker and the title text.
 const PLAYING_MARKER_GAP: f32 = 4.0;
 
@@ -238,7 +242,7 @@ pub fn format_duration(d: std::time::Duration) -> String {
 /// the same font-metric reasons as the playing marker; the cell's centred
 /// layout keeps it centred on the row.
 pub fn star_cell(ui: &mut egui::Ui, track: &TrackInfo) -> bool {
-    let side = ui.text_style_height(&egui::TextStyle::Body) * PLAYING_MARKER_SCALE;
+    let side = ui.text_style_height(&egui::TextStyle::Body) * STAR_CELL_SCALE;
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
     if track.starred {
         crate::icons::star(ui.painter(), rect, crate::theme::current_accent());

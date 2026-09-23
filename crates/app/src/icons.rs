@@ -14,6 +14,10 @@ use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 /// Kept below 1 so there is always a little breathing room around the icon.
 const ICON_SCALE: f32 = 0.56;
 
+/// Like [`ICON_SCALE`] but for the favourite star, which is drawn larger so
+/// it reads clearly at row size (#193).
+const STAR_SCALE: f32 = 0.72;
+
 /// Extra rightward nudge (as a fraction of the icon width) applied to the
 /// play triangle. A right-pointing triangle carries more visual weight on
 /// its base, so a purely geometric centre looks shifted left; nudging it
@@ -133,10 +137,24 @@ pub(crate) fn next(painter: &Painter, rect: Rect, color: Color32) {
 /// rather than spiky at table-row size.
 const STAR_INNER_RATIO: f32 = 0.42;
 
+/// How far the star's visual centre sits below its bounding-box centre, as a
+/// fraction of the outer radius. The top point reaches a full radius above
+/// the centre but the bottom points only `cos(36 deg)` of one below it, so
+/// the star has to be shifted down by half the difference to look centred.
+const STAR_CENTER_DROP: f32 = (1.0 - 0.809_017) / 2.0;
+
+/// The centre of the star drawn in `box_`, nudged down so the star looks
+/// vertically centred in the box.
+fn star_center(box_: Rect) -> Pos2 {
+    let outer = box_.width().min(box_.height()) * 0.5;
+    let center = box_.center();
+    egui::pos2(center.x, center.y + outer * STAR_CENTER_DROP)
+}
+
 /// The ten alternating outer/inner vertices of a five-pointed star filling
 /// the square `box_`, with the top point straight up.
 fn star_vertices(box_: Rect) -> Vec<Pos2> {
-    let center = box_.center();
+    let center = star_center(box_);
     let outer = box_.width().min(box_.height()) * 0.5;
     let inner = outer * STAR_INNER_RATIO;
     (0..10)
@@ -157,8 +175,8 @@ fn star_vertices(box_: Rect) -> Vec<Pos2> {
 /// centre (valid because the centre can see every vertex) rather than with a
 /// single [`Shape::convex_polygon`].
 pub(crate) fn star(painter: &Painter, rect: Rect, color: Color32) {
-    let box_ = icon_box(rect, ICON_SCALE);
-    let center = box_.center();
+    let box_ = icon_box(rect, STAR_SCALE);
+    let center = star_center(box_);
     let points = star_vertices(box_);
     for i in 0..points.len() {
         painter.add(Shape::convex_polygon(
@@ -172,7 +190,7 @@ pub(crate) fn star(painter: &Painter, rect: Rect, color: Color32) {
 /// The outline of a five-pointed star, drawn for the unstarred state so the
 /// column keeps a visible, clickable target (#131).
 pub(crate) fn star_outline(painter: &Painter, rect: Rect, color: Color32) {
-    let box_ = icon_box(rect, ICON_SCALE);
+    let box_ = icon_box(rect, STAR_SCALE);
     painter.add(Shape::closed_line(
         star_vertices(box_),
         Stroke::new(1.0, color),
@@ -230,16 +248,21 @@ mod tests {
         let points = star_vertices(b);
         assert_eq!(points.len(), 10);
 
-        let center = b.center();
+        let center = star_center(b);
         let radius = |p: Pos2| (p - center).length();
         // Even indices are the outer points, odd ones the inner notches.
         assert!(radius(points[0]) > radius(points[1]));
         assert!((radius(points[0]) - 10.0).abs() < 1e-3);
-        // The first point is the top of the box.
+        // The first point is straight above the (nudged) centre.
         assert!((points[0].x - center.x).abs() < 1e-3);
-        assert!((points[0].y - b.top()).abs() < 1e-3);
-        for p in points {
-            assert!(b.expand(0.5).contains(p), "{p:?} escaped {b:?}");
+        assert!((points[0].y - (center.y - 10.0)).abs() < 1e-3);
+        for p in &points {
+            assert!(b.expand(0.5).contains(*p), "{p:?} escaped {b:?}");
         }
+        // Optically centred: the top and bottom extents are equidistant from
+        // the box centre.
+        let top = points.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        let bottom = points.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        assert!(((top + bottom) / 2.0 - b.center().y).abs() < 1e-3);
     }
 }

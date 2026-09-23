@@ -208,6 +208,12 @@ impl App {
         }
     }
 
+    /// Opens the File -> Database info dialog. Used by `emusic-shot`
+    /// (`--database-info`) so the dialog can be screenshotted headlessly.
+    pub fn open_database_info(&mut self) {
+        self.state.database_info_open = true;
+    }
+
     /// Opens the single-track tag editor for the library's first track, as
     /// the row's context menu would (#172). Used by `emusic-shot`
     /// (`--tag-editor`) so the dialog can be screenshotted headlessly.
