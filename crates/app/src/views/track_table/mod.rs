@@ -28,7 +28,7 @@ use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
 pub use context_menu::ContextAction;
-pub use selection::ClickModifiers;
+pub use selection::{ClickModifiers, SelectionState};
 pub use sort::SortState;
 
 use crate::library_api::TrackInfo;

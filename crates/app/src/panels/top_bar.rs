@@ -195,10 +195,31 @@ fn search_box(ui: &mut egui::Ui, state: &mut AppState) {
     if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         query.clear();
     }
+    if !query.is_empty() && clear_button(ui, response.rect) {
+        query.clear();
+        ui.memory_mut(|mem| mem.request_focus(search_box_id()));
+    }
     if query != state.search_query {
         state.push(Command::SetSearchQuery(query));
     }
     response.on_hover_text(QUERY_HELP);
+}
+
+/// A small "clear" button drawn over the right end of the search box.
+/// Returns whether it was clicked.
+fn clear_button(ui: &mut egui::Ui, field: egui::Rect) -> bool {
+    let side = field.height() - 6.0;
+    let rect = egui::Rect::from_center_size(
+        egui::pos2(field.right() - side / 2.0 - 3.0, field.center().y),
+        egui::Vec2::splat(side),
+    );
+    ui.put(
+        rect,
+        egui::Button::new(egui::RichText::new("✕").small().weak()).frame(false),
+    )
+    .on_hover_text("Clear search")
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
 }
 
 fn format_time(seconds: f64) -> String {

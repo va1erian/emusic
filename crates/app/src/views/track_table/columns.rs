@@ -257,7 +257,7 @@ pub fn star_cell(ui: &mut egui::Ui, track: &TrackInfo) -> bool {
 /// than a `▶` glyph, and the cell's centred layout vertically centres the
 /// reserved box on the row, so the marker lines up with the row's text
 /// instead of sitting high on the text baseline (#81).
-fn playing_marker(ui: &mut egui::Ui) {
+pub(crate) fn playing_marker(ui: &mut egui::Ui) {
     let side = ui.text_style_height(&egui::TextStyle::Body) * PLAYING_MARKER_SCALE;
     let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::hover());
     crate::icons::play_in(ui.painter(), rect, crate::theme::current_accent());

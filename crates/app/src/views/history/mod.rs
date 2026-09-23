@@ -11,12 +11,15 @@ use eframe::egui;
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
+use crate::views::track_table::SelectionState;
 
 use table::HistoryAction;
 
 /// Persistent History-view state.
 #[derive(Debug, Default)]
 pub struct HistoryState {
+    /// Row selection and keyboard focus, keyed by history entry id.
+    pub selection: SelectionState,
     /// Whether the "clear history" confirmation dialog is open.
     pub confirm_clear: bool,
 }
@@ -48,7 +51,16 @@ pub fn show(
     } else {
         let now = unix_now();
         let playing_id = currently_playing_id(library, player);
-        if let Some(action) = table::show(ui, "history_table", history, now, playing_id) {
+        let action = table::show(
+            ui,
+            "history_table",
+            &mut state.history.selection,
+            history,
+            library,
+            now,
+            playing_id,
+        );
+        if let Some(action) = action {
             state.push(match action {
                 // Context: the history list itself, newest-first, as shown
                 // (#134). Repeated plays of the same track appear more than
@@ -58,6 +70,10 @@ pub fn show(
                     let context = history.iter().map(|entry| entry.track_id);
                     Command::play_track(track_id, context)
                 }
+                HistoryAction::PlayNext(id) => Command::PlayTrackNext(id),
+                HistoryAction::AddToQueue(id) => Command::QueueTrack(id),
+                HistoryAction::ToggleStar(id) => Command::ToggleStarred(id),
+                HistoryAction::EditTags(id) => Command::OpenTagEditor(id),
                 HistoryAction::Remove(id) => Command::HistoryRemove(id),
             });
         }
