@@ -11,6 +11,7 @@ emusic is a Windows music player & library in Rust + egui, audio via BASS. The f
 ## Unsafe
 - **Avoid `unsafe`.** Every crate except `bass`, `winshell` and `sid` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
 - In `bass`, `winshell` and `sid`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. In `sid`, every module outside `src/ffi.rs` starts with `#![forbid(unsafe_code)]`. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
+- `win32ui` (the safe Win32/common-controls wrapper for the native frontend) lives in its own repo, [va1erian/win32ui](https://github.com/va1erian/win32ui), and is pulled in as a git dependency — its `unsafe` is reviewed and tested there, not here. `crates/win32ui-demo` consumes it and holds the workspace's example + smoke test.
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.

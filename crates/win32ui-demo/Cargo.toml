@@ -1,0 +1,13 @@
+[package]
+name = "win32ui-demo"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Example and smoke test consuming the external win32ui crate (#105)"
+publish = false
+
+[dependencies]
+win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
+
+[build-dependencies]
+embed-resource = "3.0"
