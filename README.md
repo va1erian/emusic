@@ -61,7 +61,11 @@ The app ships **no bundled fonts**: it uses the fonts already installed on the m
 
 ## Packaging (Windows installer)
 
-A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
+A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. A separate `installer/emusic-win32.iss` packages the native Win32 frontend (`emusic-win32.exe`) as its own installer, side by side with the egui build under a different app name and install dir. See [docs/installer.md](docs/installer.md) for the full steps, including how the two share config/library data but not file associations.
+
+### Downloads
+
+Each [GitHub release](https://github.com/va1erian/emusic/releases) ships four assets, built by `.github/workflows/release.yml` on every `v*` tag: an installer and a portable zip for each frontend (`emusic-<version>-setup.exe` / `emusic-<version>-portable.zip` for egui, `emusic-win32-<version>-setup.exe` / `emusic-win32-<version>-portable.zip` for the native Win32 build). Both frontends can be installed at once; they read the same library.
 
 ## License
 
