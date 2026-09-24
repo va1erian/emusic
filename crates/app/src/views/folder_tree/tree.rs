@@ -58,6 +58,9 @@ fn node_ui(
                 row(ui, node, view)
             })
             .inner;
+        if response.clicked() {
+            messages.push(FoldersMsg::SelectNode(node.path.clone()));
+        }
         row_menu(&response, node, view, messages);
         return;
     }
@@ -71,6 +74,9 @@ fn node_ui(
                     node_ui(ui, child, depth + 1, view, messages);
                 }
             });
+    if header.inner.clicked() {
+        messages.push(FoldersMsg::SelectNode(node.path.clone()));
+    }
     row_menu(&header.inner, node, view, messages);
 }
 
