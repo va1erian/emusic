@@ -11,6 +11,7 @@ pub use emusic_ui::cli;
 pub mod config;
 pub mod fonts;
 mod icons;
+pub mod image_sink;
 pub use emusic_ui::library_api;
 pub use emusic_ui::mock;
 pub mod panels;

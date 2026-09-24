@@ -5,8 +5,9 @@
 //! Everything here is independent of any GUI toolkit: the [`PlayerApi`] and
 //! [`LibraryDataSource`] traits frontends program against, the real and mock
 //! [`backend`]s implementing them, the CLI, search, persisted-folder picking,
-//! the frontend-agnostic [`waker`] seam, and the view-model pieces (sorting,
-//! selection, album identity) that each frontend renders with its own widgets.
+//! the frontend-agnostic [`waker`] and [`image_cache`] seams, and the
+//! view-model pieces (sorting, selection, album identity) that each frontend
+//! renders with its own widgets.
 //!
 //! The egui frontend (`crates/app`) depends on this crate and re-exports these
 //! modules at their old paths, so UI code only changes `use` paths. Still
@@ -18,6 +19,7 @@
 pub mod backend;
 pub mod cli;
 pub mod folder_picker;
+pub mod image_cache;
 pub mod library_api;
 pub mod mock;
 pub mod player_api;

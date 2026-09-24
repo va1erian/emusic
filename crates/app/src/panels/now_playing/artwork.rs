@@ -1,105 +1,51 @@
-//! Artwork loading for the now-playing panel.
+//! Artwork loading for the now-playing panel (#96).
 //!
-//! Real files are loaded off the UI thread via `lofty` (embedded picture)
-//! followed by folder-image fallback (`cover`/`folder`/`front` `.jpg`/
-//! `.png`, case-insensitive). The decoded RGBA data is sent back through a
-//! channel and uploaded as an egui texture on the next frame. Paths that do
-//! not exist on disk (e.g. mock data) get a deterministic generated
-//! placeholder so screenshots stay stable.
+//! Uses the shared [`emusic_ui::image_cache`] engine: real files are loaded off
+//! the UI thread via `lofty` (embedded picture) followed by folder-image
+//! fallback, and the decoded RGBA data is uploaded as an egui texture on a
+//! later frame. Paths that do not exist on disk (e.g. mock data) get a
+//! deterministic generated placeholder so screenshots stay stable.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
-use lofty::file::TaggedFileExt;
+use eframe::egui;
+use emusic_ui::image_cache::{Rgba8Image, ThumbCache, load_artwork};
 
-use crate::library_api::TrackInfo;
+use crate::image_sink::EguiImageSink;
 use crate::player_api::NowPlayingInfo;
 
 /// Number of pixels in the generated placeholder square.
 const PLACEHOLDER_SIZE: u32 = 256;
 
-/// Completed artwork load, sent from the worker thread back to the UI.
-struct LoadedArtwork {
-    key: String,
-    image: Option<ColorImage>,
-}
+/// Decoded bytes the artwork LRU may hold before evicting older covers.
+const BYTE_BUDGET: usize = 16 * 1024 * 1024;
 
-/// Cache for the current track's artwork texture.
-///
-/// Holds already-uploaded textures and tracks in-flight loads so each path
-/// is only decoded once.
-#[derive(Default)]
-pub struct ArtworkCache {
-    textures: Vec<(String, TextureHandle)>,
-    loading: HashSet<String>,
-    rx: Option<Receiver<LoadedArtwork>>,
-    tx: Option<Sender<LoadedArtwork>>,
-}
+/// The now-playing panel's artwork cache: the shared cache over egui textures.
+pub type ArtworkCache = ThumbCache<EguiImageSink>;
 
-impl ArtworkCache {
-    /// Ensure the cache has a channel. Created lazily so the default
-    /// constructor stays free.
-    fn ensure_channel(&mut self) -> Sender<LoadedArtwork> {
-        if self.tx.is_none() {
-            let (tx, rx) = mpsc::channel();
-            self.tx = Some(tx.clone());
-            self.rx = Some(rx);
-        }
-        self.tx.clone().expect("channel was just created")
-    }
-
-    /// Drains any completed loads and uploads them as textures.
-    fn drain_completed(&mut self, ctx: &egui::Context) {
-        let Some(rx) = self.rx.as_ref() else {
-            return;
-        };
-        while let Ok(loaded) = rx.try_recv() {
-            self.loading.remove(&loaded.key);
-            if let Some(image) = loaded.image {
-                let handle = ctx.load_texture(&loaded.key, image, TextureOptions::LINEAR);
-                self.textures.push((loaded.key, handle));
-            }
-        }
-    }
-
-    /// Returns the cached texture for `path`, if one is ready.
-    fn get(&self, path: &str) -> Option<&TextureHandle> {
-        self.textures
-            .iter()
-            .find(|(k, _)| k == path)
-            .map(|(_, t)| t)
-    }
+/// Builds the artwork cache with the full-size decoder and the deterministic
+/// placeholder for paths that are not on disk.
+#[must_use]
+pub fn new_cache() -> ArtworkCache {
+    ThumbCache::new(BYTE_BUDGET, Arc::new(load_artwork)).with_placeholder(Arc::new(placeholder_for))
 }
 
 /// Show the artwork area: a square image (or placeholder) sized to the
 /// panel width.
-pub fn show(
-    ui: &mut egui::Ui,
-    cache: &mut ArtworkCache,
-    np: Option<&NowPlayingInfo>,
-    track: Option<&TrackInfo>,
-) {
-    cache.drain_completed(ui.ctx());
+pub fn show(ui: &mut egui::Ui, cache: &mut ArtworkCache, np: Option<&NowPlayingInfo>) {
+    let mut sink = EguiImageSink::new(ui.ctx().clone(), "artwork");
+    cache.drain(&mut sink);
 
     let max_size = ui.available_width().min(320.0);
     let desired_size = egui::vec2(max_size, max_size);
 
-    let key = match np {
-        Some(info) => info.path.clone(),
-        None => String::new(),
-    };
-
+    let key = np.map(|info| info.path.as_str()).unwrap_or("");
     let texture = if key.is_empty() {
         None
     } else {
-        cache.get(&key).cloned().or_else(|| {
-            // No texture yet: request it from a worker thread (or generate
-            // a placeholder synchronously for non-existent mock paths).
-            request(cache, ui.ctx().clone(), &key, track);
-            None
-        })
+        // No texture yet: `get` requests it from a worker thread (or generates
+        // a placeholder synchronously for non-existent mock paths).
+        cache.get(&mut sink, key).cloned()
     };
 
     let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
@@ -130,109 +76,36 @@ pub fn show(
     }
 }
 
-/// Start loading artwork for `key` off the UI thread, or cache a
-/// placeholder immediately for mock paths.
-fn request(cache: &mut ArtworkCache, ctx: egui::Context, key: &str, track: Option<&TrackInfo>) {
-    if !cache.loading.insert(key.to_string()) {
-        // Already in flight.
-        return;
-    }
-
-    let path = PathBuf::from(key);
-    if !path.exists() {
-        // Mock / not-yet-scanned path: generate a deterministic placeholder
-        // synchronously so screenshots and first frames are stable.
-        let image = placeholder_for(key);
-        let handle = ctx.load_texture(key, image, TextureOptions::LINEAR);
-        cache.textures.push((key.to_string(), handle));
-        cache.loading.remove(key);
-        return;
-    }
-
-    let tx = cache.ensure_channel();
-    let key = key.to_string();
-    let fallback_dir = track.and_then(|t| Path::new(&t.path).parent().map(Path::to_path_buf));
-    std::thread::spawn(move || {
-        let image = load_artwork(&path, fallback_dir.as_deref()).map(color_image_from_dynamic);
-        let _ = tx.send(LoadedArtwork { key, image });
-        ctx.request_repaint();
-    });
-}
-
-/// Try embedded artwork via `lofty`, then folder images.
-///
-/// Returns the raw decoded image (not yet converted to egui's [`ColorImage`])
-/// so callers such as the album grid (#17) can resize it before uploading.
-pub(crate) fn load_artwork(
-    path: &Path,
-    fallback_dir: Option<&Path>,
-) -> Option<image::DynamicImage> {
-    // 1. Embedded picture.
-    if let Ok(tagged) = lofty::read_from_path(path)
-        && let Some(picture) = tagged.primary_tag().and_then(|tag| tag.pictures().first())
-        && let Ok(img) = image::load_from_memory(picture.data())
-    {
-        return Some(img);
-    }
-
-    // 2. Folder image fallback.
-    if let Some(dir) = path.parent().or(fallback_dir) {
-        for name in ["cover", "folder", "front"] {
-            for ext in ["jpg", "jpeg", "png"] {
-                let candidate = dir.join(format!("{name}.{ext}"));
-                if candidate.exists()
-                    && let Ok(img) = image::open(&candidate)
-                {
-                    return Some(img);
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Convert a decoded `image::DynamicImage` into an egui `ColorImage`.
-fn color_image_from_dynamic(img: image::DynamicImage) -> ColorImage {
-    let rgba = img.to_rgba8();
-    ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], &rgba)
-}
-
 /// Generate a deterministic placeholder gradient for a path.
-fn placeholder_for(key: &str) -> ColorImage {
+fn placeholder_for(key: &str) -> Rgba8Image {
     let mut hash = 0u64;
     for byte in key.bytes() {
         hash = hash.wrapping_mul(31).wrapping_add(u64::from(byte));
     }
 
-    let w = PLACEHOLDER_SIZE;
-    let h = PLACEHOLDER_SIZE;
-    let mut pixels = Vec::with_capacity((w * h) as usize);
-
-    let hue = ((hash % 360) as f32) / 360.0;
+    let hue = (hash % 360) as f32 / 360.0;
     let sat = 0.5 + ((hash / 360) % 100) as f32 / 200.0;
     let light = 0.25 + ((hash / 36_000) % 100) as f32 / 200.0;
     let base = hsl_to_rgb(hue, sat, light);
     let accent = hsl_to_rgb((hue + 0.5) % 1.0, sat, light + 0.15);
 
-    for y in 0..h {
-        for x in 0..w {
-            let t = (x as f32 / w as f32 + y as f32 / h as f32) / 2.0;
-            let r = lerp(base[0], accent[0], t);
-            let g = lerp(base[1], accent[1], t);
-            let b = lerp(base[2], accent[2], t);
-            pixels.push(egui::Color32::from_rgb(r, g, b));
+    let size = PLACEHOLDER_SIZE;
+    let mut pixels = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let t = (x as f32 / size as f32 + y as f32 / size as f32) / 2.0;
+            pixels.push(lerp(base[0], accent[0], t));
+            pixels.push(lerp(base[1], accent[1], t));
+            pixels.push(lerp(base[2], accent[2], t));
+            pixels.push(255);
         }
     }
 
-    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
-    for pixel in &pixels {
-        rgba.push(pixel.r());
-        rgba.push(pixel.g());
-        rgba.push(pixel.b());
-        rgba.push(pixel.a());
+    Rgba8Image {
+        width: size,
+        height: size,
+        pixels,
     }
-    ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba)
 }
 
 fn lerp(a: u8, b: u8, t: f32) -> u8 {

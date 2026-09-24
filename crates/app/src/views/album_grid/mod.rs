@@ -22,11 +22,13 @@ use eframe::egui;
 
 use self::thumbs::ThumbnailCache;
 use super::track_table::{self, TrackAction, TrackTableState};
+use crate::image_sink::EguiImageSink;
 use crate::library_api::{AlbumInfo, LibraryDataSource};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
 use emusic_ui::views::album_grid::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
+use emusic_ui::waker::WakerHandle;
 
 /// Tile edge-length bounds for the size slider, in pixels.
 pub const MIN_TILE_SIZE: f32 = 96.0;
@@ -56,7 +58,7 @@ impl Default for AlbumGridState {
             sort: AlbumSort::default(),
             selected: None,
             table: TrackTableState::default(),
-            thumbs: ThumbnailCache::default(),
+            thumbs: thumbs::new_cache(),
         }
     }
 }
@@ -70,6 +72,11 @@ impl AlbumGridState {
             name: name.into(),
             artist: artist.into(),
         });
+    }
+
+    /// Wires the thumbnail cache's worker waker (#96).
+    pub fn set_image_waker(&mut self, waker: WakerHandle) {
+        self.thumbs.set_waker(waker);
     }
 }
 
@@ -169,7 +176,8 @@ fn grid_view(
     library: &dyn LibraryDataSource,
     commands: &mut Vec<Command>,
 ) {
-    grid.thumbs.drain(ui.ctx());
+    let mut sink = EguiImageSink::new(ui.ctx().clone(), "album_thumb");
+    grid.thumbs.drain(&mut sink);
 
     let spacing = ui.spacing().item_spacing.x;
     let tile = grid.tile_size;
@@ -194,7 +202,7 @@ fn grid_view(
                         let response = {
                             let texture = meta
                                 .get(&key)
-                                .and_then(|meta| grid.thumbs.get(ui.ctx(), &meta.art_path));
+                                .and_then(|meta| grid.thumbs.get(&mut sink, &meta.art_path));
                             tile::show(ui, album, texture, tile, selected)
                         };
                         if response.clicked() {
