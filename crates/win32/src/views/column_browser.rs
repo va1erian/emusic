@@ -8,7 +8,7 @@
 
 use std::cell::Cell;
 
-use emusic_ui::views::column_browser::{ColumnBrowser, FacetEntry, Pane};
+use emusic_ui::views::column_browser::{ColumnBrowser, FacetEntry, Pane, PaneSelection};
 use win32ui::prelude::*;
 use win32ui::{ColumnWidth, Fill, Layout, ListModel, ListView, dip, row};
 
@@ -103,11 +103,7 @@ impl ColumnBrowserView {
 
     fn sync_pane(&self, list: &ListView<FacetRow, Msg>, pane: Pane, browser: &ColumnBrowser) {
         let entries = browser.facets().pane(pane);
-        let selection = match pane {
-            Pane::Genre => &browser.genres,
-            Pane::Artist => &browser.artists,
-            Pane::Album => &browser.albums,
-        };
+        let selection = selection_of(browser, pane);
         let selected: Vec<usize> = entries
             .iter()
             .enumerate()
@@ -146,24 +142,48 @@ fn pane(ui: &mut Ui<Msg>, title: &str, pane: Pane) -> Result<ListView<FacetRow, 
 /// Reconstructs a pane's selection from the rows a `ListView` reports selected,
 /// as a reset followed by one ctrl-click per selected value, so the model's
 /// replace/ctrl semantics are preserved without duplicating them here.
-pub fn apply_selection(browser: &mut ColumnBrowser, pane: Pane, rows: &[usize]) {
-    let values: Vec<Option<String>> = rows
+///
+/// Returns whether the selection changed. The pane sync re-selects rows
+/// programmatically, which reports the selection back as a [`Msg::BrowserRow`];
+/// an unchanged selection must not touch the model (bumping its revision
+/// resyncs the panes and re-emits, looping forever on the UI thread).
+pub fn apply_selection(browser: &mut ColumnBrowser, pane: Pane, rows: &[usize]) -> bool {
+    use emusic_ui::views::column_browser::ColumnBrowserMsg;
+
+    let values: Vec<String> = rows
         .iter()
         .filter_map(|&index| browser.facets().pane(pane).get(index))
-        .map(|entry| entry.value.clone())
+        .filter_map(|entry| entry.value.clone())
         .collect();
-    use emusic_ui::views::column_browser::ColumnBrowserMsg;
+    let mut next = PaneSelection::default();
+    for value in &values {
+        next.click(Some(value), true);
+    }
+    if next == *selection_of(browser, pane) {
+        return false;
+    }
+
     browser.update(ColumnBrowserMsg::RowClicked {
         pane,
         value: None,
         ctrl: false,
     });
-    for value in values.into_iter().flatten() {
+    for value in values {
         browser.update(ColumnBrowserMsg::RowClicked {
             pane,
             value: Some(value),
             ctrl: true,
         });
+    }
+    true
+}
+
+/// The selection of `pane` in `browser`.
+fn selection_of(browser: &ColumnBrowser, pane: Pane) -> &PaneSelection {
+    match pane {
+        Pane::Genre => &browser.genres,
+        Pane::Artist => &browser.artists,
+        Pane::Album => &browser.albums,
     }
 }
 
@@ -211,5 +231,21 @@ mod tests {
         // The "All" row clears the pane.
         apply_selection(&mut browser, Pane::Genre, &[0]);
         assert!(browser.genres.is_all());
+    }
+
+    #[test]
+    fn apply_selection_reports_whether_it_changed() {
+        let mut browser = browser_with_genres();
+        // Re-applying the "All" state (what a programmatic re-select echoes
+        // back) is not a change, and must not bump the revision.
+        let revision = browser.revision();
+        assert!(!apply_selection(&mut browser, Pane::Genre, &[0]));
+        assert!(!apply_selection(&mut browser, Pane::Genre, &[]));
+        assert_eq!(browser.revision(), revision);
+
+        assert!(apply_selection(&mut browser, Pane::Genre, &[1]));
+        let revision = browser.revision();
+        assert!(!apply_selection(&mut browser, Pane::Genre, &[1]));
+        assert_eq!(browser.revision(), revision);
     }
 }

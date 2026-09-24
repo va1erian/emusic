@@ -812,13 +812,14 @@ impl App for Win32App {
                 self.tick(ui);
             }
             Msg::BrowserRow { pane, rows } => {
-                crate::views::column_browser::apply_selection(
+                if crate::views::column_browser::apply_selection(
                     &mut self.shell.state.music.browser,
                     pane,
                     &rows,
-                );
-                self.refresh_music();
-                self.tick(ui);
+                ) {
+                    self.refresh_music();
+                    self.tick(ui);
+                }
             }
             Msg::Settings(msg) => {
                 let mut commands = Commands::new();
