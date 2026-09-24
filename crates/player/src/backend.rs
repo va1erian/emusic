@@ -3,13 +3,13 @@
 
 use std::any::Any;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, MusicFlags, PositionMode, StreamFlags};
 
 use crate::error::PlayerError;
-use crate::midi::resolve_soundfont;
+use crate::midi::{is_midi_file, resolve_soundfont};
 use crate::sid::SidChannel;
 use crate::tracker::TrackerSettings;
 
@@ -108,10 +108,26 @@ pub fn is_sid_file(path: &Path) -> bool {
         })
 }
 
+/// Live per-channel MIDI soundfont state (#XXX): which `bassmidi.dll`
+/// channel-control API is available, the font currently applied, and the
+/// raw handle of whichever MIDI channel is open, so a soundfont switch can
+/// reach it without restarting the track.
+#[derive(Default)]
+struct MidiState {
+    /// `bassmidi.dll`'s own exports, loaded lazily on first use. `None`
+    /// after a failed attempt means "don't retry", not "not tried yet" —
+    /// see `lib_load_attempted`.
+    lib: Option<bass::Midi>,
+    lib_load_attempted: bool,
+    font: Option<bass::SoundFont>,
+    active_channel: Option<u32>,
+}
+
 /// Real playback backend, built on the `bass` crate.
 pub struct BassBackend {
     bass: Arc<bass::Bass>,
     soundfont_dirs: Vec<PathBuf>,
+    midi: Mutex<MidiState>,
 }
 
 impl BassBackend {
@@ -129,6 +145,7 @@ impl BassBackend {
         Self {
             bass,
             soundfont_dirs: Vec::new(),
+            midi: Mutex::new(MidiState::default()),
         }
     }
 
@@ -145,14 +162,21 @@ impl AudioBackend for BassBackend {
         // SID tunes aren't decodable by BASS: the SID engine renders PCM into
         // a push stream instead (see `crate::sid`).
         if is_sid_file(path) {
+            self.clear_active_midi_channel();
             return Ok(Box::new(SidChannel::open(&self.bass, path)?));
         }
 
         // FLOAT decodes to `f32`, which the visualizer (#25) needs for its
         // oscilloscope; `get_data_fft` works regardless.
         let channel = if is_tracker_module(path) {
+            self.clear_active_midi_channel();
             BassChannel::Music(self.bass.open_music(path, MusicFlags::FLOAT, 0)?)
+        } else if is_midi_file(path) {
+            let stream = self.bass.open_stream(path, StreamFlags::FLOAT)?;
+            self.register_midi_channel(stream.handle());
+            BassChannel::Stream(stream)
         } else {
+            self.clear_active_midi_channel();
             BassChannel::Stream(self.bass.open_stream(path, StreamFlags::FLOAT)?)
         };
         Ok(Box::new(channel))
@@ -168,14 +192,71 @@ impl AudioBackend for BassBackend {
     fn set_midi_soundfont(&self, configured: Option<&Path>) -> Result<(), PlayerError> {
         // BASS can't clear the default soundfont once set, so with nothing
         // to resolve the previous one (if any) stays until restart.
-        match resolve_soundfont(configured, &self.soundfont_dirs) {
-            Some(font) => self
-                .bass
-                .config()
-                .set_midi_default_font(&font)
-                .map_err(PlayerError::Bass),
-            None => Ok(()),
+        let Some(resolved) = resolve_soundfont(configured, &self.soundfont_dirs) else {
+            return Ok(());
+        };
+        // Keeps the config-based default for any stream opened before
+        // `bassmidi.dll`'s own exports (below) are available.
+        self.bass
+            .config()
+            .set_midi_default_font(&resolved)
+            .map_err(PlayerError::Bass)?;
+
+        let mut midi = self.lock_midi();
+        if midi.lib.is_none() && !midi.lib_load_attempted {
+            midi.lib_load_attempted = true;
+            midi.lib = self
+                .soundfont_dirs
+                .iter()
+                .find_map(|dir| self.bass.load_midi(dir));
         }
+        let Some(lib) = midi.lib.clone() else {
+            // No live per-channel switching available (e.g. `bassmidi.dll`
+            // missing): new tracks still pick up the default set above.
+            return Ok(());
+        };
+        drop(midi);
+
+        let font = lib.load_soundfont(&resolved).map_err(PlayerError::Bass)?;
+        // Registering it as channel `0`'s font sets the default for streams
+        // BASSMIDI opens before `open` below gets to register them.
+        lib.set_channel_font(0, &font).map_err(PlayerError::Bass)?;
+
+        let mut midi = self.lock_midi();
+        if let Some(handle) = midi.active_channel {
+            // Applies live to the channel already open/playing, so the
+            // track doesn't need to restart.
+            lib.set_channel_font(handle, &font)
+                .map_err(PlayerError::Bass)?;
+        }
+        midi.font = Some(font);
+        Ok(())
+    }
+}
+
+impl BassBackend {
+    fn lock_midi(&self) -> std::sync::MutexGuard<'_, MidiState> {
+        self.midi
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Records `handle` as the channel a soundfont switch should reach live,
+    /// and applies the currently configured one to it right away (so a
+    /// freshly opened MIDI track doesn't wait for the next switch).
+    fn register_midi_channel(&self, handle: u32) {
+        let mut midi = self.lock_midi();
+        midi.active_channel = Some(handle);
+        if let (Some(lib), Some(font)) = (midi.lib.clone(), &midi.font) {
+            let _ = lib.set_channel_font(handle, font);
+        }
+    }
+
+    /// Forgets the live channel a soundfont switch would reach: called
+    /// whenever a non-MIDI channel opens, so a stale handle (possibly
+    /// reused by BASS for an unrelated channel) never receives one.
+    fn clear_active_midi_channel(&self) {
+        self.lock_midi().active_channel = None;
     }
 }
 

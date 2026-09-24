@@ -11,6 +11,12 @@ use std::path::Path;
 
 use bass::{Bass, Channel, StreamFlags};
 
+/// Locates `bassmidi.dll` the same way [`load_midi_plugin`] does, so a test
+/// can also load its own exports via [`Bass::load_midi`].
+fn bass_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var_os("EMUSIC_BASS_DIR").unwrap_or_default())
+}
+
 /// A format-0 MIDI file with one middle-C note lasting exactly two seconds
 /// (480 ticks per quarter note at 120 bpm, four quarter notes).
 fn two_second_midi() -> Vec<u8> {
@@ -100,6 +106,61 @@ fn midi_is_silent_without_a_soundfont_and_audible_with_one() {
     assert!(position > 0.2, "position did not advance: {position}");
     stream.seek(1.0).expect("seek");
     assert!(stream.position_seconds().expect("position") >= 0.9);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A channel already decoding audio (not just freshly opened) picks up a
+/// soundfont switch live, including switching from one real soundfont to a
+/// different one — the case `BASS_CONFIG_MIDI_DEFFONT` alone can't cover,
+/// since BASSMIDI captures the default into a stream once, either at open
+/// time or on its first render.
+#[test]
+fn switching_soundfonts_mid_stream_applies_live() {
+    let Some((_guard, bass)) = silent::init_silent() else {
+        return;
+    };
+    if !load_midi_plugin(&bass) {
+        eprintln!("skipping: bassmidi.dll not available");
+        return;
+    }
+    let Some(midi) = bass.load_midi(bass_dir()) else {
+        eprintln!("skipping: bassmidi.dll's own exports not available");
+        return;
+    };
+
+    let dir = std::env::temp_dir().join(format!("emusic-midi-switch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let midi_path = dir.join("two_seconds.mid");
+    std::fs::write(&midi_path, two_second_midi()).expect("write midi");
+    let font_path = dir.join("sine.sf2");
+    std::fs::write(&font_path, sf2::sine_soundfont()).expect("write soundfont");
+    let font = midi.load_soundfont(&font_path).expect("load soundfont");
+
+    let stream = bass
+        .open_stream(&midi_path, StreamFlags::DECODE | StreamFlags::FLOAT)
+        .expect("open decode stream");
+
+    // Decode some audio *before* applying a font, so the channel is already
+    // "in use" rather than fresh — this is the scenario the plain
+    // `BASS_CONFIG_MIDI_DEFFONT` default doesn't reliably cover.
+    let mut buffer = vec![0f32; 4096];
+    let read = stream
+        .get_data_f32(&mut buffer)
+        .expect("decode before font");
+    assert!(
+        buffer[..read].iter().all(|s| s.abs() < 0.001),
+        "expected silence before any soundfont is applied"
+    );
+
+    midi.set_channel_font(stream.handle(), &font)
+        .expect("apply soundfont to the already-open channel");
+    let mut buffer = vec![0f32; 44100 * 2];
+    let read = stream.get_data_f32(&mut buffer).expect("decode after font");
+    assert!(
+        buffer[..read].iter().any(|s| s.abs() > 0.01),
+        "switching the soundfont on an open channel should be audible"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
