@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use emusic_player::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport};
 use emusic_player::tracker::TrackerSettings;
-use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent};
+use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent, QueueSnapshot};
 
 /// A fake channel: position advances with real wall-clock time (like a real
 /// player would), "ends" once it reaches `duration`, and lets the test fire
@@ -692,4 +692,85 @@ fn unreadable_tracks_are_skipped_not_stopped_in_a_scope() {
         ),
         "the readable track should still play"
     );
+}
+
+#[test]
+fn queue_snapshot_round_trips_an_explicit_queue() {
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play(
+        vec![
+            PathBuf::from("a.mp3"),
+            PathBuf::from("b.mp3"),
+            PathBuf::from("c.mp3"),
+        ],
+        1,
+    );
+    wait_until(&mut player, |p| {
+        p.current_path() == Some(Path::new("b.mp3"))
+    });
+
+    let snapshot = player.queue_snapshot();
+    let QueueSnapshot::Explicit(explicit) = &snapshot else {
+        panic!("an explicit queue must snapshot as explicit");
+    };
+    assert_eq!(explicit.pos, Some(1));
+
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut restored = Player::new(Arc::new(backend));
+    restored.restore_queue(&snapshot, Duration::from_secs(3), false);
+    wait_until(&mut restored, |p| p.state() == PlaybackState::Paused);
+
+    assert_eq!(restored.current_path(), Some(Path::new("b.mp3")));
+    // The upcoming queue continues after the restored position.
+    assert_eq!(
+        restored
+            .upcoming()
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("c.mp3")]
+    );
+    let position = restored.position().expect("a loaded track has a position");
+    assert!(
+        position >= Duration::from_secs(3) && position < Duration::from_secs(4),
+        "should have restored the 3s position, got {position:?}"
+    );
+}
+
+#[test]
+fn queue_snapshot_round_trips_a_scoped_shuffle() {
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut player = Player::new(Arc::new(backend));
+    player.play_shuffled(
+        vec![
+            PathBuf::from("a.mp3"),
+            PathBuf::from("b.mp3"),
+            PathBuf::from("c.mp3"),
+        ],
+        "Album",
+    );
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+    let first = player.current_path().expect("a first track").to_path_buf();
+
+    let snapshot = player.queue_snapshot();
+    let QueueSnapshot::Shuffle(shuffle) = &snapshot else {
+        panic!("a scoped shuffle must snapshot as shuffle");
+    };
+    let bag = &shuffle.bag;
+    let expected_next = shuffle.items[*bag.last().expect("a remaining track")].clone();
+
+    let backend = MockBackend::new(Duration::from_secs(30));
+    let mut restored = Player::new(Arc::new(backend));
+    restored.restore_queue(&snapshot, Duration::ZERO, true);
+    wait_until(&mut restored, |p| p.state() == PlaybackState::Playing);
+
+    assert_eq!(restored.current_path(), Some(first.as_path()));
+    assert_eq!(restored.shuffle_scope(), Some("Album"));
+
+    // Next draws the same track the saved bag would have handed out.
+    restored.next();
+    wait_until(&mut restored, |p| {
+        p.current_path() == Some(expected_next.as_path())
+    });
 }

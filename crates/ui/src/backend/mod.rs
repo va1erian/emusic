@@ -202,7 +202,22 @@ impl PlayerApi for UnavailablePlayer {
     fn queue_jump(&mut self, _index: usize) {}
     fn queue_remove(&mut self, _index: usize) {}
     fn replace_and_play(&mut self, _paths: &[PathBuf], _start_index: usize) {}
-    fn restore_track(&mut self, _path: &Path, _position: std::time::Duration, _play: bool) {}
+    fn queue_snapshot(&self) -> emusic_player::QueueSnapshot {
+        emusic_player::QueueSnapshot::Explicit(emusic_player::ExplicitQueueSnapshot {
+            items: Vec::new(),
+            order: Vec::new(),
+            pos: None,
+            shuffle: false,
+            repeat: emusic_player::RepeatMode::Off,
+        })
+    }
+    fn restore_queue(
+        &mut self,
+        _snapshot: &emusic_player::QueueSnapshot,
+        _position: std::time::Duration,
+        _play: bool,
+    ) {
+    }
     fn play_shuffled(&mut self, _paths: &[PathBuf], _label: &str) {}
     fn play_next(&mut self, _path: &Path) {}
     fn enqueue(&mut self, _path: &Path) {}

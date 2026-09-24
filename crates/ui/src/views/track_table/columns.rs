@@ -4,11 +4,16 @@
 //! Moved from the egui frontend (#93) without the cell painters, which stay
 //! there; sorting (`sort`) builds on [`ColumnId`].
 
+use serde::{Deserialize, Serialize};
+
 use crate::library_api::TrackInfo;
 
 /// Identifies one column. The `#` (row position) column is intentionally
 /// excluded here: it is not backed by track data and is never sortable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// Serialized (lowercase) for the UI state saved on exit (#214).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColumnId {
     Title,
     Artist,

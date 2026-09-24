@@ -4,13 +4,18 @@
 
 use std::cmp::Ordering;
 
+use serde::{Deserialize, Serialize};
+
 use crate::library_api::TrackInfo;
 
 use super::columns::{self, ColumnId};
 
 /// Current sort column/direction. `key: None` means "library order"
 /// (insertion order, i.e. by id), matching the row's original position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialized as part of the UI state saved on exit (#214).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SortState {
     pub key: Option<ColumnId>,
     pub ascending: bool,

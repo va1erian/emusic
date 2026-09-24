@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 use crate::backend::ipc::{self, IpcBridge};
-use crate::config::{self, Config, LastPlayed};
+use crate::config::{self, Config, PlaybackSession};
 use crate::library_api::LibraryDataSource;
 use crate::panels::visualizer::FRAME_INTERVAL;
 use crate::player_api::{PlaybackStatus, PlayerApi};
@@ -114,8 +114,8 @@ impl Shell {
         // The session was just applied to the player; drop it from the
         // baseline so the per-tick settings compare doesn't treat the
         // (now-consumed) session as a pending change. It is written again on
-        // exit (#190).
-        config.last_played = None;
+        // exit (#190, #214).
+        config.last_session = None;
 
         let handle = waker.handle();
         Self {
@@ -227,12 +227,12 @@ impl Shell {
         Tick { changes, next_wake }
     }
 
-    /// Writes the config one last time on exit, including the playback
-    /// session (#190) that is deliberately left out of the debounced save.
+    /// Writes the config one last time on exit, including the whole playback
+    /// session (#214) that is deliberately left out of the debounced save.
     pub fn save_on_exit(&mut self) {
         let mut current = Config::capture(&self.state, self.player.as_ref());
         if self.state.resume_playback {
-            current.last_played = LastPlayed::capture(self.player.as_ref());
+            current.last_session = PlaybackSession::capture(self.player.as_ref());
         }
         self.write_config(current);
     }

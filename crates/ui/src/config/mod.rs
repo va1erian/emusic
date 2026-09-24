@@ -5,48 +5,69 @@
 mod io;
 #[cfg(test)]
 mod tests;
+mod ui_state;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
+use emusic_player::QueueSnapshot;
 use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
-use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
+use crate::player_api::{PlayerApi, RepeatMode};
 use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 pub use io::{ConfigError, config_path, load, save};
+pub use ui_state::UiState;
 
-/// The playback session as it was when the app last closed (#190): the
-/// track that was loaded, how far into it playback had got, and whether it
-/// was playing. Written on exit only, so it never takes part in the
-/// debounced settings save (see [`Config::capture`]).
+/// The playback session as it was when the app last closed (#190, #214): the
+/// whole play queue (explicit or scoped shuffle) and how far into the current
+/// track playback had got. Whether it starts playing on the next launch is
+/// decided by [`Config::autoplay_on_restore`], not stored here.
+///
+/// Written on exit only, so it never takes part in the debounced settings
+/// save (see [`Config::capture`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LastPlayed {
-    /// Full path to the loaded track. Defaults to empty (and is then
-    /// ignored) if a hand-edited config drops the field.
-    #[serde(default)]
-    pub path: PathBuf,
+#[serde(default)]
+pub struct PlaybackSession {
+    /// The whole queue (explicit list with its shuffle order, or scoped
+    /// shuffle with its scope, history and remaining bag).
+    pub queue: QueueSnapshot,
     /// Playback position, in seconds.
-    #[serde(default)]
     pub position_secs: f64,
-    /// Whether the track was playing (vs. paused/stopped) at exit.
-    #[serde(default)]
-    pub playing: bool,
 }
 
-impl LastPlayed {
-    /// Snapshots the player's current session, or `None` when no track is
-    /// loaded (nothing to resume).
+impl Default for PlaybackSession {
+    fn default() -> Self {
+        Self {
+            queue: empty_queue(),
+            position_secs: 0.0,
+        }
+    }
+}
+
+/// An empty explicit queue, for [`PlaybackSession`]'s serde default.
+fn empty_queue() -> QueueSnapshot {
+    QueueSnapshot::Explicit(emusic_player::ExplicitQueueSnapshot {
+        items: Vec::new(),
+        order: Vec::new(),
+        pos: None,
+        shuffle: false,
+        repeat: emusic_player::RepeatMode::Off,
+    })
+}
+
+impl PlaybackSession {
+    /// Snapshots the player's current session, or `None` when nothing is
+    /// loaded and the queue is empty (nothing to resume).
     pub fn capture(player: &dyn PlayerApi) -> Option<Self> {
-        let now = player.now_playing()?;
-        if now.path.is_empty() {
+        let queue = player.queue_snapshot();
+        if player.now_playing().is_none() && queue.is_empty() {
             return None;
         }
         Some(Self {
-            path: PathBuf::from(&now.path),
+            queue,
             position_secs: player.position().as_secs_f64(),
-            playing: player.status() == PlaybackStatus::Playing,
         })
     }
 
@@ -54,11 +75,6 @@ impl LastPlayed {
     /// values (a hand-edited config could contain one).
     pub fn position(&self) -> Duration {
         Duration::from_secs_f64(self.position_secs.max(0.0))
-    }
-
-    /// The track path.
-    pub fn path(&self) -> &Path {
-        &self.path
     }
 }
 
@@ -86,13 +102,22 @@ pub struct Config {
     pub column_browser_height: f32,
     /// View shown on startup.
     pub last_view: View,
-    /// Reopen the last played track where it left off on startup (#190).
-    /// On by default; turn it off to always start with an empty player.
+    /// Reopen the last played track and queue where they left off on startup
+    /// (#190, #214). On by default; turn it off to always start with an empty
+    /// player.
     pub resume_playback: bool,
-    /// The playback session captured when the app last closed (#190), if
-    /// resuming is enabled. Restored on startup by [`Self::apply_to_player`].
+    /// Whether a restored session starts playing instead of coming back
+    /// paused (#214). Off by default.
+    pub autoplay_on_restore: bool,
+    /// The playback session (whole queue + position) captured when the app
+    /// last closed (#214), if resuming is enabled. Restored on startup by
+    /// [`Self::apply_to_player`].
     #[serde(default)]
-    pub last_played: Option<LastPlayed>,
+    pub last_session: Option<PlaybackSession>,
+    /// Window geometry and the in-app UI state (search query, view
+    /// selections/sorts) saved across runs (#214).
+    #[serde(default)]
+    pub ui: UiState,
     /// Whether the status-bar visualizer strip (#25) is shown. Defaults to
     /// `false` so an idle/playing app never repaints continuously unless the
     /// user opts in.
@@ -142,7 +167,9 @@ impl Default for Config {
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             last_view: View::default(),
             resume_playback: true,
-            last_played: None,
+            autoplay_on_restore: false,
+            last_session: None,
+            ui: UiState::default(),
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             library_folders: Vec::new(),
@@ -160,10 +187,10 @@ impl Config {
     /// player. Everything here round-trips through [`Self::apply_to_state`]
     /// / [`Self::apply_to_player`], so saving is lossless for these fields.
     ///
-    /// The [`Self::last_played`] session is deliberately left `None`: its
-    /// position changes every frame while playing, so including it would
-    /// make the settings compare dirty continuously and rewrite the file
-    /// every debounce interval. It is captured separately, on exit.
+    /// The [`Self::last_session`] is deliberately left `None`: its position
+    /// changes every frame while playing, so including it would make the
+    /// settings compare dirty continuously and rewrite the file every
+    /// debounce interval. It is captured separately, on exit.
     pub fn capture(state: &AppState, player: &dyn PlayerApi) -> Self {
         Self {
             volume: player.volume(),
@@ -176,7 +203,9 @@ impl Config {
             column_browser_height: state.column_browser.height,
             last_view: state.view,
             resume_playback: state.resume_playback,
-            last_played: None,
+            autoplay_on_restore: state.autoplay_on_restore,
+            last_session: None,
+            ui: UiState::capture(state),
             visualizer_enabled: state.visualizer_enabled,
             visualizer: state.visualizer,
             library_folders: state.library_folders.clone(),
@@ -198,6 +227,8 @@ impl Config {
         state.column_browser.height = self.column_browser_height;
         state.view = self.last_view;
         state.resume_playback = self.resume_playback;
+        state.autoplay_on_restore = self.autoplay_on_restore;
+        self.ui.apply_to_state(state);
         state.visualizer_enabled = self.visualizer_enabled;
         state.visualizer = self.visualizer;
         state.library_folders = self.library_folders.clone();
@@ -209,7 +240,10 @@ impl Config {
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker
-    /// settings) and, when resuming is enabled, the last session (#190).
+    /// settings) and, when resuming is enabled, the last session's whole
+    /// queue (#214). It starts playing only when
+    /// [`Self::autoplay_on_restore`] is set; otherwise it comes back paused
+    /// at the saved position.
     pub fn apply_to_player(&self, player: &mut dyn PlayerApi) {
         player.set_volume(self.volume);
         player.set_repeat_mode(self.repeat_mode);
@@ -221,10 +255,10 @@ impl Config {
             self.sid_fallback_secs.max(1),
         )));
         if self.resume_playback
-            && let Some(session) = &self.last_played
-            && !session.path().as_os_str().is_empty()
+            && let Some(session) = &self.last_session
+            && !session.queue.is_empty()
         {
-            player.restore_track(session.path(), session.position(), session.playing);
+            player.restore_queue(&session.queue, session.position(), self.autoplay_on_restore);
         }
     }
 }

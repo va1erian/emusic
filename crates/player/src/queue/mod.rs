@@ -8,15 +8,19 @@ use std::path::{Path, PathBuf};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 
 mod shuffle;
+mod snapshot;
 mod source;
 
 pub use shuffle::ShuffleSource;
+pub use snapshot::{ExplicitQueueSnapshot, QueueSnapshot, ShuffleSnapshot};
 pub use source::QueueSource;
 
 /// Repeat behaviour for the queue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RepeatMode {
     #[default]
     Off,
