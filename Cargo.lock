@@ -1456,6 +1456,7 @@ dependencies = [
  "clap",
  "embed-resource",
  "emusic-ui",
+ "image",
  "tracing",
  "tracing-subscriber",
  "win32ui",

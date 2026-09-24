@@ -15,6 +15,7 @@ use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, View};
 use emusic_ui::views::Commands;
+use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
 use win32ui::{column, dip, row};
@@ -22,6 +23,7 @@ use win32ui::{column, dip, row};
 use crate::menu;
 use crate::views::music::{ContextAction, MusicView};
 use crate::views::navigator::NavigatorView;
+use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::{self, TopBarView};
@@ -51,6 +53,14 @@ pub enum Msg {
     TopBar(TopBarEvent),
     /// The top-bar search box changed.
     TopBarSearch(String),
+    /// A now-playing summary action (star, link, Properties, ...).
+    NowPlaying(SummaryEvent),
+    /// Jump to a queue preview row (double-click / Enter).
+    QueueJump(usize),
+    /// Open the queue's context menu for a preview row.
+    QueueContext(usize),
+    /// Remove the queue entry the context menu was opened on.
+    QueueRemove,
     /// Close the window and exit.
     Quit,
 }
@@ -61,7 +71,7 @@ pub struct Win32App {
     navigator: NavigatorView,
     central: Placeholder,
     music: MusicView,
-    right_panel: Placeholder,
+    right_panel: NowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
     /// is available.
@@ -94,13 +104,14 @@ impl Win32App {
         let navigator = NavigatorView::new(ui).expect("create navigator view");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
         let music = MusicView::new(ui).expect("create music view");
-        let right_panel = Placeholder::new(ui, "Now playing").expect("create right panel");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
         let top_bar = TopBarView::new(ui).ok();
 
         waker.bind(Win32Waker::new(ui.proxy()));
+        // The panel's artwork cache decodes off-thread and wakes through `waker`.
+        let right_panel = NowPlayingView::new(ui, waker.handle()).expect("create now playing view");
         let mut shell = Shell::new(library, player, config, config_path, waker);
         if let Some(ipc) = ipc {
             shell.attach_ipc(ipc);
@@ -124,7 +135,7 @@ impl Win32App {
                     navigator.width(dip(220.0)),
                     central.fill(1),
                     music.fill(1),
-                    right_panel.width(dip(280.0)),
+                    right_panel.layout().width(dip(now_playing::PANEL_WIDTH)),
                 ]
                 .fill(1),
                 status,
@@ -190,7 +201,7 @@ impl Win32App {
             changes,
         );
 
-        self.right_panel.sync("Now playing");
+        self.refresh_now_playing(ui.dpi());
 
         self.shell.state.navigator.sync(self.shell.state.view);
         self.navigator.sync(&self.shell.state.navigator);
@@ -240,6 +251,74 @@ impl Win32App {
         self.shell.state.top_bar.update(message, &mut out);
         for command in out.into_vec() {
             self.shell.dispatch(command);
+        }
+    }
+
+    /// Refreshes the now-playing model from the player/library, then pushes it
+    /// into the panel (artwork included).
+    fn refresh_now_playing(&mut self, dpi: u32) {
+        let shell = &mut self.shell;
+        shell
+            .state
+            .now_playing
+            .refresh(shell.player.as_ref(), shell.library.as_ref());
+        self.right_panel.sync(&shell.state.now_playing, dpi);
+    }
+
+    /// Applies a now-playing intent through the shared model and dispatches any
+    /// commands it emits.
+    fn apply_now_playing(&mut self, message: NowPlayingMsg) {
+        let mut out = Commands::new();
+        self.shell.state.now_playing.update(message, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
+        }
+    }
+
+    /// Turns a summary click into a now-playing intent, if it carries one.
+    fn handle_summary(&mut self, event: SummaryEvent) {
+        if event == SummaryEvent::OpenFolder {
+            let path = self
+                .shell
+                .state
+                .now_playing
+                .track()
+                .map(|track| track.path.clone());
+            if let Some(path) = path.filter(|path| !path.is_empty()) {
+                open_file_location(&path);
+            }
+            return;
+        }
+
+        let message = {
+            let model = &self.shell.state.now_playing;
+            match event {
+                SummaryEvent::ToggleStar => model
+                    .track()
+                    .map(|track| NowPlayingMsg::ToggleStar(track.id)),
+                SummaryEvent::EditTags => {
+                    model.track().map(|track| NowPlayingMsg::EditTags(track.id))
+                }
+                SummaryEvent::ShowProperties => model
+                    .track()
+                    .map(|track| NowPlayingMsg::ShowProperties(Box::new(track.clone()))),
+                SummaryEvent::GoToArtist => model
+                    .now_playing()
+                    .filter(|np| !np.artist.is_empty())
+                    .map(|np| NowPlayingMsg::GoToArtist(np.artist.clone())),
+                SummaryEvent::GoToAlbum => {
+                    model.track().filter(|t| !t.album.is_empty()).map(|track| {
+                        NowPlayingMsg::GoToAlbum {
+                            name: track.album.clone(),
+                            artist: track.artist.clone(),
+                        }
+                    })
+                }
+                SummaryEvent::OpenFolder => None,
+            }
+        };
+        if let Some(message) = message {
+            self.apply_now_playing(message);
         }
     }
 
@@ -319,9 +398,36 @@ impl App for Win32App {
                 self.apply_top_bar(TopBarMsg::SetSearchQuery(query));
                 self.tick(ui);
             }
+            Msg::NowPlaying(event) => {
+                self.handle_summary(event);
+                self.tick(ui);
+            }
+            Msg::QueueJump(row) => {
+                if let Some(index) = self.right_panel.queue_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick(ui);
+                }
+            }
+            Msg::QueueContext(row) => {
+                self.right_panel.set_context_row(row);
+                ui.popup(self.right_panel.context_menu(), ui.cursor_position());
+            }
+            Msg::QueueRemove => {
+                if let Some(index) = self.right_panel.context_index() {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick(ui);
+                }
+            }
             Msg::Quit => ui.close(),
         }
     }
+}
+
+/// Reveals `path` in Explorer.
+fn open_file_location(path: &str) {
+    let _ = std::process::Command::new("explorer")
+        .arg(format!("/select,{}", path.replace('/', "\\")))
+        .spawn();
 }
 
 /// The library id of the player's current track, matched by path.
