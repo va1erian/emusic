@@ -27,7 +27,7 @@ pub use crate::auto_tag::{
 };
 
 /// Minimal, local stand-in for `emusic_core::Track`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TrackInfo {
     pub id: u64,
     pub title: String,

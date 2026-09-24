@@ -2,27 +2,18 @@
 
 use eframe::egui;
 
-use crate::player_api::ModuleInfo;
+use emusic_ui::views::now_playing::ModuleView;
 
 /// Show module name, format, channel/order count, current order/row, message
 /// and an expandable instrument/sample list.
-pub fn show(ui: &mut egui::Ui, module: &ModuleInfo) {
+pub fn show(ui: &mut egui::Ui, module: &ModuleView) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("MODULE").small().weak());
         ui.label(egui::RichText::new(&module.format).small());
     });
 
-    ui.label(format!(
-        "{} · {} channels · {} orders",
-        module.name, module.channels, module.orders
-    ));
-    ui.label(
-        egui::RichText::new(format!(
-            "Order {:02} / Row {:03}",
-            module.current_order, module.current_row
-        ))
-        .monospace(),
-    );
+    ui.label(module.summary_text());
+    ui.label(egui::RichText::new(module.order_row_text()).monospace());
 
     if !module.message.is_empty() {
         ui.add_space(2.0);
@@ -35,17 +26,10 @@ pub fn show(ui: &mut egui::Ui, module: &ModuleInfo) {
     }
 
     ui.add_space(2.0);
-    ui.collapsing(
-        format!(
-            "Details ({} instruments, {} samples)",
-            module.instruments.len(),
-            module.samples.len()
-        ),
-        |ui| {
-            details_list(ui, "Instruments", &module.instruments);
-            details_list(ui, "Samples", &module.samples);
-        },
-    );
+    ui.collapsing(module.details_label(), |ui| {
+        details_list(ui, "Instruments", &module.instruments);
+        details_list(ui, "Samples", &module.samples);
+    });
 }
 
 fn details_list(ui: &mut egui::Ui, heading: &str, items: &[String]) {

@@ -11,10 +11,9 @@ use std::sync::Arc;
 
 use eframe::egui;
 use emusic_ui::image_cache::{Rgba8Image, ThumbCache, load_artwork};
+use emusic_ui::views::now_playing::NowPlayingView;
 
 use crate::image_sink::EguiImageSink;
-use crate::library_api::TrackInfo;
-use crate::player_api::NowPlayingInfo;
 
 /// Number of pixels in the generated placeholder square.
 const PLACEHOLDER_SIZE: u32 = 256;
@@ -43,19 +42,15 @@ fn load_artwork_with_fallback(path: &Path, fallback_dir: Option<&Path>) -> Optio
 
 /// Show the artwork area: a square image (or placeholder) sized to the
 /// panel width.
-pub fn show(
-    ui: &mut egui::Ui,
-    cache: &mut ArtworkCache,
-    np: Option<&NowPlayingInfo>,
-    track: Option<&TrackInfo>,
-) {
+pub fn show(ui: &mut egui::Ui, cache: &mut ArtworkCache, view: &NowPlayingView) {
     let mut sink = EguiImageSink::new(ui.ctx().clone(), "artwork");
     cache.drain(&mut sink);
 
     let max_size = ui.available_width().min(320.0);
     let desired_size = egui::vec2(max_size, max_size);
 
-    let key = np.map(|info| info.path.as_str()).unwrap_or("");
+    let request = view.artwork();
+    let key = request.path.as_str();
     let texture = if key.is_empty() {
         None
     } else {
@@ -63,7 +58,7 @@ pub fn show(
         // a placeholder synchronously for non-existent mock paths). The
         // library track's directory is searched for a folder image when the
         // playing path has none.
-        let fallback_dir = track.and_then(|t| Path::new(&t.path).parent());
+        let fallback_dir = request.fallback_dir.as_deref().map(Path::new);
         cache
             .get_with_fallback(&mut sink, key, fallback_dir)
             .cloned()
@@ -92,8 +87,8 @@ pub fn show(
         );
     }
 
-    if let Some(info) = np {
-        response.on_hover_text(&info.path);
+    if !request.path.is_empty() {
+        response.on_hover_text(&request.path);
     }
 }
 
