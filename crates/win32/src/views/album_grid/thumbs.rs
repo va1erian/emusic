@@ -1,15 +1,18 @@
 //! The Win32 frontend's [`ImageSink`] (#96): uploads decoded images as
 //! DIB-section bitmaps the GDI [`Canvas`](win32ui::gdi::Canvas) can blit.
 //!
-//! The shared [`ThumbCache`] decodes artwork off the UI thread and keeps a
-//! bounded LRU of uploaded handles; here the handle is a scaled, top-down
-//! 32-bpp [`Bitmap`]. `draw_bitmap` blits 1:1, so [`BitmapSink`] resizes every
-//! decoded image to the cover edge the grid is currently using; the cache is
-//! rebuilt when that edge changes (see [`ThumbState::new`]).
+//! The shared [`ThumbCache`] decodes, resizes and caches artwork off the UI
+//! thread and keeps a bounded LRU of uploaded handles; here the handle is a
+//! top-down 32-bpp [`Bitmap`] already at the grid's current cover size. That
+//! size is baked into the decode ([`cover_decoder`]) rather than the upload, so
+//! the UI thread only allocates the DIB. The cache is rebuilt when the cover
+//! size changes (see [`ThumbState::new`]).
 
+use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use emusic_ui::image_cache::{ImageSink, Rgba8Image, ThumbCache, thumbnail_decoder};
+use emusic_ui::image_cache::{DecodeFn, ImageSink, Rgba8Image, ThumbCache, thumbnail_decoder};
 use emusic_ui::waker::WakerHandle;
 use win32ui::gdi::Bitmap;
 
@@ -23,18 +26,9 @@ const BYTE_BUDGET: usize = 32 * 1024 * 1024;
 /// The album grid's thumbnail cache over Win32 bitmaps.
 pub(super) type BitmapCache = ThumbCache<BitmapSink>;
 
-/// Uploads decoded images as top-down 32-bpp bitmaps, resized to the cover.
-pub(super) struct BitmapSink {
-    /// The cover edge, in device pixels, every uploaded image is resized to.
-    edge: i32,
-}
-
-impl BitmapSink {
-    /// A sink that resizes every image to an `edge`-by-`edge` cover.
-    pub(super) fn new(edge: i32) -> Self {
-        Self { edge: edge.max(1) }
-    }
-}
+/// Uploads decoded images as top-down 32-bpp bitmaps. The image is already the
+/// cover size (see [`cover_decoder`]), so this only allocates the DIB.
+pub(super) struct BitmapSink;
 
 impl ImageSink for BitmapSink {
     /// `None` when GDI could not allocate the DIB; the grid then draws its
@@ -42,8 +36,7 @@ impl ImageSink for BitmapSink {
     type Handle = Option<Rc<Bitmap>>;
 
     fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Option<Rc<Bitmap>> {
-        let scaled = resize(image, self.edge as u32, self.edge as u32);
-        Bitmap::from_rgba(scaled.width as i32, scaled.height as i32, &scaled.pixels)
+        Bitmap::from_rgba(image.width as i32, image.height as i32, &image.pixels)
             .ok()
             .map(Rc::new)
     }
@@ -58,14 +51,14 @@ pub(super) struct ThumbState {
 }
 
 impl ThumbState {
-    /// A cache that resizes covers to `cover_px` and wakes the UI through
-    /// `waker` when a decode finishes.
+    /// A cache whose worker decodes and resizes covers to `cover_px`, waking
+    /// the UI through `waker` when a decode finishes.
     pub(super) fn new(cover_px: i32, waker: WakerHandle) -> Self {
-        let mut cache = ThumbCache::new(BYTE_BUDGET, thumbnail_decoder(THUMB_SIZE));
+        let mut cache = ThumbCache::new(BYTE_BUDGET, cover_decoder(cover_px.max(1) as u32));
         cache.set_waker(waker);
         Self {
             cache,
-            sink: BitmapSink::new(cover_px),
+            sink: BitmapSink,
         }
     }
 
@@ -77,69 +70,48 @@ impl ThumbState {
     }
 
     /// Uploads the decodes the workers finished, then trims the LRU. Called
-    /// once per frame before the grid paints.
+    /// once per frame before the grid paints. The shared cache caps uploads at
+    /// four per call and wakes the UI while more are pending, so a burst of
+    /// finished covers is spread over several frames instead of stalling one.
     pub(super) fn drain(&mut self) {
         let Self { cache, sink } = self;
         cache.drain(sink);
     }
 }
 
-/// Bilinearly resizes `image` to `width`-by-`height`, preserving neither the
-/// aspect ratio nor the alpha-premultiplication (the source is unmultiplied
-/// and `AlphaBlend` expects the same). The source is a small decoded
-/// thumbnail, so the naive filter is fast enough on the UI thread.
+/// The worker-side decoder: the shared disk-cached 200 px thumbnail decoder,
+/// resized to the grid's `edge`-by-`edge` cover. Resizing here keeps it off the
+/// UI thread, so [`BitmapSink::upload`] only creates the DIB.
+fn cover_decoder(edge: u32) -> DecodeFn {
+    let base = thumbnail_decoder(THUMB_SIZE);
+    Arc::new(move |source: &Path, fallback_dir: Option<&Path>| {
+        let image = base(source, fallback_dir)?;
+        Some(resize(&image, edge, edge))
+    })
+}
+
+/// Resizes `image` to `width`-by-`height` with the `image` crate's bilinear
+/// filter. Aspect ratio is not preserved: like egui, covers are drawn stretched
+/// into the square tile.
 fn resize(image: &Rgba8Image, width: u32, height: u32) -> Rgba8Image {
     if image.width == width && image.height == height {
         return image.clone();
     }
-    let (sw, sh) = (image.width.max(1) as i32, image.height.max(1) as i32);
-    let src = image.pixels.as_slice();
-    let mut pixels = vec![0u8; width as usize * height as usize * 4];
-
-    for y in 0..height as i32 {
-        let sy = ((y as f32 + 0.5) * sh as f32 / height as f32 - 0.5).max(0.0);
-        let y0 = sy.floor() as i32;
-        let y1 = (y0 + 1).min(sh - 1);
-        let fy = sy - y0 as f32;
-        for x in 0..width as i32 {
-            let sx = ((x as f32 + 0.5) * sw as f32 / width as f32 - 0.5).max(0.0);
-            let x0 = sx.floor() as i32;
-            let x1 = (x0 + 1).min(sw - 1);
-            let fx = sx - x0 as f32;
-
-            let out = ((y * width as i32 + x) * 4) as usize;
-            for channel in 0..4 {
-                let top = lerp(
-                    channel_at(src, sw, x0, y0, channel),
-                    channel_at(src, sw, x1, y0, channel),
-                    fx,
-                );
-                let bottom = lerp(
-                    channel_at(src, sw, x0, y1, channel),
-                    channel_at(src, sw, x1, y1, channel),
-                    fx,
-                );
-                pixels[out + channel] = lerp(top, bottom, fy).round() as u8;
-            }
-        }
-    }
-
+    let Some(source) = image::RgbaImage::from_raw(image.width, image.height, image.pixels.clone())
+    else {
+        return image.clone();
+    };
+    let resized = image::imageops::resize(
+        &source,
+        width,
+        height,
+        image::imageops::FilterType::Triangle,
+    );
     Rgba8Image {
         width,
         height,
-        pixels,
+        pixels: resized.into_raw(),
     }
-}
-
-/// The `channel` byte of the pixel at `(x, y)` in a row-major RGBA buffer.
-fn channel_at(src: &[u8], stride: i32, x: i32, y: i32, channel: usize) -> f32 {
-    let index = ((y * stride + x) * 4) as usize + channel;
-    f32::from(src.get(index).copied().unwrap_or(0))
-}
-
-/// Linear interpolation, `t` clamped to `0.0..=1.0`.
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
