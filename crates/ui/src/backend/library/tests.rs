@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use emusic_library::Store;
 use emusic_library::scanner::CancelToken;
 use emusic_library::stats::PlayRecord;
+use emusic_metadata::{Candidate, MetadataError, Provider, TrackQuery};
 
 use super::scan::ScanHandle;
 use super::test_support::{
@@ -16,7 +17,7 @@ use super::test_support::{
 };
 use super::{LibraryBackend, Update, scan};
 use crate::backend::PlayMessage;
-use crate::library_api::LibraryDataSource;
+use crate::library_api::{AutoTagOutcome, AutoTagRequest, LibraryDataSource};
 
 #[test]
 fn backend_starts_empty_and_accepts_folders() {
@@ -117,6 +118,67 @@ fn removing_a_folder_purges_its_tracks() {
     assert!(backend.folders().is_empty());
 
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn auto_tag_lookup_runs_off_thread_and_reports_candidates() {
+    let store = Store::open_in_memory().unwrap();
+    let mut backend = LibraryBackend::with_store(store, None);
+    backend.set_auto_tag_provider(Arc::new(StubProvider));
+
+    backend.request_auto_tag(AutoTagRequest {
+        path: PathBuf::from("C:/music/a.flac"),
+        query: TrackQuery {
+            title: Some("Title".to_string()),
+            ..Default::default()
+        },
+    });
+    assert!(
+        backend.auto_tag_status().is_some(),
+        "the status line is set the moment a lookup is requested"
+    );
+
+    let outcomes = wait_for_auto_tag_results(&mut backend);
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].path, PathBuf::from("C:/music/a.flac"));
+    let candidates = outcomes[0].result.as_ref().expect("the stub succeeds");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].title.as_deref(), Some("Found"));
+    assert!(
+        backend.auto_tag_status().is_none(),
+        "the status line clears once the outcome arrives"
+    );
+}
+
+/// A provider that returns one canned candidate without touching the network.
+struct StubProvider;
+
+impl Provider for StubProvider {
+    fn name(&self) -> &'static str {
+        "stub"
+    }
+
+    fn search(&self, _query: &TrackQuery) -> Result<Vec<Candidate>, MetadataError> {
+        Ok(vec![Candidate {
+            title: Some("Found".to_string()),
+            score: 1.0,
+            ..Default::default()
+        }])
+    }
+}
+
+/// Pumps the backend until the auto-tag worker reports an outcome.
+fn wait_for_auto_tag_results(backend: &mut LibraryBackend) -> Vec<AutoTagOutcome> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        backend.tick();
+        let results = backend.take_auto_tag_results();
+        if !results.is_empty() {
+            return results;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("auto-tag lookup did not finish within the timeout");
 }
 
 /// A file-backed store so the scan can open its own connection (#69), unlike

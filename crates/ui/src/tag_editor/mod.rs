@@ -13,7 +13,7 @@ pub use form::{TagForm, TagFormErrors};
 
 use std::path::PathBuf;
 
-use crate::library_api::{EditOutcome, TrackInfo};
+use crate::library_api::{AutoTagError, AutoTagOutcome, Candidate, EditOutcome, TrackInfo};
 
 /// The one open tag editor, if any.
 #[derive(Debug)]
@@ -26,6 +26,27 @@ pub struct TagEditorState {
     pub form: TagForm,
     /// Where the dialog is in the edit/submit/result cycle.
     pub status: Status,
+    /// Where the dialog's online auto-tag lookup is (#208).
+    pub auto_tag: AutoTagState,
+}
+
+/// Where the dialog's online auto-tag lookup is (#208).
+///
+/// The lookup runs in the library backend; the shell folds its outcome back in
+/// with [`deliver_auto_tag`].
+#[derive(Debug, Default)]
+pub enum AutoTagState {
+    /// No lookup has run in this dialog session.
+    #[default]
+    Idle,
+    /// A lookup is in flight; the backend will report an outcome.
+    Searching,
+    /// Candidates came back, best first.
+    Matches(Vec<Candidate>),
+    /// The lookup completed without any match.
+    NoMatch,
+    /// The lookup failed; the message is shown inline.
+    Failed(String),
 }
 
 /// Where the dialog is in the edit/submit/result cycle.
@@ -58,7 +79,27 @@ impl TagEditorState {
             original: form.clone(),
             form,
             status: Status::Editing,
+            auto_tag: AutoTagState::Idle,
         }
+    }
+}
+
+/// Folds auto-tag outcomes into the open editor, if one is showing the
+/// affected file. Outcomes for other files are ignored here.
+pub fn deliver_auto_tag(state: &mut Option<TagEditorState>, outcomes: Vec<AutoTagOutcome>) {
+    let Some(editor) = state.as_mut() else {
+        return;
+    };
+    for outcome in outcomes {
+        if outcome.path != editor.path {
+            continue;
+        }
+        editor.auto_tag = match outcome.result {
+            Ok(candidates) if candidates.is_empty() => AutoTagState::NoMatch,
+            Ok(candidates) => AutoTagState::Matches(candidates),
+            Err(AutoTagError::Cancelled) => AutoTagState::Idle,
+            Err(error) => AutoTagState::Failed(error.to_string()),
+        };
     }
 }
 

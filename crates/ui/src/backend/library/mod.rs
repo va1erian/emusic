@@ -7,6 +7,7 @@
 //! keeps the app responsive even when the library lives on a mapped network
 //! drive, where directory walks and tag reads are slow.
 
+pub(crate) mod auto_tag;
 pub(crate) mod folders;
 pub(crate) mod loader;
 pub(crate) mod scan;
@@ -22,12 +23,13 @@ use emusic_library::stats::StatsRecorder;
 use emusic_library::tags::{EditOutcome, EditRequest};
 use emusic_library::watch::{WatchEvent, Watcher};
 use emusic_library::{Folder, Store, TrackId};
+use emusic_metadata::MusicBrainzProvider;
 use tracing::{info, warn};
 
 use crate::backend::PlayMessage;
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DatabaseInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry,
-    LibraryDataSource, StatsWindow, TrackInfo,
+    AlbumInfo, ArtistInfo, AutoTagOutcome, AutoTagRequest, AutoTagStatus, DatabaseInfo,
+    DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
 };
 
 use scan::ScanHandle;
@@ -46,6 +48,9 @@ pub(crate) enum Update {
     /// The outcomes of one completed tag-edit batch, held for the UI to drain
     /// via [`LibraryDataSource::take_tag_edit_results`].
     TagEdits(Vec<EditOutcome>),
+    /// One completed online auto-tag lookup, held for the UI to drain via
+    /// [`LibraryDataSource::take_auto_tag_results`].
+    AutoTag(AutoTagOutcome),
 }
 
 /// [`LibraryDataSource`] implementation backed by `emusic-library`.
@@ -73,6 +78,9 @@ pub struct LibraryBackend {
     active_scan: Option<ScanHandle>,
     /// Completed tag-edit outcomes waiting for the UI to drain them.
     tag_edit_results: Vec<EditOutcome>,
+    /// The online metadata provider, the lookup in flight and its outcomes
+    /// (#208).
+    auto_tag: auto_tag::AutoTagState,
     /// Shared with the player backend; used to read tracker module tags
     /// during scans. `None` when BASS failed to initialize, in which case
     /// modules are counted but skipped (see [`emusic_library::scanner`]).
@@ -145,6 +153,7 @@ impl LibraryBackend {
             next_scan_id: 0,
             active_scan: None,
             tag_edit_results: Vec::new(),
+            auto_tag: auto_tag::AutoTagState::new(Arc::new(MusicBrainzProvider::new())),
             bass,
             db_path,
             last_scan: None,
@@ -154,6 +163,13 @@ impl LibraryBackend {
     /// Sender the player adapter uses to report track starts and finishes.
     pub(crate) fn play_message_tx(&self) -> Sender<PlayMessage> {
         self.play_message_tx.clone()
+    }
+
+    /// Replaces the metadata provider, so tests can drive the worker without a
+    /// network.
+    #[cfg(test)]
+    pub(crate) fn set_auto_tag_provider(&mut self, provider: Arc<dyn emusic_metadata::Provider>) {
+        self.auto_tag.set_provider(provider);
     }
 
     /// Writes a just-started play's history row and mirrors it into the
@@ -273,6 +289,22 @@ impl LibraryDataSource for LibraryBackend {
         std::mem::take(&mut self.tag_edit_results)
     }
 
+    fn request_auto_tag(&mut self, request: AutoTagRequest) {
+        self.auto_tag.request(request, self.update_tx.clone());
+    }
+
+    fn take_auto_tag_results(&mut self) -> Vec<AutoTagOutcome> {
+        self.auto_tag.take_results()
+    }
+
+    fn auto_tag_status(&self) -> Option<AutoTagStatus> {
+        self.auto_tag.status()
+    }
+
+    fn cancel_auto_tag(&mut self) {
+        self.auto_tag.cancel();
+    }
+
     fn tick(&mut self) {
         while let Ok(update) = self.updates.try_recv() {
             match update {
@@ -287,6 +319,7 @@ impl LibraryDataSource for LibraryBackend {
                     }
                 }
                 Update::TagEdits(outcomes) => self.tag_edit_results.extend(outcomes),
+                Update::AutoTag(outcome) => self.auto_tag.handle_outcome(outcome),
             }
         }
 

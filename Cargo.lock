@@ -1433,6 +1433,7 @@ dependencies = [
  "dirs",
  "emusic-core",
  "emusic-library",
+ "emusic-metadata",
  "emusic-player",
  "emusic-search",
  "image",

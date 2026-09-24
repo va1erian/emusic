@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use emusic_player::tracker::TrackerSettings;
 
-use crate::library_api::EditRequest;
+use crate::library_api::{EditRequest, TrackQuery};
 
 use super::{Accent, PanelKind, View};
 
@@ -103,6 +103,19 @@ pub enum Command {
     /// [`LibraryDataSource::take_tag_edit_results`]:
     ///     crate::library_api::LibraryDataSource::take_tag_edit_results
     RequestTagEdits(Vec<EditRequest>),
+    /// Run an online metadata lookup for the track at `path`, seeded from
+    /// `query`, to fill the tag editor (#208). The backend does the lookup off
+    /// the UI thread and reports the candidates through
+    /// [`LibraryDataSource::take_auto_tag_results`].
+    ///
+    /// [`LibraryDataSource::take_auto_tag_results`]:
+    ///     crate::library_api::LibraryDataSource::take_auto_tag_results
+    AutoTagTrack {
+        /// The file to look up.
+        path: PathBuf,
+        /// The local metadata the lookup is seeded from.
+        query: TrackQuery,
+    },
     /// Replace the tracker module playback settings (interpolation, ramping,
     /// emulation, ...), applied live to the player and persisted.
     SetTrackerSettings(TrackerSettings),

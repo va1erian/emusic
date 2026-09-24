@@ -2,8 +2,9 @@
 
 use super::data::{self, GeneratedLibrary};
 use crate::library_api::{
-    AlbumInfo, ArtistInfo, DatabaseInfo, DirNodeInfo, EditOutcome, EditRequest, EditableTags,
-    FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
+    AlbumInfo, ArtistInfo, AutoTagOutcome, AutoTagRequest, AutoTagStatus, Candidate, DatabaseInfo,
+    DirNodeInfo, EditOutcome, EditRequest, EditableTags, FolderInfo, GenreInfo, HistoryEntry,
+    LibraryDataSource, StatsWindow, TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -14,6 +15,12 @@ pub struct MockLibrary {
     /// edits to its in-memory tracks synchronously, so a submitted edit is
     /// reflected on the next frame; this just carries the result back.
     tag_edit_results: Vec<EditOutcome>,
+    /// Auto-tag outcomes not yet drained by the UI (#208). The mock answers
+    /// synchronously with a canned candidate, so screenshots and `--mock`
+    /// runs stay offline.
+    auto_tag_results: Vec<AutoTagOutcome>,
+    /// The auto-tag progress line, when the mock is configured to show one.
+    auto_tag_status: Option<AutoTagStatus>,
 }
 
 impl MockLibrary {
@@ -23,6 +30,8 @@ impl MockLibrary {
             scanning: false,
             status: None,
             tag_edit_results: Vec::new(),
+            auto_tag_results: Vec::new(),
+            auto_tag_status: None,
         }
     }
 
@@ -33,6 +42,8 @@ impl MockLibrary {
             scanning: false,
             status: None,
             tag_edit_results: Vec::new(),
+            auto_tag_results: Vec::new(),
+            auto_tag_status: None,
         }
     }
 
@@ -45,6 +56,8 @@ impl MockLibrary {
             scanning: true,
             status: Some("Scanning 750 / 6,096 - track-0750.flac".to_string()),
             tag_edit_results: Vec::new(),
+            auto_tag_results: Vec::new(),
+            auto_tag_status: None,
         }
     }
 }
@@ -177,6 +190,40 @@ impl LibraryDataSource for MockLibrary {
 
     fn take_tag_edit_results(&mut self) -> Vec<EditOutcome> {
         std::mem::take(&mut self.tag_edit_results)
+    }
+
+    fn request_auto_tag(&mut self, request: AutoTagRequest) {
+        let candidate = Candidate {
+            title: request
+                .query
+                .title
+                .clone()
+                .or_else(|| Some("Mock Title".to_string())),
+            artist: request.query.artist.clone(),
+            album: request
+                .query
+                .album
+                .clone()
+                .or_else(|| Some("Mock Album".to_string())),
+            album_artist: request.query.artist.clone(),
+            year: Some(2001),
+            track_no: Some(1),
+            disc_no: Some(1),
+            score: 0.95,
+            ..Default::default()
+        };
+        self.auto_tag_results.push(AutoTagOutcome {
+            path: request.path,
+            result: Ok(vec![candidate]),
+        });
+    }
+
+    fn take_auto_tag_results(&mut self) -> Vec<AutoTagOutcome> {
+        std::mem::take(&mut self.auto_tag_results)
+    }
+
+    fn auto_tag_status(&self) -> Option<AutoTagStatus> {
+        self.auto_tag_status.clone()
     }
 
     fn is_scanning(&self) -> bool {

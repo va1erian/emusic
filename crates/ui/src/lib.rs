@@ -14,6 +14,7 @@
 //! modules at their old paths, so UI code only changes `use` paths. The
 //! egui-bound pieces (`backend::{smtc, thumbbar}`, theme/fonts) stay there.
 
+pub mod auto_tag;
 pub mod backend;
 pub mod cli;
 pub mod config;
