@@ -1,4 +1,4 @@
-//! Win32 Most Played view (#245): a time-window selector above the shared
+//! Win32 Most Played view (#245): a time-window tab strip above the shared
 //! track table ranked by completed play count.
 //!
 //! The window and the table's sort/selection live in `emusic-ui`'s
@@ -13,43 +13,38 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow, TrackInfo};
 use emusic_ui::state::AppState;
 use emusic_ui::views::Ctx;
 use win32ui::prelude::*;
-use win32ui::{Control, Label, Menu, RadioGroup, column, dip, row};
+use win32ui::{Control, Label, Menu, Tabs, column, dip};
 
 use crate::app::Msg;
 use crate::views::track_table::TrackView;
 
-/// Height of the window-selector band, in design units.
+/// Height of the window-tab band, in design units.
 const HEADER_HEIGHT: f32 = 30.0;
-/// Width of the "Window" label, in design units.
-const LABEL_WIDTH: f32 = 56.0;
 /// Height of the "Top N tracks" label, in design units.
 const LABEL_HEIGHT: f32 = 20.0;
 
-/// The Win32 Most Played view: the window selector and the ranked table.
+/// The Win32 Most Played view: the window tabs and the ranked table.
 pub struct MostPlayedView {
-    window_label: Label,
-    window: RadioGroup<StatsWindow, Msg>,
     count: Label,
     table: TrackView,
+    /// The window the tab strip was last synced to; it decides the tab the
+    /// strip opens on when the view is shown again.
+    window: Cell<StatsWindow>,
     /// The window and table revision the controls were last built from.
     applied: Cell<(Option<StatsWindow>, u64)>,
 }
 
 impl MostPlayedView {
-    /// Creates the selector, the count label and the (empty) track table.
+    /// Creates the count label and the (empty) track table.
     pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
-        let window = RadioGroup::new(ui, StatsWindow::ALL.map(|window| (window.label(), window)))?
-            .selected(StatsWindow::AllTime)
-            .on_select(|window| Some(Msg::MostPlayed(*window)));
         Ok(Self {
-            window_label: Label::new(ui, Rect::default(), "Window")?,
-            window,
             count: Label::new(
                 ui,
                 Rect::default(),
                 "No completed plays in this window yet.",
             )?,
             table: TrackView::new(ui)?,
+            window: Cell::new(StatsWindow::AllTime),
             applied: Cell::new((None, u64::MAX)),
         })
     }
@@ -63,9 +58,7 @@ impl MostPlayedView {
         library: &dyn LibraryDataSource,
         playing_id: Option<u64>,
     ) {
-        if self.window.selected_value() != Some(state.most_played.window) {
-            self.window.set_selected(&state.most_played.window);
-        }
+        self.window.set(state.most_played.window);
 
         let ranked = library.most_played(state.most_played.window);
         let tracks: Vec<&TrackInfo> = ranked.iter().collect();
@@ -118,25 +111,37 @@ impl MostPlayedView {
         self.table.context_menu()
     }
 
-    /// Shows or hides the whole view (its selector, count label and table).
+    /// Shows or hides the whole view (its tabs, count label and table).
     pub fn set_visible(&self, visible: bool) {
-        self.window_label.set_visible(visible);
-        self.window.set_visible(visible);
         self.count.set_visible(visible);
         self.table.set_visible(visible);
     }
 
-    /// The window-selector band and count label above the track table.
+    /// The window-tab band and count label above the track table.
     pub fn layout(&self) -> Layout {
         column![
-            row![
-                self.window_label.width(dip(LABEL_WIDTH)),
-                window_row(&self.window),
-            ]
-            .height(dip(HEADER_HEIGHT)),
+            self.tabs(),
             self.count.height(dip(LABEL_HEIGHT)),
             self.table.fill(1),
         ]
+    }
+
+    /// The window tab strip, built fresh so it only exists while the view is
+    /// installed and opens on the shared model's window.
+    ///
+    /// The table is shared across windows, so each page is an empty
+    /// placeholder: a tab only switches which ranking the table shows.
+    fn tabs(&self) -> LayoutItem {
+        Layout::column()
+            .item(
+                Tabs::new()
+                    .page(StatsWindow::AllTime.label(), Layout::column())
+                    .page(StatsWindow::Last30Days.label(), Layout::column())
+                    .page(StatsWindow::LastYear.label(), Layout::column())
+                    .initial(window_index(self.window.get()))
+                    .on_change(|index| StatsWindow::ALL.get(index).copied().map(Msg::MostPlayed)),
+            )
+            .height(dip(HEADER_HEIGHT))
     }
 }
 
@@ -146,13 +151,12 @@ impl AsControl for MostPlayedView {
     }
 }
 
-/// Lays the window options out in a single horizontal row.
-fn window_row(group: &RadioGroup<StatsWindow, Msg>) -> Layout {
-    let mut row = Layout::row().spacing(dip(16.0));
-    for option in group.options() {
-        row = row.item(option);
-    }
-    row
+/// The index of `window` in [`StatsWindow::ALL`], for [`Tabs::initial`].
+fn window_index(window: StatsWindow) -> usize {
+    StatsWindow::ALL
+        .iter()
+        .position(|candidate| *candidate == window)
+        .unwrap_or(0)
 }
 
 /// The label above the table: the number of ranked tracks, or the empty hint.
@@ -173,5 +177,12 @@ mod tests {
         assert_eq!(count_label(&[]), "No completed plays in this window yet.");
         let track = TrackInfo::default();
         assert_eq!(count_label(&[&track]), "Top 1 tracks");
+    }
+
+    #[test]
+    fn window_index_matches_the_strip_order() {
+        assert_eq!(window_index(StatsWindow::AllTime), 0);
+        assert_eq!(window_index(StatsWindow::Last30Days), 1);
+        assert_eq!(window_index(StatsWindow::LastYear), 2);
     }
 }
