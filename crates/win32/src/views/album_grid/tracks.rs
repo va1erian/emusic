@@ -19,7 +19,9 @@ use win32ui::{ColumnWidth, Fill, ListView, Menu, SortDirection, dip};
 
 use crate::app::Msg;
 use crate::views::album_grid::AlbumMsg;
-use crate::views::music::{ContextAction, MusicModel, TrackRow, cell_text, run_context_action};
+use crate::views::track_table::{
+    ContextAction, MusicModel, TrackRow, cell_text, run_context_action,
+};
 
 /// The selected album's tracks, in the shared table's display order.
 pub(super) struct TrackList {

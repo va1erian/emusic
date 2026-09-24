@@ -15,6 +15,8 @@ use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, View};
 use emusic_ui::views::Commands;
+use emusic_ui::views::Ctx;
+use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
@@ -22,12 +24,14 @@ use win32ui::{column, dip, row};
 
 use crate::menu;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
-use crate::views::music::{ContextAction, MusicView};
+use crate::views::folders::FoldersView;
+use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::{self, TopBarView};
+use crate::views::track_table::{self, ContextAction};
 use crate::waker::Win32Waker;
 
 /// Everything the window can ask the app to do.
@@ -46,10 +50,18 @@ pub enum Msg {
     SortColumn(usize),
     /// Open the Music view's context menu for a row.
     ContextRow(usize),
-    /// Run a Music view context-menu action.
+    /// Run a track-table context-menu action.
     ContextAction(ContextAction),
     /// An event from the Albums view.
     Album(AlbumMsg),
+    /// A folder tree row was selected (or the selection cleared).
+    FoldersSelect(String),
+    /// The Folders view's "include subfolders" checkbox changed.
+    FoldersSubfolders(bool),
+    /// A folder tree row was right-clicked.
+    FoldersContext(String),
+    /// Start a scoped shuffle of a folder's tracks.
+    FoldersShuffle(String),
     /// Switch the central view (navigator row click).
     Navigate(View),
     /// A top-bar band event (transport button, toggle or slider).
@@ -75,6 +87,7 @@ pub struct Win32App {
     central: Placeholder,
     music: MusicView,
     albums: AlbumGridView,
+    folders: FoldersView,
     right_panel: NowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
@@ -109,6 +122,7 @@ impl Win32App {
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
         let music = MusicView::new(ui).expect("create music view");
         let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
+        let folders = FoldersView::new(ui).expect("create folders view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
@@ -126,12 +140,14 @@ impl Win32App {
         }
 
         ui.set_menu_bar(menu::build());
-        // The central area shows the Music list or the Albums grid; every
-        // other view is still the placeholder. Hidden items take no space.
+        // The central area shows the Music list, the Albums grid or the
+        // Folders view; every other view is still the placeholder. Hidden
+        // items take no space.
         let view = shell.state.view;
-        central.set_visible(view != View::Music && view != View::Albums);
+        central.set_visible(view != View::Music && view != View::Albums && view != View::Folders);
         music.set_visible(view == View::Music);
         albums.set_visible(view == View::Albums);
+        folders.set_visible(view == View::Folders);
         let albums_layout = albums.layout();
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
@@ -143,6 +159,7 @@ impl Win32App {
                     central.fill(1),
                     music.fill(1),
                     albums_layout.fill(1),
+                    folders.layout(),
                     right_panel.layout().width(dip(now_playing::PANEL_WIDTH)),
                 ]
                 .fill(1),
@@ -161,6 +178,7 @@ impl Win32App {
             central,
             music,
             albums,
+            folders,
             right_panel,
             status,
             top_bar,
@@ -169,6 +187,7 @@ impl Win32App {
             applied_theme,
             applied_view,
         };
+        app.refresh_folders();
         app.tick(ui);
         app
     }
@@ -192,11 +211,18 @@ impl Win32App {
         let view = self.shell.state.view;
         if view != self.applied_view {
             self.central
-                .set_visible(view != View::Music && view != View::Albums);
+                .set_visible(view != View::Music && view != View::Albums && view != View::Folders);
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
+            self.folders.set_visible(view == View::Folders);
             ui.relayout();
             self.applied_view = view;
+        }
+
+        // The Folders model rebuilds its tree rows and visible ids from the
+        // library snapshot; refresh it before the view mirrors it.
+        if changes.intersects(Changes::LIBRARY) {
+            self.refresh_folders();
         }
 
         self.central
@@ -207,6 +233,12 @@ impl Win32App {
             &self.shell.state,
             self.shell.library.as_ref(),
             &self.shell.search,
+            playing_id,
+            changes,
+        );
+        self.folders.sync(
+            &self.shell.state.folders,
+            self.shell.library.as_ref(),
             playing_id,
             changes,
         );
@@ -344,6 +376,29 @@ impl Win32App {
         }
     }
 
+    /// Rebuilds the Folders view model (its tree rows and visible ids) from the
+    /// library snapshot.
+    fn refresh_folders(&mut self) {
+        let tracks: Vec<&emusic_ui::library_api::TrackInfo> =
+            self.shell.library.as_ref().tracks().iter().collect();
+        let cx = Ctx::with_library(&tracks, None, self.shell.library.as_ref());
+        self.shell.state.folders.refresh(&cx);
+    }
+
+    /// Applies a Folders intent through the shared model, dispatches the
+    /// commands it emits, and refreshes the model.
+    fn apply_folders(&mut self, message: FoldersMsg) {
+        let tracks: Vec<&emusic_ui::library_api::TrackInfo> =
+            self.shell.library.as_ref().tracks().iter().collect();
+        let cx = Ctx::with_library(&tracks, None, self.shell.library.as_ref());
+        let mut out = Commands::new();
+        self.shell.state.folders.update(message, &cx, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
+        }
+        self.refresh_folders();
+    }
+
     /// Keeps a single repeating timer in step with the shell's `next_wake`.
     fn schedule(&mut self, ui: &mut Ui<Msg>, next_wake: Option<std::time::Duration>) {
         let wanted = next_wake.map(|wait| wait.as_millis().min(u128::from(u32::MAX)) as u32);
@@ -380,28 +435,59 @@ impl App for Win32App {
                 self.shell.state.database_info_open = true;
             }
             Msg::PlayRow(row) => {
-                if let Some(command) = self.music.activate(row) {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.activate(row),
+                    View::Folders => self.folders.activate(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
             }
             Msg::SortColumn(column) => {
-                if let Some(id) = crate::views::music::column_id(column) {
-                    self.shell.state.music.table.sort.toggle(id);
-                    self.music.resort(
-                        &self.shell.state,
-                        self.shell.library.as_ref(),
-                        &self.shell.search,
-                    );
-                    self.tick(ui);
+                let Some(id) = track_table::column_id(column) else {
+                    return;
+                };
+                match self.shell.state.view {
+                    View::Music => {
+                        self.shell.state.music.table.sort.toggle(id);
+                        self.music.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            &self.shell.search,
+                        );
+                    }
+                    View::Folders => {
+                        self.shell.state.folders.table.sort.toggle(id);
+                        self.folders
+                            .resort(&self.shell.state.folders, self.shell.library.as_ref());
+                    }
+                    _ => return,
                 }
+                self.tick(ui);
             }
             Msg::ContextRow(row) => {
-                self.music.set_context_row(row);
-                ui.popup(self.music.context_menu(), ui.cursor_position());
+                let menu = match self.shell.state.view {
+                    View::Music => {
+                        self.music.set_context_row(row);
+                        self.music.context_menu().clone()
+                    }
+                    View::Folders => {
+                        self.folders.set_context_row(row);
+                        self.folders.context_menu().clone()
+                    }
+                    _ => return,
+                };
+                ui.popup(&menu, ui.cursor_position());
             }
             Msg::ContextAction(action) => {
-                if let Some(command) = self.music.run_context(action, ui.hwnd()) {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.run_context(action, ui.hwnd()),
+                    View::Folders => self.folders.run_context(action, ui.hwnd()),
+                    _ => None,
+                };
+                if let Some(command) = command {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
@@ -421,6 +507,23 @@ impl App for Win32App {
                 for command in commands.into_vec() {
                     self.shell.dispatch(command);
                 }
+                self.tick(ui);
+            }
+            Msg::FoldersSelect(path) => {
+                self.apply_folders(FoldersMsg::SelectNode(path));
+                self.tick(ui);
+            }
+            Msg::FoldersSubfolders(on) => {
+                self.apply_folders(FoldersMsg::SetIncludeSubfolders(on));
+                self.tick(ui);
+            }
+            Msg::FoldersContext(path) => {
+                let menu = self.folders.shuffle_menu(&path);
+                ui.popup(&menu, ui.cursor_position());
+            }
+            Msg::FoldersShuffle(path) => {
+                let recursive = self.shell.state.folders.include_subfolders;
+                self.apply_folders(FoldersMsg::Shuffle { path, recursive });
                 self.tick(ui);
             }
             Msg::Navigate(view) => {

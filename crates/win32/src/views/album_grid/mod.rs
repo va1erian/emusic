@@ -25,7 +25,7 @@ use win32ui::prelude::*;
 use win32ui::{Button, ComboBox, Label, column, dip, row};
 
 use crate::app::Msg;
-use crate::views::music::{ContextAction, column_id};
+use crate::views::track_table::{ContextAction, column_id};
 
 mod thumbs;
 mod tile;

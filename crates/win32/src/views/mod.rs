@@ -6,9 +6,11 @@
 //! first slice puts placeholders where the real views will go.
 
 pub mod album_grid;
+pub mod folders;
 pub mod music;
 pub mod navigator;
 pub mod now_playing;
 pub mod placeholder;
 pub mod status_bar;
 pub mod top_bar;
+pub mod track_table;
