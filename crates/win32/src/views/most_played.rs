@@ -91,6 +91,11 @@ impl MostPlayedView {
         self.table.activate(index)
     }
 
+    /// The command to toggle the star of `index` (a star-cell click).
+    pub fn toggle_star(&self, index: usize) -> Option<emusic_ui::state::Command> {
+        self.table.toggle_star(index)
+    }
+
     /// Runs a context action on the row that opened the menu.
     pub fn run_context(
         &self,

@@ -20,7 +20,7 @@ use win32ui::{ColumnWidth, Fill, ListView, Menu, SortDirection, dip};
 use crate::app::Msg;
 use crate::views::album_grid::AlbumMsg;
 use crate::views::track_table::{
-    ContextAction, MusicModel, TrackRow, cell_text, run_context_action,
+    ContextAction, MusicModel, STAR_COLUMN, TrackRow, cell_text, run_context_action, star_column,
 };
 
 /// The selected album's tracks, in the shared table's display order.
@@ -50,7 +50,11 @@ impl TrackList {
                     RowStyle::default()
                 }
             })
+            .add_column(star_column())
             .column("Title", Fill, |row: &TrackRow| row.text(0))
+            .on_cell_click(|row, column, _point| {
+                (column == STAR_COLUMN).then_some(Msg::Album(AlbumMsg::TableToggleStar(row)))
+            })
             .on_activate(|row| Some(Msg::Album(AlbumMsg::TableActivate(row))))
             .on_sort(|column| Some(Msg::Album(AlbumMsg::TableSort(column))))
             .on_context(|row| Some(Msg::Album(AlbumMsg::TableContext(row))));
@@ -125,6 +129,15 @@ impl TrackList {
         Some(Command::play_track(track.track.id, context))
     }
 
+    /// Flips the star for `row`, repaints that cell and returns the command to
+    /// persist it. The click never moved the selection.
+    pub(super) fn toggle_star(&self, row: usize) -> Option<Command> {
+        let entry = self.rows.as_slice().get(row)?;
+        let id = entry.flip_star();
+        self.list.rows_changed(row..row + 1);
+        Some(Command::ToggleStarred(id))
+    }
+
     /// Remembers the row that opened the context menu.
     pub(super) fn set_context_row(&self, row: usize) {
         self.context_row.set(Some(row));
@@ -177,13 +190,14 @@ impl AsControl for TrackList {
     }
 }
 
-/// The list column index for a [`ColumnId`] (0 = Title, then `COLUMNS`).
+/// The list column index for a [`ColumnId`] (0 = star, 1 = Title, then
+/// `COLUMNS`).
 fn column_index(id: ColumnId) -> Option<usize> {
     if id == ColumnId::Title {
-        return Some(0);
+        return Some(1);
     }
     columns::COLUMNS
         .iter()
         .position(|column| column.id == id)
-        .map(|index| index + 1)
+        .map(|index| index + 2)
 }

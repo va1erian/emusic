@@ -54,6 +54,8 @@ pub enum Msg {
     DatabaseInfo,
     /// Play the Music view row (double-click / Enter).
     PlayRow(usize),
+    /// Toggle the star of a track table row (a star-cell click).
+    ToggleStarRow(usize),
     /// Sort the Music view by a header column.
     SortColumn(usize),
     /// Open the Music view's context menu for a row.
@@ -640,6 +642,19 @@ impl App for Win32App {
                     View::Starred => self.starred.activate(row),
                     View::MostPlayed => self.most_played.activate(row),
                     View::History => self.history.activate(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
+                    self.shell.dispatch(command);
+                    self.tick(ui);
+                }
+            }
+            Msg::ToggleStarRow(row) => {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.toggle_star(row),
+                    View::Folders => self.folders.toggle_star(row),
+                    View::Starred => self.starred.toggle_star(row),
+                    View::MostPlayed => self.most_played.toggle_star(row),
                     _ => None,
                 };
                 if let Some(command) = command {

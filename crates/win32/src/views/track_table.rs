@@ -16,9 +16,43 @@ use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
 use win32ui::prelude::*;
-use win32ui::{ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
+use win32ui::{Column, ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
 
 use crate::app::Msg;
+
+/// The frontend-drawn star toggle column, first in the table (#243). The
+/// shared `emusic-ui` column list never mentions it: only the frontends know
+/// how to draw and click it, so the data columns stay index-compatible with
+/// `columns::COLUMNS` at offset [`COLUMNS_OFFSET`].
+pub(crate) const STAR_COLUMN: usize = 0;
+/// The first data column (Title): the star column shifts every shared column
+/// right by one.
+const COLUMNS_OFFSET: usize = 1;
+/// The star column's width, in design units.
+const STAR_COLUMN_WIDTH: f32 = 24.0;
+
+/// The star cell's glyph: a filled star when starred, an outline otherwise,
+/// matching the now-playing summary.
+pub(crate) fn star_glyph(starred: bool) -> &'static str {
+    if starred { "\u{2605}" } else { "\u{2606}" }
+}
+
+/// Builds the star toggle column: centred, not resizable, its glyph tinted
+/// with the theme accent when starred and dim otherwise.
+pub(crate) fn star_column() -> Column<TrackRow> {
+    Column::new("", dip(STAR_COLUMN_WIDTH), |row: &TrackRow| {
+        star_glyph(row.starred.get())
+    })
+    .centered()
+    .resizable(false)
+    .cell_color(|row, theme| {
+        Some(if row.starred.get() {
+            theme.accent
+        } else {
+            theme.text_secondary
+        })
+    })
+}
 
 /// A context-menu action on a track row.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -37,6 +71,9 @@ pub enum ContextAction {
 /// albums grid's track list.
 pub(crate) struct TrackRow {
     pub(crate) track: TrackInfo,
+    /// The starred flag, mutable after build so a star-cell click repaints the
+    /// glyph without rebuilding the whole model.
+    starred: Cell<bool>,
     year_text: String,
     time_text: String,
     plays_text: String,
@@ -47,6 +84,7 @@ impl TrackRow {
     pub(crate) fn new(track: &TrackInfo) -> Self {
         Self {
             track: track.clone(),
+            starred: Cell::new(track.starred),
             year_text: track.year.map(|year| year.to_string()).unwrap_or_default(),
             time_text: columns::format_duration(track.duration),
             plays_text: track.play_count.to_string(),
@@ -55,6 +93,13 @@ impl TrackRow {
                 .map(format_minutes_ago)
                 .unwrap_or_default(),
         }
+    }
+
+    /// Flips this row's star and returns the track id, so a cell click can
+    /// update the glyph and queue [`Command::ToggleStarred`].
+    pub(crate) fn flip_star(&self) -> u64 {
+        self.starred.set(!self.starred.get());
+        self.track.id
     }
 
     /// The cell text for `column` (0 = Title, then `columns::COLUMNS`).
@@ -120,7 +165,11 @@ impl TrackView {
                     RowStyle::default()
                 }
             })
+            .add_column(star_column())
             .column("Title", Fill, |row: &TrackRow| row.text(0))
+            .on_cell_click(|row, column, _point| {
+                (column == STAR_COLUMN).then_some(Msg::ToggleStarRow(row))
+            })
             .on_activate(|row| Some(Msg::PlayRow(row)))
             .on_sort(|column| Some(Msg::SortColumn(column)))
             .on_context(|row| Some(Msg::ContextRow(row)));
@@ -188,6 +237,16 @@ impl TrackView {
     pub fn activate(&self, index: usize) -> Option<Command> {
         let row = self.rows.as_slice().get(index)?;
         Some(Command::play_track(row.track.id, self.context_ids()))
+    }
+
+    /// Flips the star for `index`, repaints that row and returns the command
+    /// to persist it. The cell click that raised this never moved the
+    /// selection, so the row stays put.
+    pub fn toggle_star(&self, index: usize) -> Option<Command> {
+        let row = self.rows.as_slice().get(index)?;
+        let id = row.flip_star();
+        self.list.rows_changed(index..index + 1);
+        Some(Command::ToggleStarred(id))
     }
 
     /// Runs a context action on the row that opened the menu.
@@ -269,23 +328,26 @@ pub(crate) fn cell_text(row: &TrackRow, id: ColumnId) -> &str {
     }
 }
 
-/// The list column index for a [`ColumnId`] (0 = Title, then `COLUMNS`).
+/// The list column index for a [`ColumnId`] (0 = star, 1 = Title, then
+/// `COLUMNS`).
 fn column_index(id: ColumnId) -> Option<usize> {
     if id == ColumnId::Title {
-        return Some(0);
+        return Some(COLUMNS_OFFSET);
     }
     columns::COLUMNS
         .iter()
         .position(|column| column.id == id)
-        .map(|index| index + 1)
+        .map(|index| index + COLUMNS_OFFSET + 1)
 }
 
-/// The [`ColumnId`] for a list column index.
+/// The [`ColumnId`] for a list column index, or `None` for the star column.
 pub fn column_id(index: usize) -> Option<ColumnId> {
-    if index == 0 {
+    if index == COLUMNS_OFFSET {
         return Some(ColumnId::Title);
     }
-    columns::COLUMNS.get(index - 1).map(|column| column.id)
+    columns::COLUMNS
+        .get(index.checked_sub(COLUMNS_OFFSET + 1)?)
+        .map(|column| column.id)
 }
 
 /// Runs a context action, returning the command to queue (or executing the
