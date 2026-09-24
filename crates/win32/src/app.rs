@@ -326,11 +326,17 @@ impl Win32App {
             self.shell.library.as_ref(),
             playing_id,
         );
-        self.starred.sync(
-            &mut self.shell.state,
-            self.shell.library.as_ref(),
-            playing_id,
-        );
+        // The Starred model filters the whole library on every refresh, so it
+        // is only synced while its view is showing; the first sync after
+        // switching in rebuilds the rows (the model revision changed, or the
+        // controls were never populated).
+        if view == View::Starred {
+            self.starred.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                playing_id,
+            );
+        }
 
         if view == View::Artists {
             self.artists
