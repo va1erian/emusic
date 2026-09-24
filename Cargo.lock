@@ -1301,6 +1301,7 @@ dependencies = [
  "emusic-library",
  "emusic-player",
  "emusic-search",
+ "emusic-ui",
  "image",
  "lofty 0.22.4",
  "rand",
@@ -1372,6 +1373,25 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "emusic-ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bass",
+ "clap",
+ "emusic-core",
+ "emusic-library",
+ "emusic-player",
+ "emusic-search",
+ "rand",
+ "rand_chacha",
+ "rfd",
+ "serde",
+ "tracing",
+ "winshell",
 ]
 
 [[package]]

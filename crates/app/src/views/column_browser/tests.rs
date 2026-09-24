@@ -1,10 +1,10 @@
-//! Unit tests for the column browser's selection model and facet lists.
+//! Unit tests for the column browser's facet lists and cascading state.
+//! The selection-model tests moved to `emusic-ui` with the code in #93.
 
 use std::collections::BTreeSet;
 
 use crate::library_api::TrackInfo;
 
-use super::selection::PaneSelection;
 use super::{ColumnBrowserState, entries_for, values};
 
 fn track(genre: &str, artist: &str, album: &str) -> TrackInfo {
@@ -18,59 +18,6 @@ fn track(genre: &str, artist: &str, album: &str) -> TrackInfo {
 
 fn available(values: &[&str]) -> BTreeSet<String> {
     values.iter().map(|v| (*v).to_string()).collect()
-}
-
-#[test]
-fn empty_selection_means_all() {
-    let mut selection = PaneSelection::default();
-    assert!(selection.is_all());
-    assert!(selection.matches("anything"));
-
-    selection.click(Some("Rock"), false);
-    assert!(!selection.is_all());
-    assert!(selection.matches("Rock"));
-    assert!(!selection.matches("Jazz"));
-}
-
-#[test]
-fn plain_click_replaces_and_ctrl_click_toggles() {
-    let mut selection = PaneSelection::default();
-    selection.click(Some("Rock"), false);
-    selection.click(Some("Jazz"), false);
-    assert_eq!(selection.len(), 1);
-    assert!(selection.contains("Jazz"));
-    assert!(!selection.contains("Rock"));
-
-    // Ctrl adds a second value...
-    selection.click(Some("Rock"), true);
-    assert_eq!(selection.len(), 2);
-
-    // ...and ctrl-clicking an existing value removes it again.
-    selection.click(Some("Rock"), true);
-    assert_eq!(selection.len(), 1);
-    assert!(selection.contains("Jazz"));
-}
-
-#[test]
-fn all_row_clears_the_selection() {
-    let mut selection = PaneSelection::default();
-    selection.click(Some("Rock"), true);
-    selection.click(Some("Jazz"), true);
-    assert_eq!(selection.len(), 2);
-
-    selection.click(None, false);
-    assert!(selection.is_all());
-}
-
-#[test]
-fn retain_drops_values_the_parent_no_longer_offers() {
-    let mut selection = PaneSelection::default();
-    selection.click(Some("Rock"), false);
-    selection.click(Some("Jazz"), true);
-
-    selection.retain(&available(&["Jazz"]));
-    assert!(selection.contains("Jazz"));
-    assert!(!selection.contains("Rock"));
 }
 
 #[test]

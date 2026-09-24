@@ -11,7 +11,6 @@
 //! its artist tag matches (or is empty, which is how missing tags surface in
 //! the mock data).
 
-mod catalog;
 #[cfg(test)]
 mod tests;
 mod thumbs;
@@ -21,12 +20,13 @@ use std::collections::HashMap;
 
 use eframe::egui;
 
-use self::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
 use self::thumbs::ThumbnailCache;
 use super::track_table::{self, TrackAction, TrackTableState};
-use crate::library_api::{AlbumInfo, LibraryDataSource, TrackInfo};
+use crate::library_api::{AlbumInfo, LibraryDataSource};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
+use emusic_ui::views::album_grid::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
+use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
 
 /// Tile edge-length bounds for the size slider, in pixels.
 pub const MIN_TILE_SIZE: f32 = 96.0;
@@ -35,56 +35,6 @@ pub const MAX_TILE_SIZE: f32 = 256.0;
 const DEFAULT_TILE_SIZE: f32 = 148.0;
 /// Smallest height the cover grid is given, whatever space is left.
 const MIN_GRID_HEIGHT: f32 = 160.0;
-
-/// Order the album grid is sorted by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AlbumSort {
-    #[default]
-    Artist,
-    Album,
-    Year,
-    RecentlyAdded,
-}
-
-impl AlbumSort {
-    /// Every sort option, in menu order.
-    pub const ALL: [Self; 4] = [Self::Artist, Self::Album, Self::Year, Self::RecentlyAdded];
-
-    /// Label shown in the sort menu.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Artist => "Artist",
-            Self::Album => "Album",
-            Self::Year => "Year",
-            Self::RecentlyAdded => "Recently added",
-        }
-    }
-}
-
-/// Identity of an album within the view; `AlbumInfo` has no id yet.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AlbumKey {
-    name: String,
-    artist: String,
-}
-
-impl AlbumKey {
-    fn of(album: &AlbumInfo) -> Self {
-        Self {
-            name: album.name.clone(),
-            artist: album.artist.clone(),
-        }
-    }
-
-    /// Key for a track, or `None` when the artist tag is missing (the track
-    /// cannot be attributed to a specific same-named album).
-    fn of_track(track: &TrackInfo) -> Option<Self> {
-        (!track.artist.is_empty()).then(|| Self {
-            name: track.album.clone(),
-            artist: track.artist.clone(),
-        })
-    }
-}
 
 /// Persistent album-grid state, stored on [`AppState`].
 pub struct AlbumGridState {
