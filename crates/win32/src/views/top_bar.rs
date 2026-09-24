@@ -42,6 +42,9 @@ const HEIGHT_DIP: f32 = 40.0;
 const VOLUME_WIDTH_DIP: f32 = 90.0;
 /// The native search box width.
 const SEARCH_WIDTH_DIP: f32 = 200.0;
+/// The search slot height: the edit's natural single-line height, so the bar
+/// centres it in the band instead of stretching it.
+const SEARCH_HEIGHT_DIP: f32 = 20.0;
 /// Cue banner for the search box, matching the egui top bar.
 const SEARCH_CUE: &str = "Search library... (Ctrl+F)";
 
@@ -59,6 +62,7 @@ struct Signature {
 /// The Win32 transport bar and its app-owned search box.
 pub struct TopBarView {
     bar: MaterialTopBar<Msg>,
+    /// Owned here; the bar moves and resizes it with its slot.
     search: Edit<Msg>,
     signature: Option<Signature>,
 }
@@ -82,8 +86,8 @@ impl TopBarView {
         })
     }
 
-    /// Pushes the model into the band and keeps the search box in its slot.
-    pub fn sync(&mut self, ui: &Ui<Msg>, top_bar: &TopBar, search_query: &str) {
+    /// Pushes the model into the band and mirrors the search query.
+    pub fn sync(&mut self, top_bar: &TopBar, search_query: &str) {
         let signature = Signature {
             playing: top_bar.is_playing(),
             repeat: top_bar.repeat_active(),
@@ -92,7 +96,7 @@ impl TopBarView {
             has_duration: top_bar.duration_secs().is_some(),
         };
         if self.signature.as_ref() != Some(&signature) {
-            self.bar.set_items(items(top_bar, &signature));
+            self.bar.set_items(items(top_bar, &signature, &self.search));
             self.signature = Some(signature);
         }
 
@@ -114,11 +118,8 @@ impl TopBarView {
         self.bar
             .set_enabled(BarItem::Seek.id(), top_bar.seek_supported());
 
-        // Keep the native search box in its slot, and mirror external query
-        // changes (e.g. GoToArtist) without fighting the user's typing.
-        if let Some(rect) = ui.material_top_bar_slot(BarItem::Search.id()) {
-            self.search.set_bounds(rect);
-        }
+        // Mirror external query changes (e.g. GoToArtist) without fighting the
+        // user's typing.
         if self.search.text() != search_query {
             self.search.set_text(search_query);
         }
@@ -126,7 +127,7 @@ impl TopBarView {
 }
 
 /// Builds the item list for the current structural state.
-fn items(top_bar: &TopBar, signature: &Signature) -> Vec<TopBarItem> {
+fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<TopBarItem> {
     let (play_glyph, play_tip) = if signature.playing {
         (Fluent::PAUSE, "Pause")
     } else {
@@ -172,7 +173,10 @@ fn items(top_bar: &TopBar, signature: &Signature) -> Vec<TopBarItem> {
         TopBarItem::slider(BarItem::Volume.id(), f64::from(top_bar.volume()), 0.0..=1.0)
             .width(dip(VOLUME_WIDTH_DIP)),
         TopBarItem::spacer(),
-        TopBarItem::native(BarItem::Search.id(), dip(SEARCH_WIDTH_DIP)).tooltip("Search library"),
+        TopBarItem::native(BarItem::Search.id(), dip(SEARCH_WIDTH_DIP))
+            .height(dip(SEARCH_HEIGHT_DIP))
+            .child(search)
+            .tooltip("Search library"),
     ]
 }
 

@@ -159,7 +159,7 @@ impl SettingsView {
             )
             .page(SettingsTab::Playback.label(), page(self.playback.items()))
             .page(SettingsTab::About.label(), page(self.about.items()))
-            .selected(
+            .initial(
                 SettingsTab::ALL
                     .iter()
                     .position(|tab| *tab == self.applied_tab)
