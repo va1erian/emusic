@@ -13,7 +13,7 @@ use crate::sys;
 /// its plugins) can play.
 pub const EXTENSIONS: &[&str] = &[
     "mp3", "mp2", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "aiff", "aif", "wma", "wv",
-    "ape", "mpc", "webm", "mka", "mod", "s3m", "xm", "it", "mtm", "umx", "mo3",
+    "ape", "mpc", "webm", "mka", "mod", "s3m", "xm", "it", "mtm", "umx", "mo3", "mid", "midi",
 ];
 
 /// Subdirectory of the install dir holding the per-extension `.ico` files

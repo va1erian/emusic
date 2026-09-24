@@ -108,7 +108,13 @@ pub struct AppState {
     /// Soundfont (`.sf2`/`.sf3`/`.sfz`) MIDI files are rendered with
     /// (Settings > Playback); `None` falls back to one next to the BASS DLLs.
     pub midi_soundfont: Option<PathBuf>,
+    /// Most recently used soundfonts, newest first, for quick switching
+    /// (Settings > Playback). Capped at [`RECENT_SOUNDFONTS_LIMIT`].
+    pub recent_soundfonts: Vec<PathBuf>,
 }
+
+/// Maximum number of entries kept in [`AppState::recent_soundfonts`].
+pub const RECENT_SOUNDFONTS_LIMIT: usize = 8;
 
 impl Default for AppState {
     fn default() -> Self {
@@ -140,6 +146,7 @@ impl Default for AppState {
             now_playing: crate::panels::now_playing::PanelState::default(),
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
+            recent_soundfonts: Vec::new(),
         }
     }
 }
@@ -184,7 +191,14 @@ impl AppState {
                 self.library_folders.retain(|folder| folder != path);
             }
             Command::SetTrackerSettings(settings) => self.tracker_settings = *settings,
-            Command::SetMidiSoundfont(path) => self.midi_soundfont = path.clone(),
+            Command::SetMidiSoundfont(path) => {
+                if let Some(path) = path {
+                    self.recent_soundfonts.retain(|recent| recent != path);
+                    self.recent_soundfonts.insert(0, path.clone());
+                    self.recent_soundfonts.truncate(RECENT_SOUNDFONTS_LIMIT);
+                }
+                self.midi_soundfont = path.clone();
+            }
             _ => {}
         }
     }
