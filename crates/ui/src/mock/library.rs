@@ -21,6 +21,9 @@ pub struct MockLibrary {
     auto_tag_results: Vec<AutoTagOutcome>,
     /// The auto-tag progress line, when the mock is configured to show one.
     auto_tag_status: Option<AutoTagStatus>,
+    /// Change signal exposed through [`LibraryDataSource::revision`] (#104),
+    /// bumped whenever the mock's in-memory data changes.
+    revision: u64,
 }
 
 impl MockLibrary {
@@ -32,6 +35,7 @@ impl MockLibrary {
             tag_edit_results: Vec::new(),
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
+            revision: 0,
         }
     }
 
@@ -44,6 +48,7 @@ impl MockLibrary {
             tag_edit_results: Vec::new(),
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
+            revision: 0,
         }
     }
 
@@ -72,7 +77,14 @@ impl MockLibrary {
             tag_edit_results: Vec::new(),
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
+            revision: 0,
         }
+    }
+
+    /// Signals that the data exposed through [`LibraryDataSource`] changed, so
+    /// views caching derived lists rebuild (#104).
+    fn mark_changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 
@@ -147,8 +159,13 @@ impl LibraryDataSource for MockLibrary {
         }
     }
 
+    fn revision(&self) -> Option<u64> {
+        Some(self.revision)
+    }
+
     fn remove_history_entry(&mut self, id: i64) {
         self.data.history.retain(|entry| entry.id != id);
+        self.mark_changed();
     }
 
     fn clear_history(&mut self) {
@@ -156,6 +173,7 @@ impl LibraryDataSource for MockLibrary {
         self.data.most_played_all.clear();
         self.data.most_played_30d.clear();
         self.data.most_played_year.clear();
+        self.mark_changed();
     }
 
     fn set_starred(&mut self, id: u64, starred: bool) {
@@ -171,6 +189,7 @@ impl LibraryDataSource for MockLibrary {
                 track.starred = starred;
             }
         }
+        self.mark_changed();
     }
 
     fn request_tag_edits(&mut self, requests: Vec<EditRequest>) {
@@ -200,6 +219,7 @@ impl LibraryDataSource for MockLibrary {
                 result: Ok(()),
             });
         }
+        self.mark_changed();
     }
 
     fn take_tag_edit_results(&mut self) -> Vec<EditOutcome> {

@@ -175,6 +175,18 @@ pub trait LibraryDataSource {
     /// Tracks ordered by descending play count within `window`.
     fn most_played(&self, window: StatsWindow) -> &[TrackInfo];
 
+    /// A cheap change signal: a counter that changes whenever any data read
+    /// through this trait changes, or `None` for backends that cannot provide
+    /// one (#104).
+    ///
+    /// View models cache the lists they derive from the library (e.g. the
+    /// sorted artist rows) and key that cache on this counter, so an unchanged
+    /// library costs no allocation or sorting per frame. When a backend
+    /// returns `None`, the views fall back to rebuilding and comparing.
+    fn revision(&self) -> Option<u64> {
+        None
+    }
+
     /// Starred (favorited) tracks, in library order (#131).
     ///
     /// Defaults to filtering [`LibraryDataSource::tracks`] by

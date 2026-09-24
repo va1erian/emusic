@@ -1,23 +1,17 @@
 //! Starred-view model (#104, #131): the starred track list's count plus the
 //! shared track table's sort/selection. The tracks themselves come from the
-//! backend ([`LibraryDataSource::starred_tracks`]); rendering stays in the
-//! frontends.
+//! backend ([`crate::library_api::LibraryDataSource::starred_tracks`]);
+//! rendering stays in the frontends.
 //!
-//! [`LibraryDataSource::starred_tracks`]:
-//!     crate::library_api::LibraryDataSource::starred_tracks
+//! [`StarredView::refresh`] compares the incoming ids before allocating, so a
+//! stable list does no work per frame.
 
-use crate::views::track_table::{TrackTable, TrackTableMsg};
-use crate::views::{Commands, Ctx};
-
-/// A user intent on the Starred view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StarredMsg {
-    /// The starred track list changed its sort/selection.
-    Table(TrackTableMsg),
-}
+use crate::views::Ctx;
+use crate::views::track_table::TrackTable;
 
 /// Persistent Starred-view state: the shared track table plus the visible
-/// track ids and their count, rebuilt each frame.
+/// track ids and their count, rebuilt from the context's tracks when they
+/// change.
 #[derive(Debug, Default)]
 pub struct StarredView {
     /// The starred track table (sort + selection).
@@ -31,10 +25,18 @@ pub struct StarredView {
 impl StarredView {
     /// Rebuilds the visible starred ids from the context's (already filtered)
     /// tracks, bumping the revision when the list changed.
+    ///
+    /// The incoming ids are compared before any allocation, so an unchanged
+    /// list costs nothing per frame.
     pub fn refresh(&mut self, cx: &Ctx) {
-        let track_ids: Vec<u64> = cx.tracks.iter().map(|track| track.id).collect();
-        if track_ids != self.track_ids {
-            self.track_ids = track_ids;
+        let changed = cx.tracks.len() != self.track_ids.len()
+            || cx
+                .tracks
+                .iter()
+                .zip(&self.track_ids)
+                .any(|(track, id)| track.id != *id);
+        if changed {
+            self.track_ids = cx.tracks.iter().map(|track| track.id).collect();
             self.revision += 1;
         }
     }
@@ -63,21 +65,12 @@ impl StarredView {
     pub fn revision(&self) -> u64 {
         self.revision
     }
-
-    /// Applies one user intent, queueing any resulting commands.
-    pub fn update(&mut self, msg: StarredMsg, cx: &Ctx, out: &mut Commands) {
-        match msg {
-            StarredMsg::Table(msg) => self.table.update(msg, cx, out),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::library_api::TrackInfo;
-    use crate::state::Command;
-    use crate::views::track_table::{ContextAction, TrackTableMsg};
 
     fn track(id: u64, starred: bool) -> TrackInfo {
         TrackInfo {
@@ -108,26 +101,5 @@ mod tests {
         view.refresh(&Ctx::new(&fewer, None));
         assert_eq!(view.count(), 1);
         assert!(view.revision() > after, "unstarring bumps");
-    }
-
-    #[test]
-    fn table_messages_are_delegated() {
-        let tracks = [track(1, true)];
-        let refs: Vec<&TrackInfo> = tracks.iter().collect();
-        let cx = Ctx::new(&refs, None);
-        let mut view = StarredView::default();
-        view.refresh(&cx);
-        view.table.refresh(&cx);
-
-        let mut out = Commands::new();
-        view.update(
-            StarredMsg::Table(TrackTableMsg::Context {
-                row: 0,
-                action: ContextAction::ToggleStar,
-            }),
-            &cx,
-            &mut out,
-        );
-        assert_eq!(out.into_vec(), vec![Command::ToggleStarred(1)]);
     }
 }
