@@ -83,7 +83,7 @@ pub fn show(
                     let np = player.now_playing();
                     let track = np.and_then(|info| library.track_by_path(&info.path));
 
-                    artwork::show(ui, &mut state.now_playing.artwork, np);
+                    artwork::show(ui, &mut state.now_playing.artwork, np, track);
 
                     match (np, track) {
                         (Some(np), Some(track)) => {

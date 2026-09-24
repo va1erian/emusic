@@ -17,18 +17,22 @@ use super::{DecodeFn, Rgba8Image, hash};
 /// Returns the raw RGBA image so callers can resize it before uploading.
 #[must_use]
 pub fn load_artwork(path: &Path) -> Option<Rgba8Image> {
-    load_artwork_dynamic(path).map(Rgba8Image::from_dynamic)
+    load_artwork_dynamic(path, None).map(Rgba8Image::from_dynamic)
 }
 
 /// A decoder that reads a resized thumbnail from disk, or decodes the source
 /// artwork and writes the result back. `max_edge` caps the longest side.
+///
+/// The on-disk cache is keyed by the source alone, so `fallback_dir` only
+/// affects a fresh decode; a folder-image-only cover is therefore cached under
+/// the track's path (the grid always passes the same representative track).
 #[must_use]
 pub fn thumbnail_decoder(max_edge: u32) -> DecodeFn {
-    Arc::new(move |source| {
+    Arc::new(move |source, fallback_dir| {
         if let Some(image) = read_cache(source) {
             return Some(image);
         }
-        let image = load_artwork_dynamic(source)?;
+        let image = load_artwork_dynamic(source, fallback_dir)?;
         let thumbnail = image.thumbnail(max_edge, max_edge);
         write_cache(source, &thumbnail);
         Some(Rgba8Image::from_dynamic(thumbnail))
@@ -36,8 +40,8 @@ pub fn thumbnail_decoder(max_edge: u32) -> DecodeFn {
 }
 
 /// Embedded picture first, then `cover`/`folder`/`front` images next to the
-/// file.
-fn load_artwork_dynamic(path: &Path) -> Option<DynamicImage> {
+/// file (or in `fallback_dir`).
+fn load_artwork_dynamic(path: &Path, fallback_dir: Option<&Path>) -> Option<DynamicImage> {
     if let Ok(tagged) = lofty::read_from_path(path)
         && let Some(picture) = tagged.primary_tag().and_then(|tag| tag.pictures().first())
         && let Ok(img) = image::load_from_memory(picture.data())
@@ -45,19 +49,22 @@ fn load_artwork_dynamic(path: &Path) -> Option<DynamicImage> {
         return Some(img);
     }
 
-    if let Some(dir) = path.parent() {
-        for name in ["cover", "folder", "front"] {
-            for ext in ["jpg", "jpeg", "png"] {
-                let candidate = dir.join(format!("{name}.{ext}"));
-                if candidate.exists()
-                    && let Ok(img) = image::open(&candidate)
-                {
-                    return Some(img);
-                }
+    folder_image(path.parent()).or_else(|| folder_image(fallback_dir))
+}
+
+/// A `cover`/`folder`/`front` image in `dir`, if one exists.
+fn folder_image(dir: Option<&Path>) -> Option<DynamicImage> {
+    let dir = dir?;
+    for name in ["cover", "folder", "front"] {
+        for ext in ["jpg", "jpeg", "png"] {
+            let candidate = dir.join(format!("{name}.{ext}"));
+            if candidate.exists()
+                && let Ok(img) = image::open(&candidate)
+            {
+                return Some(img);
             }
         }
     }
-
     None
 }
 
