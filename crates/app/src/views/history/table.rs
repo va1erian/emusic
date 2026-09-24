@@ -13,10 +13,10 @@ use std::time::Duration;
 use eframe::egui;
 use egui_extras::{Column, TableBuilder, TableRow};
 
-use super::grouping::{self, Row};
 use crate::library_api::{HistoryEntry, LibraryDataSource, TrackInfo, format_minutes_ago};
 use crate::views::track_table::columns;
 use crate::views::track_table::{ClickModifiers, SelectionState};
+use emusic_ui::views::history::{Row, build_rows};
 
 /// An action requested from a history row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +56,7 @@ pub fn show(
     now: i64,
     playing_id: Option<u64>,
 ) -> Option<HistoryAction> {
-    let rows = grouping::build_rows(entries, now);
+    let rows = build_rows(entries, now);
     // Entries in display order (day headers skipped): selection and keyboard
     // focus index into this, keyed by the play's own id.
     let positions = entry_positions(&rows);
