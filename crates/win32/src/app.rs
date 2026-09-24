@@ -240,7 +240,6 @@ impl Win32App {
             &self.shell.state.folders,
             self.shell.library.as_ref(),
             playing_id,
-            changes,
         );
 
         if view == View::Albums {
