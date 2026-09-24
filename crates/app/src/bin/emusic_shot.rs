@@ -21,7 +21,7 @@ use clap::Parser;
 use eframe::egui;
 use egui_kittest::Harness;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
@@ -282,7 +282,7 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
         .with_size(egui::Vec2::new(width, height))
         .build_eframe(|cc| {
             let (library, player) = args.mode.build();
-            App::with_config(cc, Box::new(library), Box::new(player), config)
+            EguiApp::with_config(cc, Box::new(library), Box::new(player), config)
         });
 
     harness.state_mut().set_view(view);

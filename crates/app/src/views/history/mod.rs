@@ -11,18 +11,8 @@ use eframe::egui;
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
-use crate::views::track_table::SelectionState;
 
 use table::HistoryAction;
-
-/// Persistent History-view state.
-#[derive(Debug, Default)]
-pub struct HistoryState {
-    /// Row selection and keyboard focus, keyed by history entry id.
-    pub selection: SelectionState,
-    /// Whether the "clear history" confirmation dialog is open.
-    pub confirm_clear: bool,
-}
 
 pub fn show(
     ui: &mut egui::Ui,
@@ -82,8 +72,8 @@ pub fn show(
     clear_confirmation(ui.ctx(), state);
 }
 
-/// The "clear history" confirmation modal, shown while
-/// [`HistoryState::confirm_clear`] is set.
+/// The "clear history" confirmation modal, shown while the state's
+/// `confirm_clear` flag is set.
 fn clear_confirmation(ctx: &egui::Context, state: &mut AppState) {
     if !state.history.confirm_clear {
         return;

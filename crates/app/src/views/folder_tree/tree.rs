@@ -1,7 +1,7 @@
 //! Recursive rendering of the Folders view's collapsible directory tree.
 //!
 //! Expansion state lives in egui's own memory (keyed by each node's path), so
-//! the tree needs no extra bookkeeping in [`super::FolderTreeState`]. Each
+//! the tree needs no extra bookkeeping in `emusic_ui::views::folder_tree::FolderTreeState`. Each
 //! node's context menu can start a scoped shuffle of that directory (#57).
 
 use eframe::egui;

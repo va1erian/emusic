@@ -5,5 +5,4 @@
 
 mod tree;
 
-pub use emusic_ui::views::folder_tree::FolderTreeState;
 pub use tree::show;

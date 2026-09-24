@@ -15,7 +15,7 @@ use std::panic::AssertUnwindSafe;
 use eframe::egui;
 use egui_kittest::Harness;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
@@ -28,7 +28,7 @@ fn snapshot_view(view: View) {
             .build_eframe(|cc| {
                 let library = MockLibrary::new();
                 let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
-                App::with_config(cc, Box::new(library), player, Config::default())
+                EguiApp::with_config(cc, Box::new(library), player, Config::default())
             });
         harness.state_mut().set_view(view);
         // A single step: the mock player reports "Playing" and the shell's
@@ -91,7 +91,7 @@ fn tag_editor_dialog() {
             .build_eframe(|cc| {
                 let library = MockLibrary::new();
                 let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
-                App::with_config(cc, Box::new(library), player, Config::default())
+                EguiApp::with_config(cc, Box::new(library), player, Config::default())
             });
         harness.state_mut().open_tag_editor();
         // A modal is laid out in its own area; give egui a couple of frames to

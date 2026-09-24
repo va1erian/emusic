@@ -1,6 +1,6 @@
 //! Unit tests for the navigation commands applied to
-//! [`AppState::apply_local`]. The [`Accent`] spelling tests moved to
-//! `emusic-ui` with the code (#94).
+//! [`AppState::apply_local`]. The [`Accent`] spelling tests live alongside
+//! the appearance code (#94).
 
 use crate::state::{AppState, Command, View};
 

@@ -1,55 +1,35 @@
-//! The [`eframe::App`] implementation: owns the app's state and backends,
-//! wires the menu bar, panels and central view router together, applies
-//! queued [`Command`]s and implements the repaint policy from #6 (no
-//! continuous repaint; a coarse one-second tick while playing, and the
-//! compositor's rate only when the opt-in visualizer is animating).
+//! The [`eframe::App`] implementation: a thin egui frontend over the
+//! toolkit-agnostic [`Shell`] (whose `tick` owns polling, command
+//! application and config persistence, #97). This type only installs the
+//! fonts/theme, draws [`Shell::state`] with egui, and maps the shell's
+//! `next_wake` onto egui's repaint scheduling.
 //!
 //! The pieces are split by responsibility: [`update`] is the per-frame
-//! `eframe::App` loop and config persistence, [`events`] handles input and
-//! messages from other instances, and [`commands`] translates queued
-//! [`Command`]s into player/library calls.
-//!
-//! [`Command`]: crate::state::Command
+//! `eframe::App` loop, and [`events`] handles egui input and draws the menu
+//! bar.
 
-mod commands;
 mod events;
+pub(crate) mod images;
 mod update;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
-use crate::search::SearchEngine;
-use crate::state::{AppState, View};
+use crate::shell::Shell;
+use crate::state::View;
+use crate::waker::WakerSlot;
 use crate::{fonts, theme};
-use emusic_ui::waker::WakerHandle;
 
-pub struct App {
-    state: AppState,
-    library: Box<dyn LibraryDataSource>,
-    player: Box<dyn PlayerApi>,
-    /// Where the config is persisted; `None` disables all disk I/O (used
-    /// by `emusic-shot` and the snapshot tests for determinism).
-    config_path: Option<PathBuf>,
-    /// Config as last loaded/saved, compared each frame to detect changes.
-    saved: Config,
-    /// When the live settings first diverged from `saved`; drives the
-    /// debounced save.
-    dirty_since: Option<std::time::Instant>,
-    /// Set when this process is the primary instance (#11); polled once per
-    /// frame for messages a secondary launch forwarded.
-    ipc: Option<crate::backend::ipc::IpcBridge>,
-    /// A startup problem to keep showing the user (e.g. "no audio device")
-    /// rather than silently degrading; `None` once nothing is wrong.
-    backend_notice: Option<String>,
-    /// Live full-text search over the library for the top bar / Music view
-    /// (#22); owns a background worker so matching never blocks the UI
-    /// thread.
-    search: SearchEngine,
-    /// A second, independent search engine for the global search popup, so
-    /// its query never changes what the Music view underneath is showing.
-    popup_search: SearchEngine,
+use self::images::ImageCaches;
+
+/// The egui frontend.
+pub struct EguiApp {
+    shell: Shell,
+    /// egui-bound image caches (album thumbnails, now-playing artwork, #96).
+    images: ImageCaches,
     /// OS media controls / hardware media keys (#26). `None` in `emusic-shot`
     /// and the snapshot tests, so headless runs never touch SMTC.
     smtc: Option<crate::backend::smtc::Smtc>,
@@ -57,21 +37,13 @@ pub struct App {
     /// `emusic-shot` and the snapshot tests so headless runs never touch the
     /// shell.
     thumbbar: Option<crate::backend::thumbbar::ThumbBar>,
+    /// A deterministic clock advanced by egui's frame delta (not wall-clock
+    /// time), so headless renders (#32) stay reproducible. Only differences
+    /// matter to [`Shell::tick`].
+    synthetic_now: Instant,
 }
 
-impl App {
-    /// Builds the app, restoring persisted settings from
-    /// `%APPDATA%\emusic\config.toml` (defaults when absent or bad).
-    pub fn new(
-        cc: &eframe::CreationContext<'_>,
-        library: Box<dyn LibraryDataSource>,
-        player: Box<dyn PlayerApi>,
-    ) -> Self {
-        let path = config::config_path();
-        let saved = path.as_deref().map_or_else(Config::default, config::load);
-        Self::build(cc, library, player, saved, path)
-    }
-
+impl EguiApp {
     /// Builds the app from an explicit [`Config`] with persistence
     /// disabled. Used by `emusic-shot` and the snapshot tests so renders
     /// stay deterministic and never touch the user's config.
@@ -81,71 +53,68 @@ impl App {
         player: Box<dyn PlayerApi>,
         config: Config,
     ) -> Self {
-        Self::build(cc, library, player, config, None)
+        Self::build(cc, library, player, config, None, WakerSlot::new())
     }
 
-    /// Builds the app for this run. A normal launch ([`Self::new`]) restores
-    /// and persists `%APPDATA%\emusic\config.toml`; a `--mock` launch (#135)
-    /// instead starts from [`Config::default`] with persistence disabled
-    /// ([`Self::with_config`]). The mock library's synthetic folders must
-    /// never leak into the real user's config, and mock reads nothing from
-    /// it either: `config::load` can rename an unparsable file to
-    /// `config.toml.bak`, which a preview mode has no business doing.
+    /// Builds the app for this run. A normal launch restores and persists
+    /// `%APPDATA%\emusic\config.toml`; a `--mock` launch (#135) instead
+    /// starts from [`Config::default`] with persistence disabled. The mock
+    /// library's synthetic folders must never leak into the real user's
+    /// config, and mock reads nothing from it either: `config::load` can
+    /// rename an unparsable file to `config.toml.bak`, which a preview mode
+    /// has no business doing.
+    ///
+    /// `waker` wakes the UI from background work (the search workers); a
+    /// `--mock` run gets an unbound slot because it does not persist.
     pub fn for_run(
         cc: &eframe::CreationContext<'_>,
         library: Box<dyn LibraryDataSource>,
         player: Box<dyn PlayerApi>,
         mock: bool,
+        waker: WakerSlot,
     ) -> Self {
         if mock {
-            Self::with_config(cc, library, player, Config::default())
+            Self::build(cc, library, player, Config::default(), None, waker)
         } else {
-            Self::new(cc, library, player)
+            let path = config::config_path();
+            let saved = path.as_deref().map_or_else(Config::default, config::load);
+            Self::build(cc, library, player, saved, path, waker)
         }
     }
 
     fn build(
         cc: &eframe::CreationContext<'_>,
-        mut library: Box<dyn LibraryDataSource>,
-        mut player: Box<dyn PlayerApi>,
-        mut config: Config,
+        library: Box<dyn LibraryDataSource>,
+        player: Box<dyn PlayerApi>,
+        config: Config,
         config_path: Option<PathBuf>,
+        waker: WakerSlot,
     ) -> Self {
         fonts::install(&cc.egui_ctx);
         crate::settings::folder_picker::init();
-        let mut state = AppState::default();
-        config.apply_to_state(&mut state);
-        theme::apply(&cc.egui_ctx, state.theme, state.accent);
-        config.apply_to_player(player.as_mut());
-        library.set_folders(&config.library_folders);
-        // The session was just applied to the player; drop it from the
-        // baseline so the per-frame settings compare doesn't treat the
-        // (now-consumed) session as a pending change. It is written again on
-        // exit (#190).
-        config.last_played = None;
+        let images = ImageCaches::new(waker.handle());
+        let shell = Shell::new(library, player, config, config_path, waker);
+        theme::apply(&cc.egui_ctx, shell.state.theme, shell.state.accent);
         Self {
-            state,
-            library,
-            player,
-            config_path,
-            saved: config,
-            dirty_since: None,
-            ipc: None,
-            backend_notice: None,
-            search: SearchEngine::new(),
-            popup_search: SearchEngine::new(),
+            shell,
+            images,
             smtc: None,
             thumbbar: None,
+            synthetic_now: Instant::now(),
         }
     }
 
+    /// The shell this frontend drives, for tests and the screenshot tool.
+    pub fn shell(&mut self) -> &mut Shell {
+        &mut self.shell
+    }
+
     /// Registers this process's [`IpcBridge`] (present only for the primary
-    /// instance, #11); polled once per frame in [`App::ui`].
+    /// instance, #11); polled once per tick by the shell.
     ///
     /// [`IpcBridge`]: crate::backend::ipc::IpcBridge
-    /// [`App::ui`]: eframe::App::ui
     pub fn attach_ipc(&mut self, ipc: crate::backend::ipc::IpcBridge) {
-        self.ipc = Some(ipc);
+        self.shell.attach_ipc(ipc);
     }
 
     /// Registers the OS media-control integration (#26). Only the real binary
@@ -168,42 +137,40 @@ impl App {
     /// Sets a one-line startup notice (e.g. "Audio unavailable: ...") shown
     /// under the menu bar until the app is restarted.
     pub fn set_backend_notice(&mut self, notice: impl Into<String>) {
-        self.backend_notice = Some(notice.into());
+        self.shell.set_backend_notice(notice);
     }
 
-    /// Wires the shared image caches' worker wakers (#96), so thumbnail and
-    /// artwork decodes can wake egui when they finish.
-    pub fn set_image_waker(&mut self, waker: WakerHandle) {
-        self.state.album_grid.set_image_waker(waker.clone());
-        self.state.now_playing.set_image_waker(waker);
+    /// Applies a request from the CLI or from a secondary instance (#11).
+    pub fn handle_ipc_message(&mut self, message: winshell::IpcMessage) {
+        self.shell.handle_ipc_message(message);
     }
 
     /// Jumps straight to a view, bypassing the navigator click. Used by
     /// `emusic-shot` so every view (including ones with no navigator entry,
     /// like Settings) can be screenshotted directly.
     pub fn set_view(&mut self, view: View) {
-        self.state.view = view;
+        self.shell.state.view = view;
     }
 
     /// Selects a Settings sub-page (#137), bypassing the tab click. Used by
     /// `emusic-shot` (`--settings-tab`) so each sub-page can be
     /// screenshotted directly.
     pub fn set_settings_tab(&mut self, tab: crate::state::SettingsTab) {
-        self.state.settings_tab = tab;
+        self.shell.state.settings_tab = tab;
     }
 
     /// Sets the top-bar search box's query text directly, bypassing the
     /// widget. Used by `emusic-shot` (`--query`) so a filtered Music view
     /// can be screenshotted headlessly.
     pub fn set_search_query(&mut self, query: impl Into<String>) {
-        self.state.search_query = query.into();
+        self.shell.state.search_query = query.into();
     }
 
     /// Opens the global search popup with the given query, as Ctrl+K would.
     /// Used by `emusic-shot` (`--search-popup`).
     pub fn open_search_popup(&mut self, query: impl Into<String>) {
-        self.state.search_popup.open();
-        self.state.search_popup.query = query.into();
+        self.shell.state.search_popup.open();
+        self.shell.state.search_popup.query = query.into();
     }
 
     /// Opens the Music table's track Properties dialog for the library's
@@ -211,23 +178,23 @@ impl App {
     /// `emusic-shot` (`--properties`) so the dialog can be screenshotted
     /// headlessly.
     pub fn open_track_properties(&mut self) {
-        if let Some(track) = self.library.tracks().first() {
-            self.state.music_table.properties = Some(track.clone());
+        if let Some(track) = self.shell.library.tracks().first() {
+            self.shell.state.music_table.properties = Some(track.clone());
         }
     }
 
     /// Opens the File -> Database info dialog. Used by `emusic-shot`
     /// (`--database-info`) so the dialog can be screenshotted headlessly.
     pub fn open_database_info(&mut self) {
-        self.state.database_info_open = true;
+        self.shell.state.database_info_open = true;
     }
 
     /// Opens the single-track tag editor for the library's first track, as
     /// the row's context menu would (#172). Used by `emusic-shot`
     /// (`--tag-editor`) so the dialog can be screenshotted headlessly.
     pub fn open_tag_editor(&mut self) {
-        if let Some(track) = self.library.tracks().first() {
-            self.state.tag_editor = Some(crate::tag_editor::TagEditorState::new(track));
+        if let Some(track) = self.shell.library.tracks().first() {
+            self.shell.state.tag_editor = Some(crate::tag_editor::TagEditorState::new(track));
         }
     }
 }

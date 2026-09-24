@@ -17,48 +17,8 @@ use eframe::egui;
 
 use crate::library_api::{LibraryDataSource, TrackInfo};
 
+pub use emusic_ui::views::column_browser::{ColumnBrowserState, MAX_HEIGHT, MIN_HEIGHT};
 use pane::PaneEntry;
-pub use selection::PaneSelection;
-
-/// Default splitter height, in pixels (the pane strip above the table),
-/// sized so roughly eight to ten rows are visible in each pane.
-pub const DEFAULT_HEIGHT: f32 = 200.0;
-/// Smallest the column browser may be dragged to.
-pub const MIN_HEIGHT: f32 = 80.0;
-/// Largest the column browser may be dragged to.
-pub const MAX_HEIGHT: f32 = 480.0;
-
-/// Persistent column-browser state: visibility, splitter height and the
-/// selection of each pane.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ColumnBrowserState {
-    pub visible: bool,
-    pub height: f32,
-    pub genres: PaneSelection,
-    pub artists: PaneSelection,
-    pub albums: PaneSelection,
-}
-
-impl Default for ColumnBrowserState {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            height: DEFAULT_HEIGHT,
-            genres: PaneSelection::default(),
-            artists: PaneSelection::default(),
-            albums: PaneSelection::default(),
-        }
-    }
-}
-
-impl ColumnBrowserState {
-    /// Whether `track` passes all three panes' filters.
-    pub fn matches(&self, track: &TrackInfo) -> bool {
-        self.genres.matches(&track.genre)
-            && self.artists.matches(&track.artist)
-            && self.albums.matches(&track.album)
-    }
-}
 
 /// Renders the three panes in a resizable top panel, cascading the
 /// selections left to right and pruning child selections that the parent no

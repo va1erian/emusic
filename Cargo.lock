@@ -1411,6 +1411,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bass",
+ "bitflags 2.13.2",
  "clap",
  "dirs",
  "emusic-core",
@@ -1423,6 +1424,8 @@ dependencies = [
  "rand_chacha",
  "rfd",
  "serde",
+ "thiserror 2.0.20",
+ "toml",
  "tracing",
  "winshell",
 ]

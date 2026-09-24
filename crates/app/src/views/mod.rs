@@ -20,6 +20,7 @@ pub(crate) mod track_table;
 
 use eframe::egui;
 
+use crate::app::images::ImageCaches;
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
@@ -28,6 +29,7 @@ use crate::state::{AppState, View};
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    images: &mut ImageCaches,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
     search: &SearchEngine,
@@ -48,7 +50,9 @@ pub fn show(
             .auto_shrink([false, false])
             .show(ui, |ui| match state.view {
                 View::Music => music::show(ui, state, library, player, search),
-                View::Albums => album_grid::show(ui, state, library, player),
+                View::Albums => {
+                    album_grid::show(ui, state, &mut images.album_thumbs, library, player)
+                }
                 View::Artists => artists::show(ui, state, library),
                 View::Genres => genres::show(ui, state, library),
                 View::Folders => folders::show(ui, state, library, player),

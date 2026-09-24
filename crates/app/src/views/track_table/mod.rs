@@ -19,7 +19,6 @@
 pub(crate) mod columns;
 mod context_menu;
 mod properties;
-mod selection;
 use emusic_ui::views::track_table::sort;
 
 use std::collections::HashSet;
@@ -28,22 +27,11 @@ use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
 pub use context_menu::ContextAction;
-pub use selection::{ClickModifiers, SelectionState};
+pub use emusic_ui::views::track_table::TrackTableState;
+pub use emusic_ui::views::track_table::selection::{ClickModifiers, SelectionState};
 pub use sort::SortState;
 
 use crate::library_api::TrackInfo;
-
-/// Persistent per-instance state (sort order + selection). Each embedding
-/// view owns one of these across frames.
-#[derive(Debug, Default)]
-pub struct TrackTableState {
-    pub sort: SortState,
-    pub selection: selection::SelectionState,
-    /// The track whose Properties dialog is open, if any. Owned here (rather
-    /// than by the shell) so each embedding table gets its own dialog; the
-    /// dialog is rendered by [`show`] itself.
-    pub properties: Option<TrackInfo>,
-}
 
 /// A playback action requested from a row this frame (double-click, Enter,
 /// or a context-menu item), to be turned into a `Command` by the caller.

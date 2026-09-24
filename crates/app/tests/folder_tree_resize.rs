@@ -16,7 +16,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::library_api::{
     AlbumInfo, ArtistInfo, DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource,
@@ -81,7 +81,7 @@ fn dragging_the_tree_panel_edge_widens_it() {
         .build_eframe(|cc| {
             let library = emusic::mock::MockLibrary::new();
             let player = Box::new(MockPlayer::default());
-            App::with_config(cc, Box::new(library), player, Config::default())
+            EguiApp::with_config(cc, Box::new(library), player, Config::default())
         });
     harness.state_mut().set_view(View::Folders);
     harness.run_steps(2);
@@ -129,7 +129,7 @@ fn the_tree_panel_can_grow_past_the_old_fixed_cap() {
         .build_eframe(|cc| {
             let library = emusic::mock::MockLibrary::new();
             let player = Box::new(MockPlayer::default());
-            App::with_config(cc, Box::new(library), player, Config::default())
+            EguiApp::with_config(cc, Box::new(library), player, Config::default())
         });
     harness.state_mut().set_view(View::Folders);
     harness.run_steps(2);
@@ -179,7 +179,7 @@ fn a_long_folder_name_does_not_pin_the_panel_open() {
         .build_eframe(|cc| {
             let library = LongNameLibrary::new();
             let player = Box::new(MockPlayer::default());
-            App::with_config(cc, Box::new(library), player, Config::default())
+            EguiApp::with_config(cc, Box::new(library), player, Config::default())
         });
     harness.state_mut().set_view(View::Folders);
     harness.run_steps(2);

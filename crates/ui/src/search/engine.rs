@@ -11,6 +11,7 @@ use emusic_search::matcher::PreparedQuery;
 use emusic_search::parse;
 
 use crate::library_api::TrackInfo;
+use crate::waker::{Waker, WakerHandle};
 
 use super::index::LibraryIndex;
 
@@ -51,14 +52,23 @@ pub struct SearchEngine {
 
 impl SearchEngine {
     /// Spawns the background worker and returns an engine with no active
-    /// query.
+    /// query. Wakes are a no-op (the frontend polls every frame); use
+    /// [`SearchEngine::with_waker`] to have a finished query wake the UI.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_waker(WakerHandle::default())
+    }
+
+    /// Like [`SearchEngine::new`], but the worker wakes `waker` whenever it
+    /// answers a query, so a result arriving while the UI is otherwise idle
+    /// (no continuous repaint) is still picked up.
+    #[must_use]
+    pub fn with_waker(waker: WakerHandle) -> Self {
         let (request_tx, request_rx) = mpsc::channel::<Request>();
         let (response_tx, response_rx) = mpsc::channel::<Answer>();
         thread::Builder::new()
             .name("emusic-search".into())
-            .spawn(move || worker_loop(&request_rx, &response_tx))
+            .spawn(move || worker_loop(&request_rx, &response_tx, &waker))
             .expect("spawn search worker thread");
 
         Self {
@@ -142,7 +152,7 @@ impl Default for SearchEngine {
 
 /// The worker's main loop: rebuilds the index on `Reindex`, matches on
 /// `Query`. Runs until the UI-side sender is dropped.
-fn worker_loop(requests: &Receiver<Request>, responses: &Sender<Answer>) {
+fn worker_loop(requests: &Receiver<Request>, responses: &Sender<Answer>, waker: &WakerHandle) {
     let mut current = LibraryIndex::build(&[]);
     while let Ok(request) = requests.recv() {
         match request {
@@ -157,6 +167,7 @@ fn worker_loop(requests: &Receiver<Request>, responses: &Sender<Answer>) {
                 if responses.send(Answer { generation, ids }).is_err() {
                     return;
                 }
+                waker.wake();
             }
         }
     }
