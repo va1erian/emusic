@@ -89,7 +89,7 @@ pub struct AlbumInfo {
     pub track_count: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ArtistInfo {
     pub name: String,
     pub track_count: usize,
@@ -97,7 +97,7 @@ pub struct ArtistInfo {
 }
 
 /// A genre with its track count, mirroring [`ArtistInfo`]/[`AlbumInfo`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GenreInfo {
     pub name: String,
     pub track_count: usize,

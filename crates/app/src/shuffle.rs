@@ -34,34 +34,6 @@ pub fn album(library: &dyn LibraryDataSource, album: &AlbumInfo) -> Command {
     }
 }
 
-/// Shuffle one artist's tracks.
-pub fn artist(library: &dyn LibraryDataSource, name: &str) -> Command {
-    let ids = library
-        .tracks()
-        .iter()
-        .filter(|track| track.artist.eq_ignore_ascii_case(name))
-        .map(|track| track.id)
-        .collect();
-    Command::ShuffleScope {
-        ids,
-        label: format!("Artist — {name}"),
-    }
-}
-
-/// Shuffle one genre's tracks.
-pub fn genre(library: &dyn LibraryDataSource, name: &str) -> Command {
-    let ids = library
-        .tracks()
-        .iter()
-        .filter(|track| genre_matches(&track.genre, name))
-        .map(|track| track.id)
-        .collect();
-    Command::ShuffleScope {
-        ids,
-        label: format!("Genre — {name}"),
-    }
-}
-
 /// Shuffle a directory's tracks, optionally including subdirectories.
 pub fn folder(library: &dyn LibraryDataSource, path: &str, recursive: bool) -> Command {
     let ids = library
@@ -79,13 +51,6 @@ pub fn folder(library: &dyn LibraryDataSource, path: &str, recursive: bool) -> C
 /// Whether `track` belongs to `album`: same rule as the album grid.
 fn belongs_to(track: &TrackInfo, album: &AlbumInfo) -> bool {
     track.album == album.name && (track.artist == album.artist || track.artist.is_empty())
-}
-
-/// Whether a raw genre tag contains `name` as one of its `;`/`/`/`,`-split
-/// parts (the same split the library index uses).
-fn genre_matches(tag: &str, name: &str) -> bool {
-    tag.split(&[';', '/', ','][..])
-        .any(|part| part.trim().eq_ignore_ascii_case(name))
 }
 
 /// Whether `track_path` is inside `folder` (directly, or in any descendant
@@ -182,17 +147,6 @@ mod tests {
             ..AlbumInfo::default()
         };
         assert_eq!(ids(album(&library(), &second)), vec![3, 4]);
-    }
-
-    #[test]
-    fn artist_matches_case_insensitively() {
-        assert_eq!(ids(artist(&library(), "alpha")), vec![1, 2]);
-    }
-
-    #[test]
-    fn genre_matches_any_split_part() {
-        assert_eq!(ids(genre(&library(), "live")), vec![3]);
-        assert_eq!(ids(genre(&library(), "jazz")), vec![3, 4]);
     }
 
     #[test]

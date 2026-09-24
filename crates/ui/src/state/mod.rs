@@ -31,11 +31,13 @@ use crate::panels::navigator::Navigator;
 use crate::panels::status_bar::StatusBar as StatusBarModel;
 use crate::panels::top_bar::TopBar;
 use crate::views::album_grid::AlbumGrid;
+use crate::views::artists::ArtistsView;
 use crate::views::folders::FoldersView;
+use crate::views::genres::GenresView;
 use crate::views::history::HistoryState;
 use crate::views::most_played::MostPlayedState;
 use crate::views::music::MusicView;
-use crate::views::track_table::TrackTable;
+use crate::views::starred::StarredView;
 
 #[cfg(test)]
 mod tests;
@@ -99,8 +101,12 @@ pub struct AppState {
     pub album_grid: AlbumGrid,
     /// The Folders view (#101): its directory tree and track table.
     pub folders: FoldersView,
-    /// The Starred view's track table (#131).
-    pub starred_table: TrackTable,
+    /// The Artists view's name-sorted artist list (#104).
+    pub artists: ArtistsView,
+    /// The Genres view's name-sorted genre list (#104).
+    pub genres: GenresView,
+    /// The Starred view (#104, #131): its track table and count.
+    pub starred: StarredView,
     /// The Most Played view's window selector + track table (#24).
     pub most_played: MostPlayedState,
     /// The History view's confirmation flag (#24).
@@ -164,7 +170,9 @@ impl Default for AppState {
             music: MusicView::default(),
             album_grid: AlbumGrid::default(),
             folders: FoldersView::default(),
-            starred_table: TrackTable::default(),
+            artists: ArtistsView::default(),
+            genres: GenresView::default(),
+            starred: StarredView::default(),
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
             pending: Vec::new(),
