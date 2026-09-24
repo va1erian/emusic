@@ -30,8 +30,8 @@ pub enum ContextAction {
 }
 
 /// One row: the track plus its pre-formatted numeric cells.
-struct TrackRow {
-    track: TrackInfo,
+pub(crate) struct TrackRow {
+    pub(crate) track: TrackInfo,
     year_text: String,
     time_text: String,
     plays_text: String,
@@ -39,7 +39,7 @@ struct TrackRow {
 }
 
 impl TrackRow {
-    fn new(track: &TrackInfo) -> Self {
+    pub(crate) fn new(track: &TrackInfo) -> Self {
         Self {
             track: track.clone(),
             year_text: track.year.map(|year| year.to_string()).unwrap_or_default(),
@@ -53,7 +53,7 @@ impl TrackRow {
     }
 
     /// The cell text for `column` (0 = Title, then `columns::COLUMNS`).
-    fn text(&self, column: usize) -> &str {
+    pub(crate) fn text(&self, column: usize) -> &str {
         match column {
             0 => columns::title_text(&self.track),
             1 => columns::artist_text(&self.track),
@@ -70,8 +70,8 @@ impl TrackRow {
 }
 
 /// The list's owner-data model: the filtered rows in display order.
-struct MusicModel {
-    rows: Rc<Vec<TrackRow>>,
+pub(crate) struct MusicModel {
+    pub(crate) rows: Rc<Vec<TrackRow>>,
 }
 
 impl ListModel for MusicModel {
@@ -320,7 +320,7 @@ impl AsControl for MusicView {
 }
 
 /// The cell text for `id` within a row, using the shared column helpers.
-fn cell_text(row: &TrackRow, id: ColumnId) -> &str {
+pub(crate) fn cell_text(row: &TrackRow, id: ColumnId) -> &str {
     match id {
         ColumnId::Title => row.text(0),
         ColumnId::Artist => row.text(1),
