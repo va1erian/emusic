@@ -1,0 +1,98 @@
+{
+  "created": "2026-09-24T00:00:00.000Z",
+  "count": 2,
+  "offset": 0,
+  "recordings": [
+    {
+      "id": "rec-1",
+      "score": 100,
+      "title": "Around the World",
+      "length": 428000,
+      "first-release-date": "1997-01-20",
+      "artist-credit": [
+        {
+          "name": "Daft Punk",
+          "joinphrase": "",
+          "artist": { "id": "art-1", "name": "Daft Punk", "sort-name": "Daft Punk" }
+        }
+      ],
+      "releases": [
+        {
+          "id": "rel-1",
+          "title": "Homework",
+          "date": "1997-01-20",
+          "status": "Official",
+          "artist-credit": [
+            {
+              "name": "Daft Punk",
+              "joinphrase": "",
+              "artist": { "id": "art-1", "name": "Daft Punk" }
+            }
+          ],
+          "media": [
+            {
+              "position": 1,
+              "format": "CD",
+              "track-count": 16,
+              "track": [
+                {
+                  "id": "trk-1",
+                  "number": "5",
+                  "title": "Around the World",
+                  "length": 428000
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rel-2",
+          "title": "The Tenth Anniversary Collection",
+          "date": "2000-05-09",
+          "status": "Bootleg",
+          "artist-credit": [
+            {
+              "name": "Various Artists",
+              "joinphrase": "",
+              "artist": { "id": "art-9", "name": "Various Artists" }
+            }
+          ],
+          "media": [
+            {
+              "position": 2,
+              "format": "CD",
+              "track-count": 12,
+              "track": [
+                {
+                  "id": "trk-9",
+                  "number": "A1",
+                  "title": "Around the World",
+                  "length": 428000
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rec-2",
+      "score": 92,
+      "title": "Around the World (radio edit)",
+      "length": 215000,
+      "artist-credit": [
+        {
+          "name": "Daft Punk",
+          "joinphrase": " feat. ",
+          "artist": { "id": "art-1", "name": "Daft Punk" }
+        },
+        {
+          "name": "Someone",
+          "joinphrase": "",
+          "artist": { "id": "art-2", "name": "Someone" }
+        }
+      ],
+      "releases": []
+    }
+  ]
+}
