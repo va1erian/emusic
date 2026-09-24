@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use eframe::egui;
 
 use self::thumbs::ThumbnailCache;
-use super::track_table::{self, TrackAction};
+use super::EguiView;
 use crate::image_sink::EguiImageSink;
 use crate::library_api::{AlbumInfo, LibraryDataSource};
 use crate::player_api::PlayerApi;
@@ -33,6 +33,7 @@ use crate::state::{AppState, Command};
 pub use emusic_ui::views::album_grid::AlbumGridState;
 use emusic_ui::views::album_grid::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
+use emusic_ui::views::{Commands, Ctx};
 
 /// Tile edge-length bounds for the size slider, in pixels.
 pub const MIN_TILE_SIZE: f32 = 96.0;
@@ -56,7 +57,7 @@ pub fn show(
 
     let meta = album_meta(library);
     let playing_id = currently_playing_id(library, player);
-    let mut commands = Vec::new();
+    let mut commands = Commands::new();
 
     let grid = &mut state.album_grid;
     let albums = sorted_albums(library, &meta, grid.sort);
@@ -75,11 +76,8 @@ pub fn show(
                 grid_view(ui, grid, thumbs, &albums, &meta, library, &mut commands);
             });
             ui.separator();
-            if let Some(action) =
-                track_table::show(ui, "album_table", &mut grid.table, &tracks, playing_id)
-            {
-                commands.push(track_command(action));
-            }
+            let cx = Ctx::new(&tracks, playing_id);
+            grid.table.show(ui, "album_table", &cx, &mut commands);
         }
         None => {
             ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
@@ -88,7 +86,7 @@ pub fn show(
         }
     }
 
-    state.pending.append(&mut commands);
+    state.pending.extend(commands.into_vec());
 }
 
 fn empty_state(ui: &mut egui::Ui) {
@@ -137,7 +135,7 @@ fn grid_view(
     albums: &[&AlbumInfo],
     meta: &HashMap<AlbumKey, AlbumMeta>,
     library: &dyn LibraryDataSource,
-    commands: &mut Vec<Command>,
+    commands: &mut Commands,
 ) {
     let mut sink = EguiImageSink::new(ui.ctx().clone(), "album_thumb");
     thumbs.drain(&mut sink);
@@ -186,16 +184,6 @@ fn grid_view(
                 });
             }
         });
-}
-
-fn track_command(action: TrackAction) -> Command {
-    match action {
-        TrackAction::Play { id, context } => Command::play_track(id, context),
-        TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
-        TrackAction::AddToQueue(id) => Command::QueueTrack(id),
-        TrackAction::ToggleStar(id) => Command::ToggleStarred(id),
-        TrackAction::EditTags(id) => Command::OpenTagEditor(id),
-    }
 }
 
 /// The selected album's entry in the current sort order, if it still exists.

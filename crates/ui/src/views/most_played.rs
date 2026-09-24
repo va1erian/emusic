@@ -3,21 +3,21 @@
 //! backend; rendering stays in the egui frontend.
 
 use crate::library_api::StatsWindow;
-use crate::views::track_table::TrackTableState;
+use crate::views::track_table::TrackTable;
 
 /// Persistent Most Played state: the selected window plus the track table's
 /// sort/selection.
 #[derive(Debug)]
 pub struct MostPlayedState {
     pub window: StatsWindow,
-    pub table: TrackTableState,
+    pub table: TrackTable,
 }
 
 impl Default for MostPlayedState {
     fn default() -> Self {
         Self {
             window: StatsWindow::AllTime,
-            table: TrackTableState::default(),
+            table: TrackTable::default(),
         }
     }
 }

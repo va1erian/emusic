@@ -7,6 +7,7 @@
 pub(crate) mod album_grid;
 mod artists;
 pub(crate) mod column_browser;
+mod egui_view;
 pub(crate) mod folder_tree;
 pub(crate) mod folders;
 mod genres;
@@ -17,6 +18,8 @@ mod now_playing;
 mod settings;
 pub(crate) mod starred;
 pub(crate) mod track_table;
+
+pub(crate) use egui_view::EguiView;
 
 use eframe::egui;
 

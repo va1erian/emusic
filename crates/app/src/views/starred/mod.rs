@@ -6,10 +6,11 @@
 
 use eframe::egui;
 
-use super::track_table::{self, TrackAction};
+use super::EguiView;
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
-use crate::state::{AppState, Command};
+use crate::state::AppState;
+use emusic_ui::views::{Commands, Ctx};
 
 pub fn show(
     ui: &mut egui::Ui,
@@ -26,23 +27,10 @@ pub fn show(
     ui.label(egui::RichText::new(format!("{} starred", tracks.len())).weak());
     ui.separator();
 
-    let playing_id = currently_playing_id(library, player);
-    let action = track_table::show(
-        ui,
-        "starred_table",
-        &mut state.starred_table,
-        &tracks,
-        playing_id,
-    );
-    if let Some(action) = action {
-        state.push(match action {
-            TrackAction::Play { id, context } => Command::play_track(id, context),
-            TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
-            TrackAction::AddToQueue(id) => Command::QueueTrack(id),
-            TrackAction::ToggleStar(id) => Command::ToggleStarred(id),
-            TrackAction::EditTags(id) => Command::OpenTagEditor(id),
-        });
-    }
+    let cx = Ctx::new(&tracks, currently_playing_id(library, player));
+    let mut out = Commands::new();
+    state.starred_table.show(ui, "starred_table", &cx, &mut out);
+    state.pending.extend(out.into_vec());
 }
 
 /// Matches the player's now-playing info back to a library track id so the

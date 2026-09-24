@@ -32,7 +32,7 @@ use crate::views::column_browser::ColumnBrowserState;
 use crate::views::folder_tree::FolderTreeState;
 use crate::views::history::HistoryState;
 use crate::views::most_played::MostPlayedState;
-use crate::views::track_table::TrackTableState;
+use crate::views::track_table::TrackTable;
 
 #[cfg(test)]
 mod tests;
@@ -86,7 +86,7 @@ pub struct AppState {
     /// The Music view's track table (sort + selection). Other views that
     /// embed a track table later (albums, artists, genres, folders,
     /// history) will each get their own field here.
-    pub music_table: TrackTableState,
+    pub music_table: TrackTable,
     /// The Music view's cascading filter panes (#16), above the track table.
     pub column_browser: ColumnBrowserState,
     /// The Albums view's grid, sort and thumbnail cache (#17).
@@ -95,9 +95,9 @@ pub struct AppState {
     /// (#18).
     pub folder_tree: FolderTreeState,
     /// The Folders view's track table (sort + selection).
-    pub folders_table: TrackTableState,
+    pub folders_table: TrackTable,
     /// The Starred view's track table (#131).
-    pub starred_table: TrackTableState,
+    pub starred_table: TrackTable,
     /// The Most Played view's window selector + track table (#24).
     pub most_played: MostPlayedState,
     /// The History view's confirmation flag (#24).
@@ -155,12 +155,12 @@ impl Default for AppState {
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
-            music_table: TrackTableState::default(),
+            music_table: TrackTable::default(),
             column_browser: ColumnBrowserState::default(),
             album_grid: AlbumGridState::default(),
             folder_tree: FolderTreeState::default(),
-            folders_table: TrackTableState::default(),
-            starred_table: TrackTableState::default(),
+            folders_table: TrackTable::default(),
+            starred_table: TrackTable::default(),
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
             pending: Vec::new(),

@@ -78,10 +78,33 @@ impl SelectionState {
         }
         let current = self.focus.unwrap_or(0) as isize;
         let next = (current + delta).clamp(0, len as isize - 1) as usize;
-        self.focus = Some(next);
-        self.anchor = Some(next);
-        self.selected.clear();
-        self.selected.insert(order[next]);
+        self.navigate(order, next, false, false);
+    }
+
+    /// Moves keyboard focus to `target` (a position in the current sort
+    /// order, clamped to `order`).
+    ///
+    /// Plain navigation replaces the selection with the focused row; `shift`
+    /// extends the selection from the anchor to the new focus; `ctrl` moves
+    /// the focus without touching the selection.
+    pub fn navigate(&mut self, order: &[u64], target: usize, shift: bool, ctrl: bool) {
+        if order.is_empty() {
+            return;
+        }
+        let target = target.min(order.len() - 1);
+        if shift {
+            let anchor = self.anchor.unwrap_or(target);
+            let (lo, hi) = (anchor.min(target), anchor.max(target));
+            self.selected.extend(order[lo..=hi].iter().copied());
+            self.focus = Some(target);
+        } else if ctrl {
+            self.focus = Some(target);
+        } else {
+            self.selected.clear();
+            self.selected.insert(order[target]);
+            self.anchor = Some(target);
+            self.focus = Some(target);
+        }
     }
 
     /// Drops ids that no longer exist (e.g. after a search filter changes
@@ -194,6 +217,27 @@ mod tests {
             sel.move_focus(&order(), 1, order().len());
         }
         assert_eq!(sel.focus, Some(4));
+    }
+
+    #[test]
+    fn shift_navigation_extends_from_the_anchor() {
+        let mut sel = SelectionState::default();
+        sel.click(&order(), 1, 20, ClickModifiers::default());
+        sel.navigate(&order(), 3, true, false);
+        for id in [20, 30, 40] {
+            assert!(sel.is_selected(id), "{id} should be in the extended range");
+        }
+        assert_eq!(sel.focus, Some(3));
+    }
+
+    #[test]
+    fn ctrl_navigation_moves_focus_without_changing_selection() {
+        let mut sel = SelectionState::default();
+        sel.click(&order(), 1, 20, ClickModifiers::default());
+        sel.navigate(&order(), 3, false, true);
+        assert_eq!(sel.focus, Some(3));
+        assert_eq!(sel.len(), 1);
+        assert!(sel.is_selected(20));
     }
 
     #[test]

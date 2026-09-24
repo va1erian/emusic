@@ -4,11 +4,12 @@
 
 use eframe::egui;
 
+use super::EguiView;
 use super::folder_tree;
-use super::track_table::{self, TrackAction};
 use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
-use crate::state::{AppState, Command};
+use crate::state::AppState;
+use emusic_ui::views::{Commands, Ctx};
 
 /// The tree panel's resizable width bounds.
 const MIN_TREE_WIDTH: f32 = 180.0;
@@ -93,23 +94,10 @@ pub fn show(
     });
     ui.separator();
 
-    let playing_id = currently_playing_id(library, player);
-    let action = track_table::show(
-        ui,
-        "folders_table",
-        &mut state.folders_table,
-        &tracks,
-        playing_id,
-    );
-    if let Some(action) = action {
-        state.push(match action {
-            TrackAction::Play { id, context } => Command::play_track(id, context),
-            TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
-            TrackAction::AddToQueue(id) => Command::QueueTrack(id),
-            TrackAction::ToggleStar(id) => Command::ToggleStarred(id),
-            TrackAction::EditTags(id) => Command::OpenTagEditor(id),
-        });
-    }
+    let cx = Ctx::new(&tracks, currently_playing_id(library, player));
+    let mut out = Commands::new();
+    state.folders_table.show(ui, "folders_table", &cx, &mut out);
+    state.pending.extend(out.into_vec());
 }
 
 /// Matches the player's now-playing info back to a library track id so the

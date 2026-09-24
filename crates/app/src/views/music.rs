@@ -3,12 +3,13 @@
 
 use eframe::egui;
 
+use super::EguiView;
 use super::column_browser;
-use super::track_table::{self, TrackAction};
-use crate::library_api::LibraryDataSource;
+use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
-use crate::state::{AppState, Command};
+use crate::state::AppState;
+use emusic_ui::views::{Commands, Ctx};
 
 pub fn show(
     ui: &mut egui::Ui,
@@ -30,7 +31,7 @@ pub fn show(
     // The query is parsed and matched off the UI thread (see
     // `crate::search`); here we only check each track's id against the
     // already-computed match set, which is O(1) per track.
-    let tracks: Vec<&_> = library
+    let tracks: Vec<&TrackInfo> = library
         .tracks()
         .iter()
         .filter(|t| state.column_browser.matches(t))
@@ -51,23 +52,10 @@ pub fn show(
     });
     ui.separator();
 
-    let playing_id = currently_playing_id(library, player);
-    let action = track_table::show(
-        ui,
-        "music_table",
-        &mut state.music_table,
-        &tracks,
-        playing_id,
-    );
-    if let Some(action) = action {
-        state.push(match action {
-            TrackAction::Play { id, context } => Command::play_track(id, context),
-            TrackAction::PlayNext(id) => Command::PlayTrackNext(id),
-            TrackAction::AddToQueue(id) => Command::QueueTrack(id),
-            TrackAction::ToggleStar(id) => Command::ToggleStarred(id),
-            TrackAction::EditTags(id) => Command::OpenTagEditor(id),
-        });
-    }
+    let cx = Ctx::new(&tracks, currently_playing_id(library, player));
+    let mut out = Commands::new();
+    state.music_table.show(ui, "music_table", &cx, &mut out);
+    state.pending.extend(out.into_vec());
 }
 
 /// First-run (or emptied-library) state: nothing to list, so offer to add a
