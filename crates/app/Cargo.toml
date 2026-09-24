@@ -37,6 +37,7 @@ bass = { path = "../bass" }
 emusic-core = { path = "../core" }
 emusic-library = { path = "../library" }
 emusic-search = { path = "../search" }
+emusic-ui = { path = "../ui" }
 rfd = { version = "0.15", default-features = false }
 winshell = { path = "../winshell" }
 

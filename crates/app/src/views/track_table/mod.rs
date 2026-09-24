@@ -20,7 +20,7 @@ pub(crate) mod columns;
 mod context_menu;
 mod properties;
 mod selection;
-mod sort;
+use emusic_ui::views::track_table::sort;
 
 use std::collections::HashSet;
 

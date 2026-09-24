@@ -320,7 +320,7 @@ impl LibraryDataSource for LibraryBackend {
             }
         }
 
-        while let Some(path) = crate::settings::folder_picker::try_recv() {
+        while let Some(path) = crate::folder_picker::try_recv() {
             info!(path = %path.display(), "folder chosen via picker");
             let mut folders: Vec<PathBuf> = self
                 .folders

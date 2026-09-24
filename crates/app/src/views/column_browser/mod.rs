@@ -7,7 +7,7 @@
 //! height and visibility are persisted through [`crate::config::Config`].
 
 mod pane;
-mod selection;
+use emusic_ui::views::column_browser::selection;
 #[cfg(test)]
 mod tests;
 
