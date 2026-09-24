@@ -12,7 +12,7 @@ Almost all of emusic is written by AI agents working from GitHub issues, one iss
 
 ## Rules that keep parallel agents from colliding
 
-- **One worktree per issue**, so agents never share a checkout. All of them share **one** `CARGO_TARGET_DIR`: a per-worktree `target/` is 5–11 GB and filled a 466 GB drive once.
+- **One worktree per issue**, so agents never share a checkout. Each worktree gets its **own** `target/` (concurrent builds sharing one `CARGO_TARGET_DIR` collide on cargo fingerprints and give phantom errors); the scripts also set `CARGO_INCREMENTAL=0` and use `sccache` when installed. A `target/` is 5–11 GB, so delete a worktree once its PR merges (`land.sh` does). Set `CARGO_TARGET_DIR` yourself to override.
 - **Rebase only, never merge.** `main` requires linear history, a green `ci` check and an up-to-date branch, for admins too. `land.sh` resolves `Cargo.lock` conflicts automatically (take `main`'s, regenerate) and stops for anything else.
 - **Tell each agent which files another agent is touching.** Most conflicts came from two agents editing the app crate at once.
 - **At most two concurrent OpenCode runs.** More just gets throttled by the provider, and runs sit idle in API calls.
@@ -26,7 +26,7 @@ Almost all of emusic is written by AI agents working from GitHub issues, one iss
 scripts/dispatch.sh <issue> <slug> <model> "<extra instructions>"
 ```
 
-Creates the worktree and branch (`feat/<issue>-<slug>`), runs the agent with a standard prompt (read the issue and AGENTS.md, implement, run the four checks, commit, rebase, push, open the PR), and **retries up to three times** if a run ends without a PR, telling the next attempt to inspect `git status` and finish what's there. Logs go to `oc-issue-<n>.log`.
+Creates the worktree and branch (`feat/<issue>-<slug>`); `<model>` is an OpenCode Go model name or a full `provider/model` id. Both scripts resolve the main checkout even when run from a linked worktree. Runs the agent with a standard prompt (read the issue and AGENTS.md, implement, run the four checks, commit, rebase, push, open the PR), and **retries up to three times** if a run ends without a PR, telling the next attempt to inspect `git status` and finish what's there. Logs go to `emusic-wt/logs/oc-issue-<n>.log`.
 
 Useful variables: `WT=`, `BR=`, `RETRIES=`, `RESUME_FIRST=1` (start with the "finish the existing work" prompt, for resuming an interrupted run).
 
@@ -38,7 +38,7 @@ The extra instructions matter more than the model. Say which files to touch, whi
 scripts/land.sh <pr> [<pr>...]
 ```
 
-Per PR: rebase on `origin/main`, auto-resolve `Cargo.lock` only, run `fmt`/`check`/`clippy`/`test` (including `--features emusic/shot`), push with lease, wait for CI to appear **and** finish, then rebase-merge and clean up. It prints `PR <n>: MERGED` or the reason it stopped.
+Per PR: rebase on `origin/main`, auto-resolve `Cargo.lock` only, run `fmt`/`check`/`clippy`/`test` (including `--features emusic/shot`), push with lease, wait for CI to appear **and** finish, then rebase-merge and clean up. It refuses a PR whose local branch has unpushed commits (only the pushed branch would land). It prints `PR <n>: MERGED` or the reason it stopped.
 
 ## Choosing a model
 
