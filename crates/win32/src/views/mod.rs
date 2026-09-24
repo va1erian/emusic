@@ -10,6 +10,7 @@ pub mod artists;
 pub mod column_browser;
 pub mod folders;
 pub mod genres;
+pub mod most_played;
 pub mod music;
 pub mod name_counts;
 pub mod navigator;

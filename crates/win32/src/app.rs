@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
-use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
@@ -29,6 +29,7 @@ use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
 use crate::views::genres::GenresView;
+use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
@@ -58,6 +59,8 @@ pub enum Msg {
     ContextRow(usize),
     /// Run a track-table context-menu action.
     ContextAction(ContextAction),
+    /// The Most Played view's time-window selector changed.
+    MostPlayed(StatsWindow),
     /// An event from the Albums view.
     Album(AlbumMsg),
     /// A folder tree row was selected (or the selection cleared).
@@ -104,6 +107,7 @@ pub struct Win32App {
     folders: FoldersView,
     artists: ArtistsView,
     genres: GenresView,
+    most_played: MostPlayedView,
     settings: SettingsView,
     starred: StarredView,
     right_panel: NowPlayingView,
@@ -146,6 +150,7 @@ impl Win32App {
         let folders = FoldersView::new(ui).expect("create folders view");
         let artists = ArtistsView::new(ui).expect("create artists view");
         let genres = GenresView::new(ui).expect("create genres view");
+        let most_played = MostPlayedView::new(ui).expect("create most played view");
         let settings = SettingsView::new(ui).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
         let status = StatusBarView::new(ui).expect("create status bar");
@@ -176,6 +181,7 @@ impl Win32App {
                 | View::Artists
                 | View::Folders
                 | View::Genres
+                | View::MostPlayed
                 | View::Settings
                 | View::Starred
         ));
@@ -185,6 +191,7 @@ impl Win32App {
         folders.set_visible(view == View::Folders);
         artists.set_visible(view == View::Artists);
         genres.set_visible(view == View::Genres);
+        most_played.set_visible(view == View::MostPlayed);
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
         ui.on_timer(|_| Some(Msg::Timer));
@@ -202,6 +209,7 @@ impl Win32App {
             folders,
             artists,
             genres,
+            most_played,
             settings,
             starred,
             right_panel,
@@ -237,6 +245,7 @@ impl Win32App {
             View::Albums => self.albums.layout().fill(1),
             View::Artists => self.artists.layout().fill(1),
             View::Genres => self.genres.layout().fill(1),
+            View::MostPlayed => self.most_played.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
@@ -288,6 +297,7 @@ impl Win32App {
                     | View::Artists
                     | View::Folders
                     | View::Genres
+                    | View::MostPlayed
                     | View::Settings
                     | View::Starred
             ));
@@ -296,6 +306,7 @@ impl Win32App {
             self.folders.set_visible(view == View::Folders);
             self.artists.set_visible(view == View::Artists);
             self.genres.set_visible(view == View::Genres);
+            self.most_played.set_visible(view == View::MostPlayed);
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
@@ -357,6 +368,14 @@ impl Win32App {
         if view == View::Genres {
             self.genres
                 .sync(&mut self.shell.state, self.shell.library.as_ref());
+        }
+
+        if view == View::MostPlayed {
+            self.most_played.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                playing_id,
+            );
         }
 
         if view == View::Albums {
@@ -584,6 +603,7 @@ impl App for Win32App {
                     View::Music => self.music.activate(row),
                     View::Folders => self.folders.activate(row),
                     View::Starred => self.starred.activate(row),
+                    View::MostPlayed => self.most_played.activate(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -614,6 +634,11 @@ impl App for Win32App {
                         self.starred
                             .resort(&self.shell.state, self.shell.library.as_ref());
                     }
+                    View::MostPlayed => {
+                        self.shell.state.most_played.table.sort.toggle(id);
+                        self.most_played
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
                     _ => return,
                 }
                 self.tick(ui);
@@ -639,6 +664,10 @@ impl App for Win32App {
                     View::Starred => {
                         self.starred.set_context_row(row);
                         self.starred.context_menu().clone()
+                    }
+                    View::MostPlayed => {
+                        self.most_played.set_context_row(row);
+                        self.most_played.context_menu().clone()
                     }
                     _ => return,
                 };
@@ -677,12 +706,17 @@ impl App for Win32App {
                     View::Music => self.music.run_context(action, ui.hwnd()),
                     View::Folders => self.folders.run_context(action, ui.hwnd()),
                     View::Starred => self.starred.run_context(action, ui.hwnd()),
+                    View::MostPlayed => self.most_played.run_context(action, ui.hwnd()),
                     _ => None,
                 };
                 if let Some(command) = command {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
+            }
+            Msg::MostPlayed(window) => {
+                self.shell.state.most_played.window = window;
+                self.tick(ui);
             }
             Msg::Album(msg) => {
                 let playing_id =

@@ -197,6 +197,41 @@ fn genres_view_builds_its_model_and_quits() {
     assert!(constructed.get(), "the app was never constructed");
 }
 
+/// Exercises the Most Played view wiring (#245): navigating there must build
+/// the window selector and the ranked track table from the mock library and
+/// tick without panicking.
+#[test]
+fn most_played_view_builds_its_table_and_quits() {
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic-win32.most-played").theme(Theme::dark()),
+        move |ui| {
+            let app = Win32App::new(
+                ui,
+                Box::new(MockLibrary::new()),
+                Box::new(MockPlayer::default()),
+                Config::default(),
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            ui.emit(Msg::Navigate(emusic_ui::state::View::MostPlayed));
+            ui.emit(Msg::Quit);
+            constructed_for_make.set(true);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}
+
 /// Exercises the Albums view wiring (#113): navigating there must build the
 /// grid model from the mock library and tick without panicking.
 #[test]
