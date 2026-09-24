@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# usage: [WT=..] [BR=..] [RETRIES=3] [RESUME_FIRST=1] oc-run.sh <issue> <slug> <model> "<extra instructions>"
+# usage: [WT=..] [BR=..] [RETRIES=3] [RESUME_FIRST=1] dispatch.sh <issue> <slug> <model> "<extra instructions>"
+# <model> is an opencode-go model name, or a full provider/model id (e.g. fireworks-ai/accounts/fireworks/models/deepseek-v4p1-flash).
 # Runs OpenCode on an issue in its own worktree; if a run ends without a PR
 # for the branch, retries in the same worktree with a "finish the job" prompt.
 set -uo pipefail
-REPO=${REPO:-$(git rev-parse --show-toplevel)}
+# The main checkout, even when run from a linked worktree.
+REPO=${REPO:-$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")}
 WT_ROOT=${WT_ROOT:-"$REPO/../emusic-wt"}
-# One shared build dir for every worktree: per-worktree target/ dirs are 5-11 GB each.
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$REPO/../emusic-target"}
 N=$1; SLUG=$2; MODEL=$3; EXTRA=${4:-}
 WT=${WT:-"$WT_ROOT/issue-$N"}
 BR=${BR:-feat/$N-$SLUG}
 RETRIES=${RETRIES:-3}
-LOG=$(dirname "$0")/oc-issue-$N.log
+# Logs live beside the worktrees, not inside the agent's checkout.
+mkdir -p "$WT_ROOT/logs"
+LOG=${LOG:-"$WT_ROOT/logs/oc-issue-$N.log"}
 R=va1erian/emusic
 
 git -C "$REPO" fetch -q origin
@@ -19,6 +21,11 @@ if [ ! -d "$WT" ]; then
   git -C "$REPO" worktree add -q "$WT" -b "$BR" origin/main || exit 1
 fi
 cd "$WT" || exit 1
+# Concurrent builds must not share a target dir (cargo fingerprint collisions):
+# one per worktree unless CARGO_TARGET_DIR is set explicitly.
+export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$WT/target"}
+export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
+command -v sccache >/dev/null && export RUSTC_WRAPPER=${RUSTC_WRAPPER:-sccache}
 
 pr_url() { gh pr list -R $R --head "$BR" --state all --json url -q '.[0].url' 2>/dev/null; }
 
@@ -39,7 +46,7 @@ PROMPT=$TASK
 while :; do
   attempt=$((attempt + 1))
   echo "===== attempt $attempt ($(date +%T)) =====" >> "$LOG"
-  opencode run --auto -m "opencode-go/$MODEL" --title "emusic #$N (attempt $attempt)" "$PROMPT" >> "$LOG" 2>&1
+  opencode run --auto -m "$([[ $MODEL == */* ]] && echo "$MODEL" || echo "opencode-go/$MODEL")" --title "emusic #$N (attempt $attempt)" "$PROMPT" >> "$LOG" 2>&1
   url=$(pr_url)
   if [ -n "$url" ]; then
     echo "OK #$N after $attempt attempt(s): $url"

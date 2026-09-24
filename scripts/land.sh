@@ -3,14 +3,27 @@
 # For each PR in order: rebase onto origin/main (auto-resolving Cargo.lock only),
 # run the four checks, force-push with lease, wait for CI, rebase-merge.
 set -uo pipefail
-REPO=${REPO:-$(git rev-parse --show-toplevel)}
+# The main checkout, even when run from a linked worktree (whose --show-toplevel
+# is the worktree itself): pulling or creating worktrees there would touch a
+# feature branch.
+REPO=${REPO:-$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")}
 WT_ROOT=${WT_ROOT:-"$REPO/../emusic-wt"}
-export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-"$REPO/../emusic-target"}
+# Concurrent builds must not share a target dir (cargo fingerprint collisions):
+# each landing worktree gets its own unless CARGO_TARGET_DIR is set explicitly.
+TARGET_OVERRIDE=${CARGO_TARGET_DIR:-}
+export CARGO_INCREMENTAL=${CARGO_INCREMENTAL:-0}
+command -v sccache >/dev/null && export RUSTC_WRAPPER=${RUSTC_WRAPPER:-sccache}
 R=va1erian/emusic
 for PR in "$@"; do
   BR=$(gh pr view "$PR" -R $R --json headRefName -q .headRefName)
   WT="$WT_ROOT/land-$PR"
+  export CARGO_TARGET_DIR=${TARGET_OVERRIDE:-"$WT/target"}
   git -C "$REPO" fetch -q origin
+  # Only the pushed branch is landed; local commits that were never pushed
+  # would be silently ignored (and then conflict), so stop and say so.
+  if git -C "$REPO" rev-parse -q --verify "refs/heads/$BR" >/dev/null     && [ "$(git -C "$REPO" rev-list --count "origin/$BR..refs/heads/$BR")" != 0 ]; then
+    echo "PR $PR: local $BR has unpushed commits; push them (or reset the branch) first"; continue
+  fi
   git -C "$REPO" worktree remove --force "$WT" 2>/dev/null
   git -C "$REPO" worktree add -q --detach "$WT" "origin/$BR" || { echo "PR $PR: worktree failed"; continue; }
   cd "$WT"
@@ -34,4 +47,5 @@ for PR in "$@"; do
   gh pr merge "$PR" -R $R --rebase >/dev/null 2>&1 && echo "PR $PR: MERGED" || echo "PR $PR: merge refused: $(gh pr view $PR -R $R --json mergeStateStatus -q .mergeStateStatus)"
   cd /; git -C "$REPO" worktree remove --force "$WT" 2>/dev/null
 done
-git -C "$REPO" pull -q --rebase 2>/dev/null
+# Fast-forward the main checkout, but only when it is actually on main.
+[ "$(git -C "$REPO" branch --show-current)" = main ] && git -C "$REPO" pull -q --ff-only 2>/dev/null
