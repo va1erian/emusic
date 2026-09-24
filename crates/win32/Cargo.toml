@@ -13,8 +13,10 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rfd = { version = "0.15", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }

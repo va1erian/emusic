@@ -31,6 +31,7 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
+use crate::views::settings::{SettingsMsg, SettingsView};
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::{self, TopBarView};
 use crate::views::track_table::{self, ContextAction};
@@ -66,6 +67,8 @@ pub enum Msg {
     FoldersShuffle(String),
     /// A column-browser pane's selection changed (the rows now selected).
     BrowserRow { pane: Pane, rows: Vec<usize> },
+    /// An intent from the Settings view (folders, appearance, ...).
+    Settings(SettingsMsg),
     /// Switch the central view (navigator row click).
     Navigate(View),
     /// A top-bar band event (transport button, toggle or slider).
@@ -93,6 +96,7 @@ pub struct Win32App {
     music: MusicView,
     albums: AlbumGridView,
     folders: FoldersView,
+    settings: SettingsView,
     right_panel: NowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
@@ -131,6 +135,7 @@ impl Win32App {
         let music = MusicView::new(ui).expect("create music view");
         let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let folders = FoldersView::new(ui).expect("create folders view");
+        let settings = SettingsView::new(ui).expect("create settings view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
@@ -148,36 +153,19 @@ impl Win32App {
         }
 
         ui.set_menu_bar(menu::build());
-        // The central area shows the Music list (with its column browser), the
-        // Albums grid or the Folders view; every other view is still the
-        // placeholder. Hidden items take no space.
+        // Only the active central view is placed by the layout (installed
+        // below); the others are hidden so they keep no stale bounds.
         let view = shell.state.view;
-        central.set_visible(view != View::Music && view != View::Albums && view != View::Folders);
         let browser_visible = view == View::Music && shell.state.music.browser.visible;
+        central.set_visible(!matches!(
+            view,
+            View::Music | View::Albums | View::Folders | View::Settings
+        ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
         albums.set_visible(view == View::Albums);
         folders.set_visible(view == View::Folders);
-        let albums_layout = albums.layout();
-        // An extended title bar reserves its strip, menu row and the top bar
-        // band; content starts below `title_bar_height()`.
-        let browser_height = dip(shell.state.music.browser.height);
-        let title_bar = ui.title_bar_height();
-        ui.set_layout(
-            column![
-                row![
-                    navigator.width(dip(220.0)),
-                    central.fill(1),
-                    column![browser.layout().height(browser_height), music.fill(1)].fill(1),
-                    albums_layout.fill(1),
-                    folders.layout(),
-                    right_panel.layout().width(dip(now_playing::PANEL_WIDTH)),
-                ]
-                .fill(1),
-                status,
-            ]
-            .margins(Insets::new(dip(0.0), title_bar, dip(0.0), dip(0.0))),
-        );
+        settings.set_visible(view == View::Settings);
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -191,6 +179,7 @@ impl Win32App {
             music,
             albums,
             folders,
+            settings,
             right_panel,
             status,
             top_bar,
@@ -200,10 +189,49 @@ impl Win32App {
             applied_view,
             applied_browser_visible: browser_visible,
         };
+        app.install_layout(ui, view);
         app.refresh_folders();
         app.refresh_music();
         app.tick(ui);
         app
+    }
+
+    /// Installs the window layout for `view`: the navigator, the active central
+    /// area and the now-playing panel.
+    ///
+    /// Rebuilt on a view change so the Settings tab control only exists while
+    /// Settings is shown (a tab node is always visible when installed).
+    fn install_layout(&self, ui: &Ui<Msg>, view: View) {
+        let central: LayoutItem = match view {
+            View::Music => column![
+                self.browser
+                    .layout()
+                    .height(dip(self.shell.state.music.browser.height)),
+                self.music.fill(1),
+            ]
+            .fill(1),
+            View::Albums => self.albums.layout().fill(1),
+            View::Folders => self.folders.layout().fill(1),
+            View::Settings => self.settings.tabs().into_layout_item(),
+            _ => self.central.fill(1),
+        };
+        // An extended title bar reserves its strip, menu row and the top bar
+        // band; content starts below `title_bar_height()`.
+        let title_bar = ui.title_bar_height();
+        ui.set_layout(
+            column![
+                row![
+                    self.navigator.width(dip(220.0)),
+                    central,
+                    self.right_panel
+                        .layout()
+                        .width(dip(now_playing::PANEL_WIDTH)),
+                ]
+                .fill(1),
+                self.status,
+            ]
+            .margins(Insets::new(dip(0.0), title_bar, dip(0.0), dip(0.0))),
+        );
     }
 
     /// Sets the one-line startup notice shown in the status bar.
@@ -223,15 +251,24 @@ impl Win32App {
         // Central-area routing: the Music list and the Albums grid own the
         // central area; every other view is still a placeholder.
         let view = self.shell.state.view;
-        let mut relayout = view != self.applied_view;
-        if relayout {
-            self.central
-                .set_visible(view != View::Music && view != View::Albums && view != View::Folders);
+        if view != self.applied_view {
+            self.central.set_visible(!matches!(
+                view,
+                View::Music | View::Albums | View::Folders | View::Settings
+            ));
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
             self.folders.set_visible(view == View::Folders);
+            self.settings.set_visible(view == View::Settings);
+            let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
+            self.browser.set_visible(browser_visible);
+            self.applied_browser_visible = browser_visible;
             self.applied_view = view;
+            // Rebuild the layout so the active view's subtree (and, for
+            // Settings, its tab control) is the one installed.
+            self.install_layout(ui, view);
         }
+        let mut relayout = false;
 
         // The Folders model rebuilds its tree rows and visible ids from the
         // library snapshot; refresh it before the view mirrors it.
@@ -285,6 +322,17 @@ impl Win32App {
             relayout = true;
         }
         self.browser.sync(&self.shell.state.music.browser);
+
+        if view == View::Settings
+            && self
+                .settings
+                .sync(ui, &self.shell.state, self.shell.library.as_ref())
+        {
+            // The tab control has no runtime selection setter, so rebuild the
+            // layout around the newly selected page.
+            self.install_layout(ui, view);
+        }
+
         if relayout {
             ui.relayout();
         }
@@ -575,6 +623,15 @@ impl App for Win32App {
                     &rows,
                 );
                 self.refresh_music();
+                self.tick(ui);
+            }
+            Msg::Settings(msg) => {
+                let mut commands = Commands::new();
+                self.settings
+                    .update(msg, ui, &mut self.shell.state, &mut commands);
+                for command in commands.into_vec() {
+                    self.shell.dispatch(command);
+                }
                 self.tick(ui);
             }
             Msg::Navigate(view) => {
