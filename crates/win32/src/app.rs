@@ -33,6 +33,7 @@ use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
 use crate::views::settings::{SettingsMsg, SettingsView};
+use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::{self, TopBarView};
 use crate::views::track_table::{self, ContextAction};
@@ -102,6 +103,7 @@ pub struct Win32App {
     folders: FoldersView,
     artists: ArtistsView,
     settings: SettingsView,
+    starred: StarredView,
     right_panel: NowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
@@ -142,6 +144,7 @@ impl Win32App {
         let folders = FoldersView::new(ui).expect("create folders view");
         let artists = ArtistsView::new(ui).expect("create artists view");
         let settings = SettingsView::new(ui).expect("create settings view");
+        let starred = StarredView::new(ui).expect("create starred view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
@@ -165,7 +168,12 @@ impl Win32App {
         let browser_visible = view == View::Music && shell.state.music.browser.visible;
         central.set_visible(!matches!(
             view,
-            View::Music | View::Albums | View::Artists | View::Folders | View::Settings
+            View::Music
+                | View::Albums
+                | View::Artists
+                | View::Folders
+                | View::Settings
+                | View::Starred
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
@@ -173,6 +181,7 @@ impl Win32App {
         folders.set_visible(view == View::Folders);
         artists.set_visible(view == View::Artists);
         settings.set_visible(view == View::Settings);
+        starred.set_visible(view == View::Starred);
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -188,6 +197,7 @@ impl Win32App {
             folders,
             artists,
             settings,
+            starred,
             right_panel,
             status,
             top_bar,
@@ -221,6 +231,7 @@ impl Win32App {
             View::Albums => self.albums.layout().fill(1),
             View::Artists => self.artists.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
+            View::Starred => self.starred.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
             _ => self.central.fill(1),
         };
@@ -263,13 +274,19 @@ impl Win32App {
         if view != self.applied_view {
             self.central.set_visible(!matches!(
                 view,
-                View::Music | View::Albums | View::Artists | View::Folders | View::Settings
+                View::Music
+                    | View::Albums
+                    | View::Artists
+                    | View::Folders
+                    | View::Settings
+                    | View::Starred
             ));
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
             self.folders.set_visible(view == View::Folders);
             self.artists.set_visible(view == View::Artists);
             self.settings.set_visible(view == View::Settings);
+            self.starred.set_visible(view == View::Starred);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
             self.browser.set_visible(browser_visible);
             self.applied_browser_visible = browser_visible;
@@ -306,6 +323,11 @@ impl Win32App {
         );
         self.folders.sync(
             &self.shell.state.folders,
+            self.shell.library.as_ref(),
+            playing_id,
+        );
+        self.starred.sync(
+            &mut self.shell.state,
             self.shell.library.as_ref(),
             playing_id,
         );
@@ -543,6 +565,7 @@ impl App for Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.activate(row),
                     View::Folders => self.folders.activate(row),
+                    View::Starred => self.starred.activate(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -568,6 +591,11 @@ impl App for Win32App {
                         self.folders
                             .resort(&self.shell.state.folders, self.shell.library.as_ref());
                     }
+                    View::Starred => {
+                        self.shell.state.starred.table.sort.toggle(id);
+                        self.starred
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
                     _ => return,
                 }
                 self.tick(ui);
@@ -585,6 +613,10 @@ impl App for Win32App {
                     View::Artists => {
                         self.artists.set_context_row(row);
                         self.artists.context_menu().clone()
+                    }
+                    View::Starred => {
+                        self.starred.set_context_row(row);
+                        self.starred.context_menu().clone()
                     }
                     _ => return,
                 };
@@ -609,6 +641,7 @@ impl App for Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.run_context(action, ui.hwnd()),
                     View::Folders => self.folders.run_context(action, ui.hwnd()),
+                    View::Starred => self.starred.run_context(action, ui.hwnd()),
                     _ => None,
                 };
                 if let Some(command) = command {
