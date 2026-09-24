@@ -192,6 +192,11 @@ impl PlayerApi for UnavailablePlayer {
     fn set_volume(&mut self, _volume: f32) {}
     fn set_repeat_mode(&mut self, _mode: RepeatMode) {}
     fn set_shuffle(&mut self, _enabled: bool) {}
+    fn seek_supported(&self) -> bool {
+        false
+    }
+    fn set_songlengths_path(&mut self, _path: Option<&Path>) {}
+    fn set_sid_fallback_length(&mut self, _length: std::time::Duration) {}
     fn set_tracker_settings(&mut self, _settings: &emusic_player::tracker::TrackerSettings) {}
     fn set_midi_soundfont(&mut self, _path: Option<&Path>) {}
     fn queue_jump(&mut self, _index: usize) {}

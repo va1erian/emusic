@@ -238,6 +238,16 @@ impl PlayerApi for MockPlayer {
         }
     }
 
+    /// Mock playback is always seekable; the unknown-duration/disabled-slider
+    /// paths are exercised by the player crate's mock-backend tests (#192).
+    fn seek_supported(&self) -> bool {
+        true
+    }
+
+    fn set_songlengths_path(&mut self, _path: Option<&Path>) {}
+
+    fn set_sid_fallback_length(&mut self, _length: Duration) {}
+
     fn queue_jump(&mut self, index: usize) {
         if index >= self.queue.len() {
             return;

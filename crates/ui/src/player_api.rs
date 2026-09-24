@@ -130,6 +130,22 @@ pub trait PlayerApi {
     fn set_repeat_mode(&mut self, mode: RepeatMode);
     fn set_shuffle(&mut self, enabled: bool);
 
+    /// Whether the current track can be seeked (#192). When `false` (e.g. a
+    /// SID tune) the transport bar disables its slider instead of letting a
+    /// drag be silently ignored.
+    fn seek_supported(&self) -> bool;
+
+    /// Points the SID decoder at an HVSC Songlengths database — the
+    /// `Songlengths.md5` file itself or an HVSC root folder to auto-detect it
+    /// in — or clears it (`None`). The player loads it lazily off the UI
+    /// thread; a missing or malformed file just falls back to unknown SID
+    /// lengths (#192).
+    fn set_songlengths_path(&mut self, path: Option<&Path>);
+
+    /// Sets the fallback play length for SID tunes with no Songlengths entry,
+    /// so an unknown-length tune still stops and the queue advances (#192).
+    fn set_sid_fallback_length(&mut self, length: Duration);
+
     /// Applies tracker module playback settings (interpolation, ramping,
     /// emulation, ...) live to the current channel, if it's a module; a
     /// no-op otherwise (e.g. the mock backend, or a plain audio stream).

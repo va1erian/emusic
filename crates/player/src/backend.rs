@@ -7,11 +7,46 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, MusicFlags, PositionMode, StreamFlags};
+use emusic_sid::{SongLengths, resolve_database_path};
+use tracing::warn;
 
 use crate::error::PlayerError;
 use crate::midi::{is_midi_file, resolve_soundfont};
-use crate::sid::SidChannel;
+use crate::sid::{DEFAULT_TUNE_LENGTH, SidChannel};
 use crate::tracker::TrackerSettings;
+
+/// How well a channel can seek to a requested position (#192).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeekSupport {
+    /// Seeking lands on the requested position.
+    Exact,
+    /// Seeking is available but lands nearby — a tracker module seeks by
+    /// order/row, not by time.
+    Approximate,
+    /// Seeking isn't available at all; the transport bar must disable its
+    /// slider instead of letting a drag be silently ignored.
+    Unsupported,
+}
+
+/// What a channel can do, so the transport bar never promises more than the
+/// backend can deliver (#192).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelCapabilities {
+    /// Whether [`BackendChannel::duration`] returns a meaningful total.
+    pub duration_known: bool,
+    /// How well [`BackendChannel::seek`] is honoured.
+    pub seek: SeekSupport,
+}
+
+impl Default for ChannelCapabilities {
+    /// Plain audio streams: a known, exactly-seekable length.
+    fn default() -> Self {
+        Self {
+            duration_known: true,
+            seek: SeekSupport::Exact,
+        }
+    }
+}
 
 /// Something that can open a playable channel for a file path.
 ///
@@ -34,6 +69,17 @@ pub trait AudioBackend: Send + Sync {
     fn set_midi_soundfont(&self, _configured: Option<&Path>) -> Result<(), PlayerError> {
         Ok(())
     }
+
+    /// Points the SID decoder at an HVSC Songlengths database — either the
+    /// `Songlengths.md5` file itself or an HVSC root folder to auto-detect it
+    /// in — or clears it (`None`). Loaded lazily, off the UI thread, when the
+    /// next SID tune opens (#192). The default does nothing.
+    fn set_songlengths_path(&self, _path: Option<&Path>) {}
+
+    /// Sets the fallback play length used for SID tunes with no database
+    /// entry, so they still stop and the queue advances (#192). The default
+    /// does nothing.
+    fn set_sid_fallback_length(&self, _length: Duration) {}
 }
 
 /// A single open, playable audio channel.
@@ -76,6 +122,12 @@ pub trait BackendChannel: Send {
     /// channel.
     fn module_info(&self) -> Option<crate::tracker::ModuleInfo> {
         None
+    }
+
+    /// What this channel can do with duration and seeking (#192). Defaults to
+    /// a fully seekable channel with a known length, matching plain streams.
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities::default()
     }
 }
 
@@ -123,11 +175,24 @@ struct MidiState {
     active_channel: Option<u32>,
 }
 
+/// HVSC Songlengths state: the configured path, the loaded database and the
+/// path it was loaded from, so changing the setting reloads and a failed load
+/// isn't retried on every tune.
+#[derive(Default)]
+struct SongLengthsState {
+    configured: Option<PathBuf>,
+    loaded: Option<Arc<SongLengths>>,
+    loaded_from: Option<PathBuf>,
+    failed_for: Option<PathBuf>,
+    fallback: Duration,
+}
+
 /// Real playback backend, built on the `bass` crate.
 pub struct BassBackend {
     bass: Arc<bass::Bass>,
     soundfont_dirs: Vec<PathBuf>,
     midi: Mutex<MidiState>,
+    songlengths: Mutex<SongLengthsState>,
 }
 
 impl BassBackend {
@@ -146,6 +211,10 @@ impl BassBackend {
             bass,
             soundfont_dirs: Vec::new(),
             midi: Mutex::new(MidiState::default()),
+            songlengths: Mutex::new(SongLengthsState {
+                fallback: DEFAULT_TUNE_LENGTH,
+                ..SongLengthsState::default()
+            }),
         }
     }
 
@@ -163,7 +232,14 @@ impl AudioBackend for BassBackend {
         // a push stream instead (see `crate::sid`).
         if is_sid_file(path) {
             self.clear_active_midi_channel();
-            return Ok(Box::new(SidChannel::open(&self.bass, path)?));
+            let lengths = self.songlengths();
+            let fallback = self.lock_songlengths().fallback;
+            return Ok(Box::new(SidChannel::open(
+                &self.bass,
+                path,
+                lengths.as_deref(),
+                fallback,
+            )?));
         }
 
         // FLOAT decodes to `f32`, which the visualizer (#25) needs for its
@@ -232,6 +308,21 @@ impl AudioBackend for BassBackend {
         midi.font = Some(font);
         Ok(())
     }
+
+    fn set_songlengths_path(&self, path: Option<&Path>) {
+        let mut state = self.lock_songlengths();
+        let path = path.map(Path::to_path_buf);
+        if state.configured != path {
+            // Force a reload on the next SID open (see `songlengths`).
+            state.loaded_from = None;
+            state.failed_for = None;
+        }
+        state.configured = path;
+    }
+
+    fn set_sid_fallback_length(&self, length: Duration) {
+        self.lock_songlengths().fallback = length;
+    }
 }
 
 impl BassBackend {
@@ -239,6 +330,54 @@ impl BassBackend {
         self.midi
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_songlengths(&self) -> std::sync::MutexGuard<'_, SongLengthsState> {
+        self.songlengths
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The configured Songlengths database, loaded on first use and cached for
+    /// the session. Reloads when the configured path changes; a missing or
+    /// malformed file is logged once and treated as "no database" rather than
+    /// failing playback (#192). Runs on the caller's (worker) thread.
+    fn songlengths(&self) -> Option<Arc<SongLengths>> {
+        let mut state = self.lock_songlengths();
+        let configured = state.configured.clone()?;
+
+        if state.loaded_from.as_ref() != Some(&configured) {
+            state.loaded = None;
+            state.loaded_from = Some(configured.clone());
+            state.failed_for = None;
+        }
+        if let Some(loaded) = &state.loaded {
+            return Some(Arc::clone(loaded));
+        }
+        if state.failed_for.as_ref() == Some(&configured) {
+            return None;
+        }
+
+        let resolved = resolve_database_path(&configured);
+        let result = resolved
+            .as_deref()
+            .ok_or_else(|| "no Songlengths.md5 found".to_string())
+            .and_then(|path| SongLengths::load(path).map_err(|error| error.to_string()));
+        match result {
+            Ok(lengths) => {
+                let lengths = Arc::new(lengths);
+                state.loaded = Some(Arc::clone(&lengths));
+                Some(lengths)
+            }
+            Err(error) => {
+                warn!(
+                    path = %configured.display(),
+                    "Songlengths database unavailable: {error}"
+                );
+                state.failed_for = Some(configured);
+                None
+            }
+        }
     }
 
     /// Records `handle` as the channel a soundfont switch should reach live,
@@ -411,6 +550,21 @@ impl BackendChannel for BassChannel {
             instruments: tags.instruments,
             samples: tags.samples,
         })
+    }
+
+    fn capabilities(&self) -> ChannelCapabilities {
+        match self {
+            // A stream's length/position are exact.
+            Self::Stream(_) => ChannelCapabilities::default(),
+            // BASS estimates a module's length and seeks by order/row, so the
+            // total can differ slightly from where playback actually stops
+            // (#192). Marking it approximate keeps the UI from treating a
+            // snapped position as a bug.
+            Self::Music(_) => ChannelCapabilities {
+                duration_known: true,
+                seek: SeekSupport::Approximate,
+            },
+        }
     }
 }
 

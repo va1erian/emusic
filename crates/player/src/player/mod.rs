@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
-use crate::backend::{AudioBackend, BackendChannel};
+use crate::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport};
 use crate::error::PlayerError;
 use crate::events::{PlaybackState, PlayerEvent};
 use crate::listen::ListenAccounting;
@@ -37,7 +37,11 @@ struct CurrentTrack {
     /// Keeps the backend's end-of-track callback registered; never read.
     _end_guard: Box<dyn Any + Send>,
     path: PathBuf,
+    /// The track's total length, or `None` when the backend can't report one
+    /// (`ChannelCapabilities::duration_known` is `false`).
     duration: Option<Duration>,
+    /// What the channel can do (duration/seek), for the transport bar (#192).
+    capabilities: ChannelCapabilities,
 }
 
 /// A position (and play/pause intent) to apply to the next track that
@@ -163,6 +167,29 @@ impl Player {
 
     pub fn duration(&self) -> Option<Duration> {
         self.current.as_ref().and_then(|c| c.duration)
+    }
+
+    /// Whether the current track can be seeked. `false` for a track whose
+    /// backend ignores seeks (e.g. SID), so the transport bar disables its
+    /// slider instead of letting a drag be silently dropped (#192).
+    pub fn seek_supported(&self) -> bool {
+        self.current
+            .as_ref()
+            .is_some_and(|c| c.capabilities.seek != SeekSupport::Unsupported)
+    }
+
+    /// Points the SID decoder at an HVSC Songlengths database (the file or an
+    /// HVSC root to auto-detect it in), or clears it. The backend loads it
+    /// lazily and off the UI thread; a missing or malformed file only costs
+    /// the SID tune's real length (#192).
+    pub fn set_songlengths_path(&self, path: Option<&Path>) {
+        self.backend.set_songlengths_path(path);
+    }
+
+    /// Sets the fallback play length for SID tunes with no Songlengths entry
+    /// (#192).
+    pub fn set_sid_fallback_length(&self, length: Duration) {
+        self.backend.set_sid_fallback_length(length);
     }
 
     pub fn volume(&self) -> f32 {

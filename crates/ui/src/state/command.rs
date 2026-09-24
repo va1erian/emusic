@@ -109,6 +109,12 @@ pub enum Command {
     /// Set (or clear, with `None`) the soundfont MIDI files play with,
     /// applied live to the player and persisted.
     SetMidiSoundfont(Option<PathBuf>),
+    /// Set (or clear, with `None`) the HVSC Songlengths database path (#192),
+    /// applied to the player and persisted.
+    SetSonglengthsPath(Option<PathBuf>),
+    /// Set the SID fallback play length, in seconds (#192), applied to the
+    /// player and persisted.
+    SetSidFallbackSecs(u32),
 }
 
 impl Command {

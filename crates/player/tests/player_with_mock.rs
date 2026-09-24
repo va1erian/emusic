@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use emusic_player::backend::{AudioBackend, BackendChannel};
+use emusic_player::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport};
 use emusic_player::tracker::TrackerSettings;
 use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent};
 
@@ -17,6 +17,7 @@ use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent};
 /// its end-of-track callback directly for deterministic tests.
 struct MockChannel {
     duration: Duration,
+    capabilities: ChannelCapabilities,
     started_at: Mutex<Option<Instant>>,
     paused_at: Mutex<Option<Duration>>,
     end_callback: Mutex<Option<Box<dyn Fn() + Send>>>,
@@ -27,6 +28,7 @@ impl MockChannel {
     fn new(duration: Duration) -> Self {
         Self {
             duration,
+            capabilities: ChannelCapabilities::default(),
             started_at: Mutex::new(None),
             paused_at: Mutex::new(Some(Duration::ZERO)),
             end_callback: Mutex::new(None),
@@ -96,6 +98,10 @@ impl BackendChannel for MockChannel {
         *self.end_callback.lock().unwrap() = Some(callback);
         Ok(Box::new(()))
     }
+
+    fn capabilities(&self) -> ChannelCapabilities {
+        self.capabilities
+    }
 }
 
 /// Mock backend: "opens" instantly (in-process, no real I/O), optionally
@@ -104,6 +110,7 @@ impl BackendChannel for MockChannel {
 #[derive(Clone, Default)]
 struct MockBackend {
     duration: Duration,
+    capabilities: ChannelCapabilities,
     fail_paths: Arc<Mutex<Vec<PathBuf>>>,
     last_opened: Arc<Mutex<Option<Arc<MockChannel>>>>,
 }
@@ -112,6 +119,16 @@ impl MockBackend {
     fn new(duration: Duration) -> Self {
         Self {
             duration,
+            capabilities: ChannelCapabilities::default(),
+            ..Default::default()
+        }
+    }
+
+    /// A backend whose channels report the given capabilities.
+    fn with_capabilities(duration: Duration, capabilities: ChannelCapabilities) -> Self {
+        Self {
+            duration,
+            capabilities,
             ..Default::default()
         }
     }
@@ -167,6 +184,9 @@ impl BackendChannel for SharedChannel {
     fn on_end(&self, callback: Box<dyn Fn() + Send>) -> Result<Box<dyn Any + Send>, PlayerError> {
         self.0.on_end(callback)
     }
+    fn capabilities(&self) -> ChannelCapabilities {
+        self.0.capabilities()
+    }
 }
 
 impl AudioBackend for MockBackend {
@@ -179,7 +199,9 @@ impl AudioBackend for MockBackend {
         {
             return Err(PlayerError::NoCurrentTrack);
         }
-        let channel = Arc::new(MockChannel::new(self.duration));
+        let mut channel = MockChannel::new(self.duration);
+        channel.capabilities = self.capabilities;
+        let channel = Arc::new(channel);
         *self.last_opened.lock().unwrap() = Some(Arc::clone(&channel));
         Ok(Box::new(SharedChannel(channel)))
     }
@@ -589,6 +611,49 @@ fn turning_shuffle_off_ends_the_scope() {
     assert!(
         player.current_path().is_some(),
         "the current track keeps playing"
+    );
+}
+
+#[test]
+fn unknown_duration_is_reported_as_none_and_seek_is_unsupported() {
+    // A SID-like channel: no database entry (unknown length) and no seeking.
+    let backend = MockBackend::with_capabilities(
+        Duration::from_secs(10),
+        ChannelCapabilities {
+            duration_known: false,
+            seek: SeekSupport::Unsupported,
+        },
+    );
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play(vec![PathBuf::from("tune.sid")], 0);
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    assert_eq!(
+        player.duration(),
+        None,
+        "an unknown total must not be shown as a real one"
+    );
+    assert!(!player.seek_supported(), "the slider must be disabled");
+}
+
+#[test]
+fn approximate_seek_is_supported_with_a_known_duration() {
+    // A tracker-like channel: BASS reports a length and seeks by order/row.
+    let backend = MockBackend::with_capabilities(
+        Duration::from_secs(10),
+        ChannelCapabilities {
+            duration_known: true,
+            seek: SeekSupport::Approximate,
+        },
+    );
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play(vec![PathBuf::from("song.mod")], 0);
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    assert_eq!(player.duration(), Some(Duration::from_secs(10)));
+    assert!(
+        player.seek_supported(),
+        "an approximate seek must still enable the slider"
     );
 }
 
