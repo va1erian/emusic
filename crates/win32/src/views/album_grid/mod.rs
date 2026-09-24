@@ -74,6 +74,8 @@ pub enum AlbumMsg {
     TableSort(usize),
     /// A track row was double-clicked; play it.
     TableActivate(usize),
+    /// A track row's star cell was clicked; toggle it.
+    TableToggleStar(usize),
     /// A track row was right-clicked; open its context menu.
     TableContext(usize),
     /// A track context-menu entry was chosen.
@@ -370,6 +372,11 @@ impl AlbumGridView {
             }
             AlbumMsg::TableActivate(row) => {
                 if let Some(command) = self.tracks.activate(row) {
+                    out.push(command);
+                }
+            }
+            AlbumMsg::TableToggleStar(row) => {
+                if let Some(command) = self.tracks.toggle_star(row) {
                     out.push(command);
                 }
             }
