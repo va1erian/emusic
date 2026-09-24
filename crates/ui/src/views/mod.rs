@@ -7,13 +7,16 @@
 mod context;
 
 pub mod album_grid;
+pub mod artists;
 pub mod column_browser;
 pub mod folders;
+pub mod genres;
 pub mod history;
 pub mod most_played;
 pub mod music;
 pub mod now_playing;
 pub mod search_popup;
+pub mod starred;
 pub mod track_table;
 
 pub use context::{Commands, Ctx};
