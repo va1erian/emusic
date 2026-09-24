@@ -78,10 +78,13 @@ impl StarredView {
         self.table.run_context(action, hwnd)
     }
 
+    /// Remembers the row whose context menu was opened, so `run_context` can
+    /// act on it.
     pub fn set_context_row(&self, row: usize) {
         self.table.set_context_row(row);
     }
 
+    /// The track table's context menu.
     pub fn context_menu(&self) -> &Menu<Msg> {
         self.table.context_menu()
     }
