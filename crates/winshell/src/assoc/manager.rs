@@ -9,11 +9,13 @@ use super::roots::AssocRoots;
 use crate::error::Result;
 use crate::sys;
 
-/// Extensions emusic can be associated with. Matches the formats BASS (and
-/// its plugins) can play.
+/// Extensions emusic can be associated with: the formats BASS (and its
+/// plugins) can play, plus the Commodore 64 SID formats the app's own decoder
+/// handles.
 pub const EXTENSIONS: &[&str] = &[
     "mp3", "mp2", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "aiff", "aif", "wma", "wv",
     "ape", "mpc", "webm", "mka", "mod", "s3m", "xm", "it", "mtm", "umx", "mo3", "mid", "midi",
+    "sid", "psid", "rsid",
 ];
 
 /// Subdirectory of the install dir holding the per-extension `.ico` files
