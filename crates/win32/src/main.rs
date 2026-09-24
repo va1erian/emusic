@@ -65,10 +65,22 @@ fn run_ui(
     let startup = (!startup.files.is_empty()).then_some(startup);
     let ipc = ipc::IpcBridge::primary(listener);
 
+    // The window chrome follows the theme the shell was configured with.
+    let window_theme = match config.theme {
+        emusic_ui::state::Theme::Dark => win32ui::Theme::dark(),
+        emusic_ui::state::Theme::Light => win32ui::Theme::light(),
+    };
+
     win32ui::run_app(
         WindowSpec::new("emusic")
             .size(dip(1100.0), dip(720.0))
-            .theme(Theme::dark()),
+            .theme(window_theme)
+            // An extended title bar draws the caption / menu / top bar on the
+            // strip+band and lets the transport bar live on it (#108); the menu
+            // moves onto the strip so the band sits below it.
+            .title_bar(TitleBar::Extended)
+            .backdrop(Backdrop::Acrylic)
+            .menu_in_strip(true),
         move |ui| {
             let backends = backend::build(mock);
             let emusic_ui::backend::Backends {

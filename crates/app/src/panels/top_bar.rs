@@ -1,12 +1,19 @@
 //! Top transport bar: prev/play-pause/stop/next, repeat, shuffle, seek
 //! slider with elapsed/total time, volume slider, and a search box.
+//!
+//! Render-only (#104): the transport state, formatting and command mapping
+//! live in [`emusic_ui::panels::top_bar::TopBar`]; this module draws it and
+//! turns widget responses into its messages.
 
 use eframe::egui;
 
+use emusic_ui::panels::top_bar::{TopBar, TopBarMsg};
+use emusic_ui::views::Commands;
+
 use crate::icons;
-use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
+use crate::player_api::PlayerApi;
 use crate::search::QUERY_HELP;
-use crate::state::{AppState, Command};
+use crate::state::AppState;
 use crate::theme;
 
 /// Stable [`egui::Id`] for the top-bar search box, so Ctrl+F can request
@@ -24,6 +31,8 @@ const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(30.0, 30.0);
 type TransportIcon = fn(&egui::Painter, egui::Rect, egui::Color32);
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+    state.top_bar.sync(player);
+
     // Ctrl+F focuses the search box regardless of which widget currently
     // has focus. The app shell consumes the more specific Ctrl+Shift+F /
     // Ctrl+K shortcuts for the global search popup before this runs, so
@@ -33,57 +42,78 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
         ui.memory_mut(|mem| mem.request_focus(search_box_id()));
     }
 
+    // Messages produced while drawing are applied afterwards, so the body can
+    // borrow the model immutably (one message per event, Elm-style).
+    let mut messages: Vec<TopBarMsg> = Vec::new();
+    let top_bar = &state.top_bar;
+    let search_query = &state.search_query;
     egui::Panel::top("top_bar").exact_size(56.0).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
             ui.add_space(4.0);
-            transport_buttons(ui, state, player);
+            transport_buttons(ui, top_bar, &mut messages);
 
             ui.separator();
             toggle_button(
                 ui,
-                state,
                 "🔁",
                 "Repeat",
-                repeat_label(player.repeat_mode()),
+                top_bar.repeat_active(),
+                TopBarMsg::ToggleRepeat,
+                &mut messages,
             );
-            toggle_button_bool(ui, state, "🔀", "Shuffle", player.shuffle());
+            toggle_button(
+                ui,
+                "🔀",
+                "Shuffle",
+                top_bar.shuffle(),
+                TopBarMsg::ToggleShuffle,
+                &mut messages,
+            );
             ui.separator();
 
             // Lay the right-hand controls out from the right edge so the
             // volume slider and search box stay pinned there; the seek area
             // then fills whatever space is left in the middle.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                search_box(ui, state);
+                search_box(ui, search_query, &mut messages);
                 ui.separator();
-                volume_area(ui, state, player);
+                volume_area(ui, top_bar, &mut messages);
                 ui.separator();
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    seek_area(ui, state, player);
+                    seek_area(ui, top_bar, &mut messages);
                 });
             });
         });
     });
+
+    if !messages.is_empty() {
+        let mut out = Commands::new();
+        for msg in messages {
+            state.top_bar.update(msg, &mut out);
+        }
+        state.pending.extend(out.into_vec());
+    }
 }
 
-fn transport_buttons(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+fn transport_buttons(ui: &mut egui::Ui, top_bar: &TopBar, messages: &mut Vec<TopBarMsg>) {
     if transport_button(ui, icons::previous, false, "Previous").clicked() {
-        state.push(Command::PlayerPrevious);
+        messages.push(TopBarMsg::Previous);
     }
 
-    let (icon, tooltip) = if player.status() == PlaybackStatus::Playing {
+    let (icon, tooltip) = if top_bar.is_playing() {
         (icons::pause as TransportIcon, "Pause")
     } else {
         (icons::play as TransportIcon, "Play")
     };
     if transport_button(ui, icon, true, tooltip).clicked() {
-        state.push(Command::PlayerPlayPause);
+        messages.push(TopBarMsg::PlayPause);
     }
 
     if transport_button(ui, icons::stop, false, "Stop").clicked() {
-        state.push(Command::PlayerStop);
+        messages.push(TopBarMsg::Stop);
     }
     if transport_button(ui, icons::next, false, "Next").clicked() {
-        state.push(Command::PlayerNext);
+        messages.push(TopBarMsg::Next);
     }
 }
 
@@ -107,33 +137,20 @@ fn transport_button(
     response
 }
 
-fn repeat_label(mode: RepeatMode) -> bool {
-    mode != RepeatMode::Off
-}
-
-fn toggle_button(ui: &mut egui::Ui, state: &mut AppState, icon: &str, tooltip: &str, active: bool) {
-    let mut button = egui::Button::new(icon);
-    if active {
-        button = button.fill(theme::current_accent());
-    }
-    if ui.add(button).on_hover_text(tooltip).clicked() {
-        state.push(Command::PlayerToggleRepeat);
-    }
-}
-
-fn toggle_button_bool(
+fn toggle_button(
     ui: &mut egui::Ui,
-    state: &mut AppState,
     icon: &str,
     tooltip: &str,
     active: bool,
+    msg: TopBarMsg,
+    messages: &mut Vec<TopBarMsg>,
 ) {
     let mut button = egui::Button::new(icon);
     if active {
         button = button.fill(theme::current_accent());
     }
     if ui.add(button).on_hover_text(tooltip).clicked() {
-        state.push(Command::PlayerToggleShuffle);
+        messages.push(msg);
     }
 }
 
@@ -143,12 +160,12 @@ fn toggle_button_bool(
 /// disabled slider with a tooltip instead of a drag that silently snaps back;
 /// a track with no known length (#192) shows elapsed time only, never a fake
 /// total.
-fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
-    let position = player.position().as_secs_f64();
-    let total = player.duration();
-    let seek_supported = player.seek_supported();
-    let elapsed = format_time(position);
-    let total_text = total.map(|d| format_time(d.as_secs_f64()));
+fn seek_area(ui: &mut egui::Ui, top_bar: &TopBar, messages: &mut Vec<TopBarMsg>) {
+    let position = top_bar.position_secs();
+    let total = top_bar.duration_secs();
+    let seek_supported = top_bar.seek_supported();
+    let elapsed = top_bar.elapsed_text();
+    let total_text = top_bar.total_text();
 
     // Stretch the slider across the centre section: reserve the time labels
     // plus the item spacing around them and give the rest to the slider, so
@@ -177,15 +194,13 @@ fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     ui.spacing_mut().slider_width = slider_width;
     // Without a total, a nominal range keeps the (disabled) thumb from
     // collapsing; the position is still shown by the elapsed label.
-    let range_end = total.map_or_else(|| position.max(1.0), |d| d.as_secs_f64().max(0.001));
+    let range_end = total.map_or_else(|| position.max(1.0), |seconds| seconds.max(0.001));
     let slider = ui.add_enabled(
         seek_supported,
         egui::Slider::new(&mut value, 0.0..=range_end).show_value(false),
     );
     if seek_supported && slider.changed() {
-        state.push(Command::PlayerSeek(std::time::Duration::from_secs_f64(
-            value,
-        )));
+        messages.push(TopBarMsg::Seek(std::time::Duration::from_secs_f64(value)));
     }
     if !seek_supported {
         slider.on_hover_text("Seeking isn't available for this track");
@@ -195,21 +210,21 @@ fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     }
 }
 
-fn volume_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+fn volume_area(ui: &mut egui::Ui, top_bar: &TopBar, messages: &mut Vec<TopBarMsg>) {
     ui.label("🔊");
-    let mut volume = player.volume();
+    let mut volume = top_bar.volume();
     ui.spacing_mut().slider_width = 90.0;
     if ui
         .add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false))
         .changed()
     {
-        state.push(Command::PlayerSetVolume(volume));
+        messages.push(TopBarMsg::SetVolume(volume));
     }
 }
 
-fn search_box(ui: &mut egui::Ui, state: &mut AppState) {
+fn search_box(ui: &mut egui::Ui, query_text: &str, messages: &mut Vec<TopBarMsg>) {
     ui.label("🔍").on_hover_text(QUERY_HELP);
-    let mut query = state.search_query.clone();
+    let mut query = query_text.to_owned();
     let response = ui.add(
         egui::TextEdit::singleline(&mut query)
             .id(search_box_id())
@@ -227,8 +242,8 @@ fn search_box(ui: &mut egui::Ui, state: &mut AppState) {
         query.clear();
         ui.memory_mut(|mem| mem.request_focus(search_box_id()));
     }
-    if query != state.search_query {
-        state.push(Command::SetSearchQuery(query));
+    if query != query_text {
+        messages.push(TopBarMsg::SetSearchQuery(query));
     }
     response.on_hover_text(QUERY_HELP);
 }
@@ -249,9 +264,4 @@ fn clear_button(ui: &mut egui::Ui, field: egui::Rect) -> bool {
         .on_hover_text("Clear search")
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
-}
-
-fn format_time(seconds: f64) -> String {
-    let seconds = seconds.max(0.0) as u64;
-    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
