@@ -21,10 +21,10 @@ impl EguiApp {
             ) || i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)
         });
         if toggle_popup {
-            if self.shell.state.search_popup.open {
-                self.shell.state.search_popup.close();
+            if self.shell.state.search_popup.state.open {
+                self.shell.state.search_popup.state.close();
             } else {
-                self.shell.state.search_popup.open();
+                self.shell.state.search_popup.state.open();
             }
         }
     }

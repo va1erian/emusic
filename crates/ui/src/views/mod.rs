@@ -12,6 +12,7 @@ pub mod folders;
 pub mod history;
 pub mod most_played;
 pub mod music;
+pub mod search_popup;
 pub mod track_table;
 
 pub use context::{Commands, Ctx};

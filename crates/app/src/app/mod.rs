@@ -169,8 +169,8 @@ impl EguiApp {
     /// Opens the global search popup with the given query, as Ctrl+K would.
     /// Used by `emusic-shot` (`--search-popup`).
     pub fn open_search_popup(&mut self, query: impl Into<String>) {
-        self.shell.state.search_popup.open();
-        self.shell.state.search_popup.query = query.into();
+        self.shell.state.search_popup.state.open();
+        self.shell.state.search_popup.state.query = query.into();
     }
 
     /// Opens the Music table's track Properties dialog for the library's

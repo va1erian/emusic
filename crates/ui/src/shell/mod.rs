@@ -219,7 +219,7 @@ impl Shell {
         self.search
             .tick(self.library.tracks(), &self.state.search_query);
         self.popup_search
-            .tick(self.library.tracks(), &self.state.search_popup.query);
+            .tick(self.library.tracks(), &self.state.search_popup.state.query);
 
         self.poll_ipc();
         self.apply_pending();
