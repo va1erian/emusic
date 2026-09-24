@@ -5,4 +5,5 @@
 
 pub mod navigator;
 pub mod status_bar;
+pub mod top_bar;
 pub mod visualizer;

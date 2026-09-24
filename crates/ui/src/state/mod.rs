@@ -29,6 +29,7 @@ use emusic_player::tracker::TrackerSettings;
 
 use crate::panels::navigator::Navigator;
 use crate::panels::status_bar::StatusBar as StatusBarModel;
+use crate::panels::top_bar::TopBar;
 use crate::views::album_grid::AlbumGrid;
 use crate::views::folders::FoldersView;
 use crate::views::history::HistoryState;
@@ -56,6 +57,9 @@ pub struct AppState {
     pub navigator: Navigator,
     /// The bottom status bar's part texts (#104).
     pub status_bar: StatusBarModel,
+    /// The top transport bar model (#104): the live transport snapshot and its
+    /// display helpers, synced from the player each frame.
+    pub top_bar: TopBar,
     /// Library folders mirrored from [`crate::config::Config`] so the
     /// persisted list survives round-trips through [`Config::capture`].
     ///
@@ -148,6 +152,7 @@ impl Default for AppState {
             search_popup: crate::views::search_popup::SearchPopup::default(),
             navigator: Navigator::default(),
             status_bar: StatusBarModel::default(),
+            top_bar: TopBar::default(),
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
             resume_playback: true,

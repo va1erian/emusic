@@ -10,9 +10,11 @@ use std::time::Instant;
 use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
 use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, View};
+use emusic_ui::views::Commands;
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
 use win32ui::{column, dip, row};
@@ -22,6 +24,7 @@ use crate::views::music::{ContextAction, MusicView};
 use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
 use crate::views::status_bar::StatusBarView;
+use crate::views::top_bar::{self, TopBarView};
 use crate::waker::Win32Waker;
 
 /// Everything the window can ask the app to do.
@@ -44,6 +47,10 @@ pub enum Msg {
     ContextAction(ContextAction),
     /// Switch the central view (navigator row click).
     Navigate(View),
+    /// A top-bar band event (transport button, toggle or slider).
+    TopBar(TopBarEvent),
+    /// The top-bar search box changed.
+    TopBarSearch(String),
     /// Close the window and exit.
     Quit,
 }
@@ -56,6 +63,9 @@ pub struct Win32App {
     music: MusicView,
     right_panel: Placeholder,
     status: StatusBarView,
+    /// The top transport bar band, when the window is extended and DirectWrite
+    /// is available.
+    top_bar: Option<TopBarView>,
     /// The shell's repaint timer, if scheduled, and its interval in ms.
     timer: Option<(TimerId, u32)>,
     /// Panel visibility last applied, so a change triggers a relayout.
@@ -86,6 +96,9 @@ impl Win32App {
         let music = MusicView::new(ui).expect("create music view");
         let right_panel = Placeholder::new(ui, "Now playing").expect("create right panel");
         let status = StatusBarView::new(ui).expect("create status bar");
+        // The top bar needs an extended title bar (see `main`) and DirectWrite;
+        // without them the app just runs without it.
+        let top_bar = TopBarView::new(ui).ok();
 
         waker.bind(Win32Waker::new(ui.proxy()));
         let mut shell = Shell::new(library, player, config, config_path, waker);
@@ -102,16 +115,22 @@ impl Win32App {
         let music_active = shell.state.view == View::Music;
         central.set_visible(!music_active);
         music.set_visible(music_active);
-        ui.set_layout(column![
-            row![
-                navigator.width(dip(220.0)),
-                central.fill(1),
-                music.fill(1),
-                right_panel.width(dip(280.0)),
+        // An extended title bar reserves its strip, menu row and the top bar
+        // band; content starts below `title_bar_height()`.
+        let title_bar = ui.title_bar_height();
+        ui.set_layout(
+            column![
+                row![
+                    navigator.width(dip(220.0)),
+                    central.fill(1),
+                    music.fill(1),
+                    right_panel.width(dip(280.0)),
+                ]
+                .fill(1),
+                status,
             ]
-            .fill(1),
-            status,
-        ]);
+            .margins(Insets::new(dip(0.0), title_bar, dip(0.0), dip(0.0))),
+        );
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -124,6 +143,7 @@ impl Win32App {
             music,
             right_panel,
             status,
+            top_bar,
             timer: None,
             applied_panels,
             applied_theme,
@@ -184,6 +204,15 @@ impl Win32App {
         self.status
             .sync(&self.shell.state.status_bar, self.shell.backend_notice());
 
+        self.shell.state.top_bar.sync(self.shell.player.as_ref());
+        if let Some(top_bar) = &mut self.top_bar {
+            top_bar.sync(
+                ui,
+                &self.shell.state.top_bar,
+                &self.shell.state.search_query,
+            );
+        }
+
         // Panel visibility is toggled through `Command::TogglePanel`; apply it
         // and relayout only when it actually changed.
         let panels = self.shell.state.panels;
@@ -201,6 +230,16 @@ impl Win32App {
         if theme != self.applied_theme {
             ui.set_theme(win32_theme(theme));
             self.applied_theme = theme;
+        }
+    }
+
+    /// Applies a top-bar intent through the shared model and dispatches the
+    /// commands it emits.
+    fn apply_top_bar(&mut self, message: TopBarMsg) {
+        let mut out = Commands::new();
+        self.shell.state.top_bar.update(message, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
         }
     }
 
@@ -268,6 +307,16 @@ impl App for Win32App {
             }
             Msg::Navigate(view) => {
                 self.shell.dispatch(Command::SetView(view));
+                self.tick(ui);
+            }
+            Msg::TopBar(event) => {
+                if let Some(message) = top_bar::to_message(event) {
+                    self.apply_top_bar(message);
+                }
+                self.tick(ui);
+            }
+            Msg::TopBarSearch(query) => {
+                self.apply_top_bar(TopBarMsg::SetSearchQuery(query));
                 self.tick(ui);
             }
             Msg::Quit => ui.close(),
