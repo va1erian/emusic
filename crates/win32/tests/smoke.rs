@@ -95,6 +95,40 @@ fn app_constructs_with_a_playing_track_and_queue() {
     }
 }
 
+/// Exercises the Settings view wiring (#115): navigating there must build the
+/// tab strip and every page's controls and tick without panicking.
+#[test]
+fn settings_view_builds_its_controls_and_quits() {
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic-win32.settings").theme(Theme::dark()),
+        move |ui| {
+            let app = Win32App::new(
+                ui,
+                Box::new(MockLibrary::new()),
+                Box::new(MockPlayer::default()),
+                Config::default(),
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            ui.emit(Msg::Navigate(emusic_ui::state::View::Settings));
+            ui.emit(Msg::Quit);
+            constructed_for_make.set(true);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}
+
 /// Exercises the Albums view wiring (#113): navigating there must build the
 /// grid model from the mock library and tick without panicking.
 #[test]

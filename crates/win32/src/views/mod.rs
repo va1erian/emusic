@@ -12,6 +12,7 @@ pub mod music;
 pub mod navigator;
 pub mod now_playing;
 pub mod placeholder;
+pub mod settings;
 pub mod status_bar;
 pub mod top_bar;
 pub mod track_table;
