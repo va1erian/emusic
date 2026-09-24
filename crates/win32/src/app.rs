@@ -85,6 +85,14 @@ pub enum Msg {
     Settings(SettingsMsg),
     /// Switch the central view (navigator row click).
     Navigate(View),
+    /// The navigator's row for `View` was right-clicked.
+    NavigatorContext(View),
+    /// Start a shuffled playback over the whole library (navigator context
+    /// menu on the Music row, #242).
+    NavigatorShuffleAll,
+    /// Start a shuffled playback over the Music view's currently visible
+    /// tracks (its header's "Shuffle all" button, #242).
+    MusicShuffleAll,
     /// A top-bar band event (transport button, toggle or slider).
     TopBar(TopBarEvent),
     /// The top-bar search box changed.
@@ -255,6 +263,7 @@ impl Win32App {
                 self.browser
                     .layout()
                     .height(dip(self.shell.state.music.browser.height)),
+                self.music.header(),
                 self.music.fill(1),
             ]
             .fill(1),
@@ -832,6 +841,36 @@ impl App for Win32App {
             }
             Msg::Navigate(view) => {
                 self.shell.dispatch(Command::SetView(view));
+                self.tick(ui);
+            }
+            Msg::NavigatorContext(view) => {
+                if view != View::Music {
+                    return;
+                }
+                let menu = Menu::new().item("Shuffle all", None, || Msg::NavigatorShuffleAll);
+                ui.popup(&menu, ui.cursor_position());
+            }
+            Msg::NavigatorShuffleAll => {
+                let ids: Vec<u64> = self
+                    .shell
+                    .library
+                    .tracks()
+                    .iter()
+                    .map(|track| track.id)
+                    .collect();
+                self.shell.dispatch(Command::ShuffleScope {
+                    ids,
+                    label: "All tracks".to_string(),
+                });
+                self.tick(ui);
+            }
+            Msg::MusicShuffleAll => {
+                let command = self.music.shuffle_all(
+                    &self.shell.state,
+                    self.shell.library.as_ref(),
+                    &self.shell.search,
+                );
+                self.shell.dispatch(command);
                 self.tick(ui);
             }
             Msg::TopBar(event) => {

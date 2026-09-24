@@ -3,7 +3,10 @@
 //! plus the view label, with a selection highlight.
 //!
 //! The sections and the click-to-switch intent come from the model; this view
-//! only owns the child window and draws it.
+//! only owns the child window and draws it. A right click raises
+//! [`NavigatorEvent::Context`] for the row under the cursor; the app decides
+//! which rows actually have a context menu (#242: the Music row's "Shuffle
+//! all").
 
 use std::cell::{Cell, RefCell};
 
@@ -36,11 +39,13 @@ const INITIAL_WIDTH: f32 = 200.0;
 /// Initial height, in device-independent pixels.
 const INITIAL_HEIGHT: f32 = 300.0;
 
-/// The event the navigator raises when a view is clicked.
+/// The event the navigator raises when a view is clicked or right-clicked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigatorEvent {
     /// The user clicked this view's row.
     Select(View),
+    /// The user right-clicked this view's row, requesting its context menu.
+    Context(View),
 }
 
 /// A navigator row: a non-selectable section heading, or a view.
@@ -59,7 +64,10 @@ impl NavigatorView {
     /// Creates the navigator and maps its clicks to [`Msg::Navigate`].
     pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
         let widget = NavigatorWidget::new(ui.dpi());
-        let custom = Custom::new(ui, widget)?.on_event(|event| Some(Msg::Navigate(event.view())));
+        let custom = Custom::new(ui, widget)?.on_event(|event| match event {
+            NavigatorEvent::Select(view) => Some(Msg::Navigate(view)),
+            NavigatorEvent::Context(view) => Some(Msg::NavigatorContext(view)),
+        });
         Ok(Self {
             custom,
             applied_revision: Cell::new(u64::MAX),
@@ -86,21 +94,13 @@ impl AsControl for NavigatorView {
     }
 }
 
-impl NavigatorEvent {
-    /// The view that was clicked.
-    fn view(self) -> View {
-        match self {
-            NavigatorEvent::Select(view) => view,
-        }
-    }
-}
-
 /// The owner-drawn widget: the sections, the selected view and the hover.
 struct NavigatorWidget {
     dpi: Cell<u32>,
     selected: Cell<View>,
     hot: Cell<Option<View>>,
     pressed: Cell<Option<View>>,
+    pressed_right: Cell<Option<View>>,
     body: RefCell<Option<Font>>,
     icons: RefCell<Option<Font>>,
 }
@@ -112,6 +112,7 @@ impl NavigatorWidget {
             selected: Cell::new(View::default()),
             hot: Cell::new(None),
             pressed: Cell::new(None),
+            pressed_right: Cell::new(None),
             body: RefCell::new(Font::new("Segoe UI", 9.75, FontWeight::Regular, dpi).ok()),
             icons: RefCell::new(
                 Font::new("Segoe Fluent Icons", 11.0, FontWeight::Regular, dpi).ok(),
@@ -269,6 +270,28 @@ impl CustomWidget for NavigatorWidget {
                     && let Some(view) = hit
                 {
                     cx.emit(NavigatorEvent::Select(view));
+                }
+            }
+            Input::MouseDown {
+                x,
+                y,
+                button: MouseButton::Right,
+                ..
+            } => {
+                self.pressed_right.set(self.hit(x, y, bounds));
+            }
+            Input::MouseUp {
+                x,
+                y,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let hit = self.hit(x, y, bounds);
+                if hit.is_some()
+                    && hit == self.pressed_right.take()
+                    && let Some(view) = hit
+                {
+                    cx.emit(NavigatorEvent::Context(view));
                 }
             }
             _ => {}
