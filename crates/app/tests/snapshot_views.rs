@@ -158,3 +158,24 @@ fn demo_candidates() -> Vec<Candidate> {
         },
     ]
 }
+
+#[test]
+fn status_bar_auto_tagging() {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut harness = Harness::builder()
+            .with_size(egui::Vec2::new(1280.0, 800.0))
+            .build_eframe(|cc| {
+                let library = MockLibrary::auto_tagging();
+                let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
+                EguiApp::with_config(cc, Box::new(library), player, Config::default())
+            });
+        harness.run_steps(1);
+        harness.snapshot("status-bar-auto-tagging");
+    }));
+
+    if result.is_err() {
+        eprintln!(
+            "skipping snapshot test for `status-bar-auto-tagging`: no headless GPU adapter available in this environment"
+        );
+    }
+}

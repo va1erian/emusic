@@ -47,6 +47,20 @@ impl MockLibrary {
         }
     }
 
+    /// A populated library with an auto-tag lookup in flight, for screenshots
+    /// of the status bar's lookup line and Cancel button (#210).
+    pub fn auto_tagging() -> Self {
+        Self {
+            auto_tag_status: Some(AutoTagStatus {
+                path: std::path::PathBuf::from("D:/Music/Tracker/Über_Horizon/Disc1/000.it"),
+                text: "Looking up tags on MusicBrainz…".to_string(),
+                done: 0,
+                total: 1,
+            }),
+            ..Self::new()
+        }
+    }
+
     /// An empty library that is mid-scan, for screenshots of the first-run
     /// "building your music library" state (#80): no tracks are loaded yet,
     /// but a scan is running and reporting progress.
@@ -224,6 +238,10 @@ impl LibraryDataSource for MockLibrary {
 
     fn auto_tag_status(&self) -> Option<AutoTagStatus> {
         self.auto_tag_status.clone()
+    }
+
+    fn cancel_auto_tag(&mut self) {
+        self.auto_tag_status = None;
     }
 
     fn is_scanning(&self) -> bool {

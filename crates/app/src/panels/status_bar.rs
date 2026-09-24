@@ -28,6 +28,7 @@ pub fn show(
                     ui.colored_label(ui.visuals().warn_fg_color, message);
                 }
                 scan_status(ui, state, library);
+                auto_tag_status(ui, state, library);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if state.visualizer_enabled {
@@ -48,6 +49,18 @@ fn scan_status(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDat
     ui.label(text);
     if library.is_scanning() && ui.small_button("Cancel").clicked() {
         state.push(Command::LibraryCancelScan);
+    }
+}
+
+/// Shows an in-flight online auto-tag lookup, with a cancel button (#210).
+fn auto_tag_status(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
+    let Some(status) = library.auto_tag_status() else {
+        return;
+    };
+    ui.separator();
+    ui.label(status.text);
+    if ui.small_button("Cancel").clicked() {
+        state.push(Command::CancelAutoTag);
     }
 }
 

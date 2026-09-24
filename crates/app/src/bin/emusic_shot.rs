@@ -50,6 +50,12 @@ struct Cli {
     #[arg(long)]
     scanning: bool,
 
+    /// Render against a populated mock library with an auto-tag lookup in
+    /// flight, so the status bar's lookup line and Cancel button can be
+    /// screenshotted (#210). Takes precedence over `--empty`/`--scanning`.
+    #[arg(long)]
+    auto_tagging: bool,
+
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
@@ -189,7 +195,7 @@ fn parse_settings_tab(s: &str) -> Result<SettingsTab, String> {
 fn main() {
     let cli = Cli::parse();
     let (width, height) = parse_size(&cli.size);
-    let mode = LibraryMode::from_flags(cli.empty, cli.scanning);
+    let mode = LibraryMode::from_flags(cli.empty, cli.scanning, cli.auto_tagging);
 
     let search = SearchArgs {
         query: cli.query.clone(),
@@ -261,17 +267,21 @@ struct SearchArgs {
 }
 
 /// Mock library to render: the populated default, the first-run empty state,
-/// or the first-run mid-scan state.
+/// the first-run mid-scan state, or a populated library with an auto-tag
+/// lookup in flight (#210).
 #[derive(Clone, Copy)]
 enum LibraryMode {
     Populated,
     Empty,
     Scanning,
+    AutoTagging,
 }
 
 impl LibraryMode {
-    fn from_flags(empty: bool, scanning: bool) -> Self {
-        if scanning {
+    fn from_flags(empty: bool, scanning: bool, auto_tagging: bool) -> Self {
+        if auto_tagging {
+            Self::AutoTagging
+        } else if scanning {
             Self::Scanning
         } else if empty {
             Self::Empty
@@ -282,8 +292,11 @@ impl LibraryMode {
 
     fn build(self) -> (MockLibrary, MockPlayer) {
         match self {
-            Self::Populated => {
-                let library = MockLibrary::new();
+            Self::Populated | Self::AutoTagging => {
+                let library = match self {
+                    Self::AutoTagging => MockLibrary::auto_tagging(),
+                    _ => MockLibrary::new(),
+                };
                 let player = MockPlayer::playing_demo(&library.tracks()[0]);
                 (library, player)
             }

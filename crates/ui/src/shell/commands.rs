@@ -28,6 +28,7 @@ pub(super) fn apply_library_commands(
     let mut open_tag_editor = None;
     let mut tag_edits: Vec<EditRequest> = Vec::new();
     let mut auto_tag: Option<AutoTagRequest> = None;
+    let mut cancel_auto_tag = false;
     for cmd in commands {
         match cmd {
             Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
@@ -46,6 +47,7 @@ pub(super) fn apply_library_commands(
                     query: query.clone(),
                 });
             }
+            Command::CancelAutoTag => cancel_auto_tag = true,
             _ => {}
         }
     }
@@ -93,6 +95,9 @@ pub(super) fn apply_library_commands(
     }
     if let Some(request) = auto_tag {
         library.request_auto_tag(request);
+    }
+    if cancel_auto_tag {
+        library.cancel_auto_tag();
     }
 }
 
@@ -299,5 +304,19 @@ mod tests {
         let candidates = results[0].result.as_ref().expect("the mock succeeds");
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].title.as_deref(), Some(track.title.as_str()));
+    }
+
+    #[test]
+    fn cancel_auto_tag_clears_the_mock_status() {
+        let mut library = MockLibrary::auto_tagging();
+        let mut state = AppState::default();
+        assert!(
+            library.auto_tag_status().is_some(),
+            "the mock starts with a lookup in flight"
+        );
+
+        apply_library_commands(&mut library, &mut state, &[Command::CancelAutoTag]);
+
+        assert!(library.auto_tag_status().is_none());
     }
 }
