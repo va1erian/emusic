@@ -10,7 +10,7 @@
 
 use eframe::egui::{self, Color32, Stroke};
 
-use crate::state::{Accent, AppState, Command, SettingsTab, VisualizerMode};
+use crate::state::{Accent, AppState, Command, Rgb, SettingsTab, VisualizerMode};
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     tab_strip(ui, state);
@@ -97,7 +97,7 @@ fn playback(ui: &mut egui::Ui, state: &mut AppState) {
 /// One filled button per preset; the active preset gets a strong border.
 fn preset_buttons(ui: &mut egui::Ui, state: &mut AppState) {
     for preset in Accent::PRESETS {
-        let color = preset.color();
+        let color = crate::theme::to_color32(preset.rgb());
         let text = egui::RichText::new(preset.label()).color(text_on(color));
         let mut button = egui::Button::new(text).fill(color);
         if state.accent == preset {
@@ -123,10 +123,10 @@ fn custom_picker(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.label("Custom:");
-        let [r, g, b, _] = state.accent.color().to_array();
+        let [r, g, b] = state.accent.rgb().to_array();
         let mut rgb = [r, g, b];
         if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
-            state.push(Command::SetAccent(Accent::Custom(Color32::from_rgb(
+            state.push(Command::SetAccent(Accent::Custom(Rgb::from_rgb(
                 rgb[0], rgb[1], rgb[2],
             ))));
         }

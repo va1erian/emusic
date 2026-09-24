@@ -1,16 +1,14 @@
 //! Dark/light visual styling, MusicBee-inspired: dense spacing, a strong
 //! accent colour, subtle panel separation. The accent is user-selectable
-//! (Settings → Appearance, #40); hover/selected/dim variants are derived
-//! from it so contrast stays readable in both themes.
+//! (Settings → Appearance, #40); the semantic [`Palette`] (in `emusic-ui`)
+//! derives every colour from the theme + accent, and this module maps it to
+//! `egui::Visuals`.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Style, Visuals};
 
-use crate::state::Theme;
-
-/// MusicBee-ish orange, the default accent ([`crate::state::Accent::Orange`]).
-pub const DEFAULT_ACCENT: Color32 = Color32::from_rgb(0xE8, 0x7A, 0x1E);
+use crate::state::{Accent, DEFAULT_ACCENT, Palette, Rgb, Rgba, Theme};
 
 /// The accent colour currently applied, packed as `0xRRGGBB`. The UI is
 /// single-threaded, so a relaxed atomic is all the syncing this needs.
@@ -24,19 +22,32 @@ pub fn current_accent() -> Color32 {
     Color32::from_rgb((packed >> 16) as u8, (packed >> 8) as u8, packed as u8)
 }
 
-/// Applies the theme's visuals and spacing to `ctx` with the given accent,
-/// makes it the active theme, and records the accent for
-/// [`current_accent`].
-pub fn apply(ctx: &egui::Context, theme: Theme, accent: Color32) {
-    CURRENT_ACCENT.store(pack(accent), Ordering::Relaxed);
-    let egui_theme = to_egui_theme(theme);
-    ctx.set_theme(egui_theme);
-    ctx.style_mut_of(egui_theme, |style| customize(style, theme, accent));
+/// Maps a toolkit-agnostic colour to egui, for painters that need a
+/// [`Color32`] (swatches, icons, markers).
+pub fn to_color32(rgb: Rgb) -> Color32 {
+    Color32::from_rgb(rgb.r, rgb.g, rgb.b)
 }
 
-const fn pack(color: Color32) -> u32 {
-    let [r, g, b, _] = color.to_array();
-    ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+/// Applies the theme's visuals and spacing to `ctx` for the given theme and
+/// accent, makes it the active theme, and records the accent for
+/// [`current_accent`].
+pub fn apply(ctx: &egui::Context, theme: Theme, accent: Accent) {
+    let palette = Palette::of(theme, accent);
+    CURRENT_ACCENT.store(pack(palette.accent), Ordering::Relaxed);
+    let egui_theme = to_egui_theme(theme);
+    ctx.set_theme(egui_theme);
+    ctx.style_mut_of(egui_theme, |style| customize(style, theme, &palette));
+}
+
+const fn pack(color: Rgb) -> u32 {
+    ((color.r as u32) << 16) | ((color.g as u32) << 8) | color.b as u32
+}
+
+fn to_rgba(rgba: Rgba) -> Color32 {
+    // Packs the derived bytes verbatim: `Palette` already ran the exact
+    // gamma/alpha math, and `ecolor` stores these shades premultiplied, so
+    // this must not convert again (`from_rgba_unmultiplied` would).
+    Color32::from_rgba_premultiplied(rgba.r, rgba.g, rgba.b, rgba.a)
 }
 
 fn to_egui_theme(theme: Theme) -> egui::Theme {
@@ -46,49 +57,10 @@ fn to_egui_theme(theme: Theme) -> egui::Theme {
     }
 }
 
-/// Accent shades derived from the user's choice, themed so contrast stays
-/// readable in both dark and light visuals.
-struct AccentShades {
-    /// Fills for active/accent widgets, strokes and dark-theme links.
-    base: Color32,
-    /// Border of hovered widgets.
-    hover: Color32,
-    /// Selection background.
-    selected: Color32,
-    /// De-emphasised accent, e.g. links and selected text on light theme.
-    dim: Color32,
-}
-
-impl AccentShades {
-    fn derive(accent: Color32, theme: Theme) -> Self {
-        match theme {
-            Theme::Dark => Self {
-                base: accent,
-                hover: toward_white(accent, 0.18),
-                selected: accent.linear_multiply(0.55),
-                dim: accent.linear_multiply(0.75),
-            },
-            Theme::Light => Self {
-                base: accent,
-                hover: accent.linear_multiply(0.85),
-                selected: toward_white(accent, 0.75),
-                dim: accent.linear_multiply(0.72),
-            },
-        }
-    }
-}
-
-/// Blends `color` toward white by `t` (0..1) in sRGB space.
-fn toward_white(color: Color32, t: f32) -> Color32 {
-    let mix = |c: u8| (c as f32 + (255.0 - c as f32) * t).round() as u8;
-    Color32::from_rgb(mix(color.r()), mix(color.g()), mix(color.b()))
-}
-
-fn customize(style: &mut Style, theme: Theme, accent: Color32) {
-    let s = AccentShades::derive(accent, theme);
+fn customize(style: &mut Style, theme: Theme, palette: &Palette) {
     style.visuals = match theme {
-        Theme::Dark => dark_visuals(&s),
-        Theme::Light => light_visuals(&s),
+        Theme::Dark => dark_visuals(palette),
+        Theme::Light => light_visuals(palette),
     };
 
     // Dense, table-friendly spacing (MusicBee packs a lot into the track
@@ -98,42 +70,47 @@ fn customize(style: &mut Style, theme: Theme, accent: Color32) {
     style.spacing.interact_size.y = 20.0;
 }
 
-fn dark_visuals(s: &AccentShades) -> Visuals {
+fn dark_visuals(p: &Palette) -> Visuals {
     let mut v = Visuals::dark();
-    v.override_text_color = None;
-    v.panel_fill = Color32::from_rgb(0x1E, 0x1F, 0x22);
-    v.window_fill = Color32::from_rgb(0x24, 0x25, 0x29);
-    v.extreme_bg_color = Color32::from_rgb(0x17, 0x18, 0x1A);
-    v.faint_bg_color = Color32::from_rgb(0x28, 0x29, 0x2D);
-    v.widgets.noninteractive.bg_fill = Color32::from_rgb(0x24, 0x25, 0x29);
-    v.widgets.inactive.bg_fill = Color32::from_rgb(0x2C, 0x2D, 0x32);
-    v.widgets.hovered.bg_fill = Color32::from_rgb(0x3A, 0x3B, 0x41);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, s.hover);
-    v.widgets.active.bg_fill = s.base;
+    // Same value the default derives (`noninteractive.fg_stroke`); set
+    // explicitly so the palette is the single source of truth. Weak text
+    // keeps egui's default derivation from it, exactly as before.
+    v.override_text_color = Some(to_color32(p.fg));
+    v.panel_fill = to_color32(p.panel_bg);
+    v.window_fill = to_color32(p.window_bg);
+    v.extreme_bg_color = to_color32(p.extreme_bg);
+    v.faint_bg_color = to_color32(p.faint_bg);
+    v.widgets.noninteractive.bg_fill = to_color32(p.view_bg);
+    v.widgets.inactive.bg_fill = to_color32(p.control_bg);
+    v.widgets.hovered.bg_fill = to_color32(p.control_hover_bg);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, to_rgba(p.accent_hover));
+    v.widgets.active.bg_fill = to_color32(p.accent);
     // `selection.stroke.color` doubles as the selected-text colour in egui.
-    v.selection.bg_fill = s.selected;
-    v.selection.stroke = Stroke::new(1.0, s.base);
-    v.hyperlink_color = s.base;
+    v.selection.bg_fill = to_rgba(p.selection_bg);
+    v.selection.stroke = Stroke::new(1.0, to_rgba(p.accent_text));
+    v.hyperlink_color = to_rgba(p.accent_text);
     v.window_corner_radius = CornerRadius::same(4);
     v.menu_corner_radius = CornerRadius::same(4);
     v
 }
 
-fn light_visuals(s: &AccentShades) -> Visuals {
+fn light_visuals(p: &Palette) -> Visuals {
     let mut v = Visuals::light();
-    v.panel_fill = Color32::from_rgb(0xF3, 0xF3, 0xF4);
-    v.window_fill = Color32::WHITE;
-    v.extreme_bg_color = Color32::from_rgb(0xFA, 0xFA, 0xFA);
-    v.faint_bg_color = Color32::from_rgb(0xEC, 0xEC, 0xEE);
-    v.widgets.inactive.bg_fill = Color32::from_rgb(0xE6, 0xE6, 0xE9);
-    v.widgets.hovered.bg_fill = Color32::from_rgb(0xDD, 0xDD, 0xE2);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, s.hover);
-    v.widgets.active.bg_fill = s.base;
+    v.override_text_color = Some(to_color32(p.fg));
+    v.panel_fill = to_color32(p.panel_bg);
+    v.window_fill = to_color32(p.window_bg);
+    v.extreme_bg_color = to_color32(p.extreme_bg);
+    v.faint_bg_color = to_color32(p.faint_bg);
+    v.widgets.noninteractive.bg_fill = to_color32(p.view_bg);
+    v.widgets.inactive.bg_fill = to_color32(p.control_bg);
+    v.widgets.hovered.bg_fill = to_color32(p.control_hover_bg);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, to_rgba(p.accent_hover));
+    v.widgets.active.bg_fill = to_color32(p.accent);
     // A pale accent tint with dark accent text, so selected text stays
     // readable (egui paints selection text in `selection.stroke.color`).
-    v.selection.bg_fill = s.selected;
-    v.selection.stroke = Stroke::new(1.0, s.dim);
-    v.hyperlink_color = s.dim;
+    v.selection.bg_fill = to_rgba(p.selection_bg);
+    v.selection.stroke = Stroke::new(1.0, to_rgba(p.accent_text));
+    v.hyperlink_color = to_rgba(p.accent_text);
     v
 }
 
@@ -141,35 +118,130 @@ fn light_visuals(s: &AccentShades) -> Visuals {
 mod tests {
     use super::*;
 
-    const ACCENT: Color32 = Color32::from_rgb(0xE8, 0x7A, 0x1E);
-
     #[test]
     fn apply_records_current_accent() {
         let ctx = egui::Context::default();
-        apply(&ctx, Theme::Dark, ACCENT);
-        assert_eq!(current_accent(), ACCENT);
-        apply(&ctx, Theme::Light, Color32::from_rgb(1, 2, 3));
+        apply(&ctx, Theme::Dark, Accent::Orange);
+        assert_eq!(current_accent(), to_color32(DEFAULT_ACCENT));
+        apply(&ctx, Theme::Light, Accent::Custom(Rgb::from_rgb(1, 2, 3)));
         assert_eq!(current_accent(), Color32::from_rgb(1, 2, 3));
     }
 
+    /// The `Palette` → `Visuals` mapping reproduces the pre-#94 colours
+    /// bit-for-bit (including blend alphas). Values recorded from the old
+    /// derivation; if the gamma math in `emusic-ui` drifts by even one ulp,
+    /// this fails.
     #[test]
-    fn derived_shades_stay_readable() {
-        let dark = AccentShades::derive(ACCENT, Theme::Dark);
-        assert_eq!(dark.base, ACCENT);
-        // Dark theme: selection is a dimmed fill with accent text on top.
-        assert_ne!(dark.selected, ACCENT);
-
-        let light = AccentShades::derive(ACCENT, Theme::Light);
-        // Light theme: selection is a pale tint with dark accent text.
-        let luminance =
-            |c: Color32| 0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32;
-        assert!(luminance(light.selected) > luminance(ACCENT));
-        assert!(luminance(light.dim) < luminance(ACCENT));
-    }
-
-    #[test]
-    fn toward_white_endpoints() {
-        assert_eq!(toward_white(ACCENT, 0.0), ACCENT);
-        assert_eq!(toward_white(ACCENT, 1.0), Color32::WHITE);
+    fn palette_mapping_matches_recorded_colours() {
+        let cases = [
+            (
+                Theme::Dark,
+                Accent::Blue,
+                "3584E4",
+                [
+                    ("active", (0x35, 0x84, 0xE4, 0xFF)),
+                    ("hover", (0x59, 0x9A, 0xE9, 0xFF)),
+                    ("sel_bg", (0x1D, 0x49, 0x7D, 0x8C)),
+                    ("sel_text", (0x35, 0x84, 0xE4, 0xFF)),
+                    ("link", (0x35, 0x84, 0xE4, 0xFF)),
+                ],
+            ),
+            (
+                Theme::Dark,
+                Accent::Custom(Rgb::from_rgb(0x12, 0xAB, 0xCF)),
+                "12ABCF",
+                [
+                    ("active", (0x12, 0xAB, 0xCF, 0xFF)),
+                    ("hover", (0x3D, 0xBA, 0xD8, 0xFF)),
+                    ("sel_bg", (0x0A, 0x5E, 0x72, 0x8C)),
+                    ("sel_text", (0x12, 0xAB, 0xCF, 0xFF)),
+                    ("link", (0x12, 0xAB, 0xCF, 0xFF)),
+                ],
+            ),
+            (
+                Theme::Dark,
+                Accent::Orange,
+                "E87A1E",
+                [
+                    ("active", (0xE8, 0x7A, 0x1E, 0xFF)),
+                    ("hover", (0xEC, 0x92, 0x47, 0xFF)),
+                    ("sel_bg", (0x80, 0x43, 0x11, 0x8C)),
+                    ("sel_text", (0xE8, 0x7A, 0x1E, 0xFF)),
+                    ("link", (0xE8, 0x7A, 0x1E, 0xFF)),
+                ],
+            ),
+            (
+                Theme::Light,
+                Accent::Blue,
+                "3584E4",
+                [
+                    ("active", (0x35, 0x84, 0xE4, 0xFF)),
+                    ("hover", (0x2D, 0x70, 0xC2, 0xD9)),
+                    ("sel_bg", (0xCD, 0xE0, 0xF8, 0xFF)),
+                    ("sel_text", (0x26, 0x5F, 0xA4, 0xB8)),
+                    ("link", (0x26, 0x5F, 0xA4, 0xB8)),
+                ],
+            ),
+            (
+                Theme::Light,
+                Accent::Custom(Rgb::from_rgb(0x12, 0xAB, 0xCF)),
+                "12ABCF",
+                [
+                    ("active", (0x12, 0xAB, 0xCF, 0xFF)),
+                    ("hover", (0x0F, 0x91, 0xB0, 0xD9)),
+                    ("sel_bg", (0xC4, 0xEA, 0xF3, 0xFF)),
+                    ("sel_text", (0x0D, 0x7B, 0x95, 0xB8)),
+                    ("link", (0x0D, 0x7B, 0x95, 0xB8)),
+                ],
+            ),
+            (
+                Theme::Light,
+                Accent::Orange,
+                "E87A1E",
+                [
+                    ("active", (0xE8, 0x7A, 0x1E, 0xFF)),
+                    ("hover", (0xC5, 0x68, 0x1A, 0xD9)),
+                    ("sel_bg", (0xF9, 0xDE, 0xC7, 0xFF)),
+                    ("sel_text", (0xA7, 0x58, 0x16, 0xB8)),
+                    ("link", (0xA7, 0x58, 0x16, 0xB8)),
+                ],
+            ),
+        ];
+        for (theme, accent, name, expected) in cases {
+            let mut style = egui::Style::default();
+            customize(&mut style, theme, &Palette::of(theme, accent));
+            let v = style.visuals;
+            let actual = [
+                ("active", v.widgets.active.bg_fill),
+                ("hover", v.widgets.hovered.bg_stroke.color),
+                ("sel_bg", v.selection.bg_fill),
+                ("sel_text", v.selection.stroke.color),
+                ("link", v.hyperlink_color),
+            ];
+            for ((key, color), (_, rgba)) in actual.iter().zip(expected.iter()) {
+                let (r, g, b, a) = (color.r(), color.g(), color.b(), color.a());
+                assert_eq!(
+                    (r, g, b, a),
+                    *rgba,
+                    "{theme:?} {name} {key}: got ({r:02X},{g:02X},{b:02X},{a:02X})"
+                );
+            }
+            // Fills never depended on the accent; one case pins them.
+            if name == "E87A1E" {
+                let (panel, window) = (v.panel_fill, v.window_fill);
+                let (er, eg, eb) = (panel.r(), panel.g(), panel.b());
+                let (wr, wg, wb) = (window.r(), window.g(), window.b());
+                match theme {
+                    Theme::Dark => {
+                        assert_eq!((er, eg, eb), (0x1E, 0x1F, 0x22));
+                        assert_eq!((wr, wg, wb), (0x24, 0x25, 0x29));
+                    }
+                    Theme::Light => {
+                        assert_eq!((er, eg, eb), (0xF3, 0xF3, 0xF4));
+                        assert_eq!((wr, wg, wb), (0xFF, 0xFF, 0xFF));
+                    }
+                }
+            }
+        }
     }
 }

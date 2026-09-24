@@ -9,10 +9,11 @@
 //! frontend renders with its own widgets.
 //!
 //! The egui frontend (`crates/app`) depends on this crate and re-exports these
-//! modules at their old paths, so UI code only changes `use` paths. Not yet
-//! moved (blocked on the colour decoupling in #94, which keeps them tied to
-//! `egui::Color32` via `AppState`): `config`, `shuffle`, `app::commands` and
-//! `state` itself, plus the egui-bound `backend::{smtc, thumbbar}`.
+//! modules at their old paths, so UI code only changes `use` paths. Still
+//! frontend-side: `config` (needs the `AppState` aggregate), `shuffle`,
+//! `app::commands` and the `AppState` shell state itself (until the view
+//! states move over in #98–#104), plus the egui-bound
+//! `backend::{smtc,thumbbar}`.
 
 pub mod backend;
 pub mod cli;
@@ -21,4 +22,5 @@ pub mod library_api;
 pub mod mock;
 pub mod player_api;
 pub mod search;
+pub mod state;
 pub mod views;
