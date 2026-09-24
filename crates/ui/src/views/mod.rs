@@ -11,6 +11,7 @@ pub mod column_browser;
 pub mod folder_tree;
 pub mod history;
 pub mod most_played;
+pub mod music;
 pub mod track_table;
 
 pub use context::{Commands, Ctx};

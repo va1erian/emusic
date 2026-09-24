@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use super::selection::PaneSelection;
+use emusic_ui::views::column_browser::{ColumnBrowser, ColumnBrowserMsg, FacetEntry, Pane};
 
 /// Height of one row, in pixels. Kept close to the row text's line height so
 /// panes stay as dense as MusicBee's.
@@ -12,25 +12,6 @@ const ROW_HEIGHT: f32 = 17.0;
 /// entries fit without feeling cramped.
 const ROW_FONT_SIZE: f32 = 12.0;
 
-/// One selectable row in a pane; `value == None` is the leading "All (N)"
-/// row, and an empty value is shown as "(unknown)".
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PaneEntry {
-    pub value: Option<String>,
-    pub count: usize,
-}
-
-impl PaneEntry {
-    /// Text shown for this row, without the count.
-    pub fn label(&self) -> &str {
-        match self.value.as_deref() {
-            None => "All",
-            Some("") => "(unknown)",
-            Some(value) => value,
-        }
-    }
-}
-
 /// Shows a pane's title and its rows: the "All (N)" row stays pinned at the
 /// top while the facet rows scroll (and are virtualized, so large libraries
 /// stay smooth). The name is left-aligned and the count right-aligned, like
@@ -39,8 +20,9 @@ pub fn show(
     ui: &mut egui::Ui,
     id_salt: &str,
     title: &str,
-    entries: &[PaneEntry],
-    selection: &mut PaneSelection,
+    pane: Pane,
+    browser: &ColumnBrowser,
+    messages: &mut Vec<ColumnBrowserMsg>,
 ) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -50,23 +32,35 @@ pub fn show(
         // density comes from the row height alone.
         ui.spacing_mut().item_spacing.y = 0.0;
 
+        let entries = browser.facets().pane(pane);
         let Some((all, facets)) = entries.split_first() else {
             return;
         };
 
-        row(ui, all, selection);
+        row(ui, pane, browser, all, messages);
         egui::ScrollArea::vertical()
             .id_salt(id_salt)
             .auto_shrink([false, false])
             .show_rows(ui, ROW_HEIGHT, facets.len(), |ui, range| {
                 for index in range {
-                    row(ui, &facets[index], selection);
+                    row(ui, pane, browser, &facets[index], messages);
                 }
             });
     });
 }
 
-fn row(ui: &mut egui::Ui, entry: &PaneEntry, selection: &mut PaneSelection) {
+fn row(
+    ui: &mut egui::Ui,
+    pane: Pane,
+    browser: &ColumnBrowser,
+    entry: &FacetEntry,
+    messages: &mut Vec<ColumnBrowserMsg>,
+) {
+    let selection = match pane {
+        Pane::Genre => &browser.genres,
+        Pane::Artist => &browser.artists,
+        Pane::Album => &browser.albums,
+    };
     let selected = match entry.value.as_deref() {
         None => selection.is_all(),
         Some(value) => selection.contains(value),
@@ -88,6 +82,10 @@ fn row(ui: &mut egui::Ui, entry: &PaneEntry, selection: &mut PaneSelection) {
     );
     if response.clicked() {
         let ctrl = ui.input(|i| i.modifiers.command);
-        selection.click(entry.value.as_deref(), ctrl);
+        messages.push(ColumnBrowserMsg::RowClicked {
+            pane,
+            value: entry.value.clone(),
+            ctrl,
+        });
     }
 }

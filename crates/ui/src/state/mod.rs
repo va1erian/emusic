@@ -28,10 +28,10 @@ use std::path::PathBuf;
 use emusic_player::tracker::TrackerSettings;
 
 use crate::views::album_grid::AlbumGridState;
-use crate::views::column_browser::ColumnBrowserState;
 use crate::views::folder_tree::FolderTreeState;
 use crate::views::history::HistoryState;
 use crate::views::most_played::MostPlayedState;
+use crate::views::music::MusicView;
 use crate::views::track_table::TrackTable;
 
 #[cfg(test)]
@@ -83,12 +83,8 @@ pub struct AppState {
     pub visualizer: VisualizerMode,
     /// Transient visualizer rendering state (peak-hold caps), not persisted.
     pub visualizer_state: crate::panels::visualizer::VisualizerState,
-    /// The Music view's track table (sort + selection). Other views that
-    /// embed a track table later (albums, artists, genres, folders,
-    /// history) will each get their own field here.
-    pub music_table: TrackTable,
-    /// The Music view's cascading filter panes (#16), above the track table.
-    pub column_browser: ColumnBrowserState,
+    /// The Music view (#99): its column browser and track table, composed.
+    pub music: MusicView,
     /// The Albums view's grid, sort and thumbnail cache (#17).
     pub album_grid: AlbumGridState,
     /// The Folders view's selected directory + "include subfolders" toggle
@@ -155,8 +151,7 @@ impl Default for AppState {
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
-            music_table: TrackTable::default(),
-            column_browser: ColumnBrowserState::default(),
+            music: MusicView::default(),
             album_grid: AlbumGridState::default(),
             folder_tree: FolderTreeState::default(),
             folders_table: TrackTable::default(),
@@ -205,7 +200,7 @@ impl AppState {
                 self.album_grid.select_album(name, artist);
             }
             Command::ToggleColumnBrowser => {
-                self.column_browser.visible = !self.column_browser.visible;
+                self.music.browser.visible = !self.music.browser.visible;
             }
             Command::LibraryAddFolder(path) => {
                 if !self.library_folders.contains(path) {

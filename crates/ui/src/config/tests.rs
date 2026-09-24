@@ -134,8 +134,8 @@ fn apply_to_state_restores_column_browser() {
     let mut state = AppState::default();
     config.apply_to_state(&mut state);
 
-    assert!(!state.column_browser.visible);
-    assert_eq!(state.column_browser.height, 222.0);
+    assert!(!state.music.browser.visible);
+    assert_eq!(state.music.browser.height, 222.0);
 }
 
 #[test]

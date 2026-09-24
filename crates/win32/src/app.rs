@@ -242,7 +242,7 @@ impl App for Win32App {
             }
             Msg::SortColumn(column) => {
                 if let Some(id) = crate::views::music::column_id(column) {
-                    self.shell.state.music_table.sort.toggle(id);
+                    self.shell.state.music.table.sort.toggle(id);
                     self.music.resort(
                         &self.shell.state,
                         self.shell.library.as_ref(),

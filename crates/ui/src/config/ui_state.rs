@@ -93,12 +93,12 @@ impl UiState {
         Self {
             window: state.window,
             search_query: state.search_query.clone(),
-            music_sort: state.music_table.sort,
-            music_selection: state.music_table.selection.selected_ids_sorted(),
+            music_sort: state.music.table.sort,
+            music_selection: state.music.table.selection.selected_ids_sorted(),
             column_browser: ColumnBrowserSelection {
-                genres: state.column_browser.genres.clone(),
-                artists: state.column_browser.artists.clone(),
-                albums: state.column_browser.albums.clone(),
+                genres: state.music.browser.genres.clone(),
+                artists: state.music.browser.artists.clone(),
+                albums: state.music.browser.albums.clone(),
             },
             album_grid: AlbumGridUi {
                 tile_size: state.album_grid.tile_size,
@@ -117,14 +117,15 @@ impl UiState {
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.window = self.window;
         state.search_query = self.search_query.clone();
-        state.music_table.sort = self.music_sort;
+        state.music.table.sort = self.music_sort;
         state
-            .music_table
+            .music
+            .table
             .selection
             .restore_selected(self.music_selection.iter().copied());
-        state.column_browser.genres = self.column_browser.genres.clone();
-        state.column_browser.artists = self.column_browser.artists.clone();
-        state.column_browser.albums = self.column_browser.albums.clone();
+        state.music.browser.genres = self.column_browser.genres.clone();
+        state.music.browser.artists = self.column_browser.artists.clone();
+        state.music.browser.albums = self.column_browser.albums.clone();
         state.album_grid.tile_size = self.album_grid.tile_size;
         state.album_grid.sort = self.album_grid.sort;
         state.album_grid.selected = self.album_grid.selected.clone();

@@ -93,7 +93,7 @@ struct Signature {
     scan: bool,
     search_active: bool,
     search_count: Option<usize>,
-    column_browser: emusic_ui::views::column_browser::ColumnBrowserState,
+    column_browser: emusic_ui::views::column_browser::ColumnBrowser,
 }
 
 /// The Music view: the library track table.
@@ -186,7 +186,7 @@ impl MusicView {
             scan: library.is_scanning(),
             search_active: search.is_active(),
             search_count: search.match_count(),
-            column_browser: state.column_browser.clone(),
+            column_browser: state.music.browser.clone(),
         };
         let stale = self.signature.as_ref() != Some(&signature);
         if stale {
@@ -199,7 +199,7 @@ impl MusicView {
                     library,
                     search,
                     &signature.column_browser,
-                    state.music_table.sort,
+                    state.music.table.sort,
                 );
                 self.signature = Some(signature);
             }
@@ -211,7 +211,7 @@ impl MusicView {
             self.list.rows_changed(0..len);
         }
 
-        self.show_sort_indicator(state.music_table.sort);
+        self.show_sort_indicator(state.music.table.sort);
     }
 
     /// Applies the current sort order to the model (after a header click).
@@ -224,10 +224,10 @@ impl MusicView {
         self.rebuild(
             library,
             search,
-            &state.column_browser,
-            state.music_table.sort,
+            &state.music.browser,
+            state.music.table.sort,
         );
-        self.show_sort_indicator(state.music_table.sort);
+        self.show_sort_indicator(state.music.table.sort);
     }
 
     /// The command to play `index` in the context of the whole visible list.
@@ -261,7 +261,7 @@ impl MusicView {
         &mut self,
         library: &dyn emusic_ui::library_api::LibraryDataSource,
         search: &emusic_ui::search::SearchEngine,
-        column_browser: &emusic_ui::views::column_browser::ColumnBrowserState,
+        column_browser: &emusic_ui::views::column_browser::ColumnBrowser,
         sort_state: SortState,
     ) {
         let mut tracks: Vec<&TrackInfo> = library
