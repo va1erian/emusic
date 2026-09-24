@@ -23,6 +23,7 @@ use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
 use crate::state::{AppState, View};
 use crate::{fonts, theme};
+use emusic_ui::waker::WakerHandle;
 
 pub struct App {
     state: AppState,
@@ -168,6 +169,13 @@ impl App {
     /// under the menu bar until the app is restarted.
     pub fn set_backend_notice(&mut self, notice: impl Into<String>) {
         self.backend_notice = Some(notice.into());
+    }
+
+    /// Wires the shared image caches' worker wakers (#96), so thumbnail and
+    /// artwork decodes can wake egui when they finish.
+    pub fn set_image_waker(&mut self, waker: WakerHandle) {
+        self.state.album_grid.set_image_waker(waker.clone());
+        self.state.now_playing.set_image_waker(waker);
     }
 
     /// Jumps straight to a view, bypassing the navigator click. Used by

@@ -102,6 +102,7 @@ fn run_ui(
             waker.bind(EguiWaker::new(cc.egui_ctx.clone()));
             let backends = backend::build(cli.mock);
             let mut app = App::for_run(cc, backends.library, backends.player, cli.mock);
+            app.set_image_waker(waker.handle());
             if let Some(notice) = backends.notice {
                 app.set_backend_notice(notice);
             }

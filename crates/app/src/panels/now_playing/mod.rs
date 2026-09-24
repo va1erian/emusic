@@ -18,9 +18,9 @@ use eframe::egui;
 use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::state::AppState;
+use emusic_ui::waker::WakerHandle;
 
 pub use artwork::ArtworkCache;
-pub(crate) use artwork::load_artwork;
 
 /// The panel's resizable width bounds.
 const MIN_PANEL_WIDTH: f32 = 200.0;
@@ -32,13 +32,28 @@ const DEFAULT_PANEL_WIDTH: f32 = 260.0;
 const MIN_CENTRAL_WIDTH: f32 = 320.0;
 
 /// Persistent UI state for the now-playing panel.
-#[derive(Default)]
 pub struct PanelState {
     /// Cache for the current track's artwork texture.
     pub artwork: ArtworkCache,
     /// The track whose Properties dialog is open, if any. Rendered by the
     /// shell so it works whichever view is active.
     pub properties: Option<TrackInfo>,
+}
+
+impl Default for PanelState {
+    fn default() -> Self {
+        Self {
+            artwork: artwork::new_cache(),
+            properties: None,
+        }
+    }
+}
+
+impl PanelState {
+    /// Wires the artwork cache's worker waker (#96).
+    pub fn set_image_waker(&mut self, waker: WakerHandle) {
+        self.artwork.set_waker(waker);
+    }
 }
 
 /// Render the right-hand now-playing panel.
@@ -68,7 +83,7 @@ pub fn show(
                     let np = player.now_playing();
                     let track = np.and_then(|info| library.track_by_path(&info.path));
 
-                    artwork::show(ui, &mut state.now_playing.artwork, np, track);
+                    artwork::show(ui, &mut state.now_playing.artwork, np);
 
                     match (np, track) {
                         (Some(np), Some(track)) => {

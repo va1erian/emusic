@@ -353,8 +353,15 @@ fn cover_file(path: &Path) -> Option<PathBuf> {
         return Some(cached);
     }
 
-    let image = crate::panels::now_playing::load_artwork(path, None)?;
-    image.save(&cached).ok()?;
+    let image = emusic_ui::image_cache::load_artwork(path)?;
+    image::save_buffer(
+        &cached,
+        &image.pixels,
+        image.width,
+        image.height,
+        image::ExtendedColorType::Rgba8,
+    )
+    .ok()?;
     Some(cached)
 }
 
