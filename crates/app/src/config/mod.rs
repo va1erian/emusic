@@ -113,6 +113,20 @@ pub struct Config {
     /// (Settings > Playback).
     #[serde(default)]
     pub recent_soundfonts: Vec<PathBuf>,
+    /// Path to the HVSC Songlengths database — the `Songlengths.md5` file
+    /// itself or an HVSC root folder to auto-detect it in — used to give SID
+    /// tunes their real length (#192). `None` means SID lengths are unknown.
+    #[serde(default)]
+    pub songlengths_path: Option<PathBuf>,
+    /// Fallback play length, in seconds, for SID tunes with no Songlengths
+    /// entry, so they still stop and the queue advances (#192).
+    #[serde(default = "default_sid_fallback_secs")]
+    pub sid_fallback_secs: u32,
+}
+
+/// Default SID fallback play length, matching the player's own default.
+fn default_sid_fallback_secs() -> u32 {
+    emusic_player::sid::DEFAULT_TUNE_LENGTH.as_secs() as u32
 }
 
 impl Default for Config {
@@ -135,6 +149,8 @@ impl Default for Config {
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
             recent_soundfonts: Vec::new(),
+            songlengths_path: None,
+            sid_fallback_secs: default_sid_fallback_secs(),
         }
     }
 }
@@ -167,6 +183,8 @@ impl Config {
             tracker_settings: state.tracker_settings,
             midi_soundfont: state.midi_soundfont.clone(),
             recent_soundfonts: state.recent_soundfonts.clone(),
+            songlengths_path: state.songlengths_path.clone(),
+            sid_fallback_secs: state.sid_fallback_secs,
         }
     }
 
@@ -186,6 +204,8 @@ impl Config {
         state.tracker_settings = self.tracker_settings;
         state.midi_soundfont = self.midi_soundfont.clone();
         state.recent_soundfonts = self.recent_soundfonts.clone();
+        state.songlengths_path = self.songlengths_path.clone();
+        state.sid_fallback_secs = self.sid_fallback_secs;
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker
@@ -196,6 +216,10 @@ impl Config {
         player.set_shuffle(self.shuffle);
         player.set_tracker_settings(&self.tracker_settings);
         player.set_midi_soundfont(self.midi_soundfont.as_deref());
+        player.set_songlengths_path(self.songlengths_path.as_deref());
+        player.set_sid_fallback_length(Duration::from_secs(u64::from(
+            self.sid_fallback_secs.max(1),
+        )));
         if self.resume_playback
             && let Some(session) = &self.last_played
             && !session.path().as_os_str().is_empty()

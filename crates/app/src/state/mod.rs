@@ -100,6 +100,15 @@ pub struct AppState {
     /// Most recently used soundfonts, newest first, for quick switching
     /// (Settings > Playback). Capped at [`RECENT_SOUNDFONTS_LIMIT`].
     pub recent_soundfonts: Vec<PathBuf>,
+    /// HVSC Songlengths database path (#192): the `Songlengths.md5` file or an
+    /// HVSC root to auto-detect it in; `None` leaves SID lengths unknown.
+    /// Mirrored from [`crate::config::Config`] so it round-trips.
+    ///
+    /// [`Config`]: crate::config::Config
+    pub songlengths_path: Option<PathBuf>,
+    /// Fallback play length, in seconds, for SID tunes with no Songlengths
+    /// entry (#192).
+    pub sid_fallback_secs: u32,
 }
 
 /// Maximum number of entries kept in [`AppState::recent_soundfonts`].
@@ -136,6 +145,8 @@ impl Default for AppState {
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
             recent_soundfonts: Vec::new(),
+            songlengths_path: None,
+            sid_fallback_secs: emusic_player::sid::DEFAULT_TUNE_LENGTH.as_secs() as u32,
         }
     }
 }
@@ -188,6 +199,8 @@ impl AppState {
                 }
                 self.midi_soundfont = path.clone();
             }
+            Command::SetSonglengthsPath(path) => self.songlengths_path = path.clone(),
+            Command::SetSidFallbackSecs(secs) => self.sid_fallback_secs = (*secs).max(1),
             _ => {}
         }
     }

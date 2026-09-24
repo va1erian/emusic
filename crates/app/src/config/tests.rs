@@ -76,6 +76,8 @@ fn non_default_config() -> Config {
             PathBuf::from(r"C:onts\gm.sf2"),
             PathBuf::from(r"C:onts\other.sf2"),
         ],
+        songlengths_path: Some(PathBuf::from(r"C:\hvsc\DOCUMENTS\Songlengths.md5")),
+        sid_fallback_secs: 240,
     }
 }
 

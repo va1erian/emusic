@@ -74,24 +74,35 @@ fn visualizer(ui: &mut egui::Ui, state: &mut AppState) {
     }
 }
 
-/// Playback tab: session resume (#190) followed by the tracker module
-/// and MIDI options.
+/// Playback tab: session resume (#190) followed by the tracker, MIDI and SID
+/// options. Bounded to the tab's remaining height, so the growing list of
+/// sections scrolls here rather than running off the bottom of the window.
 fn playback(ui: &mut egui::Ui, state: &mut AppState) {
-    ui.checkbox(&mut state.resume_playback, "Resume playback on startup")
-        .on_hover_text(
-            "Reopen the last played track where you left off. \
-             Turn this off to always start with an empty player.",
-        );
-    ui.add_space(12.0);
-    ui.separator();
-    ui.add_space(8.0);
-    ui.label(egui::RichText::new("Tracker modules").weak());
-    crate::settings::tracker::show(ui, state);
-    ui.add_space(12.0);
-    ui.separator();
-    ui.add_space(8.0);
-    ui.label(egui::RichText::new("MIDI playback").weak());
-    crate::settings::midi::show(ui, state);
+    egui::ScrollArea::vertical()
+        .max_height(ui.available_height())
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.checkbox(&mut state.resume_playback, "Resume playback on startup")
+                .on_hover_text(
+                    "Reopen the last played track where you left off. \
+                     Turn this off to always start with an empty player.",
+                );
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Tracker modules").weak());
+            crate::settings::tracker::show(ui, state);
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("MIDI playback").weak());
+            crate::settings::midi::show(ui, state);
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("SID song lengths").weak());
+            crate::settings::sid::show(ui, state);
+        });
 }
 
 /// One filled button per preset; the active preset gets a strong border.

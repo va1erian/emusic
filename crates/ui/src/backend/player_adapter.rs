@@ -292,6 +292,18 @@ impl PlayerApi for PlayerAdapter {
         self.player.set_shuffle(enabled);
     }
 
+    fn seek_supported(&self) -> bool {
+        self.player.seek_supported()
+    }
+
+    fn set_songlengths_path(&mut self, path: Option<&Path>) {
+        self.player.set_songlengths_path(path);
+    }
+
+    fn set_sid_fallback_length(&mut self, length: Duration) {
+        self.player.set_sid_fallback_length(length);
+    }
+
     fn set_tracker_settings(&mut self, settings: &TrackerSettings) {
         self.player.apply_tracker_settings(settings);
     }

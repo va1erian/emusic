@@ -135,6 +135,10 @@ pub(super) fn apply_player_command(
         }
         Command::SetTrackerSettings(settings) => player.set_tracker_settings(settings),
         Command::SetMidiSoundfont(path) => player.set_midi_soundfont(path.as_deref()),
+        Command::SetSonglengthsPath(path) => player.set_songlengths_path(path.as_deref()),
+        Command::SetSidFallbackSecs(secs) => {
+            player.set_sid_fallback_length(std::time::Duration::from_secs(u64::from(*secs)))
+        }
         _ => {}
     }
 }

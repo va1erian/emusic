@@ -44,9 +44,9 @@ pub struct Smtc {
     /// once the async cover lookup finishes.
     published_metadata: Option<(String, Option<String>)>,
     /// Last published `(status, whole-second position, whole-second
-    /// duration)`, so the overlay's scrubber updates about once a second
-    /// instead of every frame.
-    published_playback: Option<(PlaybackStatus, u64, u64)>,
+    /// duration, has-progress)`, so the overlay's scrubber updates about once
+    /// a second instead of every frame.
+    published_playback: Option<(PlaybackStatus, u64, u64, bool)>,
 }
 
 impl Smtc {
@@ -172,19 +172,22 @@ impl Smtc {
 
         let status = player.status();
         let position = player.position();
+        // A track with no known length (#192) publishes no progress, so the
+        // OS overlay can't offer a scrubber for something it can't measure.
+        let progress = player
+            .duration()
+            .is_some()
+            .then_some(MediaPosition(position));
         let playback_key = (
             status,
             position.as_secs(),
             player.duration().map_or(0, |d| d.as_secs()),
+            progress.is_some(),
         );
         if self.published_playback != Some(playback_key) {
             let playback = match status {
-                PlaybackStatus::Playing => MediaPlayback::Playing {
-                    progress: Some(MediaPosition(position)),
-                },
-                PlaybackStatus::Paused => MediaPlayback::Paused {
-                    progress: Some(MediaPosition(position)),
-                },
+                PlaybackStatus::Playing => MediaPlayback::Playing { progress },
+                PlaybackStatus::Paused => MediaPlayback::Paused { progress },
                 PlaybackStatus::Stopped => MediaPlayback::Stopped,
             };
             if let Some(controls) = self.controls.as_mut()
@@ -251,7 +254,12 @@ fn transport_command(event: MediaControlEvent, player: &dyn PlayerApi) -> Option
         MediaControlEvent::Next => Some(Command::PlayerNext),
         MediaControlEvent::Previous => Some(Command::PlayerPrevious),
         MediaControlEvent::Stop => Some(Command::PlayerStop),
-        MediaControlEvent::SetPosition(position) => Some(Command::PlayerSeek(position.0)),
+        // Only forward a scrubber seek when the current channel honours it
+        // (#192): a SID tune would otherwise ignore the drag while the OS
+        // overlay kept showing the requested position.
+        MediaControlEvent::SetPosition(position) if player.seek_supported() => {
+            Some(Command::PlayerSeek(position.0))
+        }
         // Relative seeks and the remaining events have no shell equivalent
         // (or are outside v1's scope); ignore them.
         _ => None,

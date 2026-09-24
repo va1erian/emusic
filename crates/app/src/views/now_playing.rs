@@ -38,21 +38,30 @@ pub fn show(
     queue::show(ui, state, player);
 }
 
-/// Full-width progress bar with a `position / duration` caption.
+/// Full-width progress bar. Shows `position / duration` when the total is
+/// known; for a track whose backend can't report one (e.g. SID without an
+/// HVSC database, #192) it shows elapsed time only, as an indeterminate bar,
+/// rather than a fake `position / 0:00`.
 fn progress(ui: &mut egui::Ui, player: &dyn PlayerApi) {
     let position = player.position();
-    let duration = player.duration().unwrap_or_default();
-    let fraction = if duration.as_secs_f32() > 0.0 {
-        (position.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let text = format!(
-        "{} / {}",
-        format_duration(position),
-        format_duration(duration)
-    );
-    ui.add(egui::ProgressBar::new(fraction).text(text));
+    match player.duration() {
+        Some(duration) if duration.as_secs_f32() > 0.0 => {
+            let fraction = (position.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0);
+            let text = format!(
+                "{} / {}",
+                format_duration(position),
+                format_duration(duration)
+            );
+            ui.add(egui::ProgressBar::new(fraction).text(text));
+        }
+        _ => {
+            ui.add(
+                egui::ProgressBar::new(0.0)
+                    .animate(true)
+                    .text(format_duration(position)),
+            );
+        }
+    }
 }
 
 fn format_duration(d: std::time::Duration) -> String {

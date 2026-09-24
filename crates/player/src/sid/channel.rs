@@ -15,8 +15,9 @@ use std::time::Duration;
 
 use bass::{Attribute, Channel, FftSize, PushFlags, PushStream};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
+use emusic_sid::{SidHeader, SongLengths};
 
-use crate::backend::BackendChannel;
+use crate::backend::{BackendChannel, ChannelCapabilities, SeekSupport};
 use crate::error::PlayerError;
 use crate::tracker::TrackerSettings;
 
@@ -25,7 +26,10 @@ use super::decoder::{CrsidDecoder, SidDecoder};
 /// Sample rate the engine renders at and the push stream is created with.
 pub const SID_SAMPLE_RATE: u32 = 44_100;
 
-/// Fixed tune length used until HVSC song lengths land (#65).
+/// Fallback play length for a SID tune with no HVSC Songlengths entry (#192):
+/// long enough to hear the tune, short enough that playback doesn't sit on an
+/// unknown-length track forever. The real per-subtune length is used whenever
+/// the database has one.
 pub const DEFAULT_TUNE_LENGTH: Duration = Duration::from_secs(180);
 
 /// Samples rendered per feeder iteration.
@@ -52,6 +56,9 @@ enum FeederCommand {
 pub struct SidChannel {
     stream: Arc<PushStream>,
     commands: Sender<FeederCommand>,
+    /// Whether the tune's real length (from the database) is known; drives
+    /// [`ChannelCapabilities::duration_known`].
+    duration_known: bool,
 }
 
 impl SidChannel {
@@ -59,29 +66,55 @@ impl SidChannel {
     ///
     /// Returns once the engine has loaded the tune, so load errors surface
     /// synchronously (on the caller's worker thread, never the UI thread).
-    pub fn open(bass: &bass::Bass, path: &Path) -> Result<Self, PlayerError> {
+    ///
+    /// `lengths` is the user's HVSC Songlengths database, if any: when it
+    /// holds the current subtune, that length is reported and used to stop
+    /// playback; otherwise `fallback` is played (and the length is reported as
+    /// unknown) so the tune still ends and the queue advances (#192).
+    pub fn open(
+        bass: &bass::Bass,
+        path: &Path,
+        lengths: Option<&SongLengths>,
+        fallback: Duration,
+    ) -> Result<Self, PlayerError> {
         let data =
             std::fs::read(path).map_err(|error| PlayerError::ReadFailed(error.to_string()))?;
 
         let stream = Arc::new(bass.open_push_stream(SID_SAMPLE_RATE, 1, PushFlags::FLOAT)?);
-        stream.set_duration(DEFAULT_TUNE_LENGTH.as_secs_f64());
+        let length = tune_length(&data, lengths);
+        if let Some(length) = length {
+            stream.set_duration(length.as_secs_f64());
+        }
+        let play_length = length.unwrap_or(fallback);
 
         let (commands, command_rx) = unbounded();
         let (ready_tx, ready_rx) = bounded(1);
         let feeder_stream = Arc::clone(&stream);
         thread::Builder::new()
             .name("emusic-sid-feeder".to_string())
-            .spawn(move || run_feeder(feeder_stream, data, command_rx, ready_tx))
+            .spawn(move || run_feeder(feeder_stream, data, command_rx, ready_tx, play_length))
             .map_err(|error| PlayerError::SpawnFailed(error.to_string()))?;
 
         match ready_rx.recv() {
-            Ok(Ok(())) => Ok(Self { stream, commands }),
+            Ok(Ok(())) => Ok(Self {
+                stream,
+                commands,
+                duration_known: length.is_some(),
+            }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(PlayerError::SpawnFailed(
                 "SID feeder exited before loading the tune".to_string(),
             )),
         }
     }
+}
+
+/// The real length of `data`'s default subtune from `lengths`, or `None` when
+/// there is no database or the tune/subtune isn't in it.
+fn tune_length(data: &[u8], lengths: Option<&SongLengths>) -> Option<Duration> {
+    let lengths = lengths?;
+    let header = SidHeader::parse(data).ok()?;
+    lengths.subtune(data, header.default_subtune)
 }
 
 impl BackendChannel for SidChannel {
@@ -153,6 +186,16 @@ impl BackendChannel for SidChannel {
         }
         Some(raw[..read].to_vec())
     }
+
+    /// SID tunes can't be seeked within (only a restart to zero is honoured),
+    /// so the slider is disabled rather than silently ignored. The length is
+    /// only known when the HVSC database had the current subtune (#192).
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            duration_known: self.duration_known,
+            seek: SeekSupport::Unsupported,
+        }
+    }
 }
 
 impl Drop for SidChannel {
@@ -162,12 +205,14 @@ impl Drop for SidChannel {
 }
 
 /// The feeder thread: loads the tune, reports the result through `ready`, then
-/// renders into `stream` until it ends or is told to stop.
+/// renders into `stream` until the tune's `play_length` is reached, it is told
+/// to stop, or it errors.
 fn run_feeder(
     stream: Arc<PushStream>,
     data: Vec<u8>,
     commands: Receiver<FeederCommand>,
     ready: Sender<Result<(), PlayerError>>,
+    play_length: Duration,
 ) {
     let mut decoder = match CrsidDecoder::from_bytes(data, SID_SAMPLE_RATE, Default::default()) {
         Ok(decoder) => {
@@ -180,7 +225,7 @@ fn run_feeder(
         }
     };
 
-    let total_frames = (DEFAULT_TUNE_LENGTH.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64;
+    let total_frames = (play_length.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64;
     let mut remaining = total_frames;
     let mut pcm = vec![0i16; RENDER_CHUNK];
     let mut bytes = Vec::with_capacity(RENDER_CHUNK * size_of::<f32>());
@@ -225,5 +270,48 @@ fn run_feeder(
             return;
         }
         remaining -= frames as u64;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A minimal valid PSID v1 header with the given default subtune.
+    fn psid(default_subtune: u16) -> Vec<u8> {
+        let mut data = vec![0u8; 0x76];
+        data[0..4].copy_from_slice(b"PSID");
+        data[0x05] = 1;
+        data[0x06..0x08].copy_from_slice(&0x76u16.to_be_bytes());
+        data[0x0E..0x10].copy_from_slice(&3u16.to_be_bytes());
+        data[0x10..0x12].copy_from_slice(&default_subtune.to_be_bytes());
+        data
+    }
+
+    /// A one-entry database keyed for `data`.
+    fn database(data: &[u8], lengths: &str) -> SongLengths {
+        let key: String = SongLengths::md5(data)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        SongLengths::parse(&format!("[Database]\n{key}={lengths}\n"))
+    }
+
+    #[test]
+    fn tune_length_uses_the_default_subtune_entry() {
+        let data = psid(2);
+        let db = database(&data, "1:00 2:30 3:00");
+        assert_eq!(
+            tune_length(&data, Some(&db)),
+            Some(Duration::from_secs(150))
+        );
+    }
+
+    #[test]
+    fn tune_length_is_none_without_a_database_or_entry() {
+        let data = psid(1);
+        assert_eq!(tune_length(&data, None), None);
+        let other = database(b"a different tune", "1:00");
+        assert_eq!(tune_length(&data, Some(&other)), None);
     }
 }

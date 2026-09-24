@@ -12,3 +12,4 @@ mod decoder;
 
 pub use channel::{DEFAULT_TUNE_LENGTH, SID_SAMPLE_RATE, SidChannel};
 pub use decoder::{CrsidDecoder, SidDecoder};
+pub use emusic_sid::{SongLengths, resolve_database_path};

@@ -9,4 +9,5 @@ pub mod associations;
 pub use emusic_ui::folder_picker;
 pub mod library;
 pub mod midi;
+pub mod sid;
 pub mod tracker;
