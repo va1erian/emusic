@@ -202,6 +202,10 @@ impl Shell {
         // so it can clear its pending state or show the per-file error.
         let tag_edit_results = self.library.take_tag_edit_results();
         tag_editor::deliver(&mut self.state.tag_editor, tag_edit_results);
+        // Route finished auto-tag lookups to the editor that requested them
+        // (#208), so it can show the candidates or the error.
+        let auto_tag_results = self.library.take_auto_tag_results();
+        tag_editor::deliver_auto_tag(&mut self.state.tag_editor, auto_tag_results);
 
         self.player.tick(dt);
 
@@ -296,6 +300,11 @@ impl Shell {
             self.state.tag_editor.as_ref().map(|editor| &editor.status),
             Some(TagStatus::Pending)
         ) {
+            return Some(TAG_EDIT_REPAINT);
+        }
+        // Keep waking while an auto-tag lookup is in flight so its outcome is
+        // picked up promptly (#208).
+        if self.library.auto_tag_status().is_some() {
             return Some(TAG_EDIT_REPAINT);
         }
         None

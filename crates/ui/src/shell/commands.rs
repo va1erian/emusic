@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::library_api::{EditRequest, LibraryDataSource};
+use crate::library_api::{AutoTagRequest, EditRequest, LibraryDataSource};
 use crate::player_api::{PlayerApi, RepeatMode};
 use crate::state::{AppState, Command};
 
@@ -27,6 +27,7 @@ pub(super) fn apply_library_commands(
     let mut toggle_starred: Vec<u64> = Vec::new();
     let mut open_tag_editor = None;
     let mut tag_edits: Vec<EditRequest> = Vec::new();
+    let mut auto_tag: Option<AutoTagRequest> = None;
     for cmd in commands {
         match cmd {
             Command::LibraryAddFolder(_) | Command::LibraryRemoveFolder(_) => {
@@ -39,6 +40,12 @@ pub(super) fn apply_library_commands(
             Command::ToggleStarred(id) => toggle_starred.push(*id),
             Command::OpenTagEditor(id) => open_tag_editor = Some(*id),
             Command::RequestTagEdits(requests) => tag_edits.extend(requests.iter().cloned()),
+            Command::AutoTagTrack { path, query } => {
+                auto_tag = Some(AutoTagRequest {
+                    path: path.clone(),
+                    query: query.clone(),
+                });
+            }
             _ => {}
         }
     }
@@ -83,6 +90,9 @@ pub(super) fn apply_library_commands(
     }
     if !tag_edits.is_empty() {
         library.request_tag_edits(tag_edits);
+    }
+    if let Some(request) = auto_tag {
+        library.request_auto_tag(request);
     }
 }
 
@@ -193,7 +203,7 @@ fn next_repeat(mode: RepeatMode) -> RepeatMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library_api::EditableTags;
+    use crate::library_api::{EditableTags, TrackQuery};
     use crate::mock::MockLibrary;
 
     #[test]
@@ -263,5 +273,31 @@ mod tests {
             .find(|track| track.id == id)
             .expect("edited track still exists");
         assert_eq!(edited.title, "Edited");
+    }
+
+    #[test]
+    fn auto_tag_track_reaches_the_library() {
+        let mut library = MockLibrary::new();
+        let mut state = AppState::default();
+        let track = library.tracks()[0].clone();
+
+        apply_library_commands(
+            &mut library,
+            &mut state,
+            &[Command::AutoTagTrack {
+                path: std::path::PathBuf::from(&track.path),
+                query: TrackQuery {
+                    title: Some(track.title.clone()),
+                    artist: Some(track.artist.clone()),
+                    ..Default::default()
+                },
+            }],
+        );
+
+        let results = library.take_auto_tag_results();
+        assert_eq!(results.len(), 1);
+        let candidates = results[0].result.as_ref().expect("the mock succeeds");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].title.as_deref(), Some(track.title.as_str()));
     }
 }

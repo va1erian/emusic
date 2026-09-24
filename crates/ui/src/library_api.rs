@@ -20,6 +20,12 @@ pub use emusic_library::stats::StatsWindow;
 /// depending on the library crate directly.
 pub use emusic_library::tags::{EditOutcome, EditRequest, EditableTags};
 
+/// The online auto-tag lookup types (#208), re-exported so UI code can request
+/// lookups and read back candidates without depending on `emusic-metadata`.
+pub use crate::auto_tag::{
+    AutoTagError, AutoTagOutcome, AutoTagRequest, AutoTagStatus, Candidate, TrackQuery,
+};
+
 /// Minimal, local stand-in for `emusic_core::Track`.
 #[derive(Debug, Clone, Default)]
 pub struct TrackInfo {
@@ -205,6 +211,29 @@ pub trait LibraryDataSource {
     fn take_tag_edit_results(&mut self) -> Vec<EditOutcome> {
         Vec::new()
     }
+
+    /// Requests an online metadata lookup for one track (#208). The work runs
+    /// in the background — never on the UI thread — and the result is
+    /// collected with [`LibraryDataSource::take_auto_tag_results`].
+    ///
+    /// A no-op for backends without a lookup provider (mock/screenshots).
+    fn request_auto_tag(&mut self, _request: AutoTagRequest) {}
+
+    /// Drains the auto-tag lookups requested with
+    /// [`LibraryDataSource::request_auto_tag`] that have finished since the
+    /// last call, in completion order. Empty for backends without a provider.
+    fn take_auto_tag_results(&mut self) -> Vec<AutoTagOutcome> {
+        Vec::new()
+    }
+
+    /// The progress line of the auto-tag lookup currently in flight, if any.
+    /// Drives the status bar's lookup line and cancel button (#210).
+    fn auto_tag_status(&self) -> Option<AutoTagStatus> {
+        None
+    }
+
+    /// Requests cancellation of the auto-tag lookup in flight, if any.
+    fn cancel_auto_tag(&mut self) {}
 
     fn track_count(&self) -> usize {
         self.tracks().len()

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use emusic_library::LibraryError;
 
 use super::form::TagForm;
-use super::{Status, TagEditorState, deliver};
-use crate::library_api::{EditOutcome, TrackInfo};
+use super::{AutoTagState, Status, TagEditorState, deliver, deliver_auto_tag};
+use crate::library_api::{AutoTagError, AutoTagOutcome, Candidate, EditOutcome, TrackInfo};
 
 fn track() -> TrackInfo {
     TrackInfo {
@@ -155,4 +155,100 @@ fn deliver_without_an_open_editor_is_a_no_op() {
         }],
     );
     assert!(state.is_none());
+}
+
+fn candidate(title: &str) -> Candidate {
+    Candidate {
+        title: Some(title.to_string()),
+        score: 0.9,
+        ..Default::default()
+    }
+}
+
+fn auto_tag_outcome(result: Result<Vec<Candidate>, AutoTagError>) -> AutoTagOutcome {
+    AutoTagOutcome {
+        path: PathBuf::from("C:/music/track.flac"),
+        result,
+    }
+}
+
+#[test]
+fn deliver_auto_tag_stores_candidates() {
+    let track = track();
+    let mut state = Some(TagEditorState::new(&track));
+    state.as_mut().expect("editor is open").auto_tag = AutoTagState::Searching;
+
+    deliver_auto_tag(
+        &mut state,
+        vec![auto_tag_outcome(Ok(vec![candidate("Found")]))],
+    );
+
+    let editor = state.as_ref().expect("editor stays open");
+    let AutoTagState::Matches(candidates) = &editor.auto_tag else {
+        panic!("expected matches");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].title.as_deref(), Some("Found"));
+}
+
+#[test]
+fn deliver_auto_tag_without_candidates_is_no_match() {
+    let track = track();
+    let mut state = Some(TagEditorState::new(&track));
+
+    deliver_auto_tag(&mut state, vec![auto_tag_outcome(Ok(Vec::new()))]);
+
+    let editor = state.as_ref().expect("editor stays open");
+    assert!(matches!(editor.auto_tag, AutoTagState::NoMatch));
+}
+
+#[test]
+fn deliver_auto_tag_failure_shows_the_message() {
+    let track = track();
+    let mut state = Some(TagEditorState::new(&track));
+
+    deliver_auto_tag(
+        &mut state,
+        vec![auto_tag_outcome(Err(AutoTagError::Provider(
+            emusic_metadata::MetadataError::NoMatch,
+        )))],
+    );
+
+    let editor = state.as_ref().expect("editor stays open");
+    let AutoTagState::Failed(message) = &editor.auto_tag else {
+        panic!("expected a failure");
+    };
+    assert!(message.contains("no matching metadata"));
+}
+
+#[test]
+fn deliver_auto_tag_cancelled_returns_to_idle() {
+    let track = track();
+    let mut state = Some(TagEditorState::new(&track));
+    state.as_mut().expect("editor is open").auto_tag = AutoTagState::Searching;
+
+    deliver_auto_tag(
+        &mut state,
+        vec![auto_tag_outcome(Err(AutoTagError::Cancelled))],
+    );
+
+    let editor = state.as_ref().expect("editor stays open");
+    assert!(matches!(editor.auto_tag, AutoTagState::Idle));
+}
+
+#[test]
+fn deliver_auto_tag_ignores_other_files() {
+    let track = track();
+    let mut state = Some(TagEditorState::new(&track));
+
+    deliver_auto_tag(
+        &mut state,
+        vec![AutoTagOutcome {
+            path: PathBuf::from("C:/music/other.flac"),
+            result: Ok(vec![candidate("Found")]),
+        }],
+    );
+
+    let editor = state.as_ref().expect("editor stays open");
+    assert!(matches!(editor.auto_tag, AutoTagState::Idle));
 }
