@@ -14,7 +14,7 @@ use std::collections::{BTreeSet, HashMap};
 use crate::library_api::TrackInfo;
 use crate::views::Ctx;
 
-use selection::PaneSelection;
+pub use selection::PaneSelection;
 
 /// Default splitter height, in pixels (the pane strip above the table),
 /// sized so roughly eight to ten rows are visible in each pane.
