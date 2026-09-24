@@ -29,6 +29,8 @@ pub enum ContextAction {
     ToggleStar,
     CopyPath,
     OpenFileLocation,
+    /// Remove the row's playback-history entry (History view only).
+    RemoveHistory,
 }
 
 /// One row: the track plus its pre-formatted numeric cells. Shared with the
@@ -308,5 +310,8 @@ pub fn run_context_action(
                 .spawn();
             None
         }
+        // Only the History view's own context menu raises this; the track
+        // table has no history entry to remove.
+        ContextAction::RemoveHistory => None,
     }
 }

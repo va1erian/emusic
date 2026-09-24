@@ -29,6 +29,7 @@ use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
 use crate::views::genres::GenresView;
+use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
@@ -61,6 +62,8 @@ pub enum Msg {
     ContextAction(ContextAction),
     /// The Most Played view's time-window selector changed.
     MostPlayed(StatsWindow),
+    /// Clear the whole play history, after the confirmation dialog.
+    HistoryClear,
     /// An event from the Albums view.
     Album(AlbumMsg),
     /// A folder tree row was selected (or the selection cleared).
@@ -108,6 +111,7 @@ pub struct Win32App {
     artists: ArtistsView,
     genres: GenresView,
     most_played: MostPlayedView,
+    history: HistoryView,
     settings: SettingsView,
     starred: StarredView,
     right_panel: NowPlayingView,
@@ -151,6 +155,7 @@ impl Win32App {
         let artists = ArtistsView::new(ui).expect("create artists view");
         let genres = GenresView::new(ui).expect("create genres view");
         let most_played = MostPlayedView::new(ui).expect("create most played view");
+        let history = HistoryView::new(ui).expect("create history view");
         let settings = SettingsView::new(ui).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
         let status = StatusBarView::new(ui).expect("create status bar");
@@ -184,6 +189,7 @@ impl Win32App {
                 | View::MostPlayed
                 | View::Settings
                 | View::Starred
+                | View::History
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
@@ -194,6 +200,7 @@ impl Win32App {
         most_played.set_visible(view == View::MostPlayed);
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
+        history.set_visible(view == View::History);
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -210,6 +217,7 @@ impl Win32App {
             artists,
             genres,
             most_played,
+            history,
             settings,
             starred,
             right_panel,
@@ -248,6 +256,7 @@ impl Win32App {
             View::MostPlayed => self.most_played.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
+            View::History => self.history.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
             _ => self.central.fill(1),
         };
@@ -309,6 +318,7 @@ impl Win32App {
             self.most_played.set_visible(view == View::MostPlayed);
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
+            self.history.set_visible(view == View::History);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
             self.browser.set_visible(browser_visible);
             self.applied_browser_visible = browser_visible;
@@ -376,6 +386,15 @@ impl Win32App {
                 self.shell.library.as_ref(),
                 playing_id,
             );
+        }
+
+        // The History list is rebuilt when the library (and so the history)
+        // changes; its day grouping and per-play status come from the shared
+        // model and the current track.
+        if view == View::History {
+            let rebuild = changes.intersects(Changes::LIBRARY);
+            self.history
+                .sync(self.shell.library.as_ref(), playing_id, rebuild);
         }
 
         if view == View::Albums {
@@ -604,6 +623,7 @@ impl App for Win32App {
                     View::Folders => self.folders.activate(row),
                     View::Starred => self.starred.activate(row),
                     View::MostPlayed => self.most_played.activate(row),
+                    View::History => self.history.activate(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -669,6 +689,13 @@ impl App for Win32App {
                         self.most_played.set_context_row(row);
                         self.most_played.context_menu().clone()
                     }
+                    View::History => {
+                        if !self.history.is_entry_row(row) {
+                            return;
+                        }
+                        self.history.set_context_row(row);
+                        self.history.context_menu().clone()
+                    }
                     _ => return,
                 };
                 ui.popup(&menu, ui.cursor_position());
@@ -707,6 +734,7 @@ impl App for Win32App {
                     View::Folders => self.folders.run_context(action, ui.hwnd()),
                     View::Starred => self.starred.run_context(action, ui.hwnd()),
                     View::MostPlayed => self.most_played.run_context(action, ui.hwnd()),
+                    View::History => self.history.run_context(action),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -801,6 +829,12 @@ impl App for Win32App {
             Msg::QueueRemove => {
                 if let Some(index) = self.right_panel.context_index() {
                     self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick(ui);
+                }
+            }
+            Msg::HistoryClear => {
+                if self.history.confirm_clear(ui) {
+                    self.shell.dispatch(Command::HistoryClear);
                     self.tick(ui);
                 }
             }

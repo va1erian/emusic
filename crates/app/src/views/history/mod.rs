@@ -3,7 +3,6 @@
 //! Double-clicking a row plays that track again; each row has a remove
 //! button, and the whole list can be cleared after a confirmation dialog.
 
-mod grouping;
 mod table;
 
 use eframe::egui;
