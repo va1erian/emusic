@@ -47,7 +47,7 @@ impl ArtistsView {
     pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
         Ok(Self {
             label: Label::new(ui, Rect::default(), "0 artists")?,
-            rows: NameCountsView::new(ui, &COUNT_COLUMNS)?,
+            rows: NameCountsView::new(ui, "Artist", &COUNT_COLUMNS)?,
             applied_revision: Cell::new(u64::MAX),
         })
     }
@@ -57,9 +57,9 @@ impl ArtistsView {
     pub fn sync(&mut self, state: &mut AppState, library: &dyn LibraryDataSource) {
         let cx = Ctx::with_library(&[], None, library);
         state.artists.refresh(&cx);
-        self.label.set_text(&state.artists.count_label());
         if self.applied_revision.get() != state.artists.revision() {
             self.applied_revision.set(state.artists.revision());
+            self.label.set_text(&state.artists.count_label());
             let rows = state.artists.rows().iter().map(row_for).collect();
             self.rows.set_rows(rows);
         }

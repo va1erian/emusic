@@ -80,11 +80,15 @@ pub struct NameCountsView {
 }
 
 impl NameCountsView {
-    /// Creates the list with a fill-width name column and the given
+    /// Creates the list with a fill-width `name_title` column and the given
     /// right-aligned count columns.
-    pub fn new(ui: &mut Ui<Msg>, count_columns: &[CountColumn]) -> Result<Self> {
+    pub fn new(
+        ui: &mut Ui<Msg>,
+        name_title: &'static str,
+        count_columns: &[CountColumn],
+    ) -> Result<Self> {
         let mut list = ListView::new(ui)?
-            .column("Name", Fill, |row: &NameCountRow| row.name.as_str())
+            .column(name_title, Fill, |row: &NameCountRow| row.name.as_str())
             .on_context(|row| Some(Msg::ContextRow(row)));
         for (index, column) in count_columns.iter().enumerate() {
             list = list.column_right(
