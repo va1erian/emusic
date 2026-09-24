@@ -47,7 +47,10 @@ pub fn sorted_indices(tracks: &[&TrackInfo], sort: SortState) -> Vec<usize> {
     order
 }
 
-fn compare(a: &TrackInfo, b: &TrackInfo, key: ColumnId) -> Ordering {
+/// Orders two tracks by `key`, with the same tie-breaking the egui frontend
+/// relies on. Exposed so a retained-mode frontend can sort its own model
+/// without duplicating these rules (`sorted_indices` builds on it).
+pub fn compare(a: &TrackInfo, b: &TrackInfo, key: ColumnId) -> Ordering {
     match key {
         ColumnId::Title => title_key(a)
             .cmp(&title_key(b))

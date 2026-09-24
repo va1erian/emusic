@@ -11,13 +11,14 @@ use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::player_api::PlayerApi;
-use emusic_ui::shell::Shell;
-use emusic_ui::state::Command;
+use emusic_ui::shell::{Changes, Shell};
+use emusic_ui::state::{Command, View};
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
 use win32ui::{StatusBar, column, dip, row};
 
 use crate::menu;
+use crate::views::music::{ContextAction, MusicView};
 use crate::views::placeholder::Placeholder;
 use crate::waker::Win32Waker;
 
@@ -31,6 +32,14 @@ pub enum Msg {
     Dispatch(Command),
     /// Open File -> Database info (placeholder until the dialog lands).
     DatabaseInfo,
+    /// Play the Music view row (double-click / Enter).
+    PlayRow(usize),
+    /// Sort the Music view by a header column.
+    SortColumn(usize),
+    /// Open the Music view's context menu for a row.
+    ContextRow(usize),
+    /// Run a Music view context-menu action.
+    ContextAction(ContextAction),
     /// Close the window and exit.
     Quit,
 }
@@ -40,6 +49,7 @@ pub struct Win32App {
     shell: Shell,
     navigator: Placeholder,
     central: Placeholder,
+    music: MusicView,
     right_panel: Placeholder,
     status: StatusBar<Msg>,
     /// The shell's repaint timer, if scheduled, and its interval in ms.
@@ -48,6 +58,8 @@ pub struct Win32App {
     applied_panels: emusic_ui::state::PanelVisibility,
     /// Theme last applied to the window, so a change re-themes it.
     applied_theme: emusic_ui::state::Theme,
+    /// View last applied to the central area, so a change re-lays it out.
+    applied_view: View,
 }
 
 impl Win32App {
@@ -67,6 +79,7 @@ impl Win32App {
     ) -> Self {
         let navigator = Placeholder::new(ui, "Navigator").expect("create navigator placeholder");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
+        let music = MusicView::new(ui).expect("create music view");
         let right_panel = Placeholder::new(ui, "Now playing").expect("create right panel");
         let status = StatusBar::new(ui).expect("create status bar");
 
@@ -80,10 +93,16 @@ impl Win32App {
         }
 
         ui.set_menu_bar(menu::build());
+        // The central area shows the Music list for the Music view and the
+        // placeholder otherwise; hidden items take no space in the layout.
+        let music_active = shell.state.view == View::Music;
+        central.set_visible(!music_active);
+        music.set_visible(music_active);
         ui.set_layout(column![
             row![
                 navigator.width(dip(220.0)),
                 central.fill(1),
+                music.fill(1),
                 right_panel.width(dip(280.0)),
             ]
             .fill(1),
@@ -93,15 +112,18 @@ impl Win32App {
 
         let applied_panels = shell.state.panels;
         let applied_theme = shell.state.theme;
+        let applied_view = shell.state.view;
         let mut app = Self {
             shell,
             navigator,
             central,
+            music,
             right_panel,
             status,
             timer: None,
             applied_panels,
             applied_theme,
+            applied_view,
         };
         app.tick(ui);
         app
@@ -115,17 +137,34 @@ impl Win32App {
     /// Runs the shell for this frame, syncs the views and schedules the timer.
     fn tick(&mut self, ui: &mut Ui<Msg>) {
         let tick = self.shell.tick(Instant::now());
-        self.sync_views(ui);
+        self.sync_views(ui, tick.changes);
         self.schedule(ui, tick.next_wake);
     }
 
-    /// Pushes the current shell state into the placeholder views.
-    fn sync_views(&mut self, ui: &mut Ui<Msg>) {
-        let tracks = self.shell.library.track_count();
-        self.central.sync(&format!(
-            "{} view — {tracks} tracks",
-            self.shell.state.view.label()
-        ));
+    /// Pushes the current shell state into the views.
+    fn sync_views(&mut self, ui: &mut Ui<Msg>, changes: Changes) {
+        // Central-area routing: the Music view owns the track list, every other
+        // view is still a placeholder.
+        let view = self.shell.state.view;
+        if view != self.applied_view {
+            let music = view == View::Music;
+            self.central.set_visible(!music);
+            self.music.set_visible(music);
+            ui.relayout();
+            self.applied_view = view;
+        }
+
+        self.central
+            .sync(&format!("{} view", self.shell.state.view.label()));
+
+        let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+        self.music.sync(
+            &self.shell.state,
+            self.shell.library.as_ref(),
+            &self.shell.search,
+            playing_id,
+            changes,
+        );
 
         let folders = self.shell.library.folders().len();
         self.navigator
@@ -195,9 +234,44 @@ impl App for Win32App {
             Msg::DatabaseInfo => {
                 self.shell.state.database_info_open = true;
             }
+            Msg::PlayRow(row) => {
+                if let Some(command) = self.music.activate(row) {
+                    self.shell.dispatch(command);
+                    self.tick(ui);
+                }
+            }
+            Msg::SortColumn(column) => {
+                if let Some(id) = crate::views::music::column_id(column) {
+                    self.shell.state.music_table.sort.toggle(id);
+                    self.music.resort(
+                        &self.shell.state,
+                        self.shell.library.as_ref(),
+                        &self.shell.search,
+                    );
+                    self.tick(ui);
+                }
+            }
+            Msg::ContextRow(row) => {
+                self.music.set_context_row(row);
+                ui.popup(self.music.context_menu(), ui.cursor_position());
+            }
+            Msg::ContextAction(action) => {
+                if let Some(command) = self.music.run_context(action, ui.hwnd()) {
+                    self.shell.dispatch(command);
+                    self.tick(ui);
+                }
+            }
             Msg::Quit => ui.close(),
         }
     }
+}
+
+/// The library id of the player's current track, matched by path.
+fn playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
+    let now_playing = player.now_playing()?;
+    library
+        .track_by_path(&now_playing.path)
+        .map(|track| track.id)
 }
 
 /// Maps the shell's dark/light theme onto win32ui's palette.
