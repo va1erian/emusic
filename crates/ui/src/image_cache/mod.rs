@@ -55,9 +55,11 @@ pub trait ImageSink {
 
 /// Decodes the image for a source path; runs on a worker thread.
 ///
-/// `None` means the image is unavailable and the frontend draws its own
-/// placeholder.
-pub type DecodeFn = Arc<dyn Fn(&Path) -> Option<Rgba8Image> + Send + Sync>;
+/// `fallback_dir` is where folder-level images (`cover.jpg`, ...) may live
+/// when the source itself is not the file to read from; `None` to search next
+/// to `path` only. `None` as a return value means the image is unavailable and
+/// the frontend draws its own placeholder.
+pub type DecodeFn = Arc<dyn Fn(&Path, Option<&Path>) -> Option<Rgba8Image> + Send + Sync>;
 
 /// Builds a stand-in image for a source path that is not on disk (e.g. mock
 /// data), so headless renders stay deterministic and spawn no workers.
@@ -77,6 +79,7 @@ const WORKERS: usize = 2;
 struct Job {
     key: u64,
     source: PathBuf,
+    fallback_dir: Option<PathBuf>,
     waker: WakerHandle,
 }
 
@@ -189,10 +192,19 @@ impl<S: ImageSink> ThumbCache<S> {
 
     /// Returns the handle for `source` if ready, requesting it otherwise.
     ///
-    /// `source` is the file an image is read from; paths that do not exist
+    /// `source` is the file an image is read from. Paths that do not exist
     /// (e.g. mock data) never spawn a worker — they use the placeholder, if
     /// one was set, and otherwise report "not ready".
-    pub fn get(&mut self, sink: &mut S, source: &str) -> Option<&S::Handle> {
+    ///
+    /// `fallback_dir` lets the decoder find folder-level artwork when `source`
+    /// is not itself the file to read (e.g. the now-playing panel passes the
+    /// library track's directory); it is ignored by the placeholder path.
+    pub fn get_with_fallback(
+        &mut self,
+        sink: &mut S,
+        source: &str,
+        fallback_dir: Option<&Path>,
+    ) -> Option<&S::Handle> {
         let key = hash(source);
         if self.entries.contains_key(&key) {
             self.clock += 1;
@@ -216,8 +228,14 @@ impl<S: ImageSink> ThumbCache<S> {
             return self.entries.get(&key).map(|entry| &entry.handle);
         }
 
-        self.request(key, path);
+        self.request(key, path, fallback_dir);
         None
+    }
+
+    /// Convenience for the common case with no extra folder-image search
+    /// directory.
+    pub fn get(&mut self, sink: &mut S, source: &str) -> Option<&S::Handle> {
+        self.get_with_fallback(sink, source, None)
     }
 
     fn insert(&mut self, key: u64, handle: S::Handle, bytes: usize) {
@@ -251,7 +269,7 @@ impl<S: ImageSink> ThumbCache<S> {
         }
     }
 
-    fn request(&mut self, key: u64, source: &Path) {
+    fn request(&mut self, key: u64, source: &Path, fallback_dir: Option<&Path>) {
         if !self.loading.insert(key) {
             return;
         }
@@ -259,6 +277,7 @@ impl<S: ImageSink> ThumbCache<S> {
         let job = Job {
             key,
             source: source.to_path_buf(),
+            fallback_dir: fallback_dir.map(Path::to_path_buf),
             waker: self.waker.clone(),
         };
         if sender.send(job).is_err() {
@@ -295,7 +314,7 @@ fn worker(jobs: Arc<Mutex<Receiver<Job>>>, done: Sender<Finished>, decode: Decod
             let Ok(job) = jobs.recv() else { return };
             job
         };
-        let image = decode(&job.source);
+        let image = decode(&job.source, job.fallback_dir.as_deref());
         if done
             .send(Finished {
                 key: job.key,

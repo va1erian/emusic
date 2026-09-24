@@ -1,5 +1,9 @@
 //! Fake-sink tests for the shared cache's upload cap, LRU and byte budget.
 
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
 use super::*;
 
 /// Records every upload so tests can assert what reached the frontend.
@@ -27,7 +31,7 @@ fn image(bytes: usize) -> Rgba8Image {
 }
 
 fn cache(byte_budget: usize) -> ThumbCache<FakeSink> {
-    ThumbCache::new(byte_budget, Arc::new(|_| None))
+    ThumbCache::new(byte_budget, Arc::new(|_, _| None))
 }
 
 fn queue(
@@ -111,4 +115,48 @@ fn missing_sources_use_the_placeholder_without_spawning_a_worker() {
     assert!(handle.is_some());
     assert_eq!(sink.uploads.len(), 1);
     assert!(cache.jobs.is_none());
+}
+
+#[test]
+fn the_decoder_receives_the_fallback_directory() {
+    // The decoder echoes the byte length of the fallback dir it was handed, so
+    // the test can see the value the cache forwarded through the worker.
+    let seen_dir_len = Arc::new(AtomicUsize::new(0));
+    let decode = Arc::new({
+        let seen = Arc::clone(&seen_dir_len);
+        move |_path: &Path, fallback_dir: Option<&Path>| {
+            seen.store(
+                fallback_dir.map_or(0, |dir| dir.to_string_lossy().len()),
+                Ordering::SeqCst,
+            );
+            Some(image(1))
+        }
+    });
+    let source = std::env::temp_dir().join("emusic-image-cache-test.png");
+    std::fs::write(&source, b"x").expect("write temp file");
+
+    let mut cache = ThumbCache::new(usize::MAX, decode);
+    let mut sink = FakeSink::default();
+    cache.get_with_fallback(
+        &mut sink,
+        &source.to_string_lossy(),
+        Some(Path::new("D:/some/album/dir")),
+    );
+
+    // Poll until the worker answers (like the UI thread drains per frame).
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        cache.drain(&mut sink);
+        if !sink.uploads.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let _ = std::fs::remove_file(&source);
+
+    assert_eq!(sink.uploads.len(), 1);
+    assert_eq!(
+        seen_dir_len.load(Ordering::SeqCst),
+        "D:/some/album/dir".len()
+    );
 }

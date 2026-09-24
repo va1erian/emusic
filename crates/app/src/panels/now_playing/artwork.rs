@@ -6,12 +6,14 @@
 //! later frame. Paths that do not exist on disk (e.g. mock data) get a
 //! deterministic generated placeholder so screenshots stay stable.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use eframe::egui;
 use emusic_ui::image_cache::{Rgba8Image, ThumbCache, load_artwork};
 
 use crate::image_sink::EguiImageSink;
+use crate::library_api::TrackInfo;
 use crate::player_api::NowPlayingInfo;
 
 /// Number of pixels in the generated placeholder square.
@@ -27,12 +29,26 @@ pub type ArtworkCache = ThumbCache<EguiImageSink>;
 /// placeholder for paths that are not on disk.
 #[must_use]
 pub fn new_cache() -> ArtworkCache {
-    ThumbCache::new(BYTE_BUDGET, Arc::new(load_artwork)).with_placeholder(Arc::new(placeholder_for))
+    let decode =
+        |path: &Path, fallback_dir: Option<&Path>| load_artwork_with_fallback(path, fallback_dir);
+    ThumbCache::new(BYTE_BUDGET, Arc::new(decode)).with_placeholder(Arc::new(placeholder_for))
+}
+
+/// Full-size artwork for `path`, falling back to a folder image in
+/// `fallback_dir` (the library track's directory) when `path` itself has
+/// neither embedded art nor a sibling image.
+fn load_artwork_with_fallback(path: &Path, fallback_dir: Option<&Path>) -> Option<Rgba8Image> {
+    load_artwork(path).or_else(|| fallback_dir.and_then(load_artwork))
 }
 
 /// Show the artwork area: a square image (or placeholder) sized to the
 /// panel width.
-pub fn show(ui: &mut egui::Ui, cache: &mut ArtworkCache, np: Option<&NowPlayingInfo>) {
+pub fn show(
+    ui: &mut egui::Ui,
+    cache: &mut ArtworkCache,
+    np: Option<&NowPlayingInfo>,
+    track: Option<&TrackInfo>,
+) {
     let mut sink = EguiImageSink::new(ui.ctx().clone(), "artwork");
     cache.drain(&mut sink);
 
@@ -44,8 +60,13 @@ pub fn show(ui: &mut egui::Ui, cache: &mut ArtworkCache, np: Option<&NowPlayingI
         None
     } else {
         // No texture yet: `get` requests it from a worker thread (or generates
-        // a placeholder synchronously for non-existent mock paths).
-        cache.get(&mut sink, key).cloned()
+        // a placeholder synchronously for non-existent mock paths). The
+        // library track's directory is searched for a folder image when the
+        // playing path has none.
+        let fallback_dir = track.and_then(|t| Path::new(&t.path).parent());
+        cache
+            .get_with_fallback(&mut sink, key, fallback_dir)
+            .cloned()
     };
 
     let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
