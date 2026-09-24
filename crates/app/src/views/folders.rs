@@ -33,7 +33,11 @@ const MIN_CENTRAL_WIDTH: f32 = 320.0;
 /// from the scroll content's (potentially offset) bounds instead of the
 /// screen, which let it paint over the navigator column instead of stopping
 /// at its edge.
-pub fn tree_panel(ui: &mut egui::Ui, view: &mut FoldersView, library: &dyn LibraryDataSource) {
+pub fn tree_panel(
+    ui: &mut egui::Ui,
+    view: &mut FoldersView,
+    library: &dyn LibraryDataSource,
+) -> Commands {
     let mut messages = Vec::new();
     // `ui.available_width()` here already excludes the navigator and right
     // panel (shown earlier this frame), so this is genuinely the width left
@@ -61,6 +65,7 @@ pub fn tree_panel(ui: &mut egui::Ui, view: &mut FoldersView, library: &dyn Libra
     for msg in messages {
         view.update(msg, &cx, &mut out);
     }
+    out
 }
 
 pub fn show(
