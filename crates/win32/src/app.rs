@@ -238,20 +238,22 @@ impl Win32App {
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
         let title_bar = ui.title_bar_height();
-        ui.set_layout(
-            column![
-                row![
-                    self.navigator.width(dip(220.0)),
-                    central,
-                    self.right_panel
-                        .layout()
-                        .width(dip(now_playing::PANEL_WIDTH)),
-                ]
-                .fill(1),
-                self.status,
-            ]
-            .margins(Insets::new(dip(0.0), title_bar, dip(0.0), dip(0.0))),
-        );
+        let body = row![
+            self.navigator.width(dip(220.0)),
+            central,
+            self.right_panel
+                .layout()
+                .width(dip(now_playing::PANEL_WIDTH)),
+        ]
+        .fill(1);
+        // The material status bar is not a child: it reserves its band with a
+        // bottom margin instead of taking a row.
+        let bottom = self.status.bottom_margin(ui);
+        let layout = match self.status.layout_item() {
+            Some(child) => column![body, *child],
+            None => column![body],
+        };
+        ui.set_layout(layout.margins(Insets::new(dip(0.0), title_bar, dip(0.0), bottom)));
     }
 
     /// Sets the one-line startup notice shown in the status bar.
@@ -396,11 +398,7 @@ impl Win32App {
 
         self.shell.state.top_bar.sync(self.shell.player.as_ref());
         if let Some(top_bar) = &mut self.top_bar {
-            top_bar.sync(
-                ui,
-                &self.shell.state.top_bar,
-                &self.shell.state.search_query,
-            );
+            top_bar.sync(&self.shell.state.top_bar, &self.shell.state.search_query);
         }
 
         // Panel visibility is toggled through `Command::TogglePanel`; apply it
