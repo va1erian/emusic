@@ -8,6 +8,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use emusic_ui::config::Config;
+use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::mock::{MockLibrary, MockPlayer};
 use emusic_ui::waker::WakerSlot;
 use emusic_win32::app::{Msg, Win32App};
@@ -61,4 +62,35 @@ fn app_constructs_ticks_and_quits() {
         "the watchdog fired before the app quit"
     );
     assert!(constructed.get(), "the app was never constructed");
+}
+
+/// Builds the panel against a playing mock track with a populated queue and
+/// module info, so the panel's non-empty sync path (artwork request, metadata,
+/// queue model) runs too. Skips if the session cannot create windows.
+#[test]
+fn app_constructs_with_a_playing_track_and_queue() {
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic-win32.smoke.playing").theme(Theme::light()),
+        move |ui| {
+            let library = MockLibrary::new();
+            let track = library.tracks().first().cloned().unwrap_or_default();
+            let player = MockPlayer::playing_demo(&track);
+            let app = Win32App::new(
+                ui,
+                Box::new(library),
+                Box::new(player),
+                Config::default(),
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            ui.emit(Msg::Quit);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
 }
