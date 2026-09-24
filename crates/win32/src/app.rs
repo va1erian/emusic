@@ -129,6 +129,10 @@ pub struct Win32App {
     applied_view: View,
     /// Whether the column browser was last shown, so a change re-lays it out.
     applied_browser_visible: bool,
+    /// The column-browser toggle last reflected in the View menu's tick. Kept
+    /// apart from [`Self::applied_browser_visible`], which is the *effective*
+    /// visibility (also false off the Music view).
+    applied_browser_toggle: bool,
 }
 
 impl Win32App {
@@ -174,7 +178,7 @@ impl Win32App {
             shell.handle_ipc_message(message);
         }
 
-        ui.set_menu_bar(menu::build());
+        ui.set_menu_bar(menu::build(&shell.state));
         // Only the active central view is placed by the layout (installed
         // below); the others are hidden so they keep no stale bounds.
         let view = shell.state.view;
@@ -206,6 +210,7 @@ impl Win32App {
         let applied_panels = shell.state.panels;
         let applied_theme = shell.state.theme;
         let applied_view = shell.state.view;
+        let applied_browser_toggle = shell.state.music.browser.visible;
         let mut app = Self {
             shell,
             navigator,
@@ -228,6 +233,7 @@ impl Win32App {
             applied_theme,
             applied_view,
             applied_browser_visible: browser_visible,
+            applied_browser_toggle,
         };
         app.install_layout(ui, view);
         app.refresh_folders();
@@ -418,6 +424,13 @@ impl Win32App {
             self.applied_browser_visible = browser_visible;
             relayout = true;
         }
+        // The View menu ticks the column-browser *toggle*, which can change
+        // even off the Music view; reinstall the bar when it does.
+        let browser_toggle = self.shell.state.music.browser.visible;
+        if browser_toggle != self.applied_browser_toggle {
+            self.applied_browser_toggle = browser_toggle;
+            ui.set_menu_bar(menu::build(&self.shell.state));
+        }
         self.browser.sync(&self.shell.state.music.browser);
 
         if view == View::Settings
@@ -462,6 +475,9 @@ impl Win32App {
             self.status.set_visible(panels.status_bar);
             ui.relayout();
             self.applied_panels = panels;
+            // Rebuild the View menu so its ticks match the new visibility
+            // (win32ui has no checked-setter).
+            ui.set_menu_bar(menu::build(&self.shell.state));
         }
 
         // The dark/light menu toggle changes the shell's theme; mirror it onto
