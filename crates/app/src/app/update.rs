@@ -84,11 +84,12 @@ impl eframe::App for EguiApp {
         // the navigator/right panel above), not nested inside the central
         // view's ScrollArea — see `views::folders::tree_panel`.
         if self.shell.state.view == crate::state::View::Folders {
-            views::folders::tree_panel(
+            let commands = views::folders::tree_panel(
                 ui,
                 &mut self.shell.state.folders,
                 self.shell.library.as_ref(),
             );
+            self.shell.state.pending.extend(commands.into_vec());
         }
         views::show(
             ui,
