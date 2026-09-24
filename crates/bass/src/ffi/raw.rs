@@ -5,8 +5,8 @@ use std::ffi::c_void;
 use libloading::Library;
 
 use super::types::{
-    BassChannelInfo, BassDeviceInfo, Bool, Dword, HMusic, HPlugin, HStream, HSync, Qword,
-    StreamProc, SyncProc,
+    BassChannelInfo, BassDeviceInfo, BassMidiFont, Bool, Dword, HMusic, HPlugin, HSoundFont,
+    HStream, HSync, Qword, StreamProc, SyncProc,
 };
 use crate::error::BassError;
 
@@ -89,6 +89,33 @@ pub(crate) struct RawBindings {
     pub bass_channel_remove_sync: unsafe extern "system" fn(handle: Dword, sync: HSync) -> Bool,
     pub bass_channel_get_tags:
         unsafe extern "system" fn(handle: Dword, tags: Dword) -> *const c_void,
+}
+
+/// `bassmidi.dll`'s own exports, resolved separately from `bass.dll`'s
+/// [`RawBindings`] (see [`super::MidiLib`]): needed to change an
+/// already-open MIDI channel's soundfont live, which
+/// `BASS_CONFIG_MIDI_DEFFONT` (a `bass.dll` config option) can't do.
+pub(crate) struct MidiRawBindings {
+    pub bass_midi_font_init:
+        unsafe extern "system" fn(file: *const c_void, flags: Dword) -> HSoundFont,
+    pub bass_midi_font_free: unsafe extern "system" fn(handle: HSoundFont) -> Bool,
+    pub bass_midi_stream_set_fonts:
+        unsafe extern "system" fn(handle: Dword, fonts: *const BassMidiFont, count: Dword) -> Dword,
+}
+
+impl MidiRawBindings {
+    /// Resolves every symbol this crate needs out of an already-loaded
+    /// `bassmidi.dll`.
+    pub(crate) fn load(lib: &Library) -> Result<Self, BassError> {
+        Ok(Self {
+            // SAFETY: transcribed from the documented BASSMIDI 2.4 C API.
+            bass_midi_font_init: unsafe { symbol(lib, "BASS_MIDI_FontInit")? },
+            // SAFETY: see above.
+            bass_midi_font_free: unsafe { symbol(lib, "BASS_MIDI_FontFree")? },
+            // SAFETY: see above.
+            bass_midi_stream_set_fonts: unsafe { symbol(lib, "BASS_MIDI_StreamSetFonts")? },
+        })
+    }
 }
 
 /// Loads one symbol from `lib` by its C name, mapping a lookup failure to

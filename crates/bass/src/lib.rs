@@ -54,6 +54,7 @@ pub mod device;
 pub mod error;
 pub mod ffi;
 pub mod flags;
+pub mod midi;
 mod music;
 mod push;
 mod stream;
@@ -72,6 +73,7 @@ pub use error::BassError;
 pub use flags::{
     Attribute, FftSize, MusicFlags, PlaybackState, PositionMode, PushFlags, StreamFlags,
 };
+pub use midi::{Midi, SoundFont};
 pub use music::Music;
 pub use push::PushStream;
 pub use stream::Stream;
@@ -210,6 +212,22 @@ impl Bass {
                 PluginLoadResult { path, result }
             })
             .collect()
+    }
+
+    /// Loads `bassmidi.dll`'s own exports from `dir` (separately from the
+    /// generic decoder registration [`Bass::load_plugins`] does via
+    /// `BASS_PluginLoad`), needed for per-channel soundfont control
+    /// ([`midi::Midi::set_channel_font`]) — changing an already-open MIDI
+    /// channel's soundfont live, not just the one new streams start with.
+    ///
+    /// Returns `None` if `bassmidi.dll` isn't present/loadable there; MIDI
+    /// playback still works via [`Bass::load_plugins`] and
+    /// [`config::Config::set_midi_default_font`], just without live
+    /// per-channel switching.
+    pub fn load_midi(&self, dir: impl AsRef<Path>) -> Option<Midi> {
+        ffi::MidiLib::open(Arc::clone(&self.lib), dir.as_ref())
+            .ok()
+            .map(|lib| Midi::new(Arc::new(lib)))
     }
 
     fn load_plugin(&self, path: &Path) -> Result<(), BassError> {

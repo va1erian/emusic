@@ -20,6 +20,8 @@ pub type HMusic = Dword;
 pub type HSync = Dword;
 /// `HPLUGIN` — handle to a loaded add-on.
 pub type HPlugin = Dword;
+/// `HSOUNDFONT` — handle to a loaded BASSMIDI soundfont (`bassmidi.h`).
+pub type HSoundFont = Dword;
 
 /// Callback signature for `BASS_SyncProc`.
 ///
@@ -62,6 +64,17 @@ pub struct BassChannelInfo {
     pub plugin: HPlugin,
     pub sample: Dword,
     pub filename: *const c_char,
+}
+
+/// Mirrors `BASS_MIDI_FONT` (`bassmidi.h`): one soundfont assigned to a
+/// channel, with the preset/bank it applies to (`-1`/`0` = every
+/// preset/bank in the font).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct BassMidiFont {
+    pub font: HSoundFont,
+    pub preset: i32,
+    pub bank: i32,
 }
 
 impl Default for BassDeviceInfo {
