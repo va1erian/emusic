@@ -45,7 +45,7 @@ fn hit(widget: &SummaryWidget, x: i32, y: i32) -> Option<Hit> {
 /// Handles one input event, emitting a [`SummaryEvent`] on a completed click.
 pub(super) fn handle(widget: &SummaryWidget, input: Input, cx: &mut WidgetCx<SummaryEvent>) {
     match input {
-        Input::MouseMove { x, y } => {
+        Input::MouseMove { x, y, .. } => {
             let hit = hit(widget, x, y);
             if hit != widget.hot.get() {
                 widget.hot.set(hit);
@@ -61,11 +61,13 @@ pub(super) fn handle(widget: &SummaryWidget, input: Input, cx: &mut WidgetCx<Sum
             x,
             y,
             button: MouseButton::Left,
+            ..
         } => widget.pressed.set(hit(widget, x, y)),
         Input::MouseUp {
             x,
             y,
             button: MouseButton::Left,
+            ..
         } => {
             let hit = hit(widget, x, y);
             if hit.is_some()

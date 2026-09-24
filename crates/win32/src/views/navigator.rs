@@ -237,7 +237,7 @@ impl CustomWidget for NavigatorWidget {
     fn input(&self, input: Input, cx: &mut WidgetCx<NavigatorEvent>) {
         let bounds = cx.bounds();
         match input {
-            Input::MouseMove { x, y } => {
+            Input::MouseMove { x, y, .. } => {
                 let hit = self.hit(x, y, bounds);
                 if hit != self.hot.get() {
                     self.hot.set(hit);
@@ -253,6 +253,7 @@ impl CustomWidget for NavigatorWidget {
                 x,
                 y,
                 button: MouseButton::Left,
+                ..
             } => {
                 self.pressed.set(self.hit(x, y, bounds));
             }
@@ -260,6 +261,7 @@ impl CustomWidget for NavigatorWidget {
                 x,
                 y,
                 button: MouseButton::Left,
+                ..
             } => {
                 let hit = self.hit(x, y, bounds);
                 if hit.is_some()
