@@ -10,7 +10,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::mock::{MockLibrary, MockPlayer};
 use emusic::state::View;
@@ -18,11 +18,11 @@ use emusic::state::View;
 const EMPTY_HEADING: &str = "Your library is empty";
 const SCANNING_HEADING: &str = "Building your music library...";
 
-fn music_harness(library: MockLibrary) -> Harness<'static, App> {
+fn music_harness(library: MockLibrary) -> Harness<'static, EguiApp> {
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(1280.0, 800.0))
         .build_eframe(move |cc| {
-            App::with_config(
+            EguiApp::with_config(
                 cc,
                 Box::new(library),
                 Box::new(MockPlayer::default()),

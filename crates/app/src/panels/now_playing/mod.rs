@@ -1,26 +1,25 @@
 //! Real now-playing right panel: artwork, rich metadata, tracker module
 //! info and the upcoming queue.
 //!
-//! Split into focused submodules to keep each file small; the panel state
-//! (artwork cache, collapsible section flags) lives in
-//! [`PanelState`] and is stored on [`crate::state::AppState`].
+//! Split into focused submodules to keep each file small. The panel's
+//! cross-frame state lives in [`emusic_ui::panels::now_playing::PanelState`]
+//! on the shell (#97); the artwork texture cache is egui-bound (it owns GPU
+//! handles via [`EguiImageSink`](crate::image_sink::EguiImageSink), #96) and
+//! is passed in by the frontend.
 
-mod artwork;
+pub(crate) mod artwork;
 mod links;
 pub(crate) mod metadata;
 mod module_info;
 pub(crate) mod queue;
 
-use std::time::Duration;
-
 use eframe::egui;
 
-use crate::library_api::{LibraryDataSource, TrackInfo};
+use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::state::AppState;
-use emusic_ui::waker::WakerHandle;
 
-pub use artwork::ArtworkCache;
+use artwork::ArtworkCache;
 
 /// The panel's resizable width bounds.
 const MIN_PANEL_WIDTH: f32 = 200.0;
@@ -31,35 +30,11 @@ const DEFAULT_PANEL_WIDTH: f32 = 260.0;
 /// view (and the track table in it) down to nothing.
 const MIN_CENTRAL_WIDTH: f32 = 320.0;
 
-/// Persistent UI state for the now-playing panel.
-pub struct PanelState {
-    /// Cache for the current track's artwork texture.
-    pub artwork: ArtworkCache,
-    /// The track whose Properties dialog is open, if any. Rendered by the
-    /// shell so it works whichever view is active.
-    pub properties: Option<TrackInfo>,
-}
-
-impl Default for PanelState {
-    fn default() -> Self {
-        Self {
-            artwork: artwork::new_cache(),
-            properties: None,
-        }
-    }
-}
-
-impl PanelState {
-    /// Wires the artwork cache's worker waker (#96).
-    pub fn set_image_waker(&mut self, waker: WakerHandle) {
-        self.artwork.set_waker(waker);
-    }
-}
-
 /// Render the right-hand now-playing panel.
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    artwork: &mut ArtworkCache,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
@@ -83,7 +58,7 @@ pub fn show(
                     let np = player.now_playing();
                     let track = np.and_then(|info| library.track_by_path(&info.path));
 
-                    artwork::show(ui, &mut state.now_playing.artwork, np, track);
+                    artwork::show(ui, artwork, np, track);
 
                     match (np, track) {
                         (Some(np), Some(track)) => {
@@ -117,7 +92,7 @@ pub fn show(
 }
 
 /// Format a duration as `m:ss`.
-pub fn format_duration(d: Duration) -> String {
+pub fn format_duration(d: std::time::Duration) -> String {
     let secs = d.as_secs();
     format!("{}:{:02}", secs / 60, secs % 60)
 }

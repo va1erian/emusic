@@ -11,7 +11,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::mock::{MockLibrary, MockPlayer};
 use emusic::state::{SettingsTab, View};
@@ -22,7 +22,7 @@ const FOLDER_COUNT: usize = 60;
 /// A well-below-the-fold folder, invisible until the list scrolls.
 const HIDDEN_FOLDER: &str = "D:/Music/Library/album-050";
 
-fn library_harness() -> Harness<'static, App> {
+fn library_harness() -> Harness<'static, EguiApp> {
     let config = Config {
         library_folders: (0..FOLDER_COUNT)
             .map(|i| format!("D:/Music/Library/album-{i:03}").into())
@@ -35,7 +35,7 @@ fn library_harness() -> Harness<'static, App> {
         .build_eframe(move |cc| {
             let library = MockLibrary::empty();
             let player = Box::new(MockPlayer::default());
-            App::with_config(cc, Box::new(library), player, config)
+            EguiApp::with_config(cc, Box::new(library), player, config)
         });
     harness.state_mut().set_view(View::Settings);
     harness.state_mut().set_settings_tab(SettingsTab::Library);

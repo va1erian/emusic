@@ -10,10 +10,14 @@
 //! stable id yet. A track belongs to an album when its album tag matches and
 //! its artist tag matches (or is empty, which is how missing tags surface in
 //! the mock data).
+//!
+//! The view state is toolkit-agnostic (`emusic_ui`, #97); the thumbnail cache
+//! is egui-bound (it owns GPU handles via [`EguiImageSink`], #96) and is
+//! passed in by the frontend.
 
 #[cfg(test)]
 mod tests;
-mod thumbs;
+pub(crate) mod thumbs;
 mod tile;
 
 use std::collections::HashMap;
@@ -21,69 +25,27 @@ use std::collections::HashMap;
 use eframe::egui;
 
 use self::thumbs::ThumbnailCache;
-use super::track_table::{self, TrackAction, TrackTableState};
+use super::track_table::{self, TrackAction};
 use crate::image_sink::EguiImageSink;
 use crate::library_api::{AlbumInfo, LibraryDataSource};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
+pub use emusic_ui::views::album_grid::AlbumGridState;
 use emusic_ui::views::album_grid::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
-use emusic_ui::waker::WakerHandle;
 
 /// Tile edge-length bounds for the size slider, in pixels.
 pub const MIN_TILE_SIZE: f32 = 96.0;
 /// Maximum cover edge length selected with the size slider.
 pub const MAX_TILE_SIZE: f32 = 256.0;
-const DEFAULT_TILE_SIZE: f32 = 148.0;
 /// Smallest height the cover grid is given, whatever space is left.
 const MIN_GRID_HEIGHT: f32 = 160.0;
-
-/// Persistent album-grid state, stored on [`AppState`].
-pub struct AlbumGridState {
-    /// Cover edge length, driven by the size slider.
-    pub tile_size: f32,
-    /// Current sort order.
-    pub sort: AlbumSort,
-    /// Selected album, whose tracks are shown below the grid.
-    pub selected: Option<AlbumKey>,
-    /// The selected album's track table (sort + selection).
-    pub table: TrackTableState,
-    thumbs: ThumbnailCache,
-}
-
-impl Default for AlbumGridState {
-    fn default() -> Self {
-        Self {
-            tile_size: DEFAULT_TILE_SIZE,
-            sort: AlbumSort::default(),
-            selected: None,
-            table: TrackTableState::default(),
-            thumbs: thumbs::new_cache(),
-        }
-    }
-}
-
-impl AlbumGridState {
-    /// Selects the album identified by `name`/`artist`, as a click on its
-    /// tile would, so the view shows its tracks. Used when jumping here from
-    /// an album name elsewhere (e.g. the now-playing panel).
-    pub fn select_album(&mut self, name: impl Into<String>, artist: impl Into<String>) {
-        self.selected = Some(AlbumKey {
-            name: name.into(),
-            artist: artist.into(),
-        });
-    }
-
-    /// Wires the thumbnail cache's worker waker (#96).
-    pub fn set_image_waker(&mut self, waker: WakerHandle) {
-        self.thumbs.set_waker(waker);
-    }
-}
 
 /// Renders the album grid and, when an album is selected, its track table.
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    thumbs: &mut ThumbnailCache,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
@@ -110,7 +72,7 @@ pub fn show(
         Some(tracks) => {
             let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
             ui.allocate_ui(egui::vec2(ui.available_width(), grid_height), |ui| {
-                grid_view(ui, grid, &albums, &meta, library, &mut commands);
+                grid_view(ui, grid, thumbs, &albums, &meta, library, &mut commands);
             });
             ui.separator();
             if let Some(action) =
@@ -121,7 +83,7 @@ pub fn show(
         }
         None => {
             ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
-                grid_view(ui, grid, &albums, &meta, library, &mut commands);
+                grid_view(ui, grid, thumbs, &albums, &meta, library, &mut commands);
             });
         }
     }
@@ -171,13 +133,14 @@ fn controls(ui: &mut egui::Ui, grid: &mut AlbumGridState, album_count: usize) {
 fn grid_view(
     ui: &mut egui::Ui,
     grid: &mut AlbumGridState,
+    thumbs: &mut ThumbnailCache,
     albums: &[&AlbumInfo],
     meta: &HashMap<AlbumKey, AlbumMeta>,
     library: &dyn LibraryDataSource,
     commands: &mut Vec<Command>,
 ) {
     let mut sink = EguiImageSink::new(ui.ctx().clone(), "album_thumb");
-    grid.thumbs.drain(&mut sink);
+    thumbs.drain(&mut sink);
 
     let spacing = ui.spacing().item_spacing.x;
     let tile = grid.tile_size;
@@ -199,12 +162,10 @@ fn grid_view(
                         };
                         let key = AlbumKey::of(album);
                         let selected = grid.selected.as_ref() == Some(&key);
-                        let response = {
-                            let texture = meta
-                                .get(&key)
-                                .and_then(|meta| grid.thumbs.get(&mut sink, &meta.art_path));
-                            tile::show(ui, album, texture, tile, selected)
-                        };
+                        let texture = meta
+                            .get(&key)
+                            .and_then(|meta| thumbs.get(&mut sink, &meta.art_path));
+                        let response = tile::show(ui, album, texture, tile, selected);
                         if response.clicked() {
                             grid.selected = Some(key);
                         }

@@ -4,7 +4,7 @@
 //! the user's actual `library_folders` (and volume/theme/...).
 //!
 //! This drives the exact constructor `main.rs` uses for `--mock`
-//! ([`App::for_run`] with `mock = true`), snapshots the real config file's
+//! ([`EguiApp::for_run`] with `mock = true`), snapshots the real config file's
 //! bytes before and after a brief run plus shutdown, and asserts they are
 //! byte-identical.
 
@@ -14,10 +14,11 @@ use std::panic::AssertUnwindSafe;
 use eframe::egui;
 use egui_kittest::Harness;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
+use emusic::waker::WakerSlot;
 
 #[test]
 fn mock_run_does_not_touch_the_real_config() {
@@ -37,7 +38,7 @@ fn mock_run_does_not_touch_the_real_config() {
             .build_eframe(|cc| {
                 let library = MockLibrary::new();
                 let player = Box::new(MockPlayer::playing_demo(&library.tracks()[0]));
-                App::for_run(cc, Box::new(library), player, true)
+                EguiApp::for_run(cc, Box::new(library), player, true, WakerSlot::new())
             });
         // A couple of frames fold the mock library's synthetic folders into
         // the in-memory state; shutdown is when a persistent app writes.

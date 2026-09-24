@@ -1,78 +1,20 @@
-//! Single-track tag editor dialog (#172).
+//! Single-track tag editor dialog (#172): the egui rendering.
 //!
-//! Opened from a track row's context menu ("Edit tags…"), the dialog shows one
-//! editable field per scalar tag, validates the numeric ones, treats a blank
-//! field as "clear", and offers Revert to the values it opened with. Applying
-//! emits an [`EditRequest`] for the shell to hand to the library backend; the
-//! per-file [`EditOutcome`]s that come back are rendered in the dialog, so a
-//! read-only or missing file is reported where the user was editing.
-//!
-//! The state lives on [`AppState`](crate::state::AppState) (like the
-//! now-playing Properties dialog) rather than inside a track table, because
-//! the shell owns the async result channel that feeds the error list.
+//! The editor's state and its edit/submit/result cycle live in
+//! `emusic-ui` (moved with the shell, #97); this module only draws the
+//! dialog and turns the buttons into the state transitions the shell reads.
 
-mod form;
-#[cfg(test)]
-mod tests;
+pub use emusic_ui::tag_editor::{Failure, Status, TagEditorState, TagForm, TagFormErrors, deliver};
 
-pub use form::{TagForm, TagFormErrors};
-
-use std::path::PathBuf;
 use std::time::Duration;
 
 use eframe::egui;
 
-use crate::library_api::{EditOutcome, EditRequest, TrackInfo};
+use crate::library_api::EditRequest;
 
 /// How often the dialog asks for a repaint while an edit is in flight, so the
 /// background worker's outcome is picked up even when nothing else is moving.
 const PENDING_REPAINT: Duration = Duration::from_millis(100);
-
-/// The one open tag editor, if any.
-#[derive(Debug)]
-pub struct TagEditorState {
-    /// The file being edited; also matches the incoming [`EditOutcome`]s.
-    path: PathBuf,
-    /// Values the dialog opened with (or last saved), for Revert.
-    original: TagForm,
-    /// The user's current edits.
-    form: TagForm,
-    status: Status,
-}
-
-/// Where the dialog is in the edit/submit/result cycle.
-#[derive(Debug)]
-enum Status {
-    /// Editing, nothing submitted this session.
-    Editing,
-    /// A request is with the backend; awaiting its outcome.
-    Pending,
-    /// The last submit succeeded.
-    Saved,
-    /// The last submit failed for at least one file.
-    Failed(Vec<Failure>),
-}
-
-/// One file's write error, kept as plain text so it can outlive the
-/// [`EditOutcome`] it came from.
-#[derive(Debug)]
-struct Failure {
-    path: String,
-    message: String,
-}
-
-impl TagEditorState {
-    /// Opens an editor for `track`, seeded from its current tag values.
-    pub fn new(track: &TrackInfo) -> Self {
-        let form = TagForm::from_track(track);
-        Self {
-            path: PathBuf::from(&track.path),
-            original: form.clone(),
-            form,
-            status: Status::Editing,
-        }
-    }
-}
 
 /// Shows the dialog while an editor is open. Returns the request to submit
 /// when the user applies a valid form.
@@ -156,36 +98,6 @@ pub fn show(ctx: &egui::Context, state: &mut Option<TagEditorState>) -> Option<E
         ctx.request_repaint_after(PENDING_REPAINT);
     }
     request
-}
-
-/// Folds tag-edit outcomes into the open editor, if one is showing the
-/// affected file. Outcomes for other files (e.g. a later batch edit) are
-/// ignored here.
-pub fn deliver(state: &mut Option<TagEditorState>, outcomes: Vec<EditOutcome>) {
-    let Some(editor) = state.as_mut() else {
-        return;
-    };
-    let mut failures = Vec::new();
-    let mut succeeded = false;
-    for outcome in outcomes {
-        if outcome.path != editor.path {
-            continue;
-        }
-        match outcome.result {
-            Ok(()) => succeeded = true,
-            Err(error) => failures.push(Failure {
-                path: outcome.path.display().to_string(),
-                message: error.to_string(),
-            }),
-        }
-    }
-
-    if !failures.is_empty() {
-        editor.status = Status::Failed(failures);
-    } else if succeeded {
-        editor.original = editor.form.clone();
-        editor.status = Status::Saved;
-    }
 }
 
 /// A labelled single-line text field spanning the value column.

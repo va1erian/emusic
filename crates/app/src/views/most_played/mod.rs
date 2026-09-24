@@ -7,27 +7,10 @@
 
 use eframe::egui;
 
-use super::track_table::{self, TrackAction, TrackTableState};
+use super::track_table::{self, TrackAction};
 use crate::library_api::{LibraryDataSource, StatsWindow, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::state::{AppState, Command};
-
-/// Persistent Most Played state: the selected window plus the track table's
-/// sort/selection.
-#[derive(Debug)]
-pub struct MostPlayedState {
-    pub window: StatsWindow,
-    pub table: TrackTableState,
-}
-
-impl Default for MostPlayedState {
-    fn default() -> Self {
-        Self {
-            window: StatsWindow::AllTime,
-            table: TrackTableState::default(),
-        }
-    }
-}
 
 pub fn show(
     ui: &mut egui::Ui,

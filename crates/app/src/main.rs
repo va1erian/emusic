@@ -14,7 +14,7 @@ use eframe::egui;
 use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::backend::{self, ipc, smtc, thumbbar, waker::EguiWaker};
 use emusic::cli::Cli;
 
@@ -101,8 +101,13 @@ fn run_ui(
         Box::new(move |cc| {
             waker.bind(EguiWaker::new(cc.egui_ctx.clone()));
             let backends = backend::build(cli.mock);
-            let mut app = App::for_run(cc, backends.library, backends.player, cli.mock);
-            app.set_image_waker(waker.handle());
+            let mut app = EguiApp::for_run(
+                cc,
+                backends.library,
+                backends.player,
+                cli.mock,
+                waker.clone(),
+            );
             if let Some(notice) = backends.notice {
                 app.set_backend_notice(notice);
             }

@@ -1,6 +1,9 @@
 //! Multi-select state for the track table: click, ctrl+click, shift+click,
 //! and arrow-key navigation. Selection is keyed by track id (not row index)
 //! so it survives re-sorting and filtering.
+//!
+//! Moved from the egui frontend (#97); the widget that turns egui responses
+//! into these calls stays there.
 
 use std::collections::HashSet;
 
@@ -36,6 +39,10 @@ impl SelectionState {
 
     pub fn len(&self) -> usize {
         self.selected.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.selected.is_empty()
     }
 
     /// Handles a click on the row at `index` (position in the current sort

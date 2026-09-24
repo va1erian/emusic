@@ -1,7 +1,7 @@
 //! Applies queued [`Command`]s to the player, resolving library track ids
-//! to filesystem paths where needed. Split out of `app/mod.rs` since it's a
-//! distinct responsibility (translating UI intent into player calls) from
-//! the `App`/`eframe::App` wiring itself.
+//! to filesystem paths where needed. Split out of the [`Shell`](super::Shell)
+//! since it is a distinct responsibility (translating UI intent into player
+//! calls) from the shell's polling/persistence loop.
 
 use std::path::PathBuf;
 

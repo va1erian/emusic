@@ -26,7 +26,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use emusic_search::normalize_text;
 
-use emusic::app::App;
+use emusic::app::EguiApp;
 use emusic::config::Config;
 use emusic::library_api::LibraryDataSource;
 use emusic::mock::{MockLibrary, MockPlayer};
@@ -122,7 +122,7 @@ fn stem_of(library: &MockLibrary, id: u64) -> String {
 /// carry their text in `value`, not `label` (kittest's `By::label` already
 /// knows this and checks `value` for `Role::Label`, which is what
 /// `query_by_label` uses under the hood).
-fn queue_count_label(harness: &Harness<'_, App>, n: usize) -> bool {
+fn queue_count_label(harness: &Harness<'_, EguiApp>, n: usize) -> bool {
     harness.query_by_label(&format!("{n} tracks")).is_some()
 }
 
@@ -133,7 +133,7 @@ fn queue_count_label(harness: &Harness<'_, App>, n: usize) -> bool {
 /// "Shuffle all", genre/artist/album browser rows all have real text).
 /// Empty-labeled buttons, in on-screen left-to-right order, are exactly
 /// those four; index 3 is "Next".
-fn click_next_button(harness: &mut Harness<'_, App>) {
+fn click_next_button(harness: &mut Harness<'_, EguiApp>) {
     let empty_labeled: Vec<_> = harness
         .get_all_by_role(Role::Button)
         .filter(|node| node.accesskit_node().label().as_deref() == Some(""))
@@ -164,7 +164,7 @@ fn selecting_a_track_queues_the_filtered_view_and_next_walks_through_it() {
                 // still valid for whatever the app actually renders.
                 let library = MockLibrary::new();
                 let player = Box::new(MockPlayer::default());
-                App::with_config(cc, Box::new(library), player, Config::default())
+                EguiApp::with_config(cc, Box::new(library), player, Config::default())
             });
 
         harness.state_mut().set_view(View::Music);

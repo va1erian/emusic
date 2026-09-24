@@ -9,7 +9,7 @@
 //! user can confirm emusic for each type.
 //!
 //! Checkbox selection state lives in egui's own per-session memory (keyed
-//! off this widget's id), not in [`crate::state::AppState`] or [`crate::app::App`]:
+//! off this widget's id), not in [`crate::state::AppState`] or [`crate::app::EguiApp`]:
 //! it's pure UI presentation with no effect until "Register" is pressed, so
 //! it doesn't need to be threaded through the shell or persisted to disk.
 
