@@ -49,7 +49,7 @@ pub struct AppState {
     /// read by the status bar.
     pub search_result_count: Option<usize>,
     /// The global search popup (#22).
-    pub search_popup: SearchPopupState,
+    pub search_popup: crate::views::search_popup::SearchPopup,
     /// Library folders mirrored from [`crate::config::Config`] so the
     /// persisted list survives round-trips through [`Config::capture`].
     ///
@@ -139,7 +139,7 @@ impl Default for AppState {
             panels: PanelVisibility::default(),
             search_query: String::new(),
             search_result_count: None,
-            search_popup: SearchPopupState::default(),
+            search_popup: crate::views::search_popup::SearchPopup::default(),
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
             resume_playback: true,
