@@ -1,7 +1,6 @@
-//! Folder view state and the collapsible directory tree (#18).
-//!
-//! The selection/filter state lives in `emusic-ui` (shared with future
-//! frontends); only the egui rendering ([`tree`]) stays here.
+//! egui rendering of the Folders view's collapsible directory tree (#18,
+//! #101). The state and filter live in `emusic-ui` ([`FoldersView`]); only
+//! the tree drawing stays here.
 
 mod tree;
 

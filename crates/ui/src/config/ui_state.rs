@@ -106,8 +106,8 @@ impl UiState {
                 selected: state.album_grid.selected.clone(),
             },
             folder_tree: FolderTreeUi {
-                selected: state.folder_tree.selected.clone(),
-                include_subfolders: state.folder_tree.include_subfolders,
+                selected: state.folders.selected.clone(),
+                include_subfolders: state.folders.include_subfolders,
             },
         }
     }
@@ -129,7 +129,7 @@ impl UiState {
         state.album_grid.tile_size = self.album_grid.tile_size;
         state.album_grid.sort = self.album_grid.sort;
         state.album_grid.selected = self.album_grid.selected.clone();
-        state.folder_tree.selected = self.folder_tree.selected.clone();
-        state.folder_tree.include_subfolders = self.folder_tree.include_subfolders;
+        state.folders.selected = self.folder_tree.selected.clone();
+        state.folders.include_subfolders = self.folder_tree.include_subfolders;
     }
 }

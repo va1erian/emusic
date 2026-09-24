@@ -61,6 +61,7 @@ pub fn show(
                 View::Artists => artists::show(ui, state, library),
                 View::Genres => genres::show(ui, state, library),
                 View::Folders => folders::show(ui, state, library, player),
+
                 View::Starred => starred::show(ui, state, library, player),
                 View::MostPlayed => most_played::show(ui, state, library, player),
                 View::History => history::show(ui, state, library, player),

@@ -1,6 +1,9 @@
-//! "Folders" view (#18): a collapsible directory tree on the left, and the
-//! track table for the selected folder on the right, with an "include
-//! subfolders" toggle.
+//! egui renderer for the "Folders" view (#18, #101): a collapsible directory
+//! tree on the left, and the track table for the selected folder on the
+//! right, with an "include subfolders" toggle.
+//!
+//! The selected directory, filter, tree rows and track table live in the
+//! [`FoldersView`] model; this module only draws them.
 
 use eframe::egui;
 
@@ -9,6 +12,7 @@ use super::folder_tree;
 use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::state::AppState;
+use emusic_ui::views::folders::{FoldersMsg, FoldersView};
 use emusic_ui::views::{Commands, Ctx};
 
 /// The tree panel's resizable width bounds.
@@ -29,9 +33,8 @@ const MIN_CENTRAL_WIDTH: f32 = 320.0;
 /// from the scroll content's (potentially offset) bounds instead of the
 /// screen, which let it paint over the navigator column instead of stopping
 /// at its edge.
-pub fn tree_panel(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
-    let recursive = state.folder_tree.include_subfolders;
-    let mut folder_command = None;
+pub fn tree_panel(ui: &mut egui::Ui, view: &mut FoldersView, library: &dyn LibraryDataSource) {
+    let mut messages = Vec::new();
     // `ui.available_width()` here already excludes the navigator and right
     // panel (shown earlier this frame), so this is genuinely the width left
     // to split between the tree and the track table.
@@ -50,17 +53,13 @@ pub fn tree_panel(ui: &mut egui::Ui, state: &mut AppState, library: &dyn Library
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    folder_command = folder_tree::show(
-                        ui,
-                        library.dir_tree(),
-                        &mut state.folder_tree.selected,
-                        library,
-                        recursive,
-                    );
+                    folder_tree::show(ui, library.dir_tree(), view, &mut messages);
                 });
         });
-    if let Some(command) = folder_command {
-        state.push(command);
+    let cx = Ctx::with_library(&[], None, library);
+    let mut out = Commands::new();
+    for msg in messages {
+        view.update(msg, &cx, &mut out);
     }
 }
 
@@ -70,24 +69,29 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
-    let tracks: Vec<&TrackInfo> = library
-        .tracks()
+    let all: Vec<&TrackInfo> = library.tracks().iter().collect();
+    let mut out = Commands::new();
+    let cx_lib = Ctx::with_library(&all, None, library);
+
+    let view = &mut state.folders;
+    view.refresh(&cx_lib);
+    let tracks: Vec<&TrackInfo> = view
+        .visible_ids()
         .iter()
-        .filter(|track| state.folder_tree.matches(track))
+        .filter_map(|id| all.iter().copied().find(|track| track.id == *id))
         .collect();
 
     ui.horizontal(|ui| {
-        let folder = state
-            .folder_tree
-            .selected
-            .as_deref()
-            .unwrap_or("All folders");
-        ui.add(egui::Label::new(egui::RichText::new(folder).strong()).truncate());
+        ui.add(egui::Label::new(egui::RichText::new(view.selected_label()).strong()).truncate());
         ui.separator();
-        ui.checkbox(
-            &mut state.folder_tree.include_subfolders,
-            "Include subfolders",
-        );
+        let mut include = view.include_subfolders;
+        if ui.checkbox(&mut include, "Include subfolders").changed() {
+            view.update(
+                FoldersMsg::SetIncludeSubfolders(include),
+                &Ctx::new(&tracks, None),
+                &mut out,
+            );
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
         });
@@ -95,8 +99,7 @@ pub fn show(
     ui.separator();
 
     let cx = Ctx::new(&tracks, currently_playing_id(library, player));
-    let mut out = Commands::new();
-    state.folders_table.show(ui, "folders_table", &cx, &mut out);
+    view.table.show(ui, "folders_table", &cx, &mut out);
     state.pending.extend(out.into_vec());
 }
 
