@@ -11,16 +11,19 @@
 //! installed, so the strip only exists while Settings is the active view; the
 //! Library page's folder list is a native `ListView` with its own scrollbar.
 //!
-//! The pages are placed directly rather than in a scrolling container: the
-//! pinned `win32ui` `ScrollView` hosts a single control and cannot hold a
-//! layout of standard controls. A native scrollable form is tracked as
-//! <https://github.com/va1erian/win32ui/issues/119>.
+//! Each page's controls are created through its [`ScrollPanel`] — a `win32ui`
+//! `Panel` inside a `ScrollView` (win32ui #119) — so a page taller than the
+//! window scrolls vertically with the wheel and the scrollbar instead of being
+//! cut off.
 
 mod about;
 mod appearance;
 mod associations;
 mod library;
 mod playback;
+mod scroll_form;
+
+use scroll_form::{FormRow, ScrollPanel};
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -148,17 +151,11 @@ impl SettingsView {
     #[must_use]
     pub fn tabs(&self) -> Tabs {
         Tabs::new()
-            .page(SettingsTab::Library.label(), page(self.library.items()))
-            .page(
-                SettingsTab::Appearance.label(),
-                page(self.appearance.items()),
-            )
-            .page(
-                SettingsTab::Associations.label(),
-                page(self.associations.items()),
-            )
-            .page(SettingsTab::Playback.label(), page(self.playback.items()))
-            .page(SettingsTab::About.label(), page(self.about.items()))
+            .page(SettingsTab::Library.label(), self.library.page())
+            .page(SettingsTab::Appearance.label(), self.appearance.page())
+            .page(SettingsTab::Associations.label(), self.associations.page())
+            .page(SettingsTab::Playback.label(), self.playback.page())
+            .page(SettingsTab::About.label(), self.about.page())
             .initial(
                 SettingsTab::ALL
                     .iter()
@@ -243,17 +240,6 @@ impl SettingsView {
         }
         self.playback.update(&msg, state, out);
     }
-}
-
-/// Stacks one page's controls in a padded column.
-fn page(items: Vec<LayoutItem>) -> Layout {
-    let mut column = Layout::column()
-        .spacing(dip(8.0))
-        .margins(Insets::all(dip(12.0)));
-    for item in items {
-        column = column.item(item);
-    }
-    column
 }
 
 /// Lays a [`RadioGroup`]'s options out in a single horizontal row (used by the

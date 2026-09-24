@@ -8,6 +8,8 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
+use super::{FormRow, ScrollPanel};
+
 /// Short repository URL shown in the credits.
 const REPOSITORY: &str = "https://github.com/va1erian/emusic";
 /// Height reserved for the wrapped flow line, in design units.
@@ -17,6 +19,7 @@ const FALLBACK_HEIGHT: f32 = 120.0;
 
 /// The About page's text.
 pub(super) struct AboutPage {
+    form: ScrollPanel,
     flow: Option<FlowText<Msg>>,
     fallback: Option<Label>,
 }
@@ -24,35 +27,46 @@ pub(super) struct AboutPage {
 impl AboutPage {
     /// Builds the flow line, or a plain label when DirectWrite is unavailable.
     pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
-        match build_flow(ui) {
-            Ok(flow) => Ok(Self {
-                flow: Some(flow),
-                fallback: None,
-            }),
-            Err(_) => Ok(Self {
-                flow: None,
-                fallback: Some(Label::new(ui, Rect::default(), FALLBACK_TEXT)?),
-            }),
-        }
+        let form = ScrollPanel::new(ui)?;
+        let mut panel = form.ui(ui);
+        let (flow, fallback) = match build_flow(&mut panel) {
+            Ok(flow) => (Some(flow), None),
+            Err(_) => (
+                None,
+                Some(Label::new(&mut panel, Rect::default(), FALLBACK_TEXT)?),
+            ),
+        };
+        let page = Self {
+            form,
+            flow,
+            fallback,
+        };
+        page.apply(ui);
+        Ok(page)
     }
 
-    /// The page's text as a layout item.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
+    /// The page's scrollable form as one tab-strip page.
+    pub(super) fn page(&self) -> LayoutItem {
+        self.form.page()
+    }
+
+    /// The page's text as a form row.
+    fn rows(&self) -> Vec<FormRow> {
         match (&self.flow, &self.fallback) {
-            (Some(flow), _) => vec![flow.height(dip(FLOW_HEIGHT))],
-            (_, Some(label)) => vec![label.height(dip(FALLBACK_HEIGHT))],
+            (Some(flow), _) => vec![(flow.height(dip(FLOW_HEIGHT)), FLOW_HEIGHT)],
+            (_, Some(label)) => vec![(label.height(dip(FALLBACK_HEIGHT)), FALLBACK_HEIGHT)],
             _ => Vec::new(),
         }
     }
 
-    /// Shows or hides the text.
+    /// Reinstalls the page's form (used after a visibility change).
+    fn apply(&self, ui: &Ui<Msg>) {
+        self.form.apply(ui, self.rows());
+    }
+
+    /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
-        if let Some(flow) = &self.flow {
-            flow.set_visible(visible);
-        }
-        if let Some(label) = &self.fallback {
-            label.set_visible(visible);
-        }
+        self.form.set_visible(visible);
     }
 }
 

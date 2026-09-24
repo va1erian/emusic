@@ -16,7 +16,7 @@ use win32ui::{Button, ComboBox, Edit, Proxy};
 
 use crate::app::Msg;
 
-use super::super::{HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg, labelled};
+use super::super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg, labelled};
 use super::{parse, path_text};
 
 /// Width of the path field, in design units.
@@ -68,32 +68,26 @@ impl MidiSection {
         })
     }
 
-    /// The section's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
+    /// The section's controls as form rows, in display order.
+    pub(super) fn rows(&self) -> Vec<FormRow> {
         let mut field = Layout::row().spacing(dip(8.0));
         field = field
             .item(self.edit.width(dip(FIELD_WIDTH)))
             .item(&self.browse)
             .item(&self.clear);
         vec![
-            self.heading.height(dip(HEADING_HEIGHT)),
-            labelled(&self.soundfont_label, field.height(dip(ROW_HEIGHT))),
-            self.status.height(dip(ROW_HEIGHT)),
-            self.recent_label.height(dip(ROW_HEIGHT)),
-            self.recent.width(dip(FIELD_WIDTH)),
+            (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
+            (
+                labelled(&self.soundfont_label, field.height(dip(ROW_HEIGHT))),
+                ROW_HEIGHT,
+            ),
+            (self.status.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (self.recent_label.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (
+                row![self.recent.width(dip(FIELD_WIDTH))].height(dip(ROW_HEIGHT)),
+                ROW_HEIGHT,
+            ),
         ]
-    }
-
-    /// Shows or hides every control on the section.
-    pub(super) fn set_visible(&self, visible: bool) {
-        self.heading.set_visible(visible);
-        self.soundfont_label.set_visible(visible);
-        self.edit.set_visible(visible);
-        self.browse.set_visible(visible);
-        self.clear.set_visible(visible);
-        self.status.set_visible(visible);
-        self.recent_label.set_visible(visible);
-        self.recent.set_visible(visible);
     }
 
     /// Mirrors the shared state onto the controls.

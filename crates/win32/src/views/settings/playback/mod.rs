@@ -22,10 +22,11 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
-use super::SettingsMsg;
+use super::{FormRow, ScrollPanel, SettingsMsg};
 
 /// The Playback page: session, tracker, MIDI and SID sections stacked.
 pub(super) struct PlaybackPage {
+    form: ScrollPanel,
     session: session::SessionSection,
     tracker: tracker::TrackerSection,
     midi: midi::MidiSection,
@@ -35,29 +36,41 @@ pub(super) struct PlaybackPage {
 impl PlaybackPage {
     /// Builds every section's controls.
     pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> win32ui::Result<Self> {
-        Ok(Self {
-            session: session::SessionSection::new(ui)?,
-            tracker: tracker::TrackerSection::new(ui)?,
-            midi: midi::MidiSection::new(ui, proxy.clone())?,
-            sid: sid::SidSection::new(ui, proxy)?,
-        })
+        let form = ScrollPanel::new(ui)?;
+        let mut panel = form.ui(ui);
+        let page = Self {
+            session: session::SessionSection::new(&mut panel)?,
+            tracker: tracker::TrackerSection::new(&mut panel)?,
+            midi: midi::MidiSection::new(&mut panel, proxy.clone())?,
+            sid: sid::SidSection::new(&mut panel, proxy)?,
+            form,
+        };
+        page.apply(ui);
+        Ok(page)
     }
 
-    /// The page's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
-        let mut items = self.session.items();
-        items.extend(self.tracker.items());
-        items.extend(self.midi.items());
-        items.extend(self.sid.items());
-        items
+    /// The page's scrollable form as one tab-strip page.
+    pub(super) fn page(&self) -> LayoutItem {
+        self.form.page()
     }
 
-    /// Shows or hides every control on the page.
+    /// The page's controls as form rows, in display order.
+    fn rows(&self) -> Vec<FormRow> {
+        let mut rows = self.session.rows();
+        rows.extend(self.tracker.rows());
+        rows.extend(self.midi.rows());
+        rows.extend(self.sid.rows());
+        rows
+    }
+
+    /// Reinstalls the page's form (used after a visibility change).
+    fn apply(&self, ui: &Ui<Msg>) {
+        self.form.apply(ui, self.rows());
+    }
+
+    /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
-        self.session.set_visible(visible);
-        self.tracker.set_visible(visible);
-        self.midi.set_visible(visible);
-        self.sid.set_visible(visible);
+        self.form.set_visible(visible);
     }
 
     /// Pushes the shared state onto every section's controls.

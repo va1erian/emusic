@@ -15,7 +15,7 @@ use win32ui::{Button, Fill, ListView, Proxy, dip};
 
 use crate::app::Msg;
 
-use super::{HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg};
+use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg};
 
 /// Height of the folder list, in design units.
 const LIST_HEIGHT: f32 = 180.0;
@@ -41,6 +41,7 @@ impl ListModel for FolderModel {
 
 /// The Library settings page's controls.
 pub(super) struct LibraryPage {
+    form: ScrollPanel,
     heading: Label,
     hint: Label,
     add: Button<Msg>,
@@ -58,24 +59,27 @@ pub(super) struct LibraryPage {
 impl LibraryPage {
     /// Builds the page's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> win32ui::Result<Self> {
-        let heading = Label::new(ui, Rect::default(), "Music folders")?;
+        let form = ScrollPanel::new(ui)?;
+        let mut panel = form.ui(ui);
+        let heading = Label::new(&mut panel, Rect::default(), "Music folders")?;
         let hint = Label::new(
-            ui,
+            &mut panel,
             Rect::default(),
             "Folders scanned for music. Adding or removing one rescans in the background.",
         )?;
-        let add = Button::new(ui, "Add folder...")?
+        let add = Button::new(&mut panel, "Add folder...")?
             .on_click(|| Some(Msg::Settings(SettingsMsg::AddFolder)));
-        let remove =
-            Button::new(ui, "Remove")?.on_click(|| Some(Msg::Settings(SettingsMsg::RemoveFolder)));
-        let rescan =
-            Button::new(ui, "Rescan now")?.on_click(|| Some(Msg::Settings(SettingsMsg::Rescan)));
-        let cancel = Button::new(ui, "Cancel scan")?
+        let remove = Button::new(&mut panel, "Remove")?
+            .on_click(|| Some(Msg::Settings(SettingsMsg::RemoveFolder)));
+        let rescan = Button::new(&mut panel, "Rescan now")?
+            .on_click(|| Some(Msg::Settings(SettingsMsg::Rescan)));
+        let cancel = Button::new(&mut panel, "Cancel scan")?
             .on_click(|| Some(Msg::Settings(SettingsMsg::CancelScan)));
-        let list = ListView::new(ui)?.column("Folder", Fill, |row: &String| row.as_str());
-        let status = Label::new(ui, Rect::default(), "")?;
+        let list = ListView::new(&mut panel)?.column("Folder", Fill, |row: &String| row.as_str());
+        let status = Label::new(&mut panel, Rect::default(), "")?;
 
-        Ok(Self {
+        let page = Self {
+            form,
             heading,
             hint,
             add,
@@ -86,34 +90,39 @@ impl LibraryPage {
             status,
             proxy,
             applied_folders: Vec::new(),
-        })
+        };
+        page.apply(ui);
+        Ok(page)
     }
 
-    /// The page's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
+    /// The page's scrollable form as one tab-strip page.
+    pub(super) fn page(&self) -> LayoutItem {
+        self.form.page()
+    }
+
+    /// The page's controls as form rows, in display order.
+    fn rows(&self) -> Vec<FormRow> {
         let mut actions = Layout::row().spacing(dip(8.0));
         for button in [&self.add, &self.remove, &self.rescan, &self.cancel] {
             actions = actions.item(button.width(dip(ACTION_WIDTH)));
         }
         vec![
-            self.heading.height(dip(HEADING_HEIGHT)),
-            self.hint.height(dip(ROW_HEIGHT)),
-            actions.height(dip(ROW_HEIGHT)),
-            self.list.height(dip(LIST_HEIGHT)),
-            self.status.height(dip(ROW_HEIGHT)),
+            (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
+            (self.hint.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (actions.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (self.list.height(dip(LIST_HEIGHT)), LIST_HEIGHT),
+            (self.status.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
         ]
     }
 
-    /// Shows or hides every control on the page.
+    /// Reinstalls the page's form (used after a visibility change).
+    fn apply(&self, ui: &Ui<Msg>) {
+        self.form.apply(ui, self.rows());
+    }
+
+    /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
-        self.heading.set_visible(visible);
-        self.hint.set_visible(visible);
-        self.add.set_visible(visible);
-        self.remove.set_visible(visible);
-        self.rescan.set_visible(visible);
-        self.cancel.set_visible(visible);
-        self.list.set_visible(visible);
-        self.status.set_visible(visible);
+        self.form.set_visible(visible);
     }
 
     /// Rebuilds the folder list when the configured set changed, and mirrors
