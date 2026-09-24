@@ -6,8 +6,14 @@
 
 use std::collections::BTreeSet;
 
+use serde::{Deserialize, Serialize};
+
 /// Multi-select state for one pane (Genre, Artist or Album).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// Serialized (as a plain list of selected values) as part of the UI state
+/// saved on exit (#214).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct PaneSelection {
     selected: BTreeSet<String>,
 }

@@ -1,6 +1,8 @@
 //! Shell unit tests: drive commands against the mock backends (no GUI), per
 //! #97.
 
+use emusic_player::{ExplicitQueueSnapshot, QueueSnapshot};
+
 use super::*;
 use crate::mock::{MockLibrary, MockPlayer};
 
@@ -122,4 +124,57 @@ fn with_config_disables_persistence() {
     shell.state.theme = Theme::Light;
     // Would panic or write if persistence were enabled with a bogus path.
     shell.tick(Instant::now());
+}
+
+#[test]
+fn session_and_ui_state_round_trip_through_the_config_file() {
+    let dir = std::env::temp_dir().join(format!("emusic-shell-session-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    let path = dir.join("config.toml");
+
+    let mut first = Shell::new(
+        Box::new(MockLibrary::new()),
+        Box::new(MockPlayer::default()),
+        Config::default(),
+        Some(path.clone()),
+        WakerSlot::new(),
+    );
+    first.state.search_query = "ambient".to_owned();
+    first.state.window.size = Some([900.0, 650.0]);
+    first.player.restore_queue(
+        &QueueSnapshot::Explicit(ExplicitQueueSnapshot {
+            items: vec![PathBuf::from("a.flac"), PathBuf::from("b.flac")],
+            order: vec![0, 1],
+            pos: Some(1),
+            shuffle: false,
+            repeat: emusic_player::RepeatMode::Off,
+        }),
+        Duration::from_secs(9),
+        true,
+    );
+    first.save_on_exit();
+
+    let saved = config::load(&path);
+    let second = Shell::new(
+        Box::new(MockLibrary::new()),
+        Box::new(MockPlayer::default()),
+        saved,
+        Some(path.clone()),
+        WakerSlot::new(),
+    );
+
+    // UI state was restored…
+    assert_eq!(second.state.search_query, "ambient");
+    assert_eq!(second.state.window.size, Some([900.0, 650.0]));
+    // …and so was the queue, paused at the saved position (autoplay is off
+    // by default).
+    assert_eq!(
+        second.player.now_playing().map(|np| np.path.as_str()),
+        Some("b.flac")
+    );
+    assert_eq!(second.player.status(), PlaybackStatus::Paused);
+    assert_eq!(second.player.position(), Duration::from_secs(9));
+
+    std::fs::remove_dir_all(&dir).expect("clean up scratch dir");
 }

@@ -84,9 +84,19 @@ fn playback(ui: &mut egui::Ui, state: &mut AppState) {
         .show(ui, |ui| {
             ui.checkbox(&mut state.resume_playback, "Resume playback on startup")
                 .on_hover_text(
-                    "Reopen the last played track where you left off. \
+                    "Reopen the last played track and queue where you left off. \
                      Turn this off to always start with an empty player.",
                 );
+            ui.add_enabled_ui(state.resume_playback, |ui| {
+                ui.checkbox(
+                    &mut state.autoplay_on_restore,
+                    "Start playing when resuming",
+                )
+                .on_hover_text(
+                    "Begin playing the restored queue immediately. \
+                         Off, the queue comes back paused at the saved position.",
+                );
+            });
             ui.add_space(12.0);
             ui.separator();
             ui.add_space(8.0);

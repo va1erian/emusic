@@ -15,6 +15,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
 use super::RepeatMode;
+use super::snapshot::{ShuffleSnapshot, sanitize_indices};
 
 /// A lazy, non-repeating shuffle over a fixed scope.
 pub struct ShuffleSource {
@@ -60,6 +61,39 @@ impl ShuffleSource {
 
     pub fn set_repeat_mode(&mut self, mode: RepeatMode) {
         self.repeat = mode;
+    }
+
+    /// Snapshots the scope, its label, played history and remaining bag
+    /// (#214), so playback can resume without replaying or reshuffling.
+    pub fn snapshot(&self, label: impl Into<String>) -> ShuffleSnapshot {
+        ShuffleSnapshot {
+            items: self.items.clone(),
+            label: label.into(),
+            history: self.history.clone(),
+            cursor: self.cursor,
+            bag: self.bag.clone(),
+            repeat: self.repeat,
+        }
+    }
+
+    /// Rebuilds a scoped shuffle from `snapshot`, dropping any out-of-range
+    /// history/bag indices a hand-edited config could contain. The RNG seed
+    /// is not part of the snapshot: a restored bag plays the saved order
+    /// first, and only a later re-shuffle draws fresh randomness.
+    pub fn from_snapshot(snapshot: ShuffleSnapshot) -> Self {
+        let items = snapshot.items;
+        let len = items.len();
+        let history = sanitize_indices(&snapshot.history, len);
+        let bag = sanitize_indices(&snapshot.bag, len);
+        let cursor = snapshot.cursor.min(history.len().saturating_sub(1));
+        Self {
+            items,
+            bag,
+            history,
+            cursor,
+            repeat: snapshot.repeat,
+            rng: StdRng::from_entropy(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {

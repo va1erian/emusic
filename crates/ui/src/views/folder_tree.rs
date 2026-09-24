@@ -6,11 +6,16 @@
 
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::library_api::TrackInfo;
 
 /// Persistent Folders-view state: which directory is selected and whether the
 /// track table also includes tracks from its subdirectories.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Serialized as part of the UI state saved on exit (#214).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FolderTreeState {
     /// Selected directory path; `None` shows the whole library.
     pub selected: Option<String>,

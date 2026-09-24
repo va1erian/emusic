@@ -4,10 +4,15 @@
 //! identity: [`AlbumInfo`] carries no stable id, so an album is its
 //! (name, artist) pair.
 
+use serde::{Deserialize, Serialize};
+
 use crate::library_api::{AlbumInfo, TrackInfo};
 
 /// Order the album grid is sorted by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// Serialized (lowercase) as part of the UI state saved on exit (#214).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AlbumSort {
     #[default]
     Artist,
@@ -32,7 +37,9 @@ impl AlbumSort {
 }
 
 /// Identity of an album within the view; `AlbumInfo` has no id yet.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// Serialized as part of the UI state saved on exit (#214).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AlbumKey {
     pub name: String,
     pub artist: String,

@@ -11,6 +11,7 @@ mod search;
 mod settings;
 mod view;
 mod visualizer;
+mod window;
 
 pub use appearance::{Accent, DEFAULT_ACCENT, Rgb, Theme};
 pub use command::Command;
@@ -20,6 +21,7 @@ pub use search::{SearchPopupItem, SearchPopupState};
 pub use settings::SettingsTab;
 pub use view::View;
 pub use visualizer::VisualizerMode;
+pub use window::WindowGeometry;
 
 use std::path::PathBuf;
 
@@ -64,6 +66,15 @@ pub struct AppState {
     ///
     /// [`Config::capture`]: crate::config::Config::capture
     pub resume_playback: bool,
+    /// Whether a restored session (#214) starts playing instead of coming
+    /// back paused. Off by default; mirrored from [`crate::config::Config`]
+    /// so it round-trips.
+    ///
+    /// [`Config::capture`]: crate::config::Config::capture
+    pub autoplay_on_restore: bool,
+    /// Last known window geometry (#214), recorded by the frontend and
+    /// applied when it builds the window on the next launch.
+    pub window: WindowGeometry,
     /// Whether the status-bar visualizer strip (#25) is shown at all. Off by
     /// default: an animated strip needs a continuous repaint while playing,
     /// which costs CPU even when the user is not looking at it.
@@ -139,6 +150,8 @@ impl Default for AppState {
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
             resume_playback: true,
+            autoplay_on_restore: false,
+            window: WindowGeometry::default(),
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
