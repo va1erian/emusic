@@ -71,6 +71,26 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     } else {
         text.weak()
     });
+
+    if !state.recent_soundfonts.is_empty() {
+        ui.add_space(4.0);
+        ui.label("Recent soundfonts");
+        let mut picked = None;
+        for path in &state.recent_soundfonts {
+            let active = state.midi_soundfont.as_deref() == Some(path.as_path());
+            if ui
+                .selectable_label(active, path.display().to_string())
+                .clicked()
+                && !active
+            {
+                picked = Some(path.clone());
+            }
+        }
+        if let Some(path) = picked {
+            *lock(&editor.text) = path_text(Some(&path));
+            state.push(Command::SetMidiSoundfont(Some(path)));
+        }
+    }
 }
 
 /// The inline message under the field and whether it is a warning.

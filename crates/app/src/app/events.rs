@@ -96,14 +96,6 @@ impl App {
                         ui.close();
                     }
                 });
-                ui.menu_button("Window", |ui| {
-                    for view in View::ALL {
-                        if ui.button(view.label()).clicked() {
-                            self.state.push(Command::SetView(view));
-                            ui.close();
-                        }
-                    }
-                });
             });
         });
     }

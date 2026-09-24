@@ -73,6 +73,10 @@ fn non_default_config() -> Config {
             resampling_quality: 4,
         },
         midi_soundfont: Some(PathBuf::from(r"C:onts\gm.sf2")),
+        recent_soundfonts: vec![
+            PathBuf::from(r"C:onts\gm.sf2"),
+            PathBuf::from(r"C:onts\other.sf2"),
+        ],
     }
 }
 

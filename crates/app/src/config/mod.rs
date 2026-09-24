@@ -109,6 +109,10 @@ pub struct Config {
     /// Soundfont MIDI files are rendered with (Settings > Playback).
     #[serde(default)]
     pub midi_soundfont: Option<PathBuf>,
+    /// Most recently used soundfonts, newest first, for quick switching
+    /// (Settings > Playback).
+    #[serde(default)]
+    pub recent_soundfonts: Vec<PathBuf>,
 }
 
 impl Default for Config {
@@ -130,6 +134,7 @@ impl Default for Config {
             library_folders: Vec::new(),
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
+            recent_soundfonts: Vec::new(),
         }
     }
 }
@@ -161,6 +166,7 @@ impl Config {
             library_folders: state.library_folders.clone(),
             tracker_settings: state.tracker_settings,
             midi_soundfont: state.midi_soundfont.clone(),
+            recent_soundfonts: state.recent_soundfonts.clone(),
         }
     }
 
@@ -179,6 +185,7 @@ impl Config {
         state.library_folders = self.library_folders.clone();
         state.tracker_settings = self.tracker_settings;
         state.midi_soundfont = self.midi_soundfont.clone();
+        state.recent_soundfonts = self.recent_soundfonts.clone();
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker
