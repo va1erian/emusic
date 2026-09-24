@@ -18,7 +18,7 @@ use tracing::warn;
 
 use crate::backend::ipc::{self, IpcBridge};
 use crate::config::{self, Config, PlaybackSession};
-use crate::library_api::LibraryDataSource;
+use crate::library_api::{AutoTagStatus, LibraryDataSource};
 use crate::panels::visualizer::FRAME_INTERVAL;
 use crate::player_api::{PlaybackStatus, PlayerApi};
 use crate::search::SearchEngine;
@@ -77,6 +77,9 @@ struct Observed {
     track_count: usize,
     scanning: bool,
     status_text: Option<String>,
+    /// The auto-tag lookup progress line (#210); part of [`Changes::LIBRARY`]
+    /// so a retained-mode frontend refreshes the status bar when it changes.
+    auto_tag_status: Option<AutoTagStatus>,
     history_len: usize,
     now_playing_path: Option<String>,
     playback: PlaybackStatus,
@@ -317,6 +320,7 @@ impl Shell {
         if current.track_count != self.observed.track_count
             || current.scanning != self.observed.scanning
             || current.status_text != self.observed.status_text
+            || current.auto_tag_status != self.observed.auto_tag_status
             || current.history_len != self.observed.history_len
         {
             changes |= Changes::LIBRARY;
@@ -359,6 +363,7 @@ impl Shell {
             track_count: self.library.track_count(),
             scanning: self.library.is_scanning(),
             status_text: self.library.status_text(),
+            auto_tag_status: self.library.auto_tag_status(),
             history_len: self.library.history().len(),
             now_playing_path: self.player.now_playing().map(|info| info.path.clone()),
             playback: self.player.status(),

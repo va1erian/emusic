@@ -116,6 +116,8 @@ pub enum Command {
         /// The local metadata the lookup is seeded from.
         query: TrackQuery,
     },
+    /// Stop the online auto-tag lookup currently in flight, if any (#210).
+    CancelAutoTag,
     /// Replace the tracker module playback settings (interpolation, ramping,
     /// emulation, ...), applied live to the player and persisted.
     SetTrackerSettings(TrackerSettings),
