@@ -17,7 +17,7 @@ use winshell::assoc::{AssocManager, EXTENSIONS, open_default_apps_settings};
 
 use crate::app::Msg;
 
-use super::{HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg};
+use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg};
 
 /// The app name the registry keys are written under.
 const APP_NAME: &str = "emusic";
@@ -30,6 +30,7 @@ const ACTION_WIDTHS: [f32; 5] = [110.0, 110.0, 100.0, 140.0, 230.0];
 
 /// The File associations page's controls.
 pub(super) struct AssociationsPage {
+    form: ScrollPanel,
     heading: Label,
     hint: Label,
     checks: Vec<CheckBox<Msg>>,
@@ -44,74 +45,81 @@ pub(super) struct AssociationsPage {
 impl AssociationsPage {
     /// Builds one checkbox per extension plus the action buttons.
     pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+        let form = ScrollPanel::new(ui)?;
+        let mut panel = form.ui(ui);
         let mut checks = Vec::with_capacity(EXTENSIONS.len());
         for (index, ext) in EXTENSIONS.iter().enumerate() {
-            let check = CheckBox::new(ui, &format!(".{ext}"))?
+            let check = CheckBox::new(&mut panel, &format!(".{ext}"))?
                 .on_toggle(move |on| Some(Msg::Settings(SettingsMsg::AssocToggle(index, on))));
             checks.push(check);
         }
 
         let actions = vec![
-            Button::new(ui, "Select all")?
+            Button::new(&mut panel, "Select all")?
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocSelect(true)))),
-            Button::new(ui, "Select none")?
+            Button::new(&mut panel, "Select none")?
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocSelect(false)))),
-            Button::new(ui, "Register")?
+            Button::new(&mut panel, "Register")?
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocRegister))),
-            Button::new(ui, "Unregister all")?
+            Button::new(&mut panel, "Unregister all")?
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocUnregister))),
-            Button::new(ui, "Open Windows Default Apps...")?
+            Button::new(&mut panel, "Open Windows Default Apps...")?
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocOpenSettings))),
         ];
 
-        Ok(Self {
-            heading: Label::new(ui, Rect::default(), "File associations")?,
+        let page = Self {
+            form,
+            heading: Label::new(&mut panel, Rect::default(), "File associations")?,
             hint: Label::new(
-                ui,
+                &mut panel,
                 Rect::default(),
                 "Choose which audio file types emusic should open, then Register. Windows 10/11 does not let an app make itself the default, so Settings opens for you to confirm emusic for each type.",
             )?,
             checks,
             actions,
-            status: Label::new(ui, Rect::default(), "")?,
+            status: Label::new(&mut panel, Rect::default(), "")?,
             selected: RefCell::new(Vec::new()),
             initialized: Cell::new(false),
-        })
+        };
+        page.apply(ui);
+        Ok(page)
     }
 
-    /// The page's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
-        let mut items = vec![
-            self.heading.height(dip(HEADING_HEIGHT)),
-            self.hint.height(dip(ROW_HEIGHT * 2.0)),
+    /// The page's scrollable form as one tab-strip page.
+    pub(super) fn page(&self) -> LayoutItem {
+        self.form.page()
+    }
+
+    /// The page's controls as form rows, in display order.
+    fn rows(&self) -> Vec<FormRow> {
+        let mut rows = vec![
+            (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
+            (self.hint.height(dip(ROW_HEIGHT * 2.0)), ROW_HEIGHT * 2.0),
         ];
         for chunk in self.checks.chunks(PER_ROW) {
             let mut row = Layout::row().spacing(dip(8.0));
             for check in chunk {
                 row = row.item(check.width(dip(CHECK_WIDTH)));
             }
-            items.push(row.height(dip(ROW_HEIGHT)));
+            rows.push((row.height(dip(ROW_HEIGHT)), ROW_HEIGHT));
         }
         let mut actions = Layout::row().spacing(dip(8.0));
         for (button, width) in self.actions.iter().zip(ACTION_WIDTHS) {
             actions = actions.item(button.width(dip(width)));
         }
-        items.push(actions.height(dip(ROW_HEIGHT)));
-        items.push(self.status.height(dip(ROW_HEIGHT)));
-        items
+        rows.push((actions.height(dip(ROW_HEIGHT)), ROW_HEIGHT));
+        rows.push((self.status.height(dip(ROW_HEIGHT)), ROW_HEIGHT));
+        rows
     }
 
-    /// Shows or hides every control on the page.
+    /// Reinstalls the page's form (used after a visibility change).
+    fn apply(&self, ui: &Ui<Msg>) {
+        self.form.apply(ui, self.rows());
+    }
+
+    /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
-        self.heading.set_visible(visible);
-        self.hint.set_visible(visible);
-        for check in &self.checks {
-            check.set_visible(visible);
-        }
-        for button in &self.actions {
-            button.set_visible(visible);
-        }
-        self.status.set_visible(visible);
+        self.form.set_visible(visible);
     }
 
     /// Reads the registry into the checkboxes the first time the page is synced.

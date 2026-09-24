@@ -18,7 +18,7 @@ use win32ui::{Button, CheckBox, ComboBox, RadioGroup};
 
 use crate::app::Msg;
 
-use super::super::{HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg, labelled, radio_row};
+use super::super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg, labelled, radio_row};
 
 /// Width of a combo-box field in a form row, in design units.
 const FIELD_WIDTH: f32 = 220.0;
@@ -249,64 +249,59 @@ impl TrackerSection {
         })
     }
 
-    /// The section's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
+    /// The section's controls as form rows, in display order.
+    pub(super) fn rows(&self) -> Vec<FormRow> {
         let mut preset_row = Layout::row().spacing(dip(8.0));
         for button in &self.presets {
             preset_row = preset_row.item(button.width(dip(PRESET_WIDTH)));
         }
         vec![
-            self.heading.height(dip(HEADING_HEIGHT)),
-            labelled(
-                &self.interp_label,
-                radio_row(&self.interpolation).height(dip(ROW_HEIGHT)),
+            (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
+            (
+                labelled(
+                    &self.interp_label,
+                    radio_row(&self.interpolation).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
             ),
-            labelled(&self.ramping_label, self.ramping.width(dip(FIELD_WIDTH))),
-            labelled(&self.surround_label, self.surround.width(dip(FIELD_WIDTH))),
-            labelled(
-                &self.emulation_label,
-                self.emulation.width(dip(FIELD_WIDTH)),
+            (
+                labelled(&self.ramping_label, self.ramping.width(dip(FIELD_WIDTH))),
+                ROW_HEIGHT,
             ),
-            labelled(&self.stereo_label, self.stereo.fill(1)),
-            labelled(&self.amplify_label, self.amplify.fill(1)),
-            labelled(&self.resampling_label, self.resampling.fill(1)),
-            self.ft2.height(dip(ROW_HEIGHT)),
-            labelled(&self.end_label, self.end.width(dip(FIELD_WIDTH))),
-            labelled(&self.times_label, self.times.fill(1)),
-            labelled(&self.presets_label, preset_row.height(dip(ROW_HEIGHT))),
+            (
+                labelled(&self.surround_label, self.surround.width(dip(FIELD_WIDTH))),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(
+                    &self.emulation_label,
+                    self.emulation.width(dip(FIELD_WIDTH)),
+                ),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(&self.stereo_label, self.stereo.fill(1)),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(&self.amplify_label, self.amplify.fill(1)),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(&self.resampling_label, self.resampling.fill(1)),
+                ROW_HEIGHT,
+            ),
+            (self.ft2.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (
+                labelled(&self.end_label, self.end.width(dip(FIELD_WIDTH))),
+                ROW_HEIGHT,
+            ),
+            (labelled(&self.times_label, self.times.fill(1)), ROW_HEIGHT),
+            (
+                labelled(&self.presets_label, preset_row.height(dip(ROW_HEIGHT))),
+                ROW_HEIGHT,
+            ),
         ]
-    }
-
-    /// Shows or hides every control on the section.
-    pub(super) fn set_visible(&self, visible: bool) {
-        for label in [
-            &self.heading,
-            &self.interp_label,
-            &self.ramping_label,
-            &self.surround_label,
-            &self.emulation_label,
-            &self.stereo_label,
-            &self.amplify_label,
-            &self.resampling_label,
-            &self.end_label,
-            &self.times_label,
-            &self.presets_label,
-        ] {
-            label.set_visible(visible);
-        }
-        self.interpolation.set_visible(visible);
-        self.ramping.set_visible(visible);
-        self.surround.set_visible(visible);
-        self.emulation.set_visible(visible);
-        self.stereo.set_visible(visible);
-        self.amplify.set_visible(visible);
-        self.resampling.set_visible(visible);
-        self.ft2.set_visible(visible);
-        self.end.set_visible(visible);
-        self.times.set_visible(visible);
-        for button in &self.presets {
-            button.set_visible(visible);
-        }
     }
 
     /// Mirrors the shared tracker settings onto the controls.

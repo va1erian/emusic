@@ -13,10 +13,11 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
-use super::{HEADING_HEIGHT, ROW_HEIGHT, SettingsMsg, labelled, radio_row};
+use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg, labelled, radio_row};
 
 /// The Appearance page's controls.
 pub(super) struct AppearancePage {
+    form: ScrollPanel,
     heading: Label,
     theme_label: Label,
     theme: RadioGroup<UiTheme, Msg>,
@@ -35,12 +36,17 @@ pub(super) struct AppearancePage {
 impl AppearancePage {
     /// Builds the page's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
-        let theme = RadioGroup::new(ui, [("Dark", UiTheme::Dark), ("Light", UiTheme::Light)])?
-            .selected(UiTheme::Dark)
-            .on_select(|theme| Some(Msg::Settings(SettingsMsg::SetTheme(*theme))));
+        let form = ScrollPanel::new(ui)?;
+        let mut panel = form.ui(ui);
+        let theme = RadioGroup::new(
+            &mut panel,
+            [("Dark", UiTheme::Dark), ("Light", UiTheme::Light)],
+        )?
+        .selected(UiTheme::Dark)
+        .on_select(|theme| Some(Msg::Settings(SettingsMsg::SetTheme(*theme))));
 
         let accent = RadioGroup::new(
-            ui,
+            &mut panel,
             Accent::PRESETS
                 .into_iter()
                 .map(|accent| (accent.label(), accent)),
@@ -48,68 +54,87 @@ impl AppearancePage {
         .on_select(|accent| Some(Msg::Settings(SettingsMsg::SetAccent(*accent))));
 
         let mode = RadioGroup::new(
-            ui,
+            &mut panel,
             VisualizerMode::ALL
                 .into_iter()
                 .map(|mode| (mode.label(), mode)),
         )?
         .on_select(|mode| Some(Msg::Settings(SettingsMsg::SetVisualizerMode(*mode))));
 
-        let visualizer = CheckBox::new(ui, "Visualizer")?
+        let visualizer = CheckBox::new(&mut panel, "Visualizer")?
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
 
         let page = Self {
-            heading: Label::new(ui, Rect::default(), "Appearance")?,
-            theme_label: Label::new(ui, Rect::default(), "Theme")?,
+            form,
+            heading: Label::new(&mut panel, Rect::default(), "Appearance")?,
+            theme_label: Label::new(&mut panel, Rect::default(), "Theme")?,
             theme,
-            accent_label: Label::new(ui, Rect::default(), "Accent colour")?,
+            accent_label: Label::new(&mut panel, Rect::default(), "Accent colour")?,
             accent,
             custom_note: Label::new(
-                ui,
+                &mut panel,
                 Rect::default(),
                 "Custom colours are not editable in the native frontend yet.",
             )?,
             visualizer,
-            mode_label: Label::new(ui, Rect::default(), "Visualizer mode")?,
+            mode_label: Label::new(&mut panel, Rect::default(), "Visualizer mode")?,
             mode,
             page_visible: Cell::new(false),
             visualizer_on: Cell::new(false),
         };
         page.refresh_mode_visibility();
+        page.apply(ui);
         Ok(page)
     }
 
-    /// The page's controls as layout items, in display order.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
-        vec![
-            self.heading.height(dip(HEADING_HEIGHT)),
-            labelled(
-                &self.theme_label,
-                radio_row(&self.theme).height(dip(ROW_HEIGHT)),
-            ),
-            labelled(
-                &self.accent_label,
-                radio_row(&self.accent).height(dip(ROW_HEIGHT)),
-            ),
-            self.custom_note.height(dip(ROW_HEIGHT)),
-            self.visualizer.height(dip(ROW_HEIGHT)),
-            labelled(
-                &self.mode_label,
-                radio_row(&self.mode).height(dip(ROW_HEIGHT)),
-            ),
-        ]
+    /// The page's scrollable form as one tab-strip page.
+    pub(super) fn page(&self) -> LayoutItem {
+        self.form.page()
     }
 
-    /// Shows or hides every control on the page.
+    /// The page's controls as form rows, in display order. The visualizer mode
+    /// row is only part of the form while the visualizer is on.
+    fn rows(&self) -> Vec<FormRow> {
+        let mut rows = vec![
+            (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
+            (
+                labelled(
+                    &self.theme_label,
+                    radio_row(&self.theme).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(
+                    &self.accent_label,
+                    radio_row(&self.accent).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
+            ),
+            (self.custom_note.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (self.visualizer.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+        ];
+        if self.visualizer_on.get() {
+            rows.push((
+                labelled(
+                    &self.mode_label,
+                    radio_row(&self.mode).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
+            ));
+        }
+        rows
+    }
+
+    /// Reinstalls the page's form (used after the mode row appears or hides).
+    fn apply(&self, ui: &Ui<Msg>) {
+        self.form.apply(ui, self.rows());
+    }
+
+    /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
         self.page_visible.set(visible);
-        self.heading.set_visible(visible);
-        self.theme_label.set_visible(visible);
-        self.theme.set_visible(visible);
-        self.accent_label.set_visible(visible);
-        self.accent.set_visible(visible);
-        self.custom_note.set_visible(visible);
-        self.visualizer.set_visible(visible);
+        self.form.set_visible(visible);
         self.refresh_mode_visibility();
     }
 
@@ -132,7 +157,7 @@ impl AppearancePage {
         if self.visualizer_on.get() != state.visualizer_enabled {
             self.visualizer_on.set(state.visualizer_enabled);
             self.refresh_mode_visibility();
-            ui.relayout();
+            self.apply(ui);
         }
     }
 
@@ -157,7 +182,7 @@ impl AppearancePage {
                 state.visualizer_enabled = *on;
                 self.visualizer_on.set(*on);
                 self.refresh_mode_visibility();
-                ui.relayout();
+                self.apply(ui);
             }
             SettingsMsg::SetVisualizerMode(mode) => state.visualizer = *mode,
             _ => return false,

@@ -8,7 +8,7 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
-use super::super::{ROW_HEIGHT, SettingsMsg};
+use super::super::{FormRow, ROW_HEIGHT, SettingsMsg};
 
 /// The session-resume checkboxes.
 pub(super) struct SessionSection {
@@ -27,18 +27,12 @@ impl SessionSection {
         })
     }
 
-    /// The section's controls as layout items.
-    pub(super) fn items(&self) -> Vec<LayoutItem> {
+    /// The section's controls as form rows.
+    pub(super) fn rows(&self) -> Vec<FormRow> {
         vec![
-            self.resume.height(dip(ROW_HEIGHT)),
-            self.autoplay.height(dip(ROW_HEIGHT)),
+            (self.resume.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (self.autoplay.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
         ]
-    }
-
-    /// Shows or hides both checkboxes.
-    pub(super) fn set_visible(&self, visible: bool) {
-        self.resume.set_visible(visible);
-        self.autoplay.set_visible(visible);
     }
 
     /// Mirrors the shared state onto the checkboxes.
