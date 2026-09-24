@@ -23,9 +23,10 @@ use egui_kittest::Harness;
 
 use emusic::app::EguiApp;
 use emusic::config::Config;
-use emusic::library_api::LibraryDataSource;
+use emusic::library_api::{Candidate, LibraryDataSource};
 use emusic::mock::{MockLibrary, MockPlayer};
 use emusic::state::{Accent, SettingsTab, Theme, View, VisualizerMode};
+use emusic::tag_editor::AutoTagState;
 
 #[derive(Parser, Debug)]
 #[command(name = "emusic-shot")]
@@ -85,6 +86,11 @@ struct Cli {
     #[arg(long)]
     tag_editor: bool,
 
+    /// Auto-tag lookup state to render in the open tag editor (#209):
+    /// `searching`, `matches`, `no-match` or `failed`. Requires `--tag-editor`.
+    #[arg(long, value_enum)]
+    tag_editor_state: Option<AutoTagArg>,
+
     /// Opens the File -> Database info dialog before rendering (#193), so it
     /// can be screenshotted headlessly.
     #[arg(long)]
@@ -111,6 +117,53 @@ struct Cli {
 enum ThemeArg {
     Dark,
     Light,
+}
+
+/// The tag editor's auto-tag lookup state to render (#209).
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum AutoTagArg {
+    Searching,
+    Matches,
+    NoMatch,
+    Failed,
+}
+
+impl AutoTagArg {
+    /// The dialog state to render, with canned candidates for `Matches`.
+    fn into_state(self) -> AutoTagState {
+        match self {
+            Self::Searching => AutoTagState::Searching,
+            Self::Matches => AutoTagState::Matches(demo_candidates()),
+            Self::NoMatch => AutoTagState::NoMatch,
+            Self::Failed => AutoTagState::Failed(
+                "Could not reach MusicBrainz; check your connection".to_string(),
+            ),
+        }
+    }
+}
+
+/// Canned candidates for the `--tag-editor-state matches` screenshot.
+fn demo_candidates() -> Vec<Candidate> {
+    vec![
+        Candidate {
+            title: Some("Around the World".to_string()),
+            artist: Some("Daft Punk".to_string()),
+            album: Some("Homework".to_string()),
+            album_artist: Some("Daft Punk".to_string()),
+            year: Some(1997),
+            track_no: Some(5),
+            disc_no: Some(1),
+            score: 0.96,
+            ..Default::default()
+        },
+        Candidate {
+            title: Some("Around the World (radio edit)".to_string()),
+            artist: Some("Daft Punk".to_string()),
+            year: Some(1997),
+            score: 0.61,
+            ..Default::default()
+        },
+    ]
 }
 
 fn parse_accent(s: &str) -> Result<Accent, String> {
@@ -162,6 +215,7 @@ fn main() {
             visualizer: cli.visualizer,
             properties: cli.properties,
             tag_editor: cli.tag_editor,
+            tag_editor_state: cli.tag_editor_state,
             database_info: cli.database_info,
             folders: cli.folders,
             settings_tab: cli.settings_tab,
@@ -190,6 +244,7 @@ fn main() {
         visualizer: cli.visualizer,
         properties: cli.properties,
         tag_editor: cli.tag_editor,
+        tag_editor_state: cli.tag_editor_state,
         database_info: cli.database_info,
         folders: cli.folders,
         settings_tab: cli.settings_tab,
@@ -253,6 +308,8 @@ struct RenderArgs<'a> {
     properties: bool,
     /// Open the single-track tag editor before rendering (#172).
     tag_editor: bool,
+    /// The tag editor's auto-tag lookup state to render (#209).
+    tag_editor_state: Option<AutoTagArg>,
     /// Open the File -> Database info dialog before rendering (#193).
     database_info: bool,
     folders: usize,
@@ -302,6 +359,11 @@ fn render_one(view: View, args: &RenderArgs, out: &Path) {
     }
     if args.tag_editor {
         harness.state_mut().open_tag_editor();
+    }
+    if let Some(state) = args.tag_editor_state {
+        harness
+            .state_mut()
+            .set_tag_editor_auto_tag(state.into_state());
     }
     if args.database_info {
         harness.state_mut().open_database_info();
