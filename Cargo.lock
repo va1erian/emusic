@@ -1334,6 +1334,7 @@ dependencies = [
  "embed-resource",
  "emusic-core",
  "emusic-library",
+ "emusic-milkdrop",
  "emusic-player",
  "emusic-search",
  "emusic-ui",
@@ -1390,6 +1391,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "emusic-milkdrop"
+version = "0.1.0"
+
+[[package]]
 name = "emusic-player"
 version = "0.1.0"
 dependencies = [
@@ -1434,6 +1439,7 @@ dependencies = [
  "emusic-core",
  "emusic-library",
  "emusic-metadata",
+ "emusic-milkdrop",
  "emusic-player",
  "emusic-search",
  "image",

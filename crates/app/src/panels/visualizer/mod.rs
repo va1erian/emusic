@@ -1,22 +1,27 @@
 //! Lightweight visualizer strip in the status bar (#25).
 //!
-//! Two modes are drawn with a single [`egui::Painter`] pass of rects/lines —
-//! no textures: [`VisualizerMode::Spectrum`] (log-spaced bars from the
-//! channel's FFT with peak-hold caps) and [`VisualizerMode::Oscilloscope`]
-//! (the channel's raw float samples as one trace). Clicking the strip cycles
-//! spectrum → oscilloscope → off; the choice is persisted via
-//! [`crate::config::Config`].
+//! Three modes are drawn with a single [`egui::Painter`] pass of
+//! rects/lines/circles — no textures: [`VisualizerMode::Spectrum`]
+//! (log-spaced bars from the channel's FFT with peak-hold caps),
+//! [`VisualizerMode::Oscilloscope`] (the channel's raw float samples as one
+//! trace), and [`VisualizerMode::Milkdrop`] (a placeholder audio-reactive
+//! engine from `emusic-milkdrop`, standing in for a future MilkDrop/projectM
+//! binding). Clicking the strip cycles spectrum → oscilloscope → milkdrop →
+//! off; the choice is persisted via [`crate::config::Config`].
 //!
 //! Split by responsibility:
-//! - `mod.rs` (this file) — the strip widget, its state (peak caps) and the
-//!   click-to-cycle behaviour.
+//! - `mod.rs` (this file) — the strip widget, its state (peak caps, the
+//!   milkdrop engine) and the click-to-cycle behaviour.
 //! - [`spectrum`] — the log-spaced FFT bar renderer.
 //! - [`scope`] — the oscilloscope trace renderer.
+//! - [`milkdrop`] — the milkdrop placeholder-engine renderer.
 
+mod milkdrop;
 mod scope;
 mod spectrum;
 
 use eframe::egui;
+use emusic_milkdrop::MilkdropEngine;
 
 use crate::player_api::{PlaybackStatus, PlayerApi};
 use crate::state::{AppState, Command, VisualizerMode};
@@ -68,6 +73,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
         VisualizerMode::Oscilloscope => {
             let samples = player.samples();
             scope::draw(painter, rect, &samples);
+        }
+        VisualizerMode::Milkdrop => {
+            let samples = player.samples();
+            state.visualizer_state.milkdrop.feed_pcm(&samples);
+            let frame = state.visualizer_state.milkdrop.tick(dt);
+            milkdrop::draw(painter, rect, frame);
         }
         VisualizerMode::Off => {}
     }

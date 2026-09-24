@@ -16,18 +16,27 @@ pub enum VisualizerMode {
     Spectrum,
     /// The channel's raw float samples as a single trace.
     Oscilloscope,
+    /// A MilkDrop/projectM-style engine (currently the placeholder plasma
+    /// in `emusic-milkdrop`; see that crate's docs).
+    Milkdrop,
     /// Nothing drawn; the strip reserves no repaints at all.
     Off,
 }
 
 impl VisualizerMode {
-    pub const ALL: [Self; 3] = [Self::Spectrum, Self::Oscilloscope, Self::Off];
+    pub const ALL: [Self; 4] = [
+        Self::Spectrum,
+        Self::Oscilloscope,
+        Self::Milkdrop,
+        Self::Off,
+    ];
 
     /// Short label for the strip's tooltip / Settings.
     pub fn label(self) -> &'static str {
         match self {
             Self::Spectrum => "Spectrum",
             Self::Oscilloscope => "Oscilloscope",
+            Self::Milkdrop => "Milkdrop",
             Self::Off => "Off",
         }
     }
@@ -37,6 +46,7 @@ impl VisualizerMode {
         match self {
             Self::Spectrum => "spectrum",
             Self::Oscilloscope => "oscilloscope",
+            Self::Milkdrop => "milkdrop",
             Self::Off => "off",
         }
     }
@@ -49,7 +59,8 @@ impl VisualizerMode {
     pub fn next(self) -> Self {
         match self {
             Self::Spectrum => Self::Oscilloscope,
-            Self::Oscilloscope => Self::Off,
+            Self::Oscilloscope => Self::Milkdrop,
+            Self::Milkdrop => Self::Off,
             Self::Off => Self::Spectrum,
         }
     }

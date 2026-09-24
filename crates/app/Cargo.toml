@@ -34,6 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"], optional = true }
 bass = { path = "../bass" }
 emusic-core = { path = "../core" }
+emusic-milkdrop = { path = "../milkdrop" }
 emusic-library = { path = "../library" }
 emusic-search = { path = "../search" }
 emusic-ui = { path = "../ui" }

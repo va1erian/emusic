@@ -14,6 +14,7 @@ dirs = "5"
 emusic-core = { path = "../core" }
 emusic-library = { path = "../library" }
 emusic-metadata = { path = "../metadata" }
+emusic-milkdrop = { path = "../milkdrop" }
 emusic-player = { path = "../player" }
 emusic-search = { path = "../search" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

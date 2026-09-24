@@ -8,7 +8,11 @@ fn mode_cycles_through_every_variant_and_wraps() {
         VisualizerMode::Spectrum.next(),
         VisualizerMode::Oscilloscope
     );
-    assert_eq!(VisualizerMode::Oscilloscope.next(), VisualizerMode::Off);
+    assert_eq!(
+        VisualizerMode::Oscilloscope.next(),
+        VisualizerMode::Milkdrop
+    );
+    assert_eq!(VisualizerMode::Milkdrop.next(), VisualizerMode::Off);
     assert_eq!(VisualizerMode::Off.next(), VisualizerMode::Spectrum);
 }
 
