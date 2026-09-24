@@ -6,7 +6,9 @@
 //! blank field maps to `None` — the scanner's "absent, not empty" convention —
 //! so clearing a field removes the tag rather than writing an empty string.
 
-use crate::library_api::{EditableTags, TrackInfo};
+use std::path::Path;
+
+use crate::library_api::{Candidate, EditableTags, TrackInfo, TrackQuery};
 
 /// One text field per [`EditableTags`] field, in the order the dialog shows
 /// them.
@@ -89,6 +91,50 @@ impl TagForm {
             composer: text_or_none(&self.composer),
             comment: text_or_none(&self.comment),
         })
+    }
+
+    /// Builds the online lookup query from the current form values (#209).
+    ///
+    /// The title/artist/album come from the fields so the user can seed a
+    /// lookup from a partial edit; the file name is carried as a fallback for
+    /// when the title is blank.
+    pub fn to_query(&self, path: &Path) -> TrackQuery {
+        TrackQuery {
+            title: text_or_none(&self.title),
+            artist: text_or_none(&self.artist),
+            album: text_or_none(&self.album),
+            duration: None,
+            filename: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+        }
+    }
+
+    /// Fills the form from a candidate, leaving fields the candidate does not
+    /// carry untouched so the user's own edits are preserved.
+    pub fn apply_candidate(&mut self, candidate: &Candidate) {
+        set_text(&mut self.title, candidate.title.as_deref());
+        set_text(&mut self.artist, candidate.artist.as_deref());
+        set_text(&mut self.album, candidate.album.as_deref());
+        set_text(&mut self.album_artist, candidate.album_artist.as_deref());
+        set_text(&mut self.genre, candidate.genre.as_deref());
+        set_text(&mut self.composer, candidate.composer.as_deref());
+        if let Some(year) = candidate.year {
+            self.year = year.to_string();
+        }
+        if let Some(track_no) = candidate.track_no {
+            self.track_no = track_no.to_string();
+        }
+        if let Some(disc_no) = candidate.disc_no {
+            self.disc_no = disc_no.to_string();
+        }
+    }
+}
+
+/// Overwrites `field` with `value` when the candidate carries one.
+fn set_text(field: &mut String, value: Option<&str>) {
+    if let Some(value) = value {
+        *field = value.to_string();
     }
 }
 

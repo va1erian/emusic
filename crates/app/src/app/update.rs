@@ -109,9 +109,19 @@ impl eframe::App for EguiApp {
         );
 
         // The single-track tag editor (#172); a valid Apply becomes a queued
-        // request, applied to the library with the next tick's commands.
-        if let Some(request) = crate::tag_editor::show(&ctx, &mut self.shell.state.tag_editor) {
-            self.shell.dispatch(Command::RequestTagEdits(vec![request]));
+        // tag edit and Auto-tag a queued lookup (#209), both applied to the
+        // library with the next tick's commands.
+        match crate::tag_editor::show(&ctx, &mut self.shell.state.tag_editor) {
+            Some(crate::tag_editor::TagEditorAction::Apply(request)) => {
+                self.shell.dispatch(Command::RequestTagEdits(vec![request]));
+            }
+            Some(crate::tag_editor::TagEditorAction::AutoTag(request)) => {
+                self.shell.dispatch(Command::AutoTagTrack {
+                    path: request.path,
+                    query: request.query,
+                });
+            }
+            None => {}
         }
 
         // Repaint policy (#6, #25): the shell reports when it next needs a

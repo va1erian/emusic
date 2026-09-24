@@ -17,9 +17,10 @@ use egui_kittest::Harness;
 
 use emusic::app::EguiApp;
 use emusic::config::Config;
-use emusic::library_api::LibraryDataSource;
+use emusic::library_api::{Candidate, LibraryDataSource};
 use emusic::mock::{MockLibrary, MockPlayer};
 use emusic::state::View;
+use emusic::tag_editor::AutoTagState;
 
 fn snapshot_view(view: View) {
     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -83,8 +84,9 @@ fn most_played_view() {
     snapshot_view(View::MostPlayed);
 }
 
-#[test]
-fn tag_editor_dialog() {
+/// Renders the tag editor dialog, optionally with an auto-tag lookup state
+/// (#209).
+fn tag_editor_snapshot(name: &str, auto_tag: Option<AutoTagState>) {
     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
         let mut harness = Harness::builder()
             .with_size(egui::Vec2::new(1280.0, 800.0))
@@ -94,15 +96,65 @@ fn tag_editor_dialog() {
                 EguiApp::with_config(cc, Box::new(library), player, Config::default())
             });
         harness.state_mut().open_tag_editor();
+        if let Some(state) = auto_tag {
+            harness.state_mut().set_tag_editor_auto_tag(state);
+        }
         // A modal is laid out in its own area; give egui a couple of frames to
         // position it before capturing, as `emusic-shot` does.
         harness.run_steps(3);
-        harness.snapshot("views/tag-editor");
+        harness.snapshot(name);
     }));
 
     if result.is_err() {
         eprintln!(
-            "skipping snapshot test for `tag-editor`: no headless GPU adapter available in this environment"
+            "skipping snapshot test for `{name}`: no headless GPU adapter available in this environment"
         );
     }
+}
+
+#[test]
+fn tag_editor_dialog() {
+    tag_editor_snapshot("views/tag-editor", None);
+}
+
+#[test]
+fn tag_editor_auto_tag_searching() {
+    tag_editor_snapshot("views/tag-editor-searching", Some(AutoTagState::Searching));
+}
+
+#[test]
+fn tag_editor_auto_tag_matches() {
+    tag_editor_snapshot(
+        "views/tag-editor-matches",
+        Some(AutoTagState::Matches(demo_candidates())),
+    );
+}
+
+#[test]
+fn tag_editor_auto_tag_no_match() {
+    tag_editor_snapshot("views/tag-editor-no-match", Some(AutoTagState::NoMatch));
+}
+
+/// Canned candidates for the Matches snapshot.
+fn demo_candidates() -> Vec<Candidate> {
+    vec![
+        Candidate {
+            title: Some("Around the World".to_string()),
+            artist: Some("Daft Punk".to_string()),
+            album: Some("Homework".to_string()),
+            album_artist: Some("Daft Punk".to_string()),
+            year: Some(1997),
+            track_no: Some(5),
+            disc_no: Some(1),
+            score: 0.96,
+            ..Default::default()
+        },
+        Candidate {
+            title: Some("Around the World (radio edit)".to_string()),
+            artist: Some("Daft Punk".to_string()),
+            year: Some(1997),
+            score: 0.61,
+            ..Default::default()
+        },
+    ]
 }

@@ -197,4 +197,13 @@ impl EguiApp {
             self.shell.state.tag_editor = Some(crate::tag_editor::TagEditorState::new(track));
         }
     }
+
+    /// Sets the open tag editor's auto-tag lookup state, so `emusic-shot`
+    /// (`--tag-editor-state`) and the snapshot tests can render the
+    /// Searching / Matches / No-match states (#209) without a live lookup.
+    pub fn set_tag_editor_auto_tag(&mut self, state: crate::tag_editor::AutoTagState) {
+        if let Some(editor) = self.shell.state.tag_editor.as_mut() {
+            editor.auto_tag = state;
+        }
+    }
 }

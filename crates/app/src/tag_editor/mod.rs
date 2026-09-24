@@ -4,28 +4,44 @@
 //! `emusic-ui` (moved with the shell, #97); this module only draws the
 //! dialog and turns the buttons into the state transitions the shell reads.
 
-pub use emusic_ui::tag_editor::{Failure, Status, TagEditorState, TagForm, TagFormErrors, deliver};
+pub use emusic_ui::tag_editor::{
+    AutoTagState, Failure, Status, TagEditorState, TagForm, TagFormErrors, deliver,
+    deliver_auto_tag,
+};
 
 use std::time::Duration;
 
 use eframe::egui;
 
-use crate::library_api::EditRequest;
+use crate::library_api::{AutoTagRequest, Candidate, EditRequest};
 
-/// How often the dialog asks for a repaint while an edit is in flight, so the
-/// background worker's outcome is picked up even when nothing else is moving.
+/// How often the dialog asks for a repaint while an edit or lookup is in
+/// flight, so the background worker's outcome is picked up even when nothing
+/// else is moving.
 const PENDING_REPAINT: Duration = Duration::from_millis(100);
 
+/// What the dialog wants the app to do after a frame (#209).
+pub enum TagEditorAction {
+    /// Submit the form as a tag edit.
+    Apply(EditRequest),
+    /// Run an online metadata lookup seeded from the current form.
+    AutoTag(AutoTagRequest),
+}
+
 /// Shows the dialog while an editor is open. Returns the request to submit
-/// when the user applies a valid form.
-pub fn show(ctx: &egui::Context, state: &mut Option<TagEditorState>) -> Option<EditRequest> {
+/// when the user applies a valid form, or the lookup to run when they click
+/// Auto-tag.
+pub fn show(ctx: &egui::Context, state: &mut Option<TagEditorState>) -> Option<TagEditorAction> {
     let editor = state.as_mut()?;
 
     let errors = editor.form.validate();
     let pending = matches!(editor.status, Status::Pending);
+    let searching = matches!(editor.auto_tag, AutoTagState::Searching);
     let mut apply = false;
     let mut revert = false;
     let mut close = false;
+    let mut auto_tag = false;
+    let mut picked = None;
 
     let modal = egui::Modal::new(egui::Id::new("tag_editor")).show(ctx, |ui| {
         ui.set_width(480.0);
@@ -60,6 +76,16 @@ pub fn show(ctx: &egui::Context, state: &mut Option<TagEditorState>) -> Option<E
                 text_field(ui, "Comment", &mut editor.form.comment);
             });
 
+        ui.add_space(6.0);
+        if ui
+            .add_enabled(!pending && !searching, egui::Button::new("Auto-tag"))
+            .on_hover_text("Look this track up online and fill the fields from a match")
+            .clicked()
+        {
+            auto_tag = true;
+        }
+        picked = auto_tag_section(ui, &editor.auto_tag);
+
         status_line(ui, &editor.status);
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -83,21 +109,96 @@ pub fn show(ctx: &egui::Context, state: &mut Option<TagEditorState>) -> Option<E
         editor.status = Status::Editing;
     }
 
-    let request = if apply {
+    if let Some(index) = picked {
+        let candidate = match &editor.auto_tag {
+            AutoTagState::Matches(candidates) => candidates.get(index).cloned(),
+            _ => None,
+        };
+        if let Some(candidate) = candidate {
+            editor.form.apply_candidate(&candidate);
+        }
+    }
+
+    let action = if apply {
         editor.form.to_tags().ok().map(|tags| {
             editor.status = Status::Pending;
-            EditRequest::new(editor.path.clone(), tags)
+            TagEditorAction::Apply(EditRequest::new(editor.path.clone(), tags))
         })
+    } else if auto_tag {
+        editor.auto_tag = AutoTagState::Searching;
+        Some(TagEditorAction::AutoTag(AutoTagRequest {
+            path: editor.path.clone(),
+            query: editor.form.to_query(&editor.path),
+        }))
     } else {
         None
     };
 
+    let searching = matches!(editor.auto_tag, AutoTagState::Searching);
     if close || modal.should_close() {
         *state = None;
-    } else if pending {
+    } else if pending || searching {
         ctx.request_repaint_after(PENDING_REPAINT);
     }
-    request
+    action
+}
+
+/// Draws the lookup state under the Auto-tag button and returns the index of
+/// the candidate the user asked to use, if any.
+fn auto_tag_section(ui: &mut egui::Ui, state: &AutoTagState) -> Option<usize> {
+    match state {
+        AutoTagState::Idle => None,
+        AutoTagState::Searching => {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Searching MusicBrainz…");
+            });
+            None
+        }
+        AutoTagState::Matches(candidates) => {
+            let mut picked = None;
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Matches").strong());
+            for (index, candidate) in candidates.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    if ui.button("Use this").clicked() {
+                        picked = Some(index);
+                    }
+                    ui.label(candidate_summary(candidate));
+                });
+            }
+            picked
+        }
+        AutoTagState::NoMatch => {
+            ui.label(egui::RichText::new("No match found.").weak());
+            None
+        }
+        AutoTagState::Failed(message) => {
+            ui.colored_label(ui.visuals().error_fg_color, message);
+            None
+        }
+    }
+}
+
+/// A one-line description of a candidate, e.g.
+/// `"Daft Punk — Around the World · Homework (1997) 96%"`.
+fn candidate_summary(candidate: &Candidate) -> String {
+    let mut summary = match (&candidate.artist, &candidate.title) {
+        (Some(artist), Some(title)) => format!("{artist} — {title}"),
+        (Some(artist), None) => artist.clone(),
+        (None, Some(title)) => title.clone(),
+        (None, None) => "(unknown)".to_string(),
+    };
+    if let Some(album) = &candidate.album {
+        summary.push_str(&format!(" · {album}"));
+    }
+    if let Some(year) = candidate.year {
+        summary.push_str(&format!(" ({year})"));
+    }
+    if candidate.score > 0.0 {
+        summary.push_str(&format!("  {:.0}%", candidate.score * 100.0));
+    }
+    summary
 }
 
 /// A labelled single-line text field spanning the value column.

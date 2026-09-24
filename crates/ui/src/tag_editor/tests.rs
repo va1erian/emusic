@@ -1,6 +1,6 @@
 //! Unit tests for the tag editor's form conversion and result handling.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use emusic_library::LibraryError;
 
@@ -170,6 +170,57 @@ fn auto_tag_outcome(result: Result<Vec<Candidate>, AutoTagError>) -> AutoTagOutc
         path: PathBuf::from("C:/music/track.flac"),
         result,
     }
+}
+
+#[test]
+fn to_query_uses_form_fields_and_the_file_name() {
+    let form = TagForm::from_track(&track());
+    let query = form.to_query(Path::new("C:/music/track.flac"));
+    assert_eq!(query.title.as_deref(), Some("Old title"));
+    assert_eq!(query.artist.as_deref(), Some("Old artist"));
+    assert_eq!(query.album.as_deref(), Some("Old album"));
+    assert_eq!(query.filename.as_deref(), Some("track.flac"));
+    assert_eq!(query.duration, None);
+}
+
+#[test]
+fn to_query_treats_blank_fields_as_absent() {
+    let form = TagForm {
+        title: "   ".to_string(),
+        ..Default::default()
+    };
+    let query = form.to_query(Path::new("C:/music/track.flac"));
+    assert_eq!(query.title, None);
+    assert_eq!(query.filename.as_deref(), Some("track.flac"));
+}
+
+#[test]
+fn apply_candidate_fills_present_fields_only() {
+    let mut form = TagForm {
+        title: "Kept title".to_string(),
+        ..Default::default()
+    };
+    let candidate = Candidate {
+        title: None,
+        artist: Some("New artist".to_string()),
+        album: Some("New album".to_string()),
+        year: Some(1997),
+        track_no: Some(5),
+        disc_no: Some(1),
+        ..Default::default()
+    };
+
+    form.apply_candidate(&candidate);
+
+    assert_eq!(
+        form.title, "Kept title",
+        "an absent field is left untouched"
+    );
+    assert_eq!(form.artist, "New artist");
+    assert_eq!(form.album, "New album");
+    assert_eq!(form.year, "1997");
+    assert_eq!(form.track_no, "5");
+    assert_eq!(form.disc_no, "1");
 }
 
 #[test]
