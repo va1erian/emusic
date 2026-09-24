@@ -1458,6 +1458,7 @@ dependencies = [
  "emusic-player",
  "emusic-ui",
  "image",
+ "png",
  "rfd",
  "tracing",
  "tracing-subscriber",

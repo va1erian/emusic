@@ -12,10 +12,10 @@ use emusic_ui::backend::{self, ipc};
 use emusic_ui::cli::Cli;
 use emusic_ui::config::{self, Config};
 use emusic_ui::waker::{Waker as _, WakerSlot};
-use win32ui::prelude::*;
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic_win32::app::Win32App;
+use emusic_win32::window::window_spec;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -71,39 +71,28 @@ fn run_ui(
         emusic_ui::state::Theme::Light => win32ui::Theme::light(),
     };
 
-    win32ui::run_app(
-        WindowSpec::new("emusic")
-            .size(dip(1100.0), dip(720.0))
-            .theme(window_theme)
-            // An extended title bar draws the caption / menu / top bar on the
-            // strip+band and lets the transport bar live on it (#108); the menu
-            // moves onto the strip so the band sits below it.
-            .title_bar(TitleBar::Extended)
-            .backdrop(Backdrop::Acrylic)
-            .menu_in_strip(true),
-        move |ui| {
-            let backends = backend::build(mock);
-            let emusic_ui::backend::Backends {
-                library,
-                player,
-                notice,
-            } = backends;
-            let mut app = Win32App::new(
-                ui,
-                library,
-                player,
-                config,
-                config_path,
-                Some(ipc),
-                startup,
-                waker,
-            );
-            if let Some(notice) = notice {
-                app.set_backend_notice(notice);
-            }
-            app
-        },
-    )
+    win32ui::run_app(window_spec(1100.0, 720.0, window_theme), move |ui| {
+        let backends = backend::build(mock);
+        let emusic_ui::backend::Backends {
+            library,
+            player,
+            notice,
+        } = backends;
+        let mut app = Win32App::new(
+            ui,
+            library,
+            player,
+            config,
+            config_path,
+            Some(ipc),
+            startup,
+            waker,
+        );
+        if let Some(notice) = notice {
+            app.set_backend_notice(notice);
+        }
+        app
+    })
     .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
 }
 

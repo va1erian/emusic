@@ -54,3 +54,15 @@ Main views also have `egui_kittest` snapshot tests under `crates/app/tests/snaps
 ```
 UPDATE_SNAPSHOTS=1 cargo test -p emusic --test snapshot_views
 ```
+
+## Win32 UI changes: use `emusic-win32-shot`
+
+`crates/win32` has the matching screenshot tool (see #118) for the native frontend:
+
+```
+cargo run -p emusic-win32 --features shot --bin emusic-win32-shot -- --all --theme dark --out crates/win32/docs/screenshots/dark
+cargo run -p emusic-win32 --features shot --bin emusic-win32-shot -- --view music --theme light --out crates/win32/docs/screenshots/light/music.png
+```
+
+It runs the real `Win32App` against the same deterministic mock data and captures the window with `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/win32/docs/screenshots/` are the reference set: for **any** change touching `crates/win32` UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
+
