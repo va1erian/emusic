@@ -179,7 +179,7 @@ impl EguiApp {
     /// headlessly.
     pub fn open_track_properties(&mut self) {
         if let Some(track) = self.shell.library.tracks().first() {
-            self.shell.state.music_table.properties = Some(track.clone());
+            self.shell.state.music.table.properties = Some(track.clone());
         }
     }
 

@@ -1,19 +1,24 @@
-//! "Music" view: the full library as a virtualized, sortable track table
-//! (#15), filtered by the column browser (#16) and the top bar's search box.
+//! egui renderer for the "Music" view (#15, #16, #99): the full library as a
+//! virtualized, sortable track table, filtered by the column browser and the
+//! top bar's search box.
+//!
+//! The column browser and table are both models in `emusic-ui`; this module
+//! only draws them and routes messages.
 
 use eframe::egui;
 
 use super::EguiView;
-use super::column_browser;
 use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
 use crate::state::AppState;
+use emusic_ui::views::music::{MusicMsg, MusicView};
 use emusic_ui::views::{Commands, Ctx};
 
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut AppState,
+    music: &mut MusicView,
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
     search: &SearchEngine,
@@ -24,37 +29,32 @@ pub fn show(
         return;
     }
 
-    if state.column_browser.visible {
-        column_browser::show(ui, &mut state.column_browser, library);
+    // The view model rebuilds the cascading facets and the filtered track
+    // list from the library snapshot and the live search.
+    let all: Vec<&TrackInfo> = library.tracks().iter().collect();
+    music.refresh(&all, search);
+    let tracks = music.visible_tracks(&all);
+    state.search_result_count = music.search_result_count();
+    // Keep the `Ctx`'s slice alive for the whole frame so the table can index
+    // into exactly what `refresh` produced.
+    let tracks: &[&TrackInfo] = &tracks;
+
+    let mut out = Commands::new();
+    let cx = Ctx::new(tracks, currently_playing_id(library, player));
+
+    if music.browser.visible {
+        music.browser.show(ui, "column_browser", &cx, &mut out);
     }
-
-    // The query is parsed and matched off the UI thread (see
-    // `crate::search`); here we only check each track's id against the
-    // already-computed match set, which is O(1) per track.
-    let tracks: Vec<&TrackInfo> = library
-        .tracks()
-        .iter()
-        .filter(|t| state.column_browser.matches(t))
-        .filter(|t| search.is_match(t.id))
-        .collect();
-
-    state.search_result_count = if search.is_active() {
-        Some(tracks.len())
-    } else {
-        None
-    };
 
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
         if ui.button("Shuffle all").clicked() {
-            state.push(crate::shuffle::all(library));
+            music.update(MusicMsg::ShuffleAll, &cx, &mut out);
         }
     });
     ui.separator();
 
-    let cx = Ctx::new(&tracks, currently_playing_id(library, player));
-    let mut out = Commands::new();
-    state.music_table.show(ui, "music_table", &cx, &mut out);
+    music.table.show(ui, "music_table", &cx, &mut out);
     state.pending.extend(out.into_vec());
 }
 

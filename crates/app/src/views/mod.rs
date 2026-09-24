@@ -29,6 +29,7 @@ use crate::player_api::PlayerApi;
 use crate::search::SearchEngine;
 use crate::state::{AppState, View};
 
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -37,6 +38,7 @@ pub fn show(
     player: &dyn PlayerApi,
     search: &SearchEngine,
 ) {
+    let mut music = std::mem::take(&mut state.music);
     egui::CentralPanel::default().show(ui, |ui| {
         ui.heading(state.view.label());
         ui.add_space(4.0);
@@ -52,7 +54,7 @@ pub fn show(
             .id_salt("central_view_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| match state.view {
-                View::Music => music::show(ui, state, library, player, search),
+                View::Music => music::show(ui, state, &mut music, library, player, search),
                 View::Albums => {
                     album_grid::show(ui, state, &mut images.album_thumbs, library, player)
                 }
@@ -66,4 +68,5 @@ pub fn show(
                 View::Settings => settings::show(ui, state),
             });
     });
+    state.music = music;
 }

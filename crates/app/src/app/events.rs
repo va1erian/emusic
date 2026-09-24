@@ -52,7 +52,7 @@ impl EguiApp {
                     self.panel_menu_item(ui, "Now playing panel", PanelKind::RightPanel);
                     self.panel_menu_item(ui, "Status bar", PanelKind::StatusBar);
                     ui.separator();
-                    let mut column_browser = self.shell.state.column_browser.visible;
+                    let mut column_browser = self.shell.state.music.browser.visible;
                     if ui.checkbox(&mut column_browser, "Column browser").changed() {
                         self.shell.state.push(Command::ToggleColumnBrowser);
                     }

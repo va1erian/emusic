@@ -199,8 +199,8 @@ impl Config {
             theme: state.theme,
             accent: state.accent,
             panels: state.panels,
-            column_browser_visible: state.column_browser.visible,
-            column_browser_height: state.column_browser.height,
+            column_browser_visible: state.music.browser.visible,
+            column_browser_height: state.music.browser.height,
             last_view: state.view,
             resume_playback: state.resume_playback,
             autoplay_on_restore: state.autoplay_on_restore,
@@ -223,8 +223,8 @@ impl Config {
         state.theme = self.theme;
         state.accent = self.accent;
         state.panels = self.panels;
-        state.column_browser.visible = self.column_browser_visible;
-        state.column_browser.height = self.column_browser_height;
+        state.music.browser.visible = self.column_browser_visible;
+        state.music.browser.height = self.column_browser_height;
         state.view = self.last_view;
         state.resume_playback = self.resume_playback;
         state.autoplay_on_restore = self.autoplay_on_restore;
