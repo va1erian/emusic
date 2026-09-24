@@ -28,6 +28,7 @@ use crate::views::album_grid::{AlbumGridView, AlbumMsg};
 use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
+use crate::views::genres::GenresView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
@@ -102,6 +103,7 @@ pub struct Win32App {
     albums: AlbumGridView,
     folders: FoldersView,
     artists: ArtistsView,
+    genres: GenresView,
     settings: SettingsView,
     starred: StarredView,
     right_panel: NowPlayingView,
@@ -143,6 +145,7 @@ impl Win32App {
         let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let folders = FoldersView::new(ui).expect("create folders view");
         let artists = ArtistsView::new(ui).expect("create artists view");
+        let genres = GenresView::new(ui).expect("create genres view");
         let settings = SettingsView::new(ui).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
         let status = StatusBarView::new(ui).expect("create status bar");
@@ -172,6 +175,7 @@ impl Win32App {
                 | View::Albums
                 | View::Artists
                 | View::Folders
+                | View::Genres
                 | View::Settings
                 | View::Starred
         ));
@@ -180,6 +184,7 @@ impl Win32App {
         albums.set_visible(view == View::Albums);
         folders.set_visible(view == View::Folders);
         artists.set_visible(view == View::Artists);
+        genres.set_visible(view == View::Genres);
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
         ui.on_timer(|_| Some(Msg::Timer));
@@ -196,6 +201,7 @@ impl Win32App {
             albums,
             folders,
             artists,
+            genres,
             settings,
             starred,
             right_panel,
@@ -230,6 +236,7 @@ impl Win32App {
             .fill(1),
             View::Albums => self.albums.layout().fill(1),
             View::Artists => self.artists.layout().fill(1),
+            View::Genres => self.genres.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
@@ -280,6 +287,7 @@ impl Win32App {
                     | View::Albums
                     | View::Artists
                     | View::Folders
+                    | View::Genres
                     | View::Settings
                     | View::Starred
             ));
@@ -287,6 +295,7 @@ impl Win32App {
             self.albums.set_visible(view == View::Albums);
             self.folders.set_visible(view == View::Folders);
             self.artists.set_visible(view == View::Artists);
+            self.genres.set_visible(view == View::Genres);
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
@@ -342,6 +351,11 @@ impl Win32App {
 
         if view == View::Artists {
             self.artists
+                .sync(&mut self.shell.state, self.shell.library.as_ref());
+        }
+
+        if view == View::Genres {
+            self.genres
                 .sync(&mut self.shell.state, self.shell.library.as_ref());
         }
 
@@ -618,6 +632,10 @@ impl App for Win32App {
                         self.artists.set_context_row(row);
                         self.artists.context_menu().clone()
                     }
+                    View::Genres => {
+                        self.genres.set_context_row(row);
+                        self.genres.context_menu().clone()
+                    }
                     View::Starred => {
                         self.starred.set_context_row(row);
                         self.starred.context_menu().clone()
@@ -627,19 +645,32 @@ impl App for Win32App {
                 ui.popup(&menu, ui.cursor_position());
             }
             Msg::NameCountShuffle => {
-                if self.shell.state.view == View::Artists
-                    && let Some(name) = self.artists.context_name()
-                {
-                    let commands = self.artists.shuffle(
+                let view = self.shell.state.view;
+                let name = match view {
+                    View::Artists => self.artists.context_name(),
+                    View::Genres => self.genres.context_name(),
+                    _ => None,
+                };
+                let Some(name) = name else {
+                    return;
+                };
+                let commands = match view {
+                    View::Artists => self.artists.shuffle(
                         name,
                         &mut self.shell.state,
                         self.shell.library.as_ref(),
-                    );
-                    for command in commands {
-                        self.shell.dispatch(command);
-                    }
-                    self.tick(ui);
+                    ),
+                    View::Genres => self.genres.shuffle(
+                        name,
+                        &mut self.shell.state,
+                        self.shell.library.as_ref(),
+                    ),
+                    _ => return,
+                };
+                for command in commands {
+                    self.shell.dispatch(command);
                 }
+                self.tick(ui);
             }
             Msg::ContextAction(action) => {
                 let command = match self.shell.state.view {

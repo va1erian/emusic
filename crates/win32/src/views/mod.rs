@@ -9,6 +9,7 @@ pub mod album_grid;
 pub mod artists;
 pub mod column_browser;
 pub mod folders;
+pub mod genres;
 pub mod music;
 pub mod name_counts;
 pub mod navigator;
