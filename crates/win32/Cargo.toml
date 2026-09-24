@@ -10,6 +10,11 @@ build = "build.rs"
 name = "emusic-win32"
 path = "src/main.rs"
 
+[[bin]]
+name = "emusic-win32-shot"
+path = "src/bin/emusic_win32_shot.rs"
+required-features = ["shot"]
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
@@ -17,10 +22,17 @@ emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 rfd = { version = "0.15", default-features = false }
+png = { version = "0.18", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
 winshell = { path = "../winshell" }
+
+[features]
+# The headless screenshot tool (`emusic-win32-shot`, #118). Off by default so
+# the PNG encoder and the WinRT capture bindings never enter the real binary's
+# dependency tree.
+shot = ["dep:png", "win32ui/wgc"]
 
 [build-dependencies]
 embed-resource = "3.0"
