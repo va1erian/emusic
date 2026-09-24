@@ -15,11 +15,13 @@ use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, View};
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
-use win32ui::{StatusBar, column, dip, row};
+use win32ui::{column, dip, row};
 
 use crate::menu;
 use crate::views::music::{ContextAction, MusicView};
+use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
+use crate::views::status_bar::StatusBarView;
 use crate::waker::Win32Waker;
 
 /// Everything the window can ask the app to do.
@@ -40,6 +42,8 @@ pub enum Msg {
     ContextRow(usize),
     /// Run a Music view context-menu action.
     ContextAction(ContextAction),
+    /// Switch the central view (navigator row click).
+    Navigate(View),
     /// Close the window and exit.
     Quit,
 }
@@ -47,11 +51,11 @@ pub enum Msg {
 /// The app: the shell plus the window's controls.
 pub struct Win32App {
     shell: Shell,
-    navigator: Placeholder,
+    navigator: NavigatorView,
     central: Placeholder,
     music: MusicView,
     right_panel: Placeholder,
-    status: StatusBar<Msg>,
+    status: StatusBarView,
     /// The shell's repaint timer, if scheduled, and its interval in ms.
     timer: Option<(TimerId, u32)>,
     /// Panel visibility last applied, so a change triggers a relayout.
@@ -77,11 +81,11 @@ impl Win32App {
         startup: Option<winshell::IpcMessage>,
         waker: WakerSlot,
     ) -> Self {
-        let navigator = Placeholder::new(ui, "Navigator").expect("create navigator placeholder");
+        let navigator = NavigatorView::new(ui).expect("create navigator view");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
         let music = MusicView::new(ui).expect("create music view");
         let right_panel = Placeholder::new(ui, "Now playing").expect("create right panel");
-        let status = StatusBar::new(ui).expect("create status bar");
+        let status = StatusBarView::new(ui).expect("create status bar");
 
         waker.bind(Win32Waker::new(ui.proxy()));
         let mut shell = Shell::new(library, player, config, config_path, waker);
@@ -166,18 +170,19 @@ impl Win32App {
             changes,
         );
 
-        let folders = self.shell.library.folders().len();
-        self.navigator
-            .sync(&format!("Navigator — {folders} folders"));
         self.right_panel.sync("Now playing");
 
-        let status = self
-            .shell
-            .backend_notice()
-            .map(ToString::to_string)
-            .or_else(|| self.shell.library.status_text())
-            .unwrap_or_else(|| format!("{} tracks", self.shell.library.track_count()));
-        self.status.set_text(0, &status);
+        self.shell.state.navigator.sync(self.shell.state.view);
+        self.navigator.sync(&self.shell.state.navigator);
+
+        let library = self.shell.library.as_ref();
+        let player = self.shell.player.as_ref();
+        self.shell
+            .state
+            .status_bar
+            .sync(self.shell.state.search_result_count, library, player);
+        self.status
+            .sync(&self.shell.state.status_bar, self.shell.backend_notice());
 
         // Panel visibility is toggled through `Command::TogglePanel`; apply it
         // and relayout only when it actually changed.
@@ -260,6 +265,10 @@ impl App for Win32App {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
+            }
+            Msg::Navigate(view) => {
+                self.shell.dispatch(Command::SetView(view));
+                self.tick(ui);
             }
             Msg::Quit => ui.close(),
         }

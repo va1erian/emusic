@@ -1,5 +1,9 @@
 //! Bottom status bar: track count, total library duration, a short status
 //! text, and (when enabled in Settings) the optional visualizer strip.
+//!
+//! Render-only (#104): the part texts live in
+//! [`emusic_ui::panels::status_bar::StatusBar`]; this module draws them and
+//! maps its buttons to commands.
 
 use eframe::egui;
 
@@ -13,22 +17,54 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
+    state
+        .status_bar
+        .sync(state.search_result_count, library, player);
+    // Copy the parts out first: the buttons below need `&mut state`, and the
+    // model is borrowed through `state`.
+    let result_count = state.status_bar.result_count().to_owned();
+    let total_duration = state.status_bar.total_duration().to_owned();
+    let status = state.status_bar.status().to_owned();
+    let shuffle_scope = state.status_bar.shuffle_scope().map(str::to_owned);
+    let status_message = state.status_bar.status_message().map(str::to_owned);
+    let scan = state.status_bar.scan().map(str::to_owned);
+    let scanning = state.status_bar.is_scanning();
+    let auto_tag = state.status_bar.auto_tag().map(str::to_owned);
+
     egui::Panel::bottom("status_bar")
         .exact_size(28.0)
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(result_count_text(state, library));
+                ui.label(&result_count);
                 ui.separator();
-                ui.label(format_duration(library.total_duration()));
+                ui.label(&total_duration);
                 ui.separator();
-                ui.label(status_text(player));
-                shuffle_scope(ui, state, player);
-                if let Some(message) = player.status_message() {
+                ui.label(&status);
+                if let Some(scope) = &shuffle_scope {
+                    ui.separator();
+                    ui.label(format!("Shuffling: {scope}"));
+                    if ui.small_button("Stop").clicked() {
+                        state.push(Command::PlayerToggleShuffle);
+                    }
+                }
+                if let Some(message) = &status_message {
                     ui.separator();
                     ui.colored_label(ui.visuals().warn_fg_color, message);
                 }
-                scan_status(ui, state, library);
-                auto_tag_status(ui, state, library);
+                if let Some(text) = &scan {
+                    ui.separator();
+                    ui.label(text);
+                    if scanning && ui.small_button("Cancel").clicked() {
+                        state.push(Command::LibraryCancelScan);
+                    }
+                }
+                if let Some(text) = &auto_tag {
+                    ui.separator();
+                    ui.label(text);
+                    if ui.small_button("Cancel").clicked() {
+                        state.push(Command::CancelAutoTag);
+                    }
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if state.visualizer_enabled {
@@ -37,66 +73,4 @@ pub fn show(
                 });
             });
         });
-}
-
-/// Shows the library's scan progress, with a cancel button while a scan is
-/// running.
-fn scan_status(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
-    let Some(text) = library.status_text() else {
-        return;
-    };
-    ui.separator();
-    ui.label(text);
-    if library.is_scanning() && ui.small_button("Cancel").clicked() {
-        state.push(Command::LibraryCancelScan);
-    }
-}
-
-/// Shows an in-flight online auto-tag lookup, with a cancel button (#210).
-fn auto_tag_status(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
-    let Some(status) = library.auto_tag_status() else {
-        return;
-    };
-    ui.separator();
-    ui.label(status.text);
-    if ui.small_button("Cancel").clicked() {
-        state.push(Command::CancelAutoTag);
-    }
-}
-
-/// Track-count label: "N of M tracks" while the Music view's search box
-/// has an active query, plain "M tracks" otherwise.
-fn result_count_text(state: &AppState, library: &dyn LibraryDataSource) -> String {
-    match state.search_result_count {
-        Some(matched) => format!("{matched} of {} tracks", library.track_count()),
-        None => format!("{} tracks", library.track_count()),
-    }
-}
-
-fn status_text(player: &dyn PlayerApi) -> String {
-    use crate::player_api::PlaybackStatus;
-    match player.status() {
-        PlaybackStatus::Playing => "Playing".to_string(),
-        PlaybackStatus::Paused => "Paused".to_string(),
-        PlaybackStatus::Stopped => "Ready".to_string(),
-    }
-}
-
-/// Shows the active scoped shuffle (#57) and a way to stop it.
-fn shuffle_scope(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
-    let Some(scope) = player.shuffle_scope() else {
-        return;
-    };
-    ui.separator();
-    ui.label(format!("Shuffling: {scope}"));
-    if ui.small_button("Stop").clicked() {
-        state.push(Command::PlayerToggleShuffle);
-    }
-}
-
-fn format_duration(total: std::time::Duration) -> String {
-    let secs = total.as_secs();
-    let hours = secs / 3600;
-    let minutes = (secs % 3600) / 60;
-    format!("{hours}h {minutes}m total")
 }
