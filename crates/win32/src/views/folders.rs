@@ -20,52 +20,86 @@ use crate::views::track_table::TrackView;
 /// The directory tree panel's width, in design units.
 const TREE_WIDTH: f32 = 260.0;
 
-/// A lazily-loaded [`TreeModel`] over the library's directory grouping: only
-/// the roots are read up front, and a node's children only when it is expanded.
+/// One directory, flattened: its display data and its direct children's
+/// indices into [`DirTreeModel::nodes`]. Storing child indices (not child
+/// slices) means building the model never copies a subtree.
+struct FlatNode {
+    path: String,
+    name: String,
+    total_track_count: usize,
+    has_children: bool,
+    children: Vec<usize>,
+}
+
+/// A lazily-loaded [`TreeModel`] over the library's directory grouping.
+///
+/// The library snapshot is copied once into a flat array (the row strings
+/// only); expanding a node then walks a handful of indices. `children` is only
+/// called for the roots and for branches the control actually expands, so an
+/// unopened branch costs nothing beyond its own entry.
 struct DirTreeModel {
-    roots: Vec<DirNodeInfo>,
-    by_path: HashMap<String, Vec<DirNodeInfo>>,
+    nodes: Vec<FlatNode>,
+    roots: Vec<usize>,
+    by_path: HashMap<String, usize>,
 }
 
 impl DirTreeModel {
     fn new(tree: &[DirNodeInfo]) -> Self {
+        let mut nodes = Vec::new();
         let mut by_path = HashMap::new();
-        index(tree, &mut by_path);
+        let roots = flatten_level(tree, &mut nodes, &mut by_path);
         Self {
-            roots: tree.to_vec(),
+            nodes,
+            roots,
             by_path,
         }
     }
 }
 
-/// Records every node's children by path, so `children` is a map lookup.
-fn index(nodes: &[DirNodeInfo], map: &mut HashMap<String, Vec<DirNodeInfo>>) {
-    for node in nodes {
-        map.insert(node.path.clone(), node.children.clone());
-        index(&node.children, map);
+/// Flattens one level, appending each node (and its descendants) to `flat` and
+/// returning the indices of this level's nodes.
+fn flatten_level(
+    level: &[DirNodeInfo],
+    flat: &mut Vec<FlatNode>,
+    by_path: &mut HashMap<String, usize>,
+) -> Vec<usize> {
+    let mut indices = Vec::with_capacity(level.len());
+    for node in level {
+        let index = flat.len();
+        indices.push(index);
+        flat.push(FlatNode {
+            path: node.path.clone(),
+            name: node.name.clone(),
+            total_track_count: node.total_track_count,
+            has_children: !node.children.is_empty(),
+            children: Vec::new(),
+        });
+        by_path.insert(node.path.clone(), index);
+        flat[index].children = flatten_level(&node.children, flat, by_path);
     }
-}
-
-/// The row text, matching the egui tree's `"name (total)"`.
-fn node_text(node: &DirNodeInfo) -> String {
-    format!("{} ({})", node.name, node.total_track_count)
+    indices
 }
 
 impl TreeModel for DirTreeModel {
     type Key = String;
 
     fn children(&self, parent: Option<&String>) -> Vec<Node<String>> {
-        let nodes: &[DirNodeInfo] = match parent {
+        let indices: &[usize] = match parent {
             None => &self.roots,
-            Some(path) => self.by_path.get(path).map_or(&[], Vec::as_slice),
+            Some(path) => self
+                .by_path
+                .get(path)
+                .map_or(&[], |&index| self.nodes[index].children.as_slice()),
         };
-        nodes
+        indices
             .iter()
-            .map(|node| {
-                if node.children.is_empty() {
-                    Node::leaf(node.path.clone(), node_text(node))
+            .map(|&index| {
+                let node = &self.nodes[index];
+                let text = format!("{} ({})", node.name, node.total_track_count);
+                if node.has_children {
+                    Node::branch(node.path.clone(), text)
                 } else {
-                    Node::branch(node.path.clone(), node_text(node))
+                    Node::leaf(node.path.clone(), text)
                 }
             })
             .collect()
@@ -77,9 +111,9 @@ pub struct FoldersView {
     tree: TreeView<String, Msg>,
     include: CheckBox<Msg>,
     table: TrackView,
-    /// The library snapshot the tree was built from (`(track count, scanning)`),
-    /// so it is only rebuilt when the directory grouping changed.
-    applied_library: Cell<(usize, bool)>,
+    /// The library snapshot the tree was built from (`(scanning, track count)`),
+    /// or `None` before the first build.
+    applied_library: Cell<Option<(bool, usize)>>,
     /// The model revision last mirrored into the table.
     applied_revision: Cell<u64>,
     applied_include: Cell<bool>,
@@ -99,7 +133,7 @@ impl FoldersView {
             tree,
             include,
             table,
-            applied_library: Cell::new((usize::MAX, true)),
+            applied_library: Cell::new(None),
             applied_revision: Cell::new(u64::MAX),
             applied_include: Cell::new(false),
             applied_selection: RefCell::new(None),
@@ -112,14 +146,17 @@ impl FoldersView {
         model: &FoldersModel,
         library: &dyn emusic_ui::library_api::LibraryDataSource,
         playing_id: Option<u64>,
-        changed: emusic_ui::shell::Changes,
     ) {
-        let library_signature = (library.track_count(), library.is_scanning());
-        let rebuild_tree = self.applied_library.get() != library_signature
-            && (changed.intersects(emusic_ui::shell::Changes::LIBRARY)
-                || self.applied_library.get().0 == usize::MAX);
-        if rebuild_tree {
-            self.applied_library.set(library_signature);
+        // Reinstall the tree only when it can actually differ and not while a
+        // scan is streaming batches (the count changes on every batch, which
+        // would reinstall and re-diff a large model each time). The first build
+        // happens immediately; a completed scan and any later non-scan change
+        // rebuild once.
+        let scanning = library.is_scanning();
+        let signature = (scanning, library.track_count());
+        let applied = self.applied_library.get();
+        if applied.is_none() || (!scanning && applied != Some(signature)) {
+            self.applied_library.set(Some(signature));
             self.tree.set_model(DirTreeModel::new(library.dir_tree()));
         }
 
