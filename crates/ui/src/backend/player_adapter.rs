@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use emusic_library::stats::PlayRecord;
 use emusic_player::tracker::TrackerSettings;
-use emusic_player::{PlaybackState, Player, PlayerEvent, RepeatMode as PlayerRepeatMode};
+use emusic_player::{
+    PlaybackState, Player, PlayerEvent, QueueSnapshot, RepeatMode as PlayerRepeatMode,
+};
 
 use super::PlayMessage;
 use crate::player_api::{
@@ -328,10 +330,13 @@ impl PlayerApi for PlayerAdapter {
         self.player.replace_and_play(paths.to_vec(), start_index);
     }
 
-    fn restore_track(&mut self, path: &Path, position: Duration, play: bool) {
+    fn queue_snapshot(&self) -> QueueSnapshot {
+        self.player.queue_snapshot()
+    }
+
+    fn restore_queue(&mut self, snapshot: &QueueSnapshot, position: Duration, play: bool) {
         self.status_message = None;
-        self.player
-            .replace_and_play_at(vec![path.to_path_buf()], 0, position, play);
+        self.player.restore_queue(snapshot, position, play);
     }
 
     fn play_shuffled(&mut self, paths: &[PathBuf], label: &str) {

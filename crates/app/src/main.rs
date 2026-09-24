@@ -59,6 +59,20 @@ fn run_ui(
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("emusic")
         .with_inner_size([1200.0, 760.0]);
+    // Restore the window size/position saved on the previous exit (#214).
+    // `--mock` never persists, so it always starts at the default size.
+    if !cli.mock {
+        let saved = saved_window_geometry();
+        if let Some([width, height]) = saved.size {
+            viewport = viewport.with_inner_size([width, height]);
+        }
+        if let Some([x, y]) = saved.position {
+            viewport = viewport.with_position([x, y]);
+        }
+        if saved.maximized {
+            viewport = viewport.with_maximized(true);
+        }
+    }
     if let Some(icon) = emusic::window_icon::window_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -121,6 +135,16 @@ fn run_ui(
         }),
     )
     .map_err(|err| anyhow::anyhow!("eframe: {err}"))
+}
+
+/// Window geometry saved on the previous exit (#214). Read once here so the
+/// window can be created at the right size/position, before the app loads the
+/// config again for everything else. Defaults on a first launch or when there
+/// is no config directory.
+fn saved_window_geometry() -> emusic_ui::state::WindowGeometry {
+    emusic_ui::config::config_path()
+        .map(|path| emusic_ui::config::load(&path).ui.window)
+        .unwrap_or_default()
 }
 
 /// Native window handle the OS integrations (SMTC, taskbar buttons) bind to

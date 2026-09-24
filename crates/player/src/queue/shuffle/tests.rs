@@ -119,3 +119,23 @@ fn enqueue_appends_to_the_end_of_the_current_cycle() {
     }
     assert_eq!(played.last(), Some(&PathBuf::from("c")));
 }
+
+#[test]
+fn snapshot_round_trips_scope_history_and_bag() {
+    let mut s = source(&["a", "b", "c", "d"]);
+    let first = s.advance().expect("a first track");
+    let second = s.advance().expect("a second track");
+    let expected_next = s.upcoming(1)[0].1.clone();
+
+    let mut restored = ShuffleSource::from_snapshot(s.snapshot("scope"));
+
+    assert_eq!(restored.current(), Some(&second));
+    assert_eq!(restored.repeat_mode(), s.repeat_mode());
+    // Retreat walks the saved history, then advancing replays forward and
+    // draws the same next track from the saved bag.
+    restored.retreat();
+    assert_eq!(restored.current(), Some(&first));
+    restored.advance();
+    restored.advance();
+    assert_eq!(restored.current(), Some(&expected_next));
+}

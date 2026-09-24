@@ -25,7 +25,7 @@ use crate::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupp
 use crate::error::PlayerError;
 use crate::events::{PlaybackState, PlayerEvent};
 use crate::listen::ListenAccounting;
-use crate::queue::{QueueSource, RepeatMode};
+use crate::queue::{Queue, QueueSnapshot, QueueSource, RepeatMode, ShuffleSource};
 
 /// Maximum number of upcoming tracks materialised for the queue panel. Keeps
 /// a 100k-track shuffle scope from ever building a full visible queue.
@@ -268,6 +268,48 @@ impl Player {
         self.emit(PlayerEvent::QueueChanged);
         self.pending_resume = Some(PendingResume { position, play });
         self.open_current_or_stop(path);
+    }
+
+    /// Snapshots the whole queue — an explicit list with its shuffle
+    /// permutation, or a scoped shuffle with its scope, history and remaining
+    /// bag — for the session saved on exit (#214).
+    pub fn queue_snapshot(&self) -> QueueSnapshot {
+        match &self.queue {
+            QueueSource::Explicit(queue) => QueueSnapshot::Explicit(queue.snapshot()),
+            QueueSource::Shuffle(source) => {
+                let label = self.shuffle_scope.clone().unwrap_or_default();
+                QueueSnapshot::Shuffle(source.snapshot(label))
+            }
+        }
+    }
+
+    /// Replaces the queue with `snapshot` and loads its current track at
+    /// `position`, playing when `play` is true and leaving it paused
+    /// otherwise. Used to restore the previous session (#214); an empty or
+    /// unreadable queue simply stops the player.
+    pub fn restore_queue(&mut self, snapshot: &QueueSnapshot, position: Duration, play: bool) {
+        self.drop_current_and_account();
+        match snapshot {
+            QueueSnapshot::Explicit(snapshot) => {
+                self.shuffle_scope = None;
+                self.queue = QueueSource::Explicit(Queue::from_snapshot(snapshot.clone()));
+            }
+            QueueSnapshot::Shuffle(snapshot) => {
+                self.shuffle_scope = Some(snapshot.label.clone());
+                self.queue = QueueSource::Shuffle(ShuffleSource::from_snapshot(snapshot.clone()));
+            }
+        }
+        self.emit(PlayerEvent::QueueChanged);
+        match self.queue.current().cloned() {
+            Some(path) => {
+                self.pending_resume = Some(PendingResume { position, play });
+                self.open_current_or_stop(Some(path));
+            }
+            None => {
+                self.pending_resume = None;
+                self.set_state(PlaybackState::Stopped);
+            }
+        }
     }
 
     /// Starts a lazy shuffled playback over `scope`, showing `label` as the

@@ -37,6 +37,8 @@ impl eframe::App for EguiApp {
         }
 
         self.handle_shortcuts(&ctx);
+        // Remember the window size/position for the next launch (#214).
+        self.record_window_geometry(&ctx);
 
         // Poll backends, apply the frame's queued commands and persist config.
         let tick = self.shell.tick(self.synthetic_now);
@@ -123,5 +125,32 @@ impl eframe::App for EguiApp {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.shell.save_on_exit();
+    }
+}
+
+impl EguiApp {
+    /// Records the live window size/position into the shared state, so the
+    /// config written on exit restores it next launch (#214). A maximized
+    /// window records only the flag, keeping the last normal geometry.
+    fn record_window_geometry(&mut self, ctx: &egui::Context) {
+        let (inner, outer, maximized) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (
+                viewport.inner_rect,
+                viewport.outer_rect,
+                viewport.maximized.unwrap_or(false),
+            )
+        });
+        let window = &mut self.shell.state.window;
+        window.maximized = maximized;
+        if maximized {
+            return;
+        }
+        if let Some(rect) = inner {
+            window.size = Some([rect.width(), rect.height()]);
+        }
+        if let Some(rect) = outer {
+            window.position = Some([rect.min.x, rect.min.y]);
+        }
     }
 }

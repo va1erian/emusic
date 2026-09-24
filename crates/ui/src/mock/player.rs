@@ -6,6 +6,10 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use emusic_player::{
+    ExplicitQueueSnapshot, QueueSnapshot, RepeatMode as PlayerRepeatMode, ShuffleSnapshot,
+};
+
 use crate::library_api::TrackInfo;
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
@@ -19,6 +23,23 @@ fn label(path: &Path) -> String {
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown")
         .to_string()
+}
+
+/// A queue panel entry for `path` (metadata-free, like the real adapter).
+fn queue_entry(path: &Path) -> QueueEntry {
+    QueueEntry {
+        title: label(path),
+        artist: String::new(),
+    }
+}
+
+/// Maps the shell's [`RepeatMode`] onto the player crate's.
+fn to_player_repeat(mode: RepeatMode) -> PlayerRepeatMode {
+    match mode {
+        RepeatMode::Off => PlayerRepeatMode::Off,
+        RepeatMode::All => PlayerRepeatMode::All,
+        RepeatMode::One => PlayerRepeatMode::One,
+    }
 }
 
 const SPECTRUM_BINS: usize = 512;
@@ -35,6 +56,9 @@ pub struct MockPlayer {
     repeat: RepeatMode,
     shuffle: bool,
     queue: Vec<QueueEntry>,
+    /// Upcoming track paths, parallel to `queue`, so a queue snapshot can
+    /// round-trip them (#214). Display-only demo entries have no path here.
+    queue_paths: Vec<PathBuf>,
     module_info: Option<ModuleInfo>,
     spectrum: [f32; SPECTRUM_BINS],
     samples: [f32; SCOPE_SAMPLES],
@@ -82,6 +106,28 @@ impl MockPlayer {
             ..Self::default()
         }
     }
+
+    /// Loads `path` as the current track at `position`, playing when `play`
+    /// is true and paused otherwise (mirrors the real adapter's session
+    /// restore, #214).
+    fn load_current(&mut self, path: &Path, position: Duration, play: bool) {
+        let title = label(path);
+        let path = path.to_string_lossy().into_owned();
+        self.now_playing = Some(NowPlayingInfo {
+            title: title.clone(),
+            artist: String::new(),
+            album: String::new(),
+            path: path.clone(),
+            duration: Duration::ZERO,
+        });
+        self.status = if play {
+            PlaybackStatus::Playing
+        } else {
+            PlaybackStatus::Paused
+        };
+        self.position = position;
+        self.module_info = tracker_module_info(&path, &title, position);
+    }
 }
 
 impl Default for MockPlayer {
@@ -94,6 +140,7 @@ impl Default for MockPlayer {
             repeat: RepeatMode::Off,
             shuffle: false,
             queue: Vec::new(),
+            queue_paths: Vec::new(),
             module_info: None,
             spectrum: [0.0; SPECTRUM_BINS],
             samples: [0.0; SCOPE_SAMPLES],
@@ -197,10 +244,15 @@ impl PlayerApi for MockPlayer {
     fn next(&mut self) {
         if !self.queue.is_empty() {
             let entry = self.queue.remove(0);
+            let path = if self.queue_paths.is_empty() {
+                PathBuf::new()
+            } else {
+                self.queue_paths.remove(0)
+            };
             if let Some(np) = &mut self.now_playing {
                 np.title = entry.title;
                 np.artist = entry.artist;
-                np.path.clear();
+                np.path = path.to_string_lossy().into_owned();
             }
             self.position = Duration::ZERO;
             self.module_info = None;
@@ -254,12 +306,20 @@ impl PlayerApi for MockPlayer {
         }
         for _ in 0..index {
             self.queue.remove(0);
+            if !self.queue_paths.is_empty() {
+                self.queue_paths.remove(0);
+            }
         }
         let entry = self.queue.remove(0);
+        let path = if self.queue_paths.is_empty() {
+            PathBuf::new()
+        } else {
+            self.queue_paths.remove(0)
+        };
         if let Some(np) = &mut self.now_playing {
             np.title = entry.title;
             np.artist = entry.artist;
-            np.path.clear();
+            np.path = path.to_string_lossy().into_owned();
         }
         self.position = Duration::ZERO;
         self.module_info = None;
@@ -268,6 +328,9 @@ impl PlayerApi for MockPlayer {
     fn queue_remove(&mut self, index: usize) {
         if index < self.queue.len() {
             self.queue.remove(index);
+            if index < self.queue_paths.len() {
+                self.queue_paths.remove(index);
+            }
         }
     }
 
@@ -275,94 +338,101 @@ impl PlayerApi for MockPlayer {
         let Some(start) = paths.get(start_index) else {
             return;
         };
-        let path = start.to_string_lossy().into_owned();
-        let title = label(start);
-        self.now_playing = Some(NowPlayingInfo {
-            title: title.clone(),
-            artist: String::new(),
-            album: String::new(),
-            path: path.clone(),
-            duration: Duration::ZERO,
-        });
-        self.status = PlaybackStatus::Playing;
-        self.position = Duration::ZERO;
-        self.module_info = tracker_module_info(&path, &title, Duration::ZERO);
-        self.queue = paths[start_index.saturating_add(1)..]
-            .iter()
-            .map(|p| QueueEntry {
-                title: label(p),
-                artist: String::new(),
-            })
-            .collect();
+        self.load_current(start, Duration::ZERO, true);
+        self.queue_paths = paths[start_index.saturating_add(1)..].to_vec();
+        self.queue = self.queue_paths.iter().map(|p| queue_entry(p)).collect();
+        self.shuffle_scope = None;
     }
 
-    fn restore_track(&mut self, path: &Path, position: Duration, play: bool) {
-        let title = label(path);
-        let path = path.to_string_lossy().into_owned();
-        self.now_playing = Some(NowPlayingInfo {
-            title: title.clone(),
-            artist: String::new(),
-            album: String::new(),
-            path: path.clone(),
-            duration: Duration::ZERO,
-        });
-        self.status = if play {
-            PlaybackStatus::Playing
+    fn queue_snapshot(&self) -> QueueSnapshot {
+        let mut items: Vec<PathBuf> = Vec::new();
+        if let Some(np) = &self.now_playing {
+            items.push(PathBuf::from(&np.path));
+        }
+        let current_len = items.len();
+        items.extend(self.queue_paths.iter().cloned());
+        let total = items.len();
+        let repeat = to_player_repeat(self.repeat);
+        if let Some(scope) = &self.shuffle_scope {
+            QueueSnapshot::Shuffle(ShuffleSnapshot {
+                items,
+                label: scope.clone(),
+                history: if current_len == 0 {
+                    Vec::new()
+                } else {
+                    vec![0]
+                },
+                cursor: 0,
+                bag: (current_len..total).collect(),
+                repeat,
+            })
         } else {
-            PlaybackStatus::Paused
+            QueueSnapshot::Explicit(ExplicitQueueSnapshot {
+                order: (0..items.len()).collect(),
+                pos: (current_len > 0).then_some(0),
+                items,
+                shuffle: self.shuffle,
+                repeat,
+            })
+        }
+    }
+
+    fn restore_queue(&mut self, snapshot: &QueueSnapshot, position: Duration, play: bool) {
+        let (items, pos) = match snapshot {
+            QueueSnapshot::Explicit(snapshot) => {
+                (snapshot.items.clone(), snapshot.pos.unwrap_or(0))
+            }
+            QueueSnapshot::Shuffle(snapshot) => (snapshot.items.clone(), 0),
         };
-        self.position = position;
-        self.module_info = tracker_module_info(&path, &title, position);
-        self.queue = Vec::new();
-        self.shuffle_scope = None;
+        let Some(current) = items.get(pos) else {
+            self.now_playing = None;
+            self.queue.clear();
+            self.queue_paths.clear();
+            self.status = PlaybackStatus::Stopped;
+            self.shuffle_scope = None;
+            return;
+        };
+        self.load_current(current, position, play);
+        self.queue_paths = items[pos.saturating_add(1)..].to_vec();
+        self.queue = self.queue_paths.iter().map(|p| queue_entry(p)).collect();
+        match snapshot {
+            QueueSnapshot::Shuffle(snapshot) => {
+                self.shuffle = true;
+                self.shuffle_scope = Some(snapshot.label.clone());
+            }
+            QueueSnapshot::Explicit(snapshot) => {
+                self.shuffle = snapshot.shuffle;
+                self.shuffle_scope = None;
+            }
+        }
         self.status_message = None;
     }
 
     fn play_next(&mut self, path: &Path) {
-        self.queue.insert(
-            0,
-            QueueEntry {
-                title: label(path),
-                artist: String::new(),
-            },
-        );
+        self.queue.insert(0, queue_entry(path));
+        self.queue_paths.insert(0, path.to_path_buf());
     }
 
     fn play_shuffled(&mut self, paths: &[PathBuf], scope_label: &str) {
         let Some(first) = paths.first() else {
             return;
         };
-        let title = label(first);
-        let path = first.to_string_lossy().into_owned();
-        self.now_playing = Some(NowPlayingInfo {
-            title: title.clone(),
-            artist: String::new(),
-            album: String::new(),
-            path: path.clone(),
-            duration: Duration::ZERO,
-        });
-        self.status = PlaybackStatus::Playing;
-        self.position = Duration::ZERO;
-        self.module_info = tracker_module_info(&path, &title, Duration::ZERO);
-        self.queue = paths
+        self.load_current(first, Duration::ZERO, true);
+        self.queue_paths = paths
             .iter()
             .skip(1)
             .take(SHUFFLE_PREVIEW)
-            .map(|p| QueueEntry {
-                title: label(p),
-                artist: String::new(),
-            })
+            .cloned()
             .collect();
+        self.queue = self.queue_paths.iter().map(|p| queue_entry(p)).collect();
         self.shuffle = true;
         self.shuffle_scope = Some(scope_label.to_string());
         self.status_message = None;
     }
 
     fn enqueue(&mut self, path: &Path) {
-        self.queue.push(QueueEntry {
-            title: label(path),
-            artist: String::new(),
-        });
+        self.queue.push(queue_entry(path));
+        self.queue_paths.push(path.to_path_buf());
     }
 }
 

@@ -150,3 +150,37 @@ fn enqueue_adds_to_the_end_of_navigation_order_when_not_shuffled() {
     assert_eq!(q.advance(), Some(PathBuf::from("b")));
     assert_eq!(q.advance(), Some(PathBuf::from("c")));
 }
+
+#[test]
+fn snapshot_round_trips_items_order_and_position() {
+    let mut q = seeded_queue();
+    q.replace(paths(&["a", "b", "c", "d"]), 2);
+    q.set_shuffle(true);
+
+    let restored = Queue::from_snapshot(q.snapshot());
+
+    assert_eq!(restored.current(), q.current());
+    assert_eq!(
+        restored.iter_order().collect::<Vec<_>>(),
+        q.iter_order().collect::<Vec<_>>(),
+        "the shuffled navigation order must survive the round-trip"
+    );
+}
+
+#[test]
+fn from_snapshot_repairs_an_invalid_permutation_and_position() {
+    let mut q = seeded_queue();
+    q.replace(paths(&["a", "b", "c"]), 0);
+    let mut snapshot = q.snapshot();
+    snapshot.order = vec![0, 0, 99];
+    snapshot.pos = Some(9);
+
+    let repaired = Queue::from_snapshot(snapshot);
+
+    assert_eq!(
+        repaired.iter_order().collect::<Vec<_>>(),
+        vec![Path::new("a"), Path::new("b"), Path::new("c")],
+        "an invalid permutation falls back to list order"
+    );
+    assert!(repaired.current().is_none(), "an invalid pos is dropped");
+}

@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use emusic_player::QueueSnapshot;
 use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
@@ -170,13 +171,20 @@ pub trait PlayerApi {
     /// way.
     fn replace_and_play(&mut self, paths: &[PathBuf], start_index: usize);
 
-    /// Loads `path` at `position` and either starts playing it or leaves it
-    /// paused, without disturbing the queue beyond a single-item one.
+    /// Snapshots the whole queue — explicit list (with its shuffle
+    /// permutation) or scoped shuffle (scope, history and remaining bag) —
+    /// for the session saved on exit (#214).
+    fn queue_snapshot(&self) -> QueueSnapshot;
+
+    /// Replaces the queue with `snapshot` and loads its current track at
+    /// `position`, playing when `play` is true and leaving it paused
+    /// otherwise.
     ///
-    /// Used to reopen the previous session on startup (#190): the seek is
-    /// applied once the (off-thread) open completes, and a path that can no
-    /// longer be opened is simply ignored.
-    fn restore_track(&mut self, path: &Path, position: Duration, play: bool);
+    /// Used to reopen the previous session on startup (#190, #214): the seek
+    /// and play/pause intent are applied once the (off-thread) open
+    /// completes, and a track that can no longer be opened is simply
+    /// ignored.
+    fn restore_queue(&mut self, snapshot: &QueueSnapshot, position: Duration, play: bool);
 
     /// Starts a lazy shuffled playback over `paths`, showing `label` as the
     /// active scope (e.g. `"Album — Purple Motion"`). The player pulls tracks

@@ -9,11 +9,32 @@ use std::time::Duration;
 use emusic_player::tracker::{
     Emulation, EndBehavior, Interpolation, Ramping, Surround, TrackerSettings,
 };
+use emusic_player::{ExplicitQueueSnapshot, QueueSnapshot, RepeatMode as PlayerRepeatMode};
 
-use crate::config::{Config, LastPlayed, load, save};
+use crate::config::{Config, PlaybackSession, UiState, load, save};
 use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
-use crate::state::{Accent, AppState, PanelVisibility, Rgb, Theme, View, VisualizerMode};
+use crate::state::{
+    Accent, AppState, PanelVisibility, Rgb, Theme, View, VisualizerMode, WindowGeometry,
+};
+
+/// A single-track explicit queue snapshot, for session tests.
+fn one_track_queue(path: &str) -> QueueSnapshot {
+    QueueSnapshot::Explicit(ExplicitQueueSnapshot {
+        items: vec![PathBuf::from(path)],
+        order: vec![0],
+        pos: Some(0),
+        shuffle: false,
+        repeat: PlayerRepeatMode::Off,
+    })
+}
+
+/// A player with `path` loaded at `position`, playing when `play` is true.
+fn player_with_session(path: &str, position: Duration, play: bool) -> MockPlayer {
+    let mut player = MockPlayer::default();
+    player.restore_queue(&one_track_queue(path), position, play);
+    player
+}
 
 /// Unique scratch directory per test, so parallel tests never collide and
 /// nothing is written to the real `%APPDATA%`.
@@ -52,11 +73,21 @@ fn non_default_config() -> Config {
         column_browser_height: 222.0,
         last_view: View::MostPlayed,
         resume_playback: false,
-        last_played: Some(LastPlayed {
-            path: PathBuf::from(r"C:\music\song.flac"),
+        autoplay_on_restore: true,
+        last_session: Some(PlaybackSession {
+            queue: one_track_queue(r"C:\music\song.flac"),
             position_secs: 42.5,
-            playing: true,
         }),
+        ui: UiState {
+            window: WindowGeometry {
+                size: Some([1000.0, 700.0]),
+                position: Some([10.0, 20.0]),
+                maximized: true,
+            },
+            search_query: "ambient".to_string(),
+            music_selection: vec![1, 2, 3],
+            ..UiState::default()
+        },
         visualizer_enabled: true,
         visualizer: VisualizerMode::Oscilloscope,
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
@@ -137,10 +168,12 @@ fn missing_fields_fall_back_to_defaults() {
         Config::default().column_browser_height
     );
     assert_eq!(config.last_view, View::default());
-    // Resuming is on by default, and an older config has no session to
-    // restore.
+    // Resuming is on by default, autoplay is off, and an older config has no
+    // session to restore.
     assert!(config.resume_playback);
-    assert_eq!(config.last_played, None);
+    assert!(!config.autoplay_on_restore);
+    assert_eq!(config.last_session, None);
+    assert_eq!(config.ui, UiState::default());
     // The visualizer is opt-in, so an older config without the field keeps it
     // off (and thus keeps the app from repainting continuously while playing).
     assert!(!config.visualizer_enabled);
@@ -236,46 +269,35 @@ fn save_creates_missing_directories() {
 
 #[test]
 fn capture_leaves_the_volatile_session_out_of_the_settings_snapshot() {
-    let mut player = MockPlayer::default();
-    player.restore_track(
-        Path::new(r"C:\music\song.flac"),
-        Duration::from_secs(12),
-        true,
-    );
+    let player = player_with_session(r"C:\music\song.flac", Duration::from_secs(12), true);
 
     let config = Config::capture(&AppState::default(), &player);
 
     // The session position changes every frame, so it must not take part in
     // the per-frame dirty check.
-    assert_eq!(config.last_played, None);
+    assert_eq!(config.last_session, None);
     assert!(config.resume_playback);
 }
 
 #[test]
-fn last_played_capture_reads_the_player() {
-    let mut player = MockPlayer::default();
-    player.restore_track(
-        Path::new(r"C:\music\song.flac"),
-        Duration::from_secs(7),
-        false,
-    );
+fn session_capture_reads_the_whole_queue() {
+    let player = player_with_session(r"C:\music\song.flac", Duration::from_secs(7), false);
 
-    let session = LastPlayed::capture(&player).expect("a loaded track is a session");
+    let session = PlaybackSession::capture(&player).expect("a loaded track is a session");
 
-    assert_eq!(session.path(), Path::new(r"C:\music\song.flac"));
     assert_eq!(session.position(), Duration::from_secs(7));
-    assert!(!session.playing);
-    // Nothing loaded means nothing to resume.
-    assert_eq!(LastPlayed::capture(&MockPlayer::default()), None);
+    assert!(!session.queue.is_empty());
+    // Nothing loaded and an empty queue means nothing to resume.
+    assert_eq!(PlaybackSession::capture(&MockPlayer::default()), None);
 }
 
 #[test]
-fn apply_to_player_restores_the_saved_session() {
+fn apply_to_player_restores_the_saved_session_and_autoplays() {
     let config = Config {
-        last_played: Some(LastPlayed {
-            path: PathBuf::from(r"C:\music\song.flac"),
+        autoplay_on_restore: true,
+        last_session: Some(PlaybackSession {
+            queue: one_track_queue(r"C:\music\song.flac"),
             position_secs: 12.0,
-            playing: true,
         }),
         ..Config::default()
     };
@@ -292,13 +314,30 @@ fn apply_to_player_restores_the_saved_session() {
 }
 
 #[test]
+fn apply_to_player_restores_the_saved_session_paused_without_autoplay() {
+    let config = Config {
+        autoplay_on_restore: false,
+        last_session: Some(PlaybackSession {
+            queue: one_track_queue(r"C:\music\song.flac"),
+            position_secs: 12.0,
+        }),
+        ..Config::default()
+    };
+    let mut player = MockPlayer::default();
+
+    config.apply_to_player(&mut player);
+
+    assert_eq!(player.status(), PlaybackStatus::Paused);
+    assert_eq!(player.position(), Duration::from_secs(12));
+}
+
+#[test]
 fn apply_to_player_skips_the_session_when_resuming_is_off() {
     let config = Config {
         resume_playback: false,
-        last_played: Some(LastPlayed {
-            path: PathBuf::from(r"C:\music\song.flac"),
+        last_session: Some(PlaybackSession {
+            queue: one_track_queue(r"C:\music\song.flac"),
             position_secs: 12.0,
-            playing: true,
         }),
         ..Config::default()
     };

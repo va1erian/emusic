@@ -89,6 +89,23 @@ impl SelectionState {
     pub fn retain_existing(&mut self, existing: &HashSet<u64>) {
         self.selected.retain(|id| existing.contains(id));
     }
+
+    /// The selected track ids in a stable order, for the UI state saved on
+    /// exit (#214).
+    pub fn selected_ids_sorted(&self) -> Vec<u64> {
+        let mut ids: Vec<u64> = self.selected.iter().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Replaces the selection with `ids`, dropping the focus/anchor row
+    /// indices, which don't survive a restart (#214). Stale ids are pruned
+    /// by [`Self::retain_existing`] once the library has loaded.
+    pub fn restore_selected(&mut self, ids: impl IntoIterator<Item = u64>) {
+        self.selected = ids.into_iter().collect();
+        self.anchor = None;
+        self.focus = None;
+    }
 }
 
 #[cfg(test)]
