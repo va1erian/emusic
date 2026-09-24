@@ -10,6 +10,7 @@ name = "emusic_sid"
 path = "src/lib.rs"
 
 [dependencies]
+md-5 = "0.10"
 thiserror = "2"
 
 [build-dependencies]

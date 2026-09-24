@@ -114,12 +114,19 @@ impl Player {
                 if !play && let Err(error) = channel.pause() {
                     self.emit(PlayerEvent::Error(error));
                 }
-                let duration = channel.duration().ok();
+                // A backend that can't report a length must not have a
+                // placeholder total shown as if it were real (#192).
+                let capabilities = channel.capabilities();
+                let duration = capabilities
+                    .duration_known
+                    .then(|| channel.duration().ok())
+                    .flatten();
                 self.current = Some(CurrentTrack {
                     channel,
                     _end_guard: guard,
                     path: path.clone(),
                     duration,
+                    capabilities,
                 });
                 self.last_tick = play.then(Instant::now);
                 self.set_state(if play {

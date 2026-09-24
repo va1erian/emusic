@@ -137,15 +137,23 @@ fn toggle_button_bool(
     }
 }
 
+/// Seek slider plus elapsed and (when known) total time.
+///
+/// SID tunes and other channels whose backend ignores seeks get a visibly
+/// disabled slider with a tooltip instead of a drag that silently snaps back;
+/// a track with no known length (#192) shows elapsed time only, never a fake
+/// total.
 fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
     let position = player.position().as_secs_f64();
-    let total = player.duration().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    let total = player.duration();
+    let seek_supported = player.seek_supported();
     let elapsed = format_time(position);
-    let remaining = format_time(total);
+    let total_text = total.map(|d| format_time(d.as_secs_f64()));
 
-    // Stretch the slider across the centre section: reserve the two time
-    // labels plus the item spacing around them and give the rest to the
-    // slider, so the whole bar uses the available width.
+    // Stretch the slider across the centre section: reserve the time labels
+    // plus the item spacing around them and give the rest to the slider, so
+    // the whole bar uses the available width. With no total there is only the
+    // elapsed label to reserve.
     let spacing = ui.spacing().item_spacing.x;
     let font_id = egui::TextStyle::Body.resolve(ui.style());
     let labels_width = ui.fonts_mut(|fonts| {
@@ -155,20 +163,36 @@ fn seek_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
                 .size()
                 .x
         };
-        width(&elapsed) + width(&remaining)
+        let mut labels = width(&elapsed);
+        if let Some(text) = &total_text {
+            labels += width(text);
+        }
+        labels
     });
-    let slider_width = (ui.available_width() - labels_width - 2.0 * spacing).max(80.0);
+    let label_count = if total_text.is_some() { 2.0 } else { 1.0 };
+    let slider_width = (ui.available_width() - labels_width - label_count * spacing).max(80.0);
 
     ui.label(&elapsed);
     let mut value = position;
     ui.spacing_mut().slider_width = slider_width;
-    let slider = ui.add(egui::Slider::new(&mut value, 0.0..=total.max(0.001)).show_value(false));
-    if slider.changed() {
+    // Without a total, a nominal range keeps the (disabled) thumb from
+    // collapsing; the position is still shown by the elapsed label.
+    let range_end = total.map_or_else(|| position.max(1.0), |d| d.as_secs_f64().max(0.001));
+    let slider = ui.add_enabled(
+        seek_supported,
+        egui::Slider::new(&mut value, 0.0..=range_end).show_value(false),
+    );
+    if seek_supported && slider.changed() {
         state.push(Command::PlayerSeek(std::time::Duration::from_secs_f64(
             value,
         )));
     }
-    ui.label(&remaining);
+    if !seek_supported {
+        slider.on_hover_text("Seeking isn't available for this track");
+    }
+    if let Some(total_text) = total_text {
+        ui.label(&total_text);
+    }
 }
 
 fn volume_area(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {

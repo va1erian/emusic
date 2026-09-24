@@ -34,7 +34,9 @@ mod engine;
 pub mod error;
 mod ffi;
 pub mod header;
+pub mod songlengths;
 
 pub use engine::{MAX_SAMPLE_RATE, MIN_SAMPLE_RATE, SidConfig, SidPlayer};
-pub use error::SidError;
+pub use error::{SidError, SongLengthsError};
 pub use header::{ChipModel, Clock, SidFormat, SidHeader};
+pub use songlengths::{SongLengths, resolve_database_path};
