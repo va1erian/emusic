@@ -106,7 +106,7 @@ pub struct AppState {
     pub database_info_open: bool,
     /// Persistent state for the right-hand now-playing panel (artwork cache,
     /// collapsible section flags, ...).
-    pub now_playing: crate::panels::now_playing::PanelState,
+    pub now_playing: crate::views::now_playing::NowPlayingView,
     /// Tracker module playback settings (Settings → Tracker playback),
     /// applied live to the player and persisted.
     pub tracker_settings: TrackerSettings,
@@ -157,7 +157,7 @@ impl Default for AppState {
             pending: Vec::new(),
             tag_editor: None,
             database_info_open: false,
-            now_playing: crate::panels::now_playing::PanelState::default(),
+            now_playing: crate::views::now_playing::NowPlayingView::default(),
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
             recent_soundfonts: Vec::new(),

@@ -1,11 +1,11 @@
 //! Real now-playing right panel: artwork, rich metadata, tracker module
 //! info and the upcoming queue.
 //!
-//! Split into focused submodules to keep each file small. The panel's
-//! cross-frame state lives in [`emusic_ui::panels::now_playing::PanelState`]
-//! on the shell (#97); the artwork texture cache is egui-bound (it owns GPU
-//! handles via [`EguiImageSink`](crate::image_sink::EguiImageSink), #96) and
-//! is passed in by the frontend.
+//! The display data and intents live in the [`NowPlayingView`] model
+//! (`emusic-ui`); this module only draws. The artwork texture cache is
+//! egui-bound (it owns GPU handles via
+//! [`EguiImageSink`](crate::image_sink::EguiImageSink), #96) and is passed in
+//! by the frontend.
 
 pub(crate) mod artwork;
 mod links;
@@ -14,6 +14,9 @@ mod module_info;
 pub(crate) mod queue;
 
 use eframe::egui;
+
+use emusic_ui::views::Commands;
+use emusic_ui::views::now_playing::{NowPlayingMsg, NowPlayingView};
 
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
@@ -38,6 +41,9 @@ pub fn show(
     library: &dyn LibraryDataSource,
     player: &dyn PlayerApi,
 ) {
+    state.now_playing.refresh(player, library);
+    let mut messages: Vec<NowPlayingMsg> = Vec::new();
+
     let max_width =
         (ui.available_width() - MIN_CENTRAL_WIDTH).clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
     egui::Panel::right("right_panel")
@@ -54,45 +60,55 @@ pub fn show(
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.add_space(4.0);
-
-                    let np = player.now_playing();
-                    let track = np.and_then(|info| library.track_by_path(&info.path));
-
-                    artwork::show(ui, artwork, np, track);
-
-                    match (np, track) {
-                        (Some(np), Some(track)) => {
-                            ui.add_space(8.0);
-                            metadata::show(ui, np, track, library, state);
-
-                            if let Some(module) = player.module_info() {
-                                ui.add_space(8.0);
-                                ui.separator();
-                                module_info::show(ui, module);
-                            }
-                        }
-                        (Some(np), None) => {
-                            // A track is loaded but not present in the library
-                            // yet (e.g. a dragged-in file). Show the basic info
-                            // we have.
-                            ui.add_space(8.0);
-                            metadata::show_basic(ui, np);
-                        }
-                        (None, _) => {
-                            ui.add_space(8.0);
-                            ui.label(egui::RichText::new("Nothing playing").weak());
-                        }
-                    }
-
-                    ui.add_space(8.0);
-                    ui.separator();
-                    queue::show(ui, state, player);
+                    body(ui, &state.now_playing, artwork, &mut messages);
                 });
         });
+
+    let mut out = Commands::new();
+    for msg in messages {
+        state.now_playing.update(msg, &mut out);
+    }
+    state.pending.extend(out.into_vec());
+}
+
+/// Draws the artwork, metadata/module info and queue from the model.
+pub(crate) fn body(
+    ui: &mut egui::Ui,
+    view: &NowPlayingView,
+    artwork: &mut ArtworkCache,
+    messages: &mut Vec<NowPlayingMsg>,
+) {
+    artwork::show(ui, artwork, view);
+
+    match (view.now_playing(), view.track()) {
+        (Some(np), Some(track)) => {
+            ui.add_space(8.0);
+            metadata::show(ui, np, track, view, messages);
+
+            if let Some(module) = view.module() {
+                ui.add_space(8.0);
+                ui.separator();
+                module_info::show(ui, &module);
+            }
+        }
+        (Some(np), None) => {
+            // A track is loaded but not present in the library yet (e.g. a
+            // dragged-in file). Show the basic info we have.
+            ui.add_space(8.0);
+            metadata::show_basic(ui, np);
+        }
+        (None, _) => {
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Nothing playing").weak());
+        }
+    }
+
+    ui.add_space(8.0);
+    ui.separator();
+    queue::show(ui, view, messages);
 }
 
 /// Format a duration as `m:ss`.
 pub fn format_duration(d: std::time::Duration) -> String {
-    let secs = d.as_secs();
-    format!("{}:{:02}", secs / 60, secs % 60)
+    emusic_ui::views::now_playing::format_duration(d)
 }

@@ -1,12 +1,11 @@
 //! Upcoming queue list in the now-playing panel.
+//!
+//! The preview rows and the jump/remove intents live in the
+//! [`NowPlayingView`] model (`emusic-ui`); this only draws them.
 
 use eframe::egui;
 
-use crate::player_api::PlayerApi;
-use crate::state::{AppState, Command};
-
-/// Maximum number of upcoming tracks to show.
-const PREVIEW_LIMIT: usize = 20;
+use emusic_ui::views::now_playing::{NowPlayingMsg, NowPlayingView};
 
 /// Show the upcoming queue with double-click jump and context-menu remove.
 ///
@@ -14,41 +13,37 @@ const PREVIEW_LIMIT: usize = 20;
 /// Now Playing view each wrap their whole body in a scroll area), so this is
 /// a plain list. Each row spans the full available width so the whole strip
 /// is clickable.
-pub fn show(ui: &mut egui::Ui, state: &mut AppState, player: &dyn PlayerApi) {
+pub fn show(ui: &mut egui::Ui, view: &NowPlayingView, messages: &mut Vec<NowPlayingMsg>) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("UP NEXT").small().weak());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                egui::RichText::new(format!("{} tracks", player.queue().len()))
-                    .small()
-                    .weak(),
-            );
+            ui.label(egui::RichText::new(view.queue_count_text()).small().weak());
         });
     });
 
-    for (i, entry) in player.queue().iter().enumerate().take(PREVIEW_LIMIT) {
+    for row in view.queue() {
         let response = ui
             .horizontal(|ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
-                    egui::RichText::new(format!("{}.", i + 1))
+                    egui::RichText::new(format!("{}.", row.number))
                         .monospace()
                         .weak(),
                 );
-                ui.label(&entry.title);
-                ui.label(egui::RichText::new(format!("— {}", entry.artist)).weak());
+                ui.label(&row.title);
+                ui.label(egui::RichText::new(format!("— {}", row.artist)).weak());
             })
             .response;
 
         response.context_menu(|ui| {
             if ui.button("Remove").clicked() {
-                state.push(Command::PlayerQueueRemove(i));
+                messages.push(NowPlayingMsg::QueueRemove(row.index));
                 ui.close();
             }
         });
 
         if response.double_clicked() {
-            state.push(Command::PlayerQueueJump(i));
+            messages.push(NowPlayingMsg::QueueJump(row.index));
         }
     }
 }
