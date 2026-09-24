@@ -1,44 +1,32 @@
-//! "Albums" view (#17): a virtualized grid of cover tiles, backed by an
-//! off-thread thumbnail cache, with the selected album's tracks shown in the
-//! shared track table below.
+//! egui renderer for the "Albums" view (#17, #100): a virtualized grid of
+//! cover tiles, backed by an off-thread thumbnail cache, with the selected
+//! album's tracks shown in the shared track table below.
 //!
-//! The grid is virtualized by `ScrollArea::show_rows`, which computes the
-//! visible row range from the scroll offset, so only on-screen tiles are laid
+//! All state and logic live in [`AlbumGrid`] (`emusic-ui`); this module only
+//! draws. The grid is virtualized by `ScrollArea::show_rows` over the rows
+//! the model computes (`columns_for`/`rows`), so only on-screen tiles are laid
 //! out and only those request their cover art.
 //!
-//! Album identity is the (name, artist) pair, since [`AlbumInfo`] carries no
-//! stable id yet. A track belongs to an album when its album tag matches and
-//! its artist tag matches (or is empty, which is how missing tags surface in
-//! the mock data).
-//!
-//! The view state is toolkit-agnostic (`emusic_ui`, #97); the thumbnail cache
-//! is egui-bound (it owns GPU handles via [`EguiImageSink`], #96) and is
-//! passed in by the frontend.
+//! The thumbnail cache is egui-bound (it owns GPU handles via
+//! [`EguiImageSink`], #96) and is passed in by the frontend.
 
 #[cfg(test)]
 mod tests;
 pub(crate) mod thumbs;
 mod tile;
 
-use std::collections::HashMap;
-
 use eframe::egui;
 
 use self::thumbs::ThumbnailCache;
 use super::EguiView;
 use crate::image_sink::EguiImageSink;
-use crate::library_api::{AlbumInfo, LibraryDataSource};
+use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::player_api::PlayerApi;
-use crate::state::{AppState, Command};
-pub use emusic_ui::views::album_grid::AlbumGridState;
-use emusic_ui::views::album_grid::catalog::{AlbumMeta, album_meta, album_tracks, sorted_albums};
+use crate::state::AppState;
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
+use emusic_ui::views::album_grid::{AlbumGrid, AlbumGridMsg};
 use emusic_ui::views::{Commands, Ctx};
 
-/// Tile edge-length bounds for the size slider, in pixels.
-pub const MIN_TILE_SIZE: f32 = 96.0;
-/// Maximum cover edge length selected with the size slider.
-pub const MAX_TILE_SIZE: f32 = 256.0;
 /// Smallest height the cover grid is given, whatever space is left.
 const MIN_GRID_HEIGHT: f32 = 160.0;
 
@@ -55,35 +43,42 @@ pub fn show(
         return;
     }
 
-    let meta = album_meta(library);
     let playing_id = currently_playing_id(library, player);
     let mut commands = Commands::new();
 
     let grid = &mut state.album_grid;
-    let albums = sorted_albums(library, &meta, grid.sort);
+    let mut control_msgs = Vec::new();
+    grid.refresh(&Ctx::with_library(&[], playing_id, library));
 
-    controls(ui, grid, albums.len());
+    let album_count = grid.len();
+    controls(ui, grid, album_count, &mut control_msgs);
+    let control_cx = Ctx::with_library(&[], playing_id, library);
+    for msg in control_msgs {
+        grid.update(msg, &control_cx, &mut commands);
+    }
     ui.separator();
 
-    let selected_tracks = selected_album(grid, &albums).map(|album| album_tracks(library, album));
+    let selected_ids = grid.selected_track_ids().to_vec();
+    let selected_tracks: Vec<&TrackInfo> = selected_ids
+        .iter()
+        .filter_map(|id| library.tracks().iter().find(|track| track.id == *id))
+        .collect();
+
     // Give the grid a definite height so its virtualization only lays out (and
     // loads covers for) the visible tiles.
     let visible_height = ui.available_height().max(MIN_GRID_HEIGHT);
-    match selected_tracks {
-        Some(tracks) => {
-            let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
-            ui.allocate_ui(egui::vec2(ui.available_width(), grid_height), |ui| {
-                grid_view(ui, grid, thumbs, &albums, &meta, library, &mut commands);
-            });
-            ui.separator();
-            let cx = Ctx::new(&tracks, playing_id);
-            grid.table.show(ui, "album_table", &cx, &mut commands);
-        }
-        None => {
-            ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
-                grid_view(ui, grid, thumbs, &albums, &meta, library, &mut commands);
-            });
-        }
+    if selected_tracks.is_empty() {
+        ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
+            grid_view(ui, grid, thumbs, library, playing_id, &mut commands);
+        });
+    } else {
+        let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
+        ui.allocate_ui(egui::vec2(ui.available_width(), grid_height), |ui| {
+            grid_view(ui, grid, thumbs, library, playing_id, &mut commands);
+        });
+        ui.separator();
+        let cx = Ctx::new(&selected_tracks, playing_id);
+        grid.table.show(ui, "album_table", &cx, &mut commands);
     }
 
     state.pending.extend(commands.into_vec());
@@ -99,7 +94,15 @@ fn empty_state(ui: &mut egui::Ui) {
 }
 
 /// Sort menu, cover-size slider and the selected-album close button.
-fn controls(ui: &mut egui::Ui, grid: &mut AlbumGridState, album_count: usize) {
+/// Records intents as messages so the model stays the source of truth.
+fn controls(
+    ui: &mut egui::Ui,
+    grid: &AlbumGrid,
+    album_count: usize,
+    messages: &mut Vec<AlbumGridMsg>,
+) {
+    use emusic_ui::views::album_grid::{MAX_TILE_SIZE, MIN_TILE_SIZE};
+
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("{album_count} albums")).weak());
         ui.separator();
@@ -108,18 +111,27 @@ fn controls(ui: &mut egui::Ui, grid: &mut AlbumGridState, album_count: usize) {
             .selected_text(grid.sort.label())
             .show_ui(ui, |ui| {
                 for sort in AlbumSort::ALL {
-                    ui.selectable_value(&mut grid.sort, sort, sort.label());
+                    if ui
+                        .selectable_label(grid.sort == sort, sort.label())
+                        .clicked()
+                    {
+                        messages.push(AlbumGridMsg::SetSort(sort));
+                    }
                 }
             });
         ui.separator();
         ui.label("Size");
-        ui.add(
-            egui::Slider::new(&mut grid.tile_size, MIN_TILE_SIZE..=MAX_TILE_SIZE).show_value(false),
-        );
+        let mut tile_size = grid.tile_size;
+        if ui
+            .add(egui::Slider::new(&mut tile_size, MIN_TILE_SIZE..=MAX_TILE_SIZE).show_value(false))
+            .changed()
+        {
+            messages.push(AlbumGridMsg::SetTileSize(tile_size));
+        }
         if grid.selected.is_some() {
             ui.separator();
             if ui.button("Close album").clicked() {
-                grid.selected = None;
+                messages.push(AlbumGridMsg::CloseAlbum);
             }
         }
     });
@@ -130,23 +142,23 @@ fn controls(ui: &mut egui::Ui, grid: &mut AlbumGridState, album_count: usize) {
 /// the whole album.
 fn grid_view(
     ui: &mut egui::Ui,
-    grid: &mut AlbumGridState,
+    grid: &mut AlbumGrid,
     thumbs: &mut ThumbnailCache,
-    albums: &[&AlbumInfo],
-    meta: &HashMap<AlbumKey, AlbumMeta>,
     library: &dyn LibraryDataSource,
+    playing_id: Option<u64>,
     commands: &mut Commands,
 ) {
     let mut sink = EguiImageSink::new(ui.ctx().clone(), "album_thumb");
     thumbs.drain(&mut sink);
 
+    let meta = emusic_ui::views::album_grid::album_meta(library);
     let spacing = ui.spacing().item_spacing.x;
     let tile = grid.tile_size;
     // Reserve the vertical scroll bar's width, or the last column of each row
     // overflows the scroll area and triggers a horizontal scroll bar.
     let width = ui.available_width() - ui.spacing().scroll.allocated_width();
-    let columns = (((width + spacing) / (tile + spacing)).floor() as usize).max(1);
-    let rows = albums.len().div_ceil(columns);
+    let columns = grid.columns_for(width, spacing);
+    let rows = grid.rows(columns);
 
     egui::ScrollArea::vertical()
         .id_salt("album_grid_scroll")
@@ -155,28 +167,40 @@ fn grid_view(
             for row in row_range {
                 ui.horizontal(|ui| {
                     for column in 0..columns {
-                        let Some(album) = albums.get(row * columns + column) else {
+                        let Some(index) = grid.tile_index(row, column, columns) else {
                             break;
                         };
-                        let key = AlbumKey::of(album);
-                        let selected = grid.selected.as_ref() == Some(&key);
+                        let Some(view) = grid.tile(index) else {
+                            break;
+                        };
+                        let key = AlbumKey::of(view.album);
                         let texture = meta
                             .get(&key)
                             .and_then(|meta| thumbs.get(&mut sink, &meta.art_path));
-                        let response = tile::show(ui, album, texture, tile, selected);
+                        let response = tile::show(ui, view.album, texture, tile, view.selected);
                         if response.clicked() {
-                            grid.selected = Some(key);
+                            grid.selected = Some(key.clone());
                         }
                         if response.double_clicked() {
-                            let ids: Vec<u64> =
-                                album_tracks(library, album).iter().map(|t| t.id).collect();
-                            if !ids.is_empty() {
-                                commands.push(Command::PlayAlbum(ids));
-                            }
+                            let cx = Ctx::with_library(&[], playing_id, library);
+                            grid.update(
+                                emusic_ui::views::album_grid::AlbumGridMsg::TileActivated(
+                                    key.clone(),
+                                ),
+                                &cx,
+                                commands,
+                            );
                         }
                         response.context_menu(|ui| {
                             if ui.button("Shuffle play").clicked() {
-                                commands.push(crate::shuffle::album(library, album));
+                                let cx = Ctx::with_library(&[], playing_id, library);
+                                grid.update(
+                                    emusic_ui::views::album_grid::AlbumGridMsg::Shuffle(
+                                        key.clone(),
+                                    ),
+                                    &cx,
+                                    commands,
+                                );
                                 ui.close();
                             }
                         });
@@ -184,15 +208,6 @@ fn grid_view(
                 });
             }
         });
-}
-
-/// The selected album's entry in the current sort order, if it still exists.
-fn selected_album<'a>(grid: &AlbumGridState, albums: &[&'a AlbumInfo]) -> Option<&'a AlbumInfo> {
-    let key = grid.selected.as_ref()?;
-    albums
-        .iter()
-        .copied()
-        .find(|album| AlbumKey::of(album) == *key)
 }
 
 fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {

@@ -7,7 +7,7 @@
 //! [`Command`]s the model emits, so a model never touches `AppState` and can
 //! be unit-tested on its own.
 
-use crate::library_api::TrackInfo;
+use crate::library_api::{LibraryDataSource, TrackInfo};
 use crate::state::Command;
 
 /// Read-only, per-frame context handed to a view model's `update`.
@@ -21,12 +21,34 @@ pub struct Ctx<'a> {
     pub tracks: &'a [&'a TrackInfo],
     /// Library id of the currently playing track, if any.
     pub playing_id: Option<u64>,
+    /// The whole library snapshot, when a model needs to reach beyond
+    /// `tracks` (e.g. the album grid rebuilding its album list). `None` for
+    /// models that only work from `tracks`.
+    pub library: Option<&'a dyn LibraryDataSource>,
 }
 
 impl<'a> Ctx<'a> {
-    /// Builds the context for one frame.
+    /// Builds the context for a view driven only by `tracks`.
     pub fn new(tracks: &'a [&'a TrackInfo], playing_id: Option<u64>) -> Self {
-        Self { tracks, playing_id }
+        Self {
+            tracks,
+            playing_id,
+            library: None,
+        }
+    }
+
+    /// Builds the context with a library snapshot, for a view that rebuilds
+    /// its own lists from the whole library.
+    pub fn with_library(
+        tracks: &'a [&'a TrackInfo],
+        playing_id: Option<u64>,
+        library: &'a dyn LibraryDataSource,
+    ) -> Self {
+        Self {
+            tracks,
+            playing_id,
+            library: Some(library),
+        }
     }
 }
 

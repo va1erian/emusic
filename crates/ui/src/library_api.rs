@@ -81,7 +81,7 @@ pub fn format_minutes_ago(minutes: u32) -> String {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AlbumInfo {
     pub name: String,
     pub artist: String,
