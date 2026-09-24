@@ -5,6 +5,7 @@
 //! the central area — a message type mapped from control notifications. The
 //! first slice puts placeholders where the real views will go.
 
+pub mod album_grid;
 pub mod music;
 pub mod navigator;
 pub mod now_playing;

@@ -21,6 +21,7 @@ use win32ui::prelude::*;
 use win32ui::{column, dip, row};
 
 use crate::menu;
+use crate::views::album_grid::{AlbumGridView, AlbumMsg};
 use crate::views::music::{ContextAction, MusicView};
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
@@ -47,6 +48,8 @@ pub enum Msg {
     ContextRow(usize),
     /// Run a Music view context-menu action.
     ContextAction(ContextAction),
+    /// An event from the Albums view.
+    Album(AlbumMsg),
     /// Switch the central view (navigator row click).
     Navigate(View),
     /// A top-bar band event (transport button, toggle or slider).
@@ -71,6 +74,7 @@ pub struct Win32App {
     navigator: NavigatorView,
     central: Placeholder,
     music: MusicView,
+    albums: AlbumGridView,
     right_panel: NowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
@@ -104,6 +108,7 @@ impl Win32App {
         let navigator = NavigatorView::new(ui).expect("create navigator view");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
         let music = MusicView::new(ui).expect("create music view");
+        let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
@@ -121,11 +126,13 @@ impl Win32App {
         }
 
         ui.set_menu_bar(menu::build());
-        // The central area shows the Music list for the Music view and the
-        // placeholder otherwise; hidden items take no space in the layout.
-        let music_active = shell.state.view == View::Music;
-        central.set_visible(!music_active);
-        music.set_visible(music_active);
+        // The central area shows the Music list or the Albums grid; every
+        // other view is still the placeholder. Hidden items take no space.
+        let view = shell.state.view;
+        central.set_visible(view != View::Music && view != View::Albums);
+        music.set_visible(view == View::Music);
+        albums.set_visible(view == View::Albums);
+        let albums_layout = albums.layout();
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
         let title_bar = ui.title_bar_height();
@@ -135,6 +142,7 @@ impl Win32App {
                     navigator.width(dip(220.0)),
                     central.fill(1),
                     music.fill(1),
+                    albums_layout.fill(1),
                     right_panel.layout().width(dip(now_playing::PANEL_WIDTH)),
                 ]
                 .fill(1),
@@ -152,6 +160,7 @@ impl Win32App {
             navigator,
             central,
             music,
+            albums,
             right_panel,
             status,
             top_bar,
@@ -178,13 +187,14 @@ impl Win32App {
 
     /// Pushes the current shell state into the views.
     fn sync_views(&mut self, ui: &mut Ui<Msg>, changes: Changes) {
-        // Central-area routing: the Music view owns the track list, every other
-        // view is still a placeholder.
+        // Central-area routing: the Music list and the Albums grid own the
+        // central area; every other view is still a placeholder.
         let view = self.shell.state.view;
         if view != self.applied_view {
-            let music = view == View::Music;
-            self.central.set_visible(!music);
-            self.music.set_visible(music);
+            self.central
+                .set_visible(view != View::Music && view != View::Albums);
+            self.music.set_visible(view == View::Music);
+            self.albums.set_visible(view == View::Albums);
             ui.relayout();
             self.applied_view = view;
         }
@@ -200,6 +210,18 @@ impl Win32App {
             playing_id,
             changes,
         );
+
+        if view == View::Albums {
+            let theme = ui.theme();
+            if self.albums.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                playing_id,
+                theme,
+            ) {
+                ui.relayout();
+            }
+        }
 
         self.refresh_now_playing(ui.dpi());
 
@@ -383,6 +405,23 @@ impl App for Win32App {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
+            }
+            Msg::Album(msg) => {
+                let playing_id =
+                    playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+                let mut commands = Commands::new();
+                self.albums.update(
+                    msg,
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                    ui,
+                    &mut commands,
+                );
+                for command in commands.into_vec() {
+                    self.shell.dispatch(command);
+                }
+                self.tick(ui);
             }
             Msg::Navigate(view) => {
                 self.shell.dispatch(Command::SetView(view));
