@@ -6,4 +6,6 @@
 //! first slice puts placeholders where the real views will go.
 
 pub mod music;
+pub mod navigator;
 pub mod placeholder;
+pub mod status_bar;

@@ -27,6 +27,8 @@ use std::path::PathBuf;
 
 use emusic_player::tracker::TrackerSettings;
 
+use crate::panels::navigator::Navigator;
+use crate::panels::status_bar::StatusBar as StatusBarModel;
 use crate::views::album_grid::AlbumGrid;
 use crate::views::folders::FoldersView;
 use crate::views::history::HistoryState;
@@ -50,6 +52,10 @@ pub struct AppState {
     pub search_result_count: Option<usize>,
     /// The global search popup (#22).
     pub search_popup: crate::views::search_popup::SearchPopup,
+    /// The left navigator's selection state (#104).
+    pub navigator: Navigator,
+    /// The bottom status bar's part texts (#104).
+    pub status_bar: StatusBarModel,
     /// Library folders mirrored from [`crate::config::Config`] so the
     /// persisted list survives round-trips through [`Config::capture`].
     ///
@@ -140,6 +146,8 @@ impl Default for AppState {
             search_query: String::new(),
             search_result_count: None,
             search_popup: crate::views::search_popup::SearchPopup::default(),
+            navigator: Navigator::default(),
+            status_bar: StatusBarModel::default(),
             library_folders: Vec::new(),
             settings_tab: SettingsTab::default(),
             resume_playback: true,
