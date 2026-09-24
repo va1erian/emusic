@@ -1,13 +1,15 @@
-//! Recursive rendering of the Folders view's collapsible directory tree.
+//! egui rendering of the Folders view's collapsible directory tree (#18,
+//! #101).
 //!
-//! Expansion state lives in egui's own memory (keyed by each node's path), so
-//! the tree needs no extra bookkeeping in `emusic_ui::views::folder_tree::FolderTreeState`. Each
-//! node's context menu can start a scoped shuffle of that directory (#57).
+//! The selection and filter live in the [`FoldersView`] model; this module
+//! only draws the tree and records intents as messages. Expansion state lives
+//! in egui's own memory (keyed by each node's path), so the model needs no
+//! extra bookkeeping for it. Each node's context menu can start a scoped
+//! shuffle of that directory (#57).
 
 use eframe::egui;
 
-use crate::library_api::{DirNodeInfo, LibraryDataSource};
-use crate::state::Command;
+use emusic_ui::views::folders::{FoldersMsg, FoldersView};
 
 /// Horizontal indent added per tree level.
 ///
@@ -17,79 +19,66 @@ use crate::state::Command;
 /// width in the 180-460px Folders panel (#162).
 const LEVEL_INDENT: f32 = 12.0;
 
-/// Renders `nodes` as a collapsible tree, highlighting `selected` and setting
-/// it when a row is clicked. Returns a shuffle command if one was requested.
+/// Renders the library's directory tree, highlighting the model's selection
+/// and recording clicks/menu choices as messages.
 pub fn show(
     ui: &mut egui::Ui,
-    nodes: &[DirNodeInfo],
-    selected: &mut Option<String>,
-    library: &dyn LibraryDataSource,
-    recursive: bool,
-) -> Option<Command> {
+    nodes: &[crate::library_api::DirNodeInfo],
+    view: &FoldersView,
+    messages: &mut Vec<FoldersMsg>,
+) {
     // Applies to the whole tree: leaf rows and `CollapsingState` bodies both
     // read `indent` from the ui they render into.
     ui.spacing_mut().indent = LEVEL_INDENT;
     if nodes.is_empty() {
         ui.label(egui::RichText::new("No folders").weak());
-        return None;
+        return;
     }
-    let mut command = None;
     for node in nodes {
-        if let Some(cmd) = node_ui(ui, node, 0, selected, library, recursive) {
-            command = Some(cmd);
-        }
+        node_ui(ui, node, 0, view, messages);
     }
-    command
 }
 
 fn node_ui(
     ui: &mut egui::Ui,
-    node: &DirNodeInfo,
+    node: &crate::library_api::DirNodeInfo,
     depth: usize,
-    selected: &mut Option<String>,
-    library: &dyn LibraryDataSource,
-    recursive: bool,
-) -> Option<Command> {
+    view: &FoldersView,
+    messages: &mut Vec<FoldersMsg>,
+) {
     if node.children.is_empty() {
-        return ui
+        let response = ui
             .horizontal(|ui| {
                 // Root-level leaves have no `CollapsingState` body indenting
                 // them, so they need a manual nudge to align with root
-                // folders' text past the arrow. Nested leaves already sit
-                // inside their parent's body indent (below); adding this
-                // again on top of it pushed them a whole extra level to the
-                // right of same-depth folders.
+                // folders' text past the arrow.
                 if depth == 0 {
                     ui.add_space(ui.spacing().indent);
                 }
-                let response = row(ui, node, selected.as_deref());
-                if response.clicked() {
-                    *selected = Some(node.path.clone());
-                }
-                row_menu(&response, node, library, recursive)
+                row(ui, node, view)
             })
             .inner;
+        row_menu(&response, node, view, messages);
+        return;
     }
 
     let id = ui.make_persistent_id(("folder_tree", &node.path));
-    let mut body_command = None;
     let (_, header, _) =
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
-            .show_header(ui, |ui| row(ui, node, selected.as_deref()))
+            .show_header(ui, |ui| row(ui, node, view))
             .body(|ui| {
                 for child in &node.children {
-                    if let Some(cmd) = node_ui(ui, child, depth + 1, selected, library, recursive) {
-                        body_command = Some(cmd);
-                    }
+                    node_ui(ui, child, depth + 1, view, messages);
                 }
             });
-    if header.inner.clicked() {
-        *selected = Some(node.path.clone());
-    }
-    row_menu(&header.inner, node, library, recursive).or(body_command)
+    row_menu(&header.inner, node, view, messages);
 }
 
-fn row(ui: &mut egui::Ui, node: &DirNodeInfo, selected: Option<&str>) -> egui::Response {
+fn row(
+    ui: &mut egui::Ui,
+    node: &crate::library_api::DirNodeInfo,
+    view: &FoldersView,
+) -> egui::Response {
     let text = format!("{} ({})", node.name, node.total_track_count);
     // `ui.selectable_label` doesn't truncate: an untruncated `Button`/`Label`
     // inside a plain (non-wrapping) horizontal layout requests its full
@@ -99,25 +88,29 @@ fn row(ui: &mut egui::Ui, node: &DirNodeInfo, selected: Option<&str>) -> egui::R
     // *max*) — so a long real-library name silently overrode the width the
     // user had dragged the panel down to, and the panel could never shrink
     // narrower than its widest row.
-    ui.add(egui::Button::selectable(selected == Some(node.path.as_str()), text).truncate())
-        .on_hover_text(format!(
-            "{}\n{} track(s) here, {} including subfolders",
-            node.path, node.direct_track_count, node.total_track_count
-        ))
+    ui.add(
+        egui::Button::selectable(view.selected.as_deref() == Some(node.path.as_str()), text)
+            .truncate(),
+    )
+    .on_hover_text(format!(
+        "{}\n{} track(s) here, {} including subfolders",
+        node.path, node.direct_track_count, node.total_track_count
+    ))
 }
 
 fn row_menu(
     response: &egui::Response,
-    node: &DirNodeInfo,
-    library: &dyn LibraryDataSource,
-    recursive: bool,
-) -> Option<Command> {
-    let mut command = None;
+    node: &crate::library_api::DirNodeInfo,
+    view: &FoldersView,
+    messages: &mut Vec<FoldersMsg>,
+) {
     response.context_menu(|ui| {
         if ui.button("Shuffle play").clicked() {
-            command = Some(crate::shuffle::folder(library, &node.path, recursive));
+            messages.push(FoldersMsg::Shuffle {
+                path: node.path.clone(),
+                recursive: view.include_subfolders,
+            });
             ui.close();
         }
     });
-    command
 }

@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use emusic_player::tracker::TrackerSettings;
 
 use crate::views::album_grid::AlbumGrid;
-use crate::views::folder_tree::FolderTreeState;
+use crate::views::folders::FoldersView;
 use crate::views::history::HistoryState;
 use crate::views::most_played::MostPlayedState;
 use crate::views::music::MusicView;
@@ -87,11 +87,8 @@ pub struct AppState {
     pub music: MusicView,
     /// The Albums view's grid, sort and thumbnail cache (#17).
     pub album_grid: AlbumGrid,
-    /// The Folders view's selected directory + "include subfolders" toggle
-    /// (#18).
-    pub folder_tree: FolderTreeState,
-    /// The Folders view's track table (sort + selection).
-    pub folders_table: TrackTable,
+    /// The Folders view (#101): its directory tree and track table.
+    pub folders: FoldersView,
     /// The Starred view's track table (#131).
     pub starred_table: TrackTable,
     /// The Most Played view's window selector + track table (#24).
@@ -153,8 +150,7 @@ impl Default for AppState {
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
             music: MusicView::default(),
             album_grid: AlbumGrid::default(),
-            folder_tree: FolderTreeState::default(),
-            folders_table: TrackTable::default(),
+            folders: FoldersView::default(),
             starred_table: TrackTable::default(),
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
