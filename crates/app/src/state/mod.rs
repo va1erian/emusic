@@ -1,24 +1,13 @@
-//! Shared UI state: [`AppState`] plus the smaller state types the shell,
-//! config and panels share. Each lives in its own module — the [`View`]
-//! router, [`Theme`]/[`Accent`] appearance, panel [`PanelVisibility`], the
-//! [`Command`] message type and the global [`SearchPopupState`] — and is
-//! re-exported here so `crate::state::…` paths keep working.
+//! Shared UI state: the [`AppState`] shell plus the smaller state types it
+//! is built from. The toolkit-agnostic pieces (appearance, commands, views,
+//! panels, …) live in `emusic-ui` and are re-exported here so
+//! `crate::state::…` paths keep working; only the [`AppState`] aggregate
+//! stays, until the view states move over (#98–#104).
 
-mod appearance;
-mod command;
-mod panels;
-mod search;
-mod settings;
-mod view;
-mod visualizer;
-
-pub use appearance::{Accent, Theme};
-pub use command::Command;
-pub use panels::{PanelKind, PanelVisibility};
-pub use search::{SearchPopupItem, SearchPopupState};
-pub use settings::SettingsTab;
-pub use view::View;
-pub use visualizer::VisualizerMode;
+pub use emusic_ui::state::{
+    Accent, Command, DEFAULT_ACCENT, Palette, PanelKind, PanelVisibility, Rgb, Rgba,
+    SearchPopupItem, SearchPopupState, SettingsTab, Theme, View, VisualizerMode,
+};
 
 use std::path::PathBuf;
 

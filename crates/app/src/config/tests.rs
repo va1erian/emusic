@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use eframe::egui::Color32;
 use emusic_player::tracker::{
     Emulation, EndBehavior, Interpolation, Ramping, Surround, TrackerSettings,
 };
@@ -14,7 +13,7 @@ use emusic_player::tracker::{
 use crate::config::{Config, LastPlayed, load, save};
 use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
-use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
+use crate::state::{Accent, AppState, PanelVisibility, Rgb, Theme, View, VisualizerMode};
 
 /// Unique scratch directory per test, so parallel tests never collide and
 /// nothing is written to the real `%APPDATA%`.
@@ -175,7 +174,7 @@ fn custom_accent_round_trips_as_hex() {
     let dir = scratch_dir("accent-hex");
     let path = config_file(&dir);
     let config = Config {
-        accent: Accent::Custom(Color32::from_rgb(0xCA, 0xFE, 0xBA)),
+        accent: Accent::Custom(Rgb::from_rgb(0xCA, 0xFE, 0xBA)),
         ..Config::default()
     };
 

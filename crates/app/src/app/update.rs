@@ -91,7 +91,7 @@ impl eframe::App for App {
             thumbbar.sync(self.player.as_ref(), &mut self.state);
         }
 
-        theme::apply(&ctx, self.state.theme, self.state.accent.color());
+        theme::apply(&ctx, self.state.theme, self.state.accent);
 
         self.handle_shortcuts(&ctx);
 

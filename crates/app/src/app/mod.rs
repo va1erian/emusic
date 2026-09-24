@@ -114,7 +114,7 @@ impl App {
         crate::settings::folder_picker::init();
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
-        theme::apply(&cc.egui_ctx, state.theme, state.accent.color());
+        theme::apply(&cc.egui_ctx, state.theme, state.accent);
         config.apply_to_player(player.as_mut());
         library.set_folders(&config.library_folders);
         // The session was just applied to the player; drop it from the
