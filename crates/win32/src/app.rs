@@ -25,6 +25,7 @@ use win32ui::{column, dip, row};
 
 use crate::menu;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
+use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
 use crate::views::music::MusicView;
@@ -65,6 +66,9 @@ pub enum Msg {
     FoldersContext(String),
     /// Start a scoped shuffle of a folder's tracks.
     FoldersShuffle(String),
+    /// Run the "Shuffle play" action of the active name+counts view
+    /// (Artists/Genres) on the row its context menu was opened on.
+    NameCountShuffle,
     /// A column-browser pane's selection changed (the rows now selected).
     BrowserRow { pane: Pane, rows: Vec<usize> },
     /// An intent from the Settings view (folders, appearance, ...).
@@ -96,6 +100,7 @@ pub struct Win32App {
     music: MusicView,
     albums: AlbumGridView,
     folders: FoldersView,
+    artists: ArtistsView,
     settings: SettingsView,
     right_panel: NowPlayingView,
     status: StatusBarView,
@@ -135,6 +140,7 @@ impl Win32App {
         let music = MusicView::new(ui).expect("create music view");
         let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let folders = FoldersView::new(ui).expect("create folders view");
+        let artists = ArtistsView::new(ui).expect("create artists view");
         let settings = SettingsView::new(ui).expect("create settings view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
@@ -159,12 +165,13 @@ impl Win32App {
         let browser_visible = view == View::Music && shell.state.music.browser.visible;
         central.set_visible(!matches!(
             view,
-            View::Music | View::Albums | View::Folders | View::Settings
+            View::Music | View::Albums | View::Artists | View::Folders | View::Settings
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
         albums.set_visible(view == View::Albums);
         folders.set_visible(view == View::Folders);
+        artists.set_visible(view == View::Artists);
         settings.set_visible(view == View::Settings);
         ui.on_timer(|_| Some(Msg::Timer));
 
@@ -179,6 +186,7 @@ impl Win32App {
             music,
             albums,
             folders,
+            artists,
             settings,
             right_panel,
             status,
@@ -211,6 +219,7 @@ impl Win32App {
             ]
             .fill(1),
             View::Albums => self.albums.layout().fill(1),
+            View::Artists => self.artists.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
             _ => self.central.fill(1),
@@ -254,11 +263,12 @@ impl Win32App {
         if view != self.applied_view {
             self.central.set_visible(!matches!(
                 view,
-                View::Music | View::Albums | View::Folders | View::Settings
+                View::Music | View::Albums | View::Artists | View::Folders | View::Settings
             ));
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
             self.folders.set_visible(view == View::Folders);
+            self.artists.set_visible(view == View::Artists);
             self.settings.set_visible(view == View::Settings);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
             self.browser.set_visible(browser_visible);
@@ -299,6 +309,11 @@ impl Win32App {
             self.shell.library.as_ref(),
             playing_id,
         );
+
+        if view == View::Artists {
+            self.artists
+                .sync(&mut self.shell.state, self.shell.library.as_ref());
+        }
 
         if view == View::Albums {
             let theme = ui.theme();
@@ -567,9 +582,28 @@ impl App for Win32App {
                         self.folders.set_context_row(row);
                         self.folders.context_menu().clone()
                     }
+                    View::Artists => {
+                        self.artists.set_context_row(row);
+                        self.artists.context_menu().clone()
+                    }
                     _ => return,
                 };
                 ui.popup(&menu, ui.cursor_position());
+            }
+            Msg::NameCountShuffle => {
+                if self.shell.state.view == View::Artists
+                    && let Some(name) = self.artists.context_name()
+                {
+                    let commands = self.artists.shuffle(
+                        name,
+                        &mut self.shell.state,
+                        self.shell.library.as_ref(),
+                    );
+                    for command in commands {
+                        self.shell.dispatch(command);
+                    }
+                    self.tick(ui);
+                }
             }
             Msg::ContextAction(action) => {
                 let command = match self.shell.state.view {
