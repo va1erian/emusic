@@ -2,8 +2,10 @@
 //! track counts, plus the per-row "Shuffle play" intent. Rendering (the table
 //! and its context menu) stays in the frontends.
 //!
-//! The rows are rebuilt from the library snapshot each frame by
-//! [`ArtistsView::refresh`]; user intents arrive as [`ArtistsMsg`].
+//! [`ArtistsView::refresh`] rebuilds the rows only when the library's
+//! [`LibraryDataSource::revision`] counter changes, so an unchanged library
+//! does no allocation or sorting per frame. User intents arrive as
+//! [`ArtistsMsg`].
 
 use crate::library_api::ArtistInfo;
 use crate::state::Command;
@@ -17,21 +19,34 @@ pub enum ArtistsMsg {
 }
 
 /// Persistent Artists-view state plus the name-sorted rows rebuilt from the
-/// library snapshot each frame.
+/// library snapshot when it changes.
 #[derive(Debug, Default)]
 pub struct ArtistsView {
     /// Artists in display order, rebuilt by [`ArtistsView::refresh`].
     rows: Vec<ArtistInfo>,
+    /// The library revision the rows were built from; `None` when the backend
+    /// provides no cheap signal or the rows are stale.
+    source_revision: Option<u64>,
     /// Bumped whenever what the view displays changes.
     revision: u64,
 }
 
 impl ArtistsView {
-    /// Rebuilds the name-sorted rows from the library snapshot in `cx`.
+    /// Rebuilds the name-sorted rows from the library snapshot in `cx` when
+    /// the library's revision changed since the last call.
     pub fn refresh(&mut self, cx: &Ctx) {
         let Some(library) = cx.library else {
             return;
         };
+        if let Some(revision) = library.revision() {
+            if self.source_revision == Some(revision) {
+                return;
+            }
+            self.source_revision = Some(revision);
+        } else {
+            self.source_revision = None;
+        }
+
         let mut rows = library.artists().to_vec();
         rows.sort_by(|a, b| a.name.cmp(&b.name));
         if rows != self.rows {
@@ -95,8 +110,9 @@ mod tests {
     use super::*;
     use crate::library_api::LibraryDataSource;
     use crate::mock::MockLibrary;
+    use crate::views::test_library::RiggedLibrary;
 
-    fn view_with_library(library: &dyn crate::library_api::LibraryDataSource) -> ArtistsView {
+    fn view_with_library(library: &dyn LibraryDataSource) -> ArtistsView {
         let mut view = ArtistsView::default();
         view.refresh(&Ctx::with_library(&[], None, library));
         view
@@ -119,16 +135,45 @@ mod tests {
     }
 
     #[test]
-    fn refresh_bumps_revision_only_on_change() {
-        let library = MockLibrary::new();
+    fn refresh_rebuilds_only_on_a_revision_change() {
+        let mut library = RiggedLibrary::new(1);
+        library.artists = vec![
+            RiggedLibrary::artist("Beta"),
+            RiggedLibrary::artist("Alpha"),
+        ];
+
         let mut view = ArtistsView::default();
-        let cx = Ctx::with_library(&[], None, &library);
+        {
+            let cx = Ctx::with_library(&[], None, &library);
+            view.refresh(&cx);
+            assert_eq!(view.len(), 2);
+            assert_eq!(view.rows()[0].name, "Alpha", "rows are sorted");
+
+            let reads = library.artist_reads.get();
+            let revision = view.revision();
+            view.refresh(&cx);
+            assert_eq!(
+                library.artist_reads.get(),
+                reads,
+                "an unchanged revision re-reads nothing"
+            );
+            assert_eq!(
+                view.revision(),
+                revision,
+                "an unchanged revision doesn't bump"
+            );
+        }
+
+        library.artists.push(RiggedLibrary::artist("Gamma"));
+        library.revision = Some(2);
         let before = view.revision();
-        view.refresh(&cx);
-        assert!(view.revision() > before);
-        let after = view.revision();
-        view.refresh(&cx);
-        assert_eq!(view.revision(), after, "stable rows don't bump");
+        view.refresh(&Ctx::with_library(&[], None, &library));
+        assert_eq!(view.len(), 3, "a changed revision rebuilds");
+        assert_eq!(view.rows()[2].name, "Gamma");
+        assert!(
+            view.revision() > before,
+            "a changed list bumps the revision"
+        );
     }
 
     #[test]
@@ -156,5 +201,18 @@ mod tests {
                 label: format!("Artist — {name}"),
             }]
         );
+    }
+
+    #[test]
+    fn shuffle_without_matching_tracks_is_a_no_op() {
+        let library = MockLibrary::new();
+        let mut view = view_with_library(&library);
+        let mut out = Commands::new();
+        view.update(
+            ArtistsMsg::Shuffle("No Such Artist".to_string()),
+            &Ctx::with_library(&[], None, &library),
+            &mut out,
+        );
+        assert!(out.is_empty(), "an empty scope is never queued");
     }
 }

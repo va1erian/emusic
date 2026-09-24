@@ -19,4 +19,7 @@ pub mod search_popup;
 pub mod starred;
 pub mod track_table;
 
+#[cfg(test)]
+pub(crate) mod test_library;
+
 pub use context::{Commands, Ctx};

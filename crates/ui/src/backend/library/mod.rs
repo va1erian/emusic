@@ -90,6 +90,10 @@ pub struct LibraryBackend {
     db_path: Option<PathBuf>,
     /// When the last scan finished in this session.
     last_scan: Option<std::time::SystemTime>,
+    /// Cheap change signal exposed through [`LibraryDataSource::revision`]
+    /// (#104), bumped whenever the snapshot or one of its in-memory mirrors
+    /// changes.
+    revision: u64,
 }
 
 impl Default for LibraryBackend {
@@ -157,7 +161,14 @@ impl LibraryBackend {
             bass,
             db_path,
             last_scan: None,
+            revision: 0,
         }
+    }
+
+    /// Signals that the data exposed through [`LibraryDataSource`] changed, so
+    /// views caching derived lists rebuild (#104).
+    fn mark_changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// Sender the player adapter uses to report track starts and finishes.
@@ -179,27 +190,34 @@ impl LibraryBackend {
     /// like the other user-action store calls) because the snapshot needs
     /// the assigned row id right away for "remove entry".
     fn begin_play(&mut self, path: &Path, started_at: i64) {
-        let mut store = self
-            .store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let track_id = match store.resolve_track_id(path) {
-            Ok(Some(track_id)) => track_id,
-            Ok(None) => {
-                warn!(path = %path.display(), "no library track for started path, dropping record");
-                return;
-            }
-            Err(err) => {
-                warn!(%err, "failed to resolve started path");
-                return;
+        let assigned = {
+            let mut store = self
+                .store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let track_id = match store.resolve_track_id(path) {
+                Ok(Some(track_id)) => track_id,
+                Ok(None) => {
+                    warn!(path = %path.display(), "no library track for started path, dropping record");
+                    return;
+                }
+                Err(err) => {
+                    warn!(%err, "failed to resolve started path");
+                    return;
+                }
+            };
+            match store.begin_play(track_id, started_at) {
+                Ok(play_id) => Some((track_id.0 as u64, play_id)),
+                Err(err) => {
+                    warn!(%err, "failed to record started play");
+                    None
+                }
             }
         };
-        match store.begin_play(track_id, started_at) {
-            Ok(play_id) => {
-                self.snapshot
-                    .record_play_started(track_id.0 as u64, play_id, started_at);
-            }
-            Err(err) => warn!(%err, "failed to record started play"),
+        if let Some((track_id, play_id)) = assigned {
+            self.snapshot
+                .record_play_started(track_id, play_id, started_at);
+            self.mark_changed();
         }
     }
 }
@@ -237,26 +255,36 @@ impl LibraryDataSource for LibraryBackend {
         self.snapshot.most_played(window)
     }
 
+    fn revision(&self) -> Option<u64> {
+        Some(self.revision)
+    }
+
     fn remove_history_entry(&mut self, id: i64) {
-        let store = self
-            .store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Err(err) = store.delete_play(id) {
-            warn!(%err, "failed to remove history entry");
+        {
+            let store = self
+                .store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(err) = store.delete_play(id) {
+                warn!(%err, "failed to remove history entry");
+            }
         }
         self.snapshot.remove_history(id);
+        self.mark_changed();
     }
 
     fn clear_history(&mut self) {
-        let store = self
-            .store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Err(err) = store.clear_plays() {
-            warn!(%err, "failed to clear history");
+        {
+            let store = self
+                .store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Err(err) = store.clear_plays() {
+                warn!(%err, "failed to clear history");
+            }
         }
         self.snapshot.clear_history();
+        self.mark_changed();
     }
 
     fn set_starred(&mut self, id: u64, starred: bool) {
@@ -270,6 +298,7 @@ impl LibraryDataSource for LibraryBackend {
             }
         }
         self.snapshot.set_starred(id, starred);
+        self.mark_changed();
     }
 
     fn request_tag_edits(&mut self, requests: Vec<EditRequest>) {
@@ -308,7 +337,10 @@ impl LibraryDataSource for LibraryBackend {
     fn tick(&mut self) {
         while let Ok(update) = self.updates.try_recv() {
             match update {
-                Update::Snapshot(snapshot) => self.snapshot = *snapshot,
+                Update::Snapshot(snapshot) => {
+                    self.snapshot = *snapshot;
+                    self.mark_changed();
+                }
                 Update::Status(text) => {
                     self.status = if text.is_empty() { None } else { Some(text) };
                 }
@@ -349,6 +381,7 @@ impl LibraryDataSource for LibraryBackend {
                 PlayMessage::Finished(record) => {
                     self.stats_recorder.record(record.clone());
                     self.snapshot.record_play_finished(&record);
+                    self.mark_changed();
                 }
             }
         }
