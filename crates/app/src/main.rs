@@ -11,10 +11,11 @@ use std::env;
 
 use clap::Parser;
 use eframe::egui;
+use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::App;
-use emusic::backend::{self, ipc, smtc, thumbbar};
+use emusic::backend::{self, ipc, smtc, thumbbar, waker::EguiWaker};
 use emusic::cli::Cli;
 
 fn main() -> anyhow::Result<()> {
@@ -34,9 +35,10 @@ fn main() -> anyhow::Result<()> {
         cwd: env::current_dir().unwrap_or_default(),
     };
 
-    let repaint = ipc::RepaintHandle::new();
+    let waker = WakerSlot::new();
     let app_id = ipc::app_id(cli.mock);
-    match SingleInstance::acquire(&app_id, repaint.waker())? {
+    let wake = waker.handle();
+    match SingleInstance::acquire(&app_id, move || wake.wake())? {
         SingleInstance::Secondary => {
             if !message.files.is_empty() {
                 winshell::instance::send_to_primary(&app_id, &message)?;
@@ -44,14 +46,14 @@ fn main() -> anyhow::Result<()> {
             tracing::info!("emusic is already running; forwarded arguments and exiting");
             Ok(())
         }
-        SingleInstance::Primary(listener) => run_ui(cli, message, repaint, listener),
+        SingleInstance::Primary(listener) => run_ui(cli, message, waker, listener),
     }
 }
 
 fn run_ui(
     cli: Cli,
     startup_message: IpcMessage,
-    repaint: ipc::RepaintHandle,
+    waker: WakerSlot,
     listener: winshell::Listener,
 ) -> anyhow::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
@@ -68,11 +70,11 @@ fn run_ui(
     // runs its loop. It claims button presses and, crucially, wakes egui so
     // the click is drained even while the app is otherwise idle (there is no
     // continuous repaint when paused). The hook runs before the window/egui
-    // context exist, so it goes through the same late-bound repaint handle as
-    // IPC (#11).
+    // context exist, so it goes through the same late-bound [`WakerSlot`] as
+    // IPC (#11, #95).
     #[cfg(target_os = "windows")]
     {
-        let repaint_hook = repaint.clone();
+        let hook_waker = waker.clone();
         options.event_loop_builder = Some(Box::new(move |builder| {
             use winit::platform::windows::EventLoopBuilderExtWindows as _;
 
@@ -82,11 +84,11 @@ fn run_ui(
             // The buttons are added by `ThumbBar::sync` once the hook wakes
             // the app.
             winshell::thumbbar::taskbar_button_created_message();
-            let wake = repaint_hook.waker();
+            let wake = hook_waker.handle();
             builder.with_msg_hook(move |msg| {
                 let claimed = winshell::thumbbar::msg_hook(msg);
                 if claimed {
-                    wake();
+                    wake.wake();
                 }
                 claimed
             });
@@ -97,7 +99,7 @@ fn run_ui(
         "emusic",
         options,
         Box::new(move |cc| {
-            repaint.bind(cc.egui_ctx.clone());
+            waker.bind(EguiWaker::new(cc.egui_ctx.clone()));
             let backends = backend::build(cli.mock);
             let mut app = App::for_run(cc, backends.library, backends.player, cli.mock);
             if let Some(notice) = backends.notice {

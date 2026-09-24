@@ -1,8 +1,10 @@
 //! Single-instance detection and IPC wiring (#11), built on `winshell`.
 //!
-//! Moved from the egui frontend (#93). The egui-bound [`RepaintHandle`] that
-//! used to live here stays in the frontend (see #95); everything here works
-//! with any `Fn()` waker.
+//! Moved from the egui frontend (#93). The egui-bound `RepaintHandle` that
+//! used to live here is now the frontend-agnostic [`Waker`] seam (#95), so
+//! everything here works with any frontend.
+//!
+//! [`Waker`]: crate::waker::Waker
 
 use std::path::PathBuf;
 
