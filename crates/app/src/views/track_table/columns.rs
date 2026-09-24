@@ -6,7 +6,6 @@
 
 use eframe::egui;
 
-pub use emusic_ui::library_api::format_minutes_ago;
 pub use emusic_ui::views::track_table::columns::{
     COLUMNS, ColumnId, ColumnSpec, TITLE_MIN_WIDTH, artist_text, format_duration, title_text,
 };
@@ -29,102 +28,25 @@ const PLAYING_MARKER_GAP: f32 = 4.0;
 /// the currently playing row stands out at a glance.
 pub fn show_cell(ui: &mut egui::Ui, id: ColumnId, track: &TrackInfo, is_playing: bool) {
     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-        let tint = |text: &str| {
-            let rich = egui::RichText::new(text);
-            if is_playing {
-                rich.color(crate::theme::current_accent()).strong()
-            } else {
-                rich
-            }
-        };
-        let weak_tint = |text: String| {
-            if is_playing {
-                egui::RichText::new(text).color(crate::theme::current_accent())
-            } else {
-                egui::RichText::new(text).weak()
-            }
-        };
-
-        match id {
-            ColumnId::Title => {
-                if is_playing {
-                    playing_marker(ui);
-                }
-                ui.add(
-                    egui::Label::new(tint(title_text(track)))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Artist => {
-                ui.add(
-                    egui::Label::new(tint(artist_text(track)))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Album => {
-                ui.add(
-                    egui::Label::new(tint(&track.album))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Year => {
-                let text = track.year.map(|y| y.to_string()).unwrap_or_default();
-                ui.add(
-                    egui::Label::new(weak_tint(text))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Genre => {
-                ui.add(
-                    egui::Label::new(tint(&track.genre))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Time => {
-                ui.add(
-                    egui::Label::new(tint(&format_duration(track.duration)))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Format => {
-                ui.add(
-                    egui::Label::new(weak_tint(track.format.clone()))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::Plays => {
-                ui.add(
-                    egui::Label::new(tint(&track.play_count.to_string()))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::LastPlayed => {
-                let text = track
-                    .last_played_minutes_ago
-                    .map(format_minutes_ago)
-                    .unwrap_or_default();
-                ui.add(
-                    egui::Label::new(weak_tint(text))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
-            ColumnId::File => {
-                ui.add(
-                    egui::Label::new(weak_tint(track.path.clone()))
-                        .truncate()
-                        .selectable(false),
-                );
-            }
+        if id == ColumnId::Title && is_playing {
+            playing_marker(ui);
         }
+        // The text itself is shared (see `ColumnId::cell`); only the styling
+        // (accent for the playing row, weak for secondary columns) is egui's.
+        let text = id.cell(track);
+        let weak = matches!(
+            id,
+            ColumnId::Year | ColumnId::Format | ColumnId::LastPlayed | ColumnId::File
+        );
+        let rich = if is_playing {
+            let rich = egui::RichText::new(text.as_ref()).color(crate::theme::current_accent());
+            if weak { rich } else { rich.strong() }
+        } else if weak {
+            egui::RichText::new(text.as_ref()).weak()
+        } else {
+            egui::RichText::new(text.as_ref())
+        };
+        ui.add(egui::Label::new(rich).truncate().selectable(false));
     });
 }
 

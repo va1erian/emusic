@@ -6,7 +6,7 @@
 pub mod catalog;
 pub mod models;
 
-use crate::views::track_table::TrackTableState;
+use crate::views::track_table::TrackTable;
 
 use models::{AlbumKey, AlbumSort};
 
@@ -26,7 +26,7 @@ pub struct AlbumGridState {
     /// Selected album, whose tracks are shown below the grid.
     pub selected: Option<AlbumKey>,
     /// The selected album's track table (sort + selection).
-    pub table: TrackTableState,
+    pub table: TrackTable,
 }
 
 impl Default for AlbumGridState {
@@ -35,7 +35,7 @@ impl Default for AlbumGridState {
             tile_size: DEFAULT_TILE_SIZE,
             sort: AlbumSort::default(),
             selected: None,
-            table: TrackTableState::default(),
+            table: TrackTable::default(),
         }
     }
 }

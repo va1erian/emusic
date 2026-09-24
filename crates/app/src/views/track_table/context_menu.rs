@@ -1,34 +1,20 @@
 //! Right-click context menu for a track row: Play, Play next, Add to queue,
 //! Star/Unstar, Open file location, Copy path, Edit tags, Properties.
+//!
+//! The state-affecting choices are the model's [`ContextAction`]s, handed
+//! back to [`TrackTableMsg::Context`](emusic_ui::views::track_table::TrackTableMsg::Context);
+//! Copy path / Open file location are executed immediately here since they
+//! have no effect on shared app state.
 
 use eframe::egui;
 
+use emusic_ui::views::track_table::ContextAction;
+
 use crate::library_api::TrackInfo;
 
-/// What the caller should do after a context menu item is chosen. Playback
-/// actions are handed back as [`crate::state::Command`]s by the caller;
-/// `Properties` is turned into the caller's dialog state; `CopyPath` and
-/// `OpenFileLocation` are executed immediately here since they have no
-/// effect on shared app state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContextAction {
-    Play,
-    PlayNext,
-    AddToQueue,
-    /// Flip the row's starred state (#131); the caller turns this into a
-    /// [`crate::state::Command::ToggleStarred`].
-    ToggleStar,
-    /// The user asked to see the track's full metadata; the caller opens the
-    /// Properties dialog for the row.
-    Properties,
-    /// The user asked to edit the track's tags; the caller opens the tag
-    /// editor dialog for the row (#172).
-    EditTags,
-}
-
 /// Shows the context menu for `response` (a track row's response), if the
-/// user right-clicked it. Returns `Some` when a playback action was chosen;
-/// `CopyPath`/`OpenFileLocation` are handled internally.
+/// user right-clicked it. Returns `Some` when a state-affecting action was
+/// chosen; Copy path / Open file location are handled internally.
 pub fn show(response: &egui::Response, track: &TrackInfo) -> Option<ContextAction> {
     let mut action = None;
     response.context_menu(|ui| {

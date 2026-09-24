@@ -4,9 +4,11 @@
 //! Moved from the egui frontend (#93) without the cell painters, which stay
 //! there; sorting (`sort`) builds on [`ColumnId`].
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
-use crate::library_api::TrackInfo;
+use crate::library_api::{TrackInfo, format_minutes_ago};
 
 /// Identifies one column. The `#` (row position) column is intentionally
 /// excluded here: it is not backed by track data and is never sortable.
@@ -25,6 +27,30 @@ pub enum ColumnId {
     Plays,
     LastPlayed,
     File,
+}
+
+impl ColumnId {
+    /// This column's text for `track`, so both frontends format cells
+    /// identically. Borrows the track's own strings where possible.
+    pub fn cell<'a>(self, track: &'a TrackInfo) -> Cow<'a, str> {
+        match self {
+            Self::Title => Cow::Borrowed(title_text(track)),
+            Self::Artist => Cow::Borrowed(artist_text(track)),
+            Self::Album => Cow::Borrowed(&track.album),
+            Self::Year => Cow::Owned(track.year.map(|year| year.to_string()).unwrap_or_default()),
+            Self::Genre => Cow::Borrowed(&track.genre),
+            Self::Time => Cow::Owned(format_duration(track.duration)),
+            Self::Format => Cow::Borrowed(&track.format),
+            Self::Plays => Cow::Owned(track.play_count.to_string()),
+            Self::LastPlayed => Cow::Owned(
+                track
+                    .last_played_minutes_ago
+                    .map(format_minutes_ago)
+                    .unwrap_or_default(),
+            ),
+            Self::File => Cow::Borrowed(&track.path),
+        }
+    }
 }
 
 /// Static description of one column: label, default/min width and whether
@@ -126,4 +152,49 @@ pub fn artist_text(track: &TrackInfo) -> &str {
 pub fn format_duration(d: std::time::Duration) -> String {
     let secs = d.as_secs();
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    fn track() -> TrackInfo {
+        TrackInfo {
+            title: String::new(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            genre: "Rock".to_string(),
+            year: Some(2020),
+            duration: Duration::from_secs(65),
+            format: "flac".to_string(),
+            path: r"C:\music\a.flac".to_string(),
+            play_count: 3,
+            last_played_minutes_ago: Some(90),
+            ..TrackInfo::default()
+        }
+    }
+
+    #[test]
+    fn cell_formats_every_column() {
+        let track = track();
+        assert_eq!(ColumnId::Title.cell(&track), "(unknown title)");
+        assert_eq!(ColumnId::Artist.cell(&track), "Artist");
+        assert_eq!(ColumnId::Album.cell(&track), "Album");
+        assert_eq!(ColumnId::Year.cell(&track), "2020");
+        assert_eq!(ColumnId::Genre.cell(&track), "Rock");
+        assert_eq!(ColumnId::Time.cell(&track), "1:05");
+        assert_eq!(ColumnId::Format.cell(&track), "flac");
+        assert_eq!(ColumnId::Plays.cell(&track), "3");
+        assert_eq!(ColumnId::LastPlayed.cell(&track), "1 h ago");
+        assert_eq!(ColumnId::File.cell(&track), r"C:\music\a.flac");
+    }
+
+    #[test]
+    fn cell_renders_missing_values_as_empty() {
+        let track = TrackInfo::default();
+        assert_eq!(ColumnId::Year.cell(&track), "");
+        assert_eq!(ColumnId::LastPlayed.cell(&track), "");
+    }
 }

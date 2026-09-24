@@ -4,9 +4,13 @@
 //! selection, identity); rendering stays in the frontends. The egui
 //! frontend re-exports these at its old `views::…` paths.
 
+mod context;
+
 pub mod album_grid;
 pub mod column_browser;
 pub mod folder_tree;
 pub mod history;
 pub mod most_played;
 pub mod track_table;
+
+pub use context::{Commands, Ctx};
