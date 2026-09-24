@@ -7,6 +7,7 @@
 //! once per refresh so owner-data requests never allocate.
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use emusic_ui::views::column_browser::{ColumnBrowser, FacetEntry, Pane, PaneSelection};
 use win32ui::prelude::*;
@@ -57,18 +58,23 @@ pub struct ColumnBrowserView {
     /// The model revision last mirrored into the lists.
     applied_revision: Cell<u64>,
     visible: Cell<bool>,
+    /// Set while [`Self::sync`] rewrites the lists, so the selection changes it
+    /// causes are not reported back as user clicks.
+    syncing: Rc<Cell<bool>>,
 }
 
 impl ColumnBrowserView {
     /// Creates the three owner-data lists and maps their selection changes to
     /// [`Msg::BrowserRow`].
     pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+        let syncing = Rc::new(Cell::new(false));
         Ok(Self {
-            genre: pane(ui, "Genre", Pane::Genre)?,
-            artist: pane(ui, "Artist", Pane::Artist)?,
-            album: pane(ui, "Album", Pane::Album)?,
+            genre: pane(ui, "Genre", Pane::Genre, &syncing)?,
+            artist: pane(ui, "Artist", Pane::Artist, &syncing)?,
+            album: pane(ui, "Album", Pane::Album, &syncing)?,
             applied_revision: Cell::new(u64::MAX),
             visible: Cell::new(true),
+            syncing,
         })
     }
 
@@ -79,9 +85,11 @@ impl ColumnBrowserView {
             return;
         }
         self.applied_revision.set(browser.revision());
+        self.syncing.set(true);
         self.sync_pane(&self.genre, Pane::Genre, browser);
         self.sync_pane(&self.artist, Pane::Artist, browser);
         self.sync_pane(&self.album, Pane::Album, browser);
+        self.syncing.set(false);
     }
 
     /// Shows or hides the three panes (the menu's "Column browser" toggle).
@@ -121,8 +129,15 @@ impl ColumnBrowserView {
 }
 
 /// Builds one pane: a virtual list with a left-aligned label and a right-aligned
-/// count, whose selection changes map to [`Msg::BrowserRow`] for `pane`.
-fn pane(ui: &mut Ui<Msg>, title: &str, pane: Pane) -> Result<ListView<FacetRow, Msg>> {
+/// count, whose selection changes map to [`Msg::BrowserRow`] for `pane`
+/// (except while `syncing`, when the model itself is being mirrored in).
+fn pane(
+    ui: &mut Ui<Msg>,
+    title: &str,
+    pane: Pane,
+    syncing: &Rc<Cell<bool>>,
+) -> Result<ListView<FacetRow, Msg>> {
+    let syncing = Rc::clone(syncing);
     Ok(ListView::new(ui)?
         .multi_select(true)
         .column(title, Fill, |row: &FacetRow| row.label.as_str())
@@ -132,7 +147,7 @@ fn pane(ui: &mut Ui<Msg>, title: &str, pane: Pane) -> Result<ListView<FacetRow, 
             |row: &FacetRow| row.count.as_str(),
         )
         .on_select(move |rows| {
-            Some(Msg::BrowserRow {
+            (!syncing.get()).then(|| Msg::BrowserRow {
                 pane,
                 rows: rows.to_vec(),
             })
