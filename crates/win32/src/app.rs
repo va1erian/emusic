@@ -16,6 +16,7 @@ use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, View};
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
+use emusic_ui::views::column_browser::Pane;
 use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
@@ -24,6 +25,7 @@ use win32ui::{column, dip, row};
 
 use crate::menu;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
+use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
@@ -62,6 +64,8 @@ pub enum Msg {
     FoldersContext(String),
     /// Start a scoped shuffle of a folder's tracks.
     FoldersShuffle(String),
+    /// A column-browser pane's selection changed (the rows now selected).
+    BrowserRow { pane: Pane, rows: Vec<usize> },
     /// Switch the central view (navigator row click).
     Navigate(View),
     /// A top-bar band event (transport button, toggle or slider).
@@ -85,6 +89,7 @@ pub struct Win32App {
     shell: Shell,
     navigator: NavigatorView,
     central: Placeholder,
+    browser: ColumnBrowserView,
     music: MusicView,
     albums: AlbumGridView,
     folders: FoldersView,
@@ -101,6 +106,8 @@ pub struct Win32App {
     applied_theme: emusic_ui::state::Theme,
     /// View last applied to the central area, so a change re-lays it out.
     applied_view: View,
+    /// Whether the column browser was last shown, so a change re-lays it out.
+    applied_browser_visible: bool,
 }
 
 impl Win32App {
@@ -120,6 +127,7 @@ impl Win32App {
     ) -> Self {
         let navigator = NavigatorView::new(ui).expect("create navigator view");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
+        let browser = ColumnBrowserView::new(ui).expect("create column browser view");
         let music = MusicView::new(ui).expect("create music view");
         let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let folders = FoldersView::new(ui).expect("create folders view");
@@ -140,24 +148,27 @@ impl Win32App {
         }
 
         ui.set_menu_bar(menu::build());
-        // The central area shows the Music list, the Albums grid or the
-        // Folders view; every other view is still the placeholder. Hidden
-        // items take no space.
+        // The central area shows the Music list (with its column browser), the
+        // Albums grid or the Folders view; every other view is still the
+        // placeholder. Hidden items take no space.
         let view = shell.state.view;
         central.set_visible(view != View::Music && view != View::Albums && view != View::Folders);
+        let browser_visible = view == View::Music && shell.state.music.browser.visible;
+        browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
         albums.set_visible(view == View::Albums);
         folders.set_visible(view == View::Folders);
         let albums_layout = albums.layout();
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
+        let browser_height = dip(shell.state.music.browser.height);
         let title_bar = ui.title_bar_height();
         ui.set_layout(
             column![
                 row![
                     navigator.width(dip(220.0)),
                     central.fill(1),
-                    music.fill(1),
+                    column![browser.layout().height(browser_height), music.fill(1)].fill(1),
                     albums_layout.fill(1),
                     folders.layout(),
                     right_panel.layout().width(dip(now_playing::PANEL_WIDTH)),
@@ -176,6 +187,7 @@ impl Win32App {
             shell,
             navigator,
             central,
+            browser,
             music,
             albums,
             folders,
@@ -186,8 +198,10 @@ impl Win32App {
             applied_panels,
             applied_theme,
             applied_view,
+            applied_browser_visible: browser_visible,
         };
         app.refresh_folders();
+        app.refresh_music();
         app.tick(ui);
         app
     }
@@ -209,13 +223,13 @@ impl Win32App {
         // Central-area routing: the Music list and the Albums grid own the
         // central area; every other view is still a placeholder.
         let view = self.shell.state.view;
-        if view != self.applied_view {
+        let mut relayout = view != self.applied_view;
+        if relayout {
             self.central
                 .set_visible(view != View::Music && view != View::Albums && view != View::Folders);
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
             self.folders.set_visible(view == View::Folders);
-            ui.relayout();
             self.applied_view = view;
         }
 
@@ -223,6 +237,13 @@ impl Win32App {
         // library snapshot; refresh it before the view mirrors it.
         if changes.intersects(Changes::LIBRARY) {
             self.refresh_folders();
+        }
+
+        // The column-browser model rebuilds its cascading facets (and prunes
+        // stale selections) from the library snapshot; the table and the panes
+        // both read it.
+        if changes.intersects(Changes::LIBRARY | Changes::SEARCH) {
+            self.refresh_music();
         }
 
         self.central
@@ -252,6 +273,20 @@ impl Win32App {
             ) {
                 ui.relayout();
             }
+        }
+
+        // Show the browser only on the Music view and only when the model says
+        // so (the menu's "Column browser" toggle); rebuild the layout if that
+        // changed.
+        let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
+        if browser_visible != self.applied_browser_visible {
+            self.browser.set_visible(browser_visible);
+            self.applied_browser_visible = browser_visible;
+            relayout = true;
+        }
+        self.browser.sync(&self.shell.state.music.browser);
+        if relayout {
+            ui.relayout();
         }
 
         self.refresh_now_playing(ui.dpi());
@@ -398,6 +433,14 @@ impl Win32App {
         self.refresh_folders();
     }
 
+    /// Rebuilds the Music view model (its cascading column-browser facets and
+    /// the filtered track list) from the library snapshot and the live search.
+    fn refresh_music(&mut self) {
+        let tracks: Vec<&emusic_ui::library_api::TrackInfo> =
+            self.shell.library.as_ref().tracks().iter().collect();
+        self.shell.state.music.refresh(&tracks, &self.shell.search);
+    }
+
     /// Keeps a single repeating timer in step with the shell's `next_wake`.
     fn schedule(&mut self, ui: &mut Ui<Msg>, next_wake: Option<std::time::Duration>) {
         let wanted = next_wake.map(|wait| wait.as_millis().min(u128::from(u32::MAX)) as u32);
@@ -523,6 +566,15 @@ impl App for Win32App {
             Msg::FoldersShuffle(path) => {
                 let recursive = self.shell.state.folders.include_subfolders;
                 self.apply_folders(FoldersMsg::Shuffle { path, recursive });
+                self.tick(ui);
+            }
+            Msg::BrowserRow { pane, rows } => {
+                crate::views::column_browser::apply_selection(
+                    &mut self.shell.state.music.browser,
+                    pane,
+                    &rows,
+                );
+                self.refresh_music();
                 self.tick(ui);
             }
             Msg::Navigate(view) => {
