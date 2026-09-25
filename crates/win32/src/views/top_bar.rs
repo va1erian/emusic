@@ -28,6 +28,8 @@ enum BarItem {
     Total,
     Volume,
     Search,
+    /// The clear button shown while the search query is non-empty.
+    ClearSearch,
 }
 
 impl BarItem {
@@ -47,6 +49,11 @@ const SEARCH_WIDTH_DIP: f32 = 200.0;
 const SEARCH_HEIGHT_DIP: f32 = 20.0;
 /// Cue banner for the search box, matching the egui top bar.
 const SEARCH_CUE: &str = "Search library... (Ctrl+F)";
+/// The clear button's side: the search edit's height, so it lines up with it.
+const CLEAR_SIZE_DIP: f32 = SEARCH_HEIGHT_DIP;
+/// Segoe Fluent Icons `E894`: the clear ("x") glyph, shown in the search box's
+/// clear button (win32ui's `Fluent` doesn't define it).
+const CLEAR_GLYPH: char = '\u{E894}';
 
 /// What the item list depends on beyond the per-frame values; the list is only
 /// rebuilt when one of these changes.
@@ -142,7 +149,7 @@ fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<Top
         .unwrap_or(position.max(1.0))
         .max(0.001);
 
-    vec![
+    let items = vec![
         TopBarItem::icon_button(BarItem::Previous.id(), Fluent::PREVIOUS).tooltip("Previous"),
         TopBarItem::icon_button(BarItem::PlayPause.id(), play_glyph).tooltip(play_tip),
         TopBarItem::icon_button(BarItem::Stop.id(), Fluent::STOP).tooltip("Stop"),
@@ -177,7 +184,14 @@ fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<Top
             .height(dip(SEARCH_HEIGHT_DIP))
             .child(search)
             .tooltip("Search library"),
-    ]
+        // Always present, so appearing/disappearing never shifts the layout; it
+        // is the edit's height, with a proportionally smaller glyph.
+        TopBarItem::icon_button(BarItem::ClearSearch.id(), CLEAR_GLYPH)
+            .width(dip(CLEAR_SIZE_DIP))
+            .height(dip(CLEAR_SIZE_DIP))
+            .tooltip("Clear search"),
+    ];
+    items
 }
 
 /// Maps a band event onto the shared model's intent, or `None` when the item
@@ -194,6 +208,9 @@ pub fn to_message(event: TopBarEvent) -> Option<TopBarMsg> {
                 Some(TopBarMsg::Stop)
             } else if clicked == id(BarItem::Next) {
                 Some(TopBarMsg::Next)
+            } else if clicked == id(BarItem::ClearSearch) {
+                // Empties the query; `sync` then clears the native edit to match.
+                Some(TopBarMsg::SetSearchQuery(String::new()))
             } else {
                 None
             }
@@ -237,6 +254,15 @@ mod tests {
         assert_eq!(click(BarItem::Stop), Some(TopBarMsg::Stop));
         assert_eq!(click(BarItem::Next), Some(TopBarMsg::Next));
         assert_eq!(click(BarItem::Repeat), None, "a toggle is not a click");
+    }
+
+    #[test]
+    fn clear_search_click_empties_the_query() {
+        assert_eq!(
+            click(BarItem::ClearSearch),
+            Some(TopBarMsg::SetSearchQuery(String::new()))
+        );
+        assert_eq!(click(BarItem::Search), None, "the slot is not a button");
     }
 
     #[test]
