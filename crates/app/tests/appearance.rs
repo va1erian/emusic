@@ -12,13 +12,16 @@ use emusic::app::EguiApp;
 use emusic::appearance;
 use emusic::config::Config;
 use emusic::mock::{MockLibrary, MockPlayer};
-use emusic::state::{Appearance, Density, FontSize, View};
+use emusic::state::{Appearance, Density, FontSize, Theme, View};
 
 fn harness_with(appearance: Appearance) -> Harness<'static, EguiApp> {
-    let config = Config {
+    harness_for(Config {
         appearance,
         ..Config::default()
-    };
+    })
+}
+
+fn harness_for(config: Config) -> Harness<'static, EguiApp> {
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(1280.0, 800.0))
         .build_eframe(move |cc| {
@@ -32,6 +35,34 @@ fn harness_with(appearance: Appearance) -> Harness<'static, EguiApp> {
     harness.state_mut().set_view(View::Music);
     harness.run_steps(1);
     harness
+}
+
+/// Regression: `egui_kittest` applies its own (dark) builder theme right after
+/// `EguiApp::build`, so the frontend must re-apply the config's theme on the
+/// first rendered frame instead of trusting the build-time application
+/// (#309).
+#[test]
+fn light_theme_reaches_the_style_on_the_first_frame() {
+    let harness = harness_for(Config {
+        theme: Theme::Light,
+        ..Config::default()
+    });
+
+    assert_eq!(harness.ctx.theme(), egui::Theme::Light, "light is active");
+    let visuals = &harness.ctx.global_style().visuals;
+    let dark = egui::Visuals::dark();
+    assert_ne!(
+        visuals.panel_fill, dark.panel_fill,
+        "panel fill must come from the light palette, not egui's dark default"
+    );
+    assert!(
+        visuals.panel_fill.r() > 128
+            && visuals.panel_fill.g() > 128
+            && visuals.panel_fill.b() > 128,
+        "light panel fill is bright, got {:?}",
+        visuals.panel_fill
+    );
+    assert_ne!(visuals.window_fill, dark.window_fill);
 }
 
 #[test]

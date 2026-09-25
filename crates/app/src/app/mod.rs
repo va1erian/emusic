@@ -43,8 +43,11 @@ pub struct EguiApp {
     /// time), so headless renders (#32) stay reproducible. Only differences
     /// matter to [`Shell::tick`].
     synthetic_now: Instant,
-    /// The theme/accent/appearance actually applied to egui, so the style is
-    /// rebuilt on change (not every frame) and a DPI move re-applies it.
+    /// The theme/accent/appearance actually applied to egui during a frame, so
+    /// the style is rebuilt on change (not every frame) and a DPI move
+    /// re-applies it. `None` until the first `ui` call: [`Self::build`]'s
+    /// application is not authoritative because the host (eframe, or
+    /// `egui_kittest` in shot/tests) may set its own theme afterwards.
     applied: Option<AppliedAppearance>,
 }
 
@@ -115,19 +118,16 @@ impl EguiApp {
             shell.state.accent,
             shell.state.appearance,
         );
-        let applied = AppliedAppearance {
-            theme: shell.state.theme,
-            accent: shell.state.accent,
-            appearance: shell.state.appearance,
-            dpi_bits: cc.egui_ctx.pixels_per_point().to_bits(),
-        };
         Self {
             shell,
             images,
             smtc: None,
             thumbbar: None,
             synthetic_now: Instant::now(),
-            applied: Some(applied),
+            // Left unset so the first frame re-applies the config's theme:
+            // the host may override the context theme after `build` (e.g.
+            // `egui_kittest` sets its builder theme).
+            applied: None,
         }
     }
 
