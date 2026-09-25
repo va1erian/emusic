@@ -14,7 +14,7 @@ use emusic_ui::config::{self, Config};
 use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
-use emusic::app::Win32App;
+use emusic::app::{Msg, Win32App};
 use emusic::window::window_spec;
 
 fn main() -> anyhow::Result<()> {
@@ -71,6 +71,12 @@ fn run_ui(
         emusic_ui::state::Theme::Light => win32ui::Theme::light(),
     };
 
+    // Register the shell's `TaskbarButtonCreated` message before the window
+    // exists, so the raw-message hook below recognises it even if the taskbar
+    // announces the button while the window is being created (#321).
+    #[cfg(target_os = "windows")]
+    winshell::thumbbar::taskbar_button_created_message();
+
     win32ui::run_app(window_spec(1100.0, 720.0, window_theme), move |ui| {
         let backends = backend::build(mock, waker.handle());
         let emusic_ui::backend::Backends {
@@ -78,6 +84,9 @@ fn run_ui(
             player,
             notice,
         } = backends;
+        // Keep a handle on the waker across `Win32App::new` (which binds it)
+        // so the taskbar message hook can wake the app even while it is idle.
+        let hook_waker = waker.handle();
         let mut app = Win32App::new(
             ui,
             library,
@@ -91,9 +100,39 @@ fn run_ui(
         if let Some(notice) = notice {
             app.set_backend_notice(notice);
         }
+        attach_shell_integrations(ui, &mut app, hook_waker);
         app
     })
     .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
+}
+
+/// Binds the OS integrations to this window (#320, #321) and installs the
+/// taskbar message hook they need.
+///
+/// The hook forwards the raw message to [`winshell::thumbbar::msg_hook`] and
+/// wakes the app when it claims one, so an otherwise-idle app still drains the
+/// press. It has to be installed after [`Win32App::new`] bound the waker but
+/// before the window is first shown (the shell announces the taskbar button
+/// only after that).
+fn attach_shell_integrations(
+    ui: &mut win32ui::Ui<Msg>,
+    app: &mut Win32App,
+    hook_waker: emusic_ui::waker::WakerHandle,
+) {
+    let hwnd = ui.hwnd().raw();
+    app.attach_smtc(emusic::backend::smtc::Smtc::new(Some(
+        hwnd as *mut std::ffi::c_void,
+    )));
+    app.attach_thumbbar(emusic::backend::thumbbar::ThumbBar::new(Some(
+        hwnd as isize,
+    )));
+    ui.on_raw_message(move |msg| {
+        let claimed = winshell::thumbbar::msg_hook(msg);
+        if claimed {
+            hook_waker.wake();
+        }
+        claimed
+    });
 }
 
 fn register_associations() -> anyhow::Result<()> {

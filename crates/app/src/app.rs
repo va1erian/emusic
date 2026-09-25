@@ -23,6 +23,8 @@ use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
 use win32ui::{column, dip, row};
 
+use crate::backend::smtc::Smtc;
+use crate::backend::thumbbar::ThumbBar;
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
 use crate::dialogs::properties;
 use crate::dialogs::tag_editor;
@@ -179,6 +181,12 @@ pub struct Win32App {
     last_full_sync: Instant,
     /// The open tag editor's bridge, while its modal dialog is up (#278).
     tag_editor: Option<std::rc::Rc<std::cell::RefCell<tag_editor::Bridge>>>,
+    /// OS media controls / hardware media keys (#320). `None` in
+    /// `emusic-shot` and tests, so headless runs never touch SMTC.
+    smtc: Option<Smtc>,
+    /// Windows taskbar thumbnail-toolbar transport buttons (#321). `None` in
+    /// `emusic-shot` and tests, so headless runs never touch the shell.
+    thumbbar: Option<ThumbBar>,
 }
 
 impl Win32App {
@@ -307,6 +315,8 @@ impl Win32App {
             applied_browser_toggle,
             last_full_sync: Instant::now(),
             tag_editor: None,
+            smtc: None,
+            thumbbar: None,
         };
         app.install_layout(ui, view);
         app.refresh_folders();
@@ -366,6 +376,19 @@ impl Win32App {
         self.shell.set_backend_notice(notice);
     }
 
+    /// Registers the OS media-control integration (#320). Only the real binary
+    /// calls this; shot/tests leave it unset so they never touch SMTC.
+    pub fn attach_smtc(&mut self, smtc: Smtc) {
+        self.smtc = Some(smtc);
+    }
+
+    /// Registers the Windows taskbar thumbnail-toolbar buttons (#321). Only the
+    /// real binary calls this; shot/tests leave it unset so they never touch
+    /// the shell.
+    pub fn attach_thumbbar(&mut self, thumbbar: ThumbBar) {
+        self.thumbbar = Some(thumbbar);
+    }
+
     /// Handles the shell's repaint timer. While the visualizer animates the
     /// timer fires at [`FRAME_INTERVAL`](emusic_ui::panels::visualizer::FRAME_INTERVAL);
     /// most of those frames only need the strip fed, so the full sync (every
@@ -388,6 +411,21 @@ impl Win32App {
         // Remember the live window geometry for the next launch (#214), before
         // the shell's persistence pass captures the state.
         record_window_geometry(ui, &mut self.shell.state);
+        // Mirror the current track to the OS media overlay and fold the
+        // overlay's transport events into this tick's queued commands (#320),
+        // then mirror the player's transport state onto the taskbar thumbnail
+        // buttons and fold their presses in the same way (#321). Both push
+        // into `shell.state.pending`, which `shell.tick` applies below.
+        if let Some(smtc) = self.smtc.as_mut() {
+            smtc.sync(
+                self.shell.player.as_ref(),
+                self.shell.library.as_ref(),
+                &mut self.shell.state,
+            );
+        }
+        if let Some(thumbbar) = self.thumbbar.as_mut() {
+            thumbbar.sync(self.shell.player.as_ref(), &mut self.shell.state);
+        }
         let tick = self.shell.tick(Instant::now());
         // Keep the modal tag editor posted on its save (the shell delivers
         // outcomes into `state.tag_editor`; the dialog polls the bridge).
