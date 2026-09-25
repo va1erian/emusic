@@ -3,3 +3,4 @@
 
 pub mod database_info;
 pub mod properties;
+pub mod tag_editor;

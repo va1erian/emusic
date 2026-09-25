@@ -84,6 +84,8 @@ pub enum ContextAction {
     RemoveHistory,
     /// Open the track's Properties dialog (#280).
     Properties,
+    /// Open the track's tag editor (#278).
+    EditTags,
 }
 
 /// One row: the track plus its pre-formatted numeric cells. Shared with the
@@ -222,6 +224,9 @@ impl TrackView {
                 Msg::ContextAction(ContextAction::CopyPath)
             })
             .separator()
+            .item("Edit tags…", None, || {
+                Msg::ContextAction(ContextAction::EditTags)
+            })
             .item("Properties…", None, || {
                 Msg::ContextAction(ContextAction::Properties)
             });
@@ -410,5 +415,6 @@ pub fn run_context_action(
         ContextAction::RemoveHistory => None,
         // Handled by the app, which shows the modal dialog itself.
         ContextAction::Properties => None,
+        ContextAction::EditTags => Some(Command::OpenTagEditor(track.id)),
     }
 }
