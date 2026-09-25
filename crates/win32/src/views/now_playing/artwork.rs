@@ -2,12 +2,19 @@
 //!
 //! The shared [`emusic_ui::image_cache`] engine decodes album art off the UI
 //! thread and wakes the frontend through the [`Waker`](emusic_ui::waker::Waker).
-//! This module supplies the frontend half: an [`ImageSink`] that turns a decoded
-//! RGBA image into a DIB-section [`Bitmap`] (the `HBITMAP` from issue #110),
-//! and the cache configured with the full-size artwork decoder (embedded
-//! picture, then a folder image next to the playing file).
+//! This module supplies the frontend half: an [`ImageSink`] that keeps a
+//! decoded RGBA image ready for the Direct2D canvas, and the cache configured
+//! with the full-size artwork decoder (embedded picture, then a folder image
+//! next to the playing file).
 //!
-//! Artwork is decoded and scaled by the Windows Imaging Component (WIC) through
+//! Direct2D bitmaps live on the drawing surface, which the summary only has
+//! while painting, so the sink keeps the decoded pixels and the widget uploads
+//! them lazily on the first frame that draws them (see
+//! [`summary`](super::summary)). Keeping the full-size image lets Direct2D
+//! scale it into the artwork box, so the fixed-square CPU resize the GDI path
+//! needed is gone.
+//!
+//! Artwork is decoded by the Windows Imaging Component (WIC) through
 //! [`win32ui::imaging`], so the Win32 binary does not link the `image` crate
 //! (#119).
 
@@ -19,74 +26,29 @@ use emusic_ui::image_cache::{
     ImageSink, Rgba8Image, ThumbCache, embedded_artwork, folder_artwork_path,
 };
 use emusic_ui::waker::WakerHandle;
-use win32ui::gdi::Bitmap;
+use win32ui::RgbaImage;
 use win32ui::imaging;
 
 /// Decoded bytes the artwork LRU may hold before evicting older covers.
 const BYTE_BUDGET: usize = 16 * 1024 * 1024;
 
-/// The now-playing panel's artwork cache: the shared cache over DIB bitmaps.
+/// The now-playing panel's artwork cache: the shared cache over RGBA buffers.
 pub type ArtworkCache = ThumbCache<Win32ImageSink>;
 
-/// Uploads decoded images as DIB-section bitmaps.
+/// Keeps decoded images as RGBA buffers for [`D2dCanvas::image`].
 ///
-/// `Canvas::draw_bitmap` blits a bitmap at its own size (it crops rather than
-/// scales), so the image is stretched to a square `edge` here, matching the egui
-/// panel which draws the cover into a square rect. A failed GDI allocation
-/// yields `None`, which the panel renders as its placeholder.
-pub struct Win32ImageSink {
-    edge: u32,
-}
-
-impl Win32ImageSink {
-    /// Creates a sink uploading each image as an `edge`×`edge` square.
-    #[must_use]
-    pub fn new(edge: u32) -> Self {
-        Self { edge: edge.max(1) }
-    }
-}
+/// [`D2dCanvas::image`]: win32ui::d2d::D2dCanvas::image
+pub struct Win32ImageSink;
 
 impl ImageSink for Win32ImageSink {
-    type Handle = Option<Rc<Bitmap>>;
+    type Handle = Option<Rc<RgbaImage>>;
 
     fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Self::Handle {
-        let square = to_square(image, self.edge);
-        match Bitmap::from_rgba(square.width as i32, square.height as i32, &square.pixels) {
-            Ok(bitmap) => Some(Rc::new(bitmap)),
-            Err(error) => {
-                tracing::warn!(%error, "now-playing artwork bitmap");
-                None
-            }
-        }
-    }
-}
-
-/// Stretches `image` to an `edge`×`edge` square, or a blank square if the
-/// source dimensions are unusable.
-fn to_square(image: &Rgba8Image, edge: u32) -> Rgba8Image {
-    let blank = || Rgba8Image {
-        width: edge,
-        height: edge,
-        pixels: vec![0; (edge * edge * 4) as usize],
-    };
-    if image.width == 0 || image.height == 0 {
-        return blank();
-    }
-    if image.width == edge && image.height == edge {
-        return image.clone();
-    }
-    let source = win32ui::RgbaImage {
-        width: image.width,
-        height: image.height,
-        pixels: image.pixels.clone(),
-    };
-    match imaging::resize(&source, edge, edge) {
-        Ok(resized) => Rgba8Image {
-            width: resized.width,
-            height: resized.height,
-            pixels: resized.pixels,
-        },
-        Err(_) => blank(),
+        Some(Rc::new(RgbaImage {
+            width: image.width,
+            height: image.height,
+            pixels: image.pixels.clone(),
+        }))
     }
 }
 
@@ -119,31 +81,4 @@ fn load_artwork(path: &Path, fallback_dir: Option<&Path>) -> Option<Rgba8Image> 
         height: image.height,
         pixels: image.pixels,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn to_square_stretches_to_the_requested_edge() {
-        let image = Rgba8Image {
-            width: 4,
-            height: 2,
-            pixels: vec![255; 4 * 2 * 4],
-        };
-        let square = to_square(&image, 8);
-        assert_eq!((square.width, square.height), (8, 8));
-    }
-
-    #[test]
-    fn to_square_tolerates_a_malformed_buffer() {
-        let image = Rgba8Image {
-            width: 4,
-            height: 4,
-            pixels: vec![0; 3],
-        };
-        let square = to_square(&image, 5);
-        assert_eq!((square.width, square.height), (5, 5));
-    }
 }

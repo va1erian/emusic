@@ -7,6 +7,8 @@
 //! the window's controls, [`menu`] builds the menu bar, [`views`] holds the
 //! (placeholder) view widgets, and [`waker`] wakes the UI from workers.
 
+mod d2d_text;
+
 pub mod app;
 pub mod dialogs;
 pub mod menu;

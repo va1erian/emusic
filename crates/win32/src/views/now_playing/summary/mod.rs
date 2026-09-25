@@ -16,9 +16,10 @@ use std::rc::Rc;
 
 use emusic_ui::library_api::TrackInfo;
 use emusic_ui::views::now_playing::{ModuleView, NowPlayingView as Model};
-use win32ui::gdi::{Bitmap, Canvas, Font, FontWeight};
+use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, RectF, TextSystem};
+use win32ui::gdi::Canvas;
 use win32ui::prelude::*;
-use win32ui::{Rect, Size, Theme};
+use win32ui::{Rect, RgbaImage, Size, Theme};
 
 use super::PANEL_WIDTH;
 use input::Hit;
@@ -37,11 +38,6 @@ const TITLE_LINE: f32 = 22.0;
 const STAR: f32 = 20.0;
 /// Small gap between the star and the title, or between links.
 const LINK_GAP: f32 = 6.0;
-
-/// The artwork bitmap edge for `dpi`, in pixels (at least one).
-pub(super) fn artwork_edge_px(dpi: u32) -> u32 {
-    dip(ARTWORK_EDGE).to_px(dpi).value().max(1) as u32
-}
 
 /// What a click on the summary asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +123,7 @@ fn album_line(track: &TrackInfo, year: Option<u32>) -> String {
     parts.join("  ·  ")
 }
 
-/// The summary's fonts, created once per DPI.
+/// The summary's fonts, resolved once from DirectWrite.
 struct Fonts {
     title: Option<Font>,
     body: Option<Font>,
@@ -135,20 +131,43 @@ struct Fonts {
 }
 
 impl Fonts {
-    fn new(dpi: u32) -> Self {
+    /// Points to the device-independent em size DirectWrite takes, keeping the
+    /// same sizes the GDI path used (`96 / 72` points per DIP).
+    fn dip_font(system: &TextSystem, points: f32, weight: u16) -> Option<Font> {
+        system
+            .font(&FontSpec::new("Segoe UI", points * 96.0 / 72.0).weight(weight))
+            .ok()
+    }
+
+    fn new() -> Self {
+        let Ok(system) = TextSystem::new() else {
+            return Self {
+                title: None,
+                body: None,
+                small: None,
+            };
+        };
         Self {
-            title: Font::new("Segoe UI", 12.0, FontWeight::Bold, dpi).ok(),
-            body: Font::new("Segoe UI", 9.75, FontWeight::Regular, dpi).ok(),
-            small: Font::new("Segoe UI", 8.5, FontWeight::Regular, dpi).ok(),
+            title: Self::dip_font(&system, 12.0, 700),
+            body: Self::dip_font(&system, 9.75, 400),
+            small: Self::dip_font(&system, 8.5, 400),
         }
     }
 }
 
-/// The owner-drawn summary widget.
+/// The decoded artwork plus its Direct2D image, uploaded on first paint.
+struct Artwork {
+    image: Rc<RgbaImage>,
+    id: Cell<Option<ImageId>>,
+}
+
+/// The Direct2D-painted summary widget.
 pub(super) struct SummaryWidget {
-    dpi: Cell<u32>,
     data: RefCell<SummaryData>,
-    artwork: RefCell<Option<Rc<Bitmap>>>,
+    artwork: RefCell<Option<Artwork>>,
+    /// The Direct2D image of a replaced artwork, released on the next paint
+    /// (the surface is only reachable while painting).
+    forget: Cell<Option<ImageId>>,
     /// Clickable regions, refreshed on every paint.
     hits: RefCell<Vec<(Rect, Hit)>>,
     hot: Cell<Option<Hit>>,
@@ -157,15 +176,15 @@ pub(super) struct SummaryWidget {
 }
 
 impl SummaryWidget {
-    pub(super) fn new(dpi: u32) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            dpi: Cell::new(dpi),
             data: RefCell::new(SummaryData::default()),
             artwork: RefCell::new(None),
+            forget: Cell::new(None),
             hits: RefCell::new(Vec::new()),
             hot: Cell::new(None),
             pressed: Cell::new(None),
-            fonts: RefCell::new(Fonts::new(dpi)),
+            fonts: RefCell::new(Fonts::new()),
         }
     }
 
@@ -174,14 +193,24 @@ impl SummaryWidget {
         *self.data.borrow_mut() = SummaryData::from_model(model);
     }
 
-    /// Replaces the artwork bitmap, returning whether it changed.
-    pub(super) fn set_artwork(&mut self, artwork: Option<Rc<Bitmap>>) -> bool {
+    /// Replaces the artwork, returning whether it changed.
+    pub(super) fn set_artwork(&mut self, artwork: Option<Rc<RgbaImage>>) -> bool {
         let changed = match (&*self.artwork.borrow(), &artwork) {
             (None, None) => false,
-            (Some(previous), Some(next)) => !Rc::ptr_eq(previous, next),
+            (Some(previous), Some(next)) => !Rc::ptr_eq(&previous.image, next),
             _ => true,
         };
-        *self.artwork.borrow_mut() = artwork;
+        if changed {
+            if let Some(previous) = self.artwork.borrow_mut().take()
+                && let Some(id) = previous.id.get()
+            {
+                self.forget.set(Some(id));
+            }
+            *self.artwork.borrow_mut() = artwork.map(|image| Artwork {
+                image,
+                id: Cell::new(None),
+            });
+        }
         changed
     }
 }
@@ -190,14 +219,19 @@ impl CustomWidget for SummaryWidget {
     type Event = SummaryEvent;
 
     fn preferred_size(&self, dpi: u32) -> Option<Size> {
-        self.dpi.set(dpi);
         Some(Size::new(
             dip(PANEL_WIDTH).to_px(dpi).value(),
             dip(ARTWORK_EDGE + 260.0).to_px(dpi).value(),
         ))
     }
 
-    fn paint(&self, canvas: &Canvas, bounds: Rect, theme: &Theme) {
+    fn renderer(&self) -> Renderer {
+        Renderer::Direct2D
+    }
+
+    fn paint(&self, _canvas: &Canvas, _bounds: Rect, _theme: &Theme) {}
+
+    fn paint_d2d(&self, canvas: &mut D2dCanvas<'_>, bounds: RectF, theme: &Theme) {
         draw::paint(self, canvas, bounds, theme);
     }
 

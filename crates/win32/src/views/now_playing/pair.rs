@@ -17,7 +17,7 @@ use crate::app::Msg;
 
 use super::artwork::{self, ArtworkCache, Win32ImageSink};
 use super::queue::{self, QueueItem};
-use super::summary::{self, SummaryWidget};
+use super::summary::SummaryWidget;
 
 /// A summary widget and a queue list, plus the artwork cache and the
 /// row-to-queue-index bookkeeping they share.
@@ -43,8 +43,8 @@ impl WidgetPair {
         on_context: impl Fn(usize) -> Option<Msg> + 'static,
         on_remove: impl Fn() -> Msg + 'static,
     ) -> win32ui::Result<Self> {
-        let summary = Custom::new(ui, SummaryWidget::new(ui.dpi()))?
-            .on_event(|event| Some(Msg::NowPlaying(event)));
+        let summary =
+            Custom::new(ui, SummaryWidget::new())?.on_event(|event| Some(Msg::NowPlaying(event)));
         let queue = queue::build(ui, on_activate, on_context)?;
         Ok(Self {
             summary,
@@ -68,8 +68,8 @@ impl WidgetPair {
     /// The artwork is polled every tick (a decode may finish between model
     /// changes); the summary and queue are only rebuilt when the model's
     /// revision changed.
-    pub(super) fn sync(&mut self, model: &Model, dpi: u32) {
-        let mut sink = Win32ImageSink::new(summary::artwork_edge_px(dpi));
+    pub(super) fn sync(&mut self, model: &Model) {
+        let mut sink = Win32ImageSink;
         self.cache.drain(&mut sink);
         let request = model.artwork();
         let bitmap = if request.path.is_empty() {

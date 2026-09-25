@@ -1,17 +1,20 @@
 //! The album grid's tiles (#113): the model item, its [`GridModel`] wrapper and
 //! the `content` painter that draws a cover, its caption and the selection.
 //!
-//! The painter receives a [`Canvas`] and the tile rectangle from the shared
-//! [`GridView`](win32ui::GridView); it draws the cached cover (or a
-//! deterministic placeholder) and the album/artist/year caption. Cover colour
-//! and caption formatting mirror the egui frontend's `album_grid::tile`.
+//! The painter receives a [`D2dCanvas`] and the tile rectangle from the shared
+//! [`GridView`](win32ui::GridView); it uploads the cached cover into Direct2D's
+//! bitmap cache once per decode and draws it scaled, then the album/artist/year
+//! caption. Cover colour and caption formatting mirror the egui frontend's
+//! `album_grid::tile`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::views::album_grid::models::AlbumKey;
-use win32ui::gdi::{Canvas, Font, FontWeight, TextFormat};
+use win32ui::d2d::{D2dCanvas, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
 use win32ui::prelude::*;
+
+use crate::d2d_text::{self, Align};
 
 use super::thumbs::ThumbState;
 
@@ -26,6 +29,37 @@ pub(super) struct AlbumTile {
     pub(super) artist: String,
     pub(super) year: Option<u32>,
     pub(super) art_path: String,
+    /// The tile's cover uploaded to the Direct2D surface, kept so a decode is
+    /// uploaded once rather than every frame.
+    cover: Cell<Option<CoverImage>>,
+}
+
+impl AlbumTile {
+    /// A tile with no cover uploaded yet.
+    pub(super) fn new(
+        key: AlbumKey,
+        name: String,
+        artist: String,
+        year: Option<u32>,
+        art_path: String,
+    ) -> Self {
+        Self {
+            key,
+            name,
+            artist,
+            year,
+            art_path,
+            cover: Cell::new(None),
+        }
+    }
+}
+
+/// An album's cover uploaded to the Direct2D surface: the RGBA buffer's
+/// address identifies the decode, so a re-decoded cover re-uploads.
+#[derive(Clone, Copy)]
+struct CoverImage {
+    source: usize,
+    id: ImageId,
 }
 
 /// The grid's owner-data model: the albums in display order.
@@ -50,71 +84,96 @@ impl GridModel for TileModel {
 pub(super) fn content(
     thumbs: Rc<RefCell<ThumbState>>,
     theme: Rc<Cell<Theme>>,
-    dpi: u32,
-    caption_px: i32,
-) -> impl Fn(&AlbumTile, &Canvas, Rect, TileState) + 'static {
-    let body = Font::new("Segoe UI", 9.75, FontWeight::Regular, dpi).ok();
-    let bold = Font::new("Segoe UI", 9.75, FontWeight::Bold, dpi).ok();
-    let small = Font::new("Segoe UI", 8.25, FontWeight::Regular, dpi).ok();
-    let glyph = Font::new("Segoe UI Symbol", 22.0, FontWeight::Regular, dpi).ok();
+) -> impl Fn(&AlbumTile, &mut D2dCanvas<'_>, RectF, TileState) + 'static {
+    let system = TextSystem::new().ok();
+    let font = move |family: &str, points: f32, weight: u16| {
+        system.as_ref().and_then(|system| {
+            system
+                .font(&FontSpec::new(family, points * 96.0 / 72.0).weight(weight))
+                .ok()
+        })
+    };
+    let body = font("Segoe UI", 9.75, 400);
+    let bold = font("Segoe UI", 9.75, 700);
+    let small = font("Segoe UI", 8.25, 400);
+    let glyph = font("Segoe UI Symbol", 22.0, 400);
 
     move |tile, canvas, rect, state| {
         let theme = theme.get();
-        let edge = (rect.width() - caption_px).max(1);
-        let cover = Rect::new(rect.left, rect.top, rect.left + edge, rect.top + edge);
+        let edge = (rect.width() - CAPTION_DIP).max(1.0);
+        let cover = RectF::new(rect.left, rect.top, rect.left + edge, rect.top + edge);
 
         match thumbs.borrow_mut().cover(&tile.art_path) {
-            Some(bitmap) => canvas.draw_bitmap(&bitmap, cover),
+            Some(image) => {
+                let source = Rc::as_ptr(&image) as usize;
+                let id = match tile.cover.get() {
+                    Some(cached) if cached.source == source => cached.id,
+                    _ => {
+                        if let Some(stale) = tile.cover.get() {
+                            canvas.forget_image(stale.id);
+                        }
+                        let id = canvas.image(&image);
+                        tile.cover.set(Some(CoverImage { source, id }));
+                        id
+                    }
+                };
+                canvas.draw_image(id, cover, None, 1.0, Interpolation::Linear);
+            }
             None => {
+                tile.cover.set(None);
                 canvas.fill_rect(cover, placeholder_color(&tile.name));
                 if let Some(font) = &glyph {
-                    canvas.with_font(font, |canvas| {
-                        canvas.draw_text(
-                            cover,
-                            "\u{266A}",
-                            Color::rgb(255, 255, 255),
-                            TextFormat::left()
-                                .center()
-                                .vcenter()
-                                .single_line()
-                                .no_prefix(),
-                        );
-                    });
+                    d2d_text::draw_line(
+                        canvas,
+                        font,
+                        cover,
+                        "\u{266A}",
+                        Color::rgb(255, 255, 255),
+                        Align::Center,
+                    );
                 }
             }
         }
         if state.selected {
-            canvas.outline(cover, theme.accent);
+            canvas.stroke_rect(cover, theme.accent, Stroke::solid(1.0));
         }
 
-        let line = (caption_px / 3).max(1);
-        let name = Rect::new(
+        let line = CAPTION_DIP / 3.0;
+        let name = RectF::new(
             rect.left,
-            cover.bottom + 1,
+            cover.bottom + 1.0,
             rect.right,
-            cover.bottom + 1 + line,
+            cover.bottom + 1.0 + line,
         );
-        let artist = name.offset(0, line);
-        let year = artist.offset(0, line);
-        let format = TextFormat::left()
-            .vcenter()
-            .single_line()
-            .end_ellipsis()
-            .no_prefix();
+        let artist = RectF::new(name.left, name.top + line, name.right, name.bottom + line);
+        let year = RectF::new(
+            artist.left,
+            artist.top + line,
+            artist.right,
+            artist.bottom + line,
+        );
         if let Some(font) = &bold {
-            canvas.with_font(font, |canvas| {
-                canvas.draw_text(name, &tile.name, theme.text, format);
-            });
+            d2d_text::draw_line(canvas, font, name, &tile.name, theme.text, Align::Left);
         }
         if let Some(font) = &body {
-            canvas.with_font(font, |canvas| {
-                canvas.draw_text(artist, &tile.artist, theme.text_secondary, format);
-            });
+            d2d_text::draw_line(
+                canvas,
+                font,
+                artist,
+                &tile.artist,
+                theme.text_secondary,
+                Align::Left,
+            );
         }
         if let (Some(year_value), Some(font)) = (tile.year, &small) {
-            canvas.with_font(font, |canvas| {
-                canvas.draw_text(year, &year_value.to_string(), theme.text_secondary, format);
-            });
+            d2d_text::draw_line(
+                canvas,
+                font,
+                year,
+                &year_value.to_string(),
+                theme.text_secondary,
+                Align::Left,
+            );
         }
     }
 }

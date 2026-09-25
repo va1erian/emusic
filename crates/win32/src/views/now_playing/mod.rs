@@ -74,8 +74,8 @@ impl NowPlayingView {
     }
 
     /// Pushes the model into the controls, decoding artwork through the cache.
-    pub fn sync(&mut self, model: &Model, dpi: u32) {
-        self.pair.sync(model, dpi);
+    pub fn sync(&mut self, model: &Model) {
+        self.pair.sync(model);
     }
 
     /// The queue entry index for a preview row, for jump/remove.
