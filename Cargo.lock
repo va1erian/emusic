@@ -2106,7 +2106,7 @@ checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 [[package]]
 name = "win32ui"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/win32ui?branch=main#bb8a06341fc812bbd689be4a04479afddd19e718"
+source = "git+https://github.com/va1erian/win32ui?branch=main#7fbb7c89701a1df5f6825b94721e72be1892586a"
 dependencies = [
  "embed-resource",
  "glow",
