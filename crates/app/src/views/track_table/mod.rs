@@ -27,7 +27,6 @@ pub use emusic_ui::views::track_table::sort::SortState;
 
 use super::EguiView;
 
-const ROW_HEIGHT: f32 = 20.0;
 const HEADER_HEIGHT: f32 = 22.0;
 const INDEX_COL_WIDTH: f32 = 34.0;
 const STAR_COL_WIDTH: f32 = 24.0;
@@ -70,6 +69,8 @@ impl EguiView for TrackTable {
         }
 
         let available_height = ui.available_height();
+        let metrics = crate::appearance::metrics();
+        let zebra = crate::appearance::zebra();
         // The table lays its columns out to whatever width it is given and
         // clips any that don't fit. Give it at least the sum of the columns'
         // minimum widths, so a narrow window scrolls horizontally (the central
@@ -89,7 +90,7 @@ impl EguiView for TrackTable {
             |ui| {
                 let mut builder = TableBuilder::new(ui)
                     .id_salt(id_salt)
-                    .striped(true)
+                    .striped(zebra)
                     .sense(egui::Sense::click())
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                     .min_scrolled_height(0.0)
@@ -124,7 +125,7 @@ impl EguiView for TrackTable {
                         }
                     })
                     .body(|body| {
-                        body.rows(ROW_HEIGHT, row_count, |mut row| {
+                        body.rows(metrics.row_height, row_count, |mut row| {
                             let pos = row.index();
                             let Some(view) = self.row(pos, cx) else {
                                 return;

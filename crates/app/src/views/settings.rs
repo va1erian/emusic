@@ -10,7 +10,9 @@
 
 use eframe::egui::{self, Color32, Stroke};
 
-use crate::state::{Accent, AppState, Command, Rgb, SettingsTab, VisualizerMode};
+use crate::state::{
+    Accent, AppState, Command, Density, FontSize, Rgb, SettingsTab, VisualizerMode,
+};
 
 pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
     tab_strip(ui, state);
@@ -53,7 +55,34 @@ fn appearance(ui: &mut egui::Ui, state: &mut AppState) {
     custom_picker(ui, state);
 
     ui.add_space(12.0);
+    text_and_density(ui, state);
+
+    ui.add_space(12.0);
     visualizer(ui, state);
+}
+
+/// UI font size, list density and zebra striping (#309). Applied live: the
+/// shell's tick reports the change and the frontend re-applies the metrics
+/// before the next frame.
+fn text_and_density(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.label("Font size");
+    ui.horizontal_wrapped(|ui| {
+        for size in FontSize::ALL {
+            ui.selectable_value(&mut state.appearance.font_size, size, size.label());
+        }
+    });
+
+    ui.add_space(8.0);
+    ui.label("List density");
+    ui.horizontal_wrapped(|ui| {
+        for density in Density::ALL {
+            ui.selectable_value(&mut state.appearance.density, density, density.label());
+        }
+    });
+
+    ui.add_space(8.0);
+    ui.checkbox(&mut state.appearance.zebra, "Zebra striping")
+        .on_hover_text("Alternate list-row backgrounds for easier scanning.");
 }
 
 /// The optional status-bar visualizer strip (#25). Disabled by default: an

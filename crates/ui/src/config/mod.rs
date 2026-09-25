@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
 use crate::state::projectm::{ProjectMSettings, VizLayout};
-use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
+use crate::state::{Accent, AppState, Appearance, PanelVisibility, Theme, View, VisualizerMode};
 
 pub use io::{ConfigError, config_path, load, save};
 pub use ui_state::UiState;
@@ -95,6 +95,9 @@ pub struct Config {
     pub theme: Theme,
     /// UI accent colour (preset name or `#rrggbb`).
     pub accent: Accent,
+    /// Font size, list density and zebra striping (#309).
+    #[serde(default)]
+    pub appearance: Appearance,
     /// Which optional panels are visible.
     pub panels: PanelVisibility,
     /// Whether the Music view's column browser (#16) is shown.
@@ -170,6 +173,7 @@ impl Default for Config {
             shuffle: false,
             theme: Theme::default(),
             accent: Accent::default(),
+            appearance: Appearance::default(),
             panels: PanelVisibility::default(),
             column_browser_visible: true,
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
@@ -208,6 +212,7 @@ impl Config {
             shuffle: player.shuffle(),
             theme: state.theme,
             accent: state.accent,
+            appearance: state.appearance,
             panels: state.panels,
             column_browser_visible: state.music.browser.visible,
             column_browser_height: state.music.browser.height,
@@ -234,6 +239,7 @@ impl Config {
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.theme = self.theme;
         state.accent = self.accent;
+        state.appearance = self.appearance;
         state.panels = self.panels;
         state.music.browser.visible = self.column_browser_visible;
         state.music.browser.height = self.column_browser_height;

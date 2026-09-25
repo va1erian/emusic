@@ -89,6 +89,14 @@ fn dispatch_toggle_theme_changes_theme() {
 }
 
 #[test]
+fn tick_reports_an_appearance_change() {
+    let mut shell = shell();
+    shell.state.appearance.zebra = false;
+    let tick = shell.tick(Instant::now());
+    assert!(tick.changes.contains(Changes::APPEARANCE));
+}
+
+#[test]
 fn dispatch_toggle_panel_changes_visibility() {
     let mut shell = shell();
     let before = shell.state.panels.navigator;

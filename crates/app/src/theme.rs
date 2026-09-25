@@ -6,9 +6,9 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use eframe::egui::{self, Color32, CornerRadius, Stroke, Style, Visuals};
+use eframe::egui::{self, Color32, CornerRadius, FontId, Stroke, Style, TextStyle, Visuals};
 
-use crate::state::{Accent, DEFAULT_ACCENT, Palette, Rgb, Rgba, Theme};
+use crate::state::{Accent, Appearance, DEFAULT_ACCENT, Metrics, Palette, Rgb, Rgba, Theme};
 
 /// The accent colour currently applied, packed as `0xRRGGBB`. The UI is
 /// single-threaded, so a relaxed atomic is all the syncing this needs.
@@ -28,15 +28,18 @@ pub fn to_color32(rgb: Rgb) -> Color32 {
     Color32::from_rgb(rgb.r, rgb.g, rgb.b)
 }
 
-/// Applies the theme's visuals and spacing to `ctx` for the given theme and
-/// accent, makes it the active theme, and records the accent for
-/// [`current_accent`].
-pub fn apply(ctx: &egui::Context, theme: Theme, accent: Accent) {
+/// Applies the theme's visuals and spacing to `ctx` for the given theme,
+/// accent and appearance settings, makes it the active theme, and records the
+/// accent and metrics for [`current_accent`] and [`crate::appearance`].
+pub fn apply(ctx: &egui::Context, theme: Theme, accent: Accent, appearance: Appearance) {
     let palette = Palette::of(theme, accent);
     CURRENT_ACCENT.store(pack(palette.accent), Ordering::Relaxed);
+    let metrics = crate::appearance::install(appearance, ctx.pixels_per_point());
     let egui_theme = to_egui_theme(theme);
     ctx.set_theme(egui_theme);
-    ctx.style_mut_of(egui_theme, |style| customize(style, theme, &palette));
+    ctx.style_mut_of(egui_theme, |style| {
+        customize(style, theme, &palette, &metrics)
+    });
 }
 
 const fn pack(color: Rgb) -> u32 {
@@ -57,17 +60,44 @@ fn to_egui_theme(theme: Theme) -> egui::Theme {
     }
 }
 
-fn customize(style: &mut Style, theme: Theme, palette: &Palette) {
+fn customize(style: &mut Style, theme: Theme, palette: &Palette, metrics: &Metrics) {
     style.visuals = match theme {
         Theme::Dark => dark_visuals(palette),
         Theme::Light => light_visuals(palette),
     };
 
+    // Text sizes come from the shared metrics (#309), so the font-size
+    // setting scales every style. The monospace family keeps the body size
+    // (matching egui's defaults) while the proportional family carries it.
+    style.text_styles = [
+        (
+            TextStyle::Small,
+            FontId::new(metrics.small, egui::FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Body,
+            FontId::new(metrics.body, egui::FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(metrics.body, egui::FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Heading,
+            FontId::new(metrics.title, egui::FontFamily::Proportional),
+        ),
+        (
+            TextStyle::Monospace,
+            FontId::new(metrics.body, egui::FontFamily::Monospace),
+        ),
+    ]
+    .into();
+
     // Dense, table-friendly spacing (MusicBee packs a lot into the track
     // list without feeling cramped).
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
     style.spacing.button_padding = egui::vec2(6.0, 3.0);
-    style.spacing.interact_size.y = 20.0;
+    style.spacing.interact_size.y = metrics.row_height;
 }
 
 fn dark_visuals(p: &Palette) -> Visuals {
@@ -121,9 +151,14 @@ mod tests {
     #[test]
     fn apply_records_current_accent() {
         let ctx = egui::Context::default();
-        apply(&ctx, Theme::Dark, Accent::Orange);
+        apply(&ctx, Theme::Dark, Accent::Orange, Appearance::default());
         assert_eq!(current_accent(), to_color32(DEFAULT_ACCENT));
-        apply(&ctx, Theme::Light, Accent::Custom(Rgb::from_rgb(1, 2, 3)));
+        apply(
+            &ctx,
+            Theme::Light,
+            Accent::Custom(Rgb::from_rgb(1, 2, 3)),
+            Appearance::default(),
+        );
         assert_eq!(current_accent(), Color32::from_rgb(1, 2, 3));
     }
 
@@ -209,7 +244,12 @@ mod tests {
         ];
         for (theme, accent, name, expected) in cases {
             let mut style = egui::Style::default();
-            customize(&mut style, theme, &Palette::of(theme, accent));
+            customize(
+                &mut style,
+                theme,
+                &Palette::of(theme, accent),
+                &Metrics::DEFAULT,
+            );
             let v = style.visuals;
             let actual = [
                 ("active", v.widgets.active.bg_fill),

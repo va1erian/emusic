@@ -6,7 +6,7 @@ use std::time::Duration;
 use eframe::egui;
 
 use crate::state::Command;
-use crate::{panels, theme, views};
+use crate::{panels, views};
 
 use super::EguiApp;
 
@@ -47,7 +47,7 @@ impl eframe::App for EguiApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
 
-        theme::apply(&ctx, self.shell.state.theme, self.shell.state.accent);
+        self.sync_appearance(&ctx);
 
         self.menu_bar(ui);
         if let Some(notice) = self.shell.backend_notice() {

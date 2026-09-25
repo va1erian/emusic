@@ -31,7 +31,6 @@ pub enum HistoryAction {
     Remove(i64),
 }
 
-const ROW_HEIGHT: f32 = 20.0;
 const HEADER_HEIGHT: f32 = 22.0;
 const TIME_WIDTH: f32 = 96.0;
 const STAR_WIDTH: f32 = 24.0;
@@ -73,13 +72,15 @@ pub fn show(
     let mut action = keyboard(ui, selection, &order, &order_ids);
 
     let available_height = ui.available_height();
+    let metrics = crate::appearance::metrics();
+    let zebra = crate::appearance::zebra();
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), available_height),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             TableBuilder::new(ui)
                 .id_salt(id_salt)
-                .striped(true)
+                .striped(zebra)
                 .sense(egui::Sense::click())
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .min_scrolled_height(0.0)
@@ -107,7 +108,7 @@ pub fn show(
                     }
                 })
                 .body(|body| {
-                    body.rows(ROW_HEIGHT, rows.len(), |mut row| {
+                    body.rows(metrics.row_height, rows.len(), |mut row| {
                         let i = row.index();
                         match &rows[i] {
                             Row::Day(label) => day_row(&mut row, label),

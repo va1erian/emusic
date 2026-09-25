@@ -6,6 +6,7 @@
 //! `emusic-shot` screenshot tool (behind the `shot` feature) can share it.
 
 pub mod app;
+pub mod appearance;
 pub mod backend;
 pub use emusic_ui::cli;
 pub use emusic_ui::config;
