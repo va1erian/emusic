@@ -9,14 +9,15 @@ emusic is a Windows music player & library in Rust with a native Win32 UI, audio
 - Match the existing style of the surrounding code.
 
 ## Unsafe
-- **Avoid `unsafe`.** Every crate except `bass`, `winshell` and `sid` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
-- In `bass`, `winshell` and `sid`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. In `sid`, every module outside `src/ffi.rs` starts with `#![forbid(unsafe_code)]`. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
+- **Avoid `unsafe`.** Every crate except `bass`, `winshell`, `sid` and `projectm` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
+- In `bass`, `winshell`, `sid` and `projectm`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. In `sid` and `projectm`, every module outside `ffi` starts with `#![forbid(unsafe_code)]`. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
 - `win32ui` (the safe Win32/common-controls wrapper the app is built on) lives in its own repo, [va1erian/win32ui](https://github.com/va1erian/win32ui), and is pulled in as a git dependency — its `unsafe` is reviewed and tested there, not here. `crates/win32ui-demo` consumes it and holds the workspace's example + smoke test.
 - To pick up new win32ui commits, run `scripts/bump-win32ui.sh [<commit>]` — **not** `cargo update -p win32ui`, which re-resolves the shared `windows` crates and can break the build.
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.
 - BASS DLLs are never committed. Loaded at runtime from `<exe dir>/bass/` (override: env `EMUSIC_BASS_DIR`). Tests that need BASS must skip gracefully when the DLLs are absent.
+- The same goes for the projectM DLLs (LGPL-2.1, #297): never committed, loaded at runtime from `<exe dir>/projectm/` (override: env `EMUSIC_PROJECTM_DIR`), and tests that need them skip when absent.
 - `crates/sid` vendors the cRSID C engine and builds it with a MinGW-w64 GCC via the `cc` crate (cRSID uses GCC nested functions, which MSVC/clang reject); `EMUSIC_SID_CC` overrides the compiler. The vendored sources are unmodified — do not patch them for one toolchain.
 - Stay within the issue's scope; list follow-ups in the PR description.
 
