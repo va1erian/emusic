@@ -25,11 +25,13 @@ use crate::app::Msg;
 /// how to draw and click it, so the data columns stay index-compatible with
 /// `columns::COLUMNS` at offset [`COLUMNS_OFFSET`].
 pub(crate) const STAR_COLUMN: usize = 0;
-/// The first data column (Title): the star column shifts every shared column
-/// right by one.
-const COLUMNS_OFFSET: usize = 1;
+/// The first data column (Title): the star and play-marker (#279) columns shift
+/// every shared column right by two.
+const COLUMNS_OFFSET: usize = 2;
 /// The star column's width, in design units.
 const STAR_COLUMN_WIDTH: f32 = 24.0;
+/// The play marker column's width, in design units.
+const PLAY_COLUMN_WIDTH: f32 = 20.0;
 
 /// The star cell's glyph: a filled star when starred, an outline otherwise,
 /// matching the now-playing summary.
@@ -52,6 +54,21 @@ pub(crate) fn star_column() -> Column<TrackRow> {
             theme.text_secondary
         })
     })
+}
+
+/// Builds the play marker column: a play glyph in the accent colour on the row
+/// of the track `playing` holds, empty elsewhere.
+pub(crate) fn play_column(playing: Rc<Cell<Option<u64>>>) -> Column<TrackRow> {
+    Column::new("", dip(PLAY_COLUMN_WIDTH), move |row: &TrackRow| {
+        if playing.get() == Some(row.track.id) {
+            "\u{25B6}"
+        } else {
+            ""
+        }
+    })
+    .centered()
+    .resizable(false)
+    .cell_color(|_, theme| Some(theme.accent))
 }
 
 /// A context-menu action on a track row.
@@ -166,6 +183,7 @@ impl TrackView {
                 }
             })
             .add_column(star_column())
+            .add_column(play_column(Rc::clone(&playing)))
             .column("Title", Fill, |row: &TrackRow| row.text(0))
             .on_cell_click(|row, column, _point| {
                 (column == STAR_COLUMN).then_some(Msg::ToggleStarRow(row))
@@ -328,9 +346,9 @@ pub(crate) fn cell_text(row: &TrackRow, id: ColumnId) -> &str {
     }
 }
 
-/// The list column index for a [`ColumnId`] (0 = star, 1 = Title, then
-/// `COLUMNS`).
-fn column_index(id: ColumnId) -> Option<usize> {
+/// The list column index for a [`ColumnId`] (0 = star, 1 = play marker,
+/// 2 = Title, then `COLUMNS`).
+pub(crate) fn column_index(id: ColumnId) -> Option<usize> {
     if id == ColumnId::Title {
         return Some(COLUMNS_OFFSET);
     }
