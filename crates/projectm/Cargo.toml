@@ -1,0 +1,15 @@
+[package]
+name = "emusic-projectm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Safe, runtime-loaded FFI wrapper over libprojectM 4 (MilkDrop visualization)"
+
+[lib]
+name = "emusic_projectm"
+path = "src/lib.rs"
+
+[dependencies]
+libloading = "0.8"
+thiserror = "2"
+tracing = "0.1"
