@@ -104,6 +104,10 @@ pub struct Config {
     pub column_browser_visible: bool,
     /// Height of the column browser's splitter, in pixels.
     pub column_browser_height: f32,
+    /// Width of the navigator (left panel) splitter, in pixels (#342).
+    pub navigator_width: f32,
+    /// Width of the now-playing (right panel) splitter, in pixels (#342).
+    pub right_panel_width: f32,
     /// View shown on startup.
     pub last_view: View,
     /// Reopen the last played track and queue where they left off on startup
@@ -177,6 +181,8 @@ impl Default for Config {
             panels: PanelVisibility::default(),
             column_browser_visible: true,
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
+            navigator_width: crate::state::DEFAULT_NAVIGATOR_WIDTH,
+            right_panel_width: crate::state::DEFAULT_RIGHT_PANEL_WIDTH,
             last_view: View::default(),
             resume_playback: true,
             autoplay_on_restore: false,
@@ -216,6 +222,8 @@ impl Config {
             panels: state.panels,
             column_browser_visible: state.music.browser.visible,
             column_browser_height: state.music.browser.height,
+            navigator_width: state.navigator_width,
+            right_panel_width: state.right_panel_width,
             last_view: state.view,
             resume_playback: state.resume_playback,
             autoplay_on_restore: state.autoplay_on_restore,
@@ -243,6 +251,8 @@ impl Config {
         state.panels = self.panels;
         state.music.browser.visible = self.column_browser_visible;
         state.music.browser.height = self.column_browser_height;
+        state.navigator_width = self.navigator_width;
+        state.right_panel_width = self.right_panel_width;
         state.view = self.last_view;
         state.resume_playback = self.resume_playback;
         state.autoplay_on_restore = self.autoplay_on_restore;

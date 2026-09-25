@@ -47,6 +47,17 @@ use crate::views::starred::StarredView;
 #[cfg(test)]
 mod tests;
 
+/// Default navigator (left panel) width, in DIP.
+pub const DEFAULT_NAVIGATOR_WIDTH: f32 = 220.0;
+/// Default now-playing (right panel) width, in DIP.
+pub const DEFAULT_RIGHT_PANEL_WIDTH: f32 = 280.0;
+/// Bounds a dragged navigator width is clamped to, in DIP.
+pub const MIN_NAVIGATOR_WIDTH: f32 = 140.0;
+pub const MAX_NAVIGATOR_WIDTH: f32 = 480.0;
+/// Bounds a dragged right-panel width is clamped to, in DIP.
+pub const MIN_RIGHT_PANEL_WIDTH: f32 = 200.0;
+pub const MAX_RIGHT_PANEL_WIDTH: f32 = 560.0;
+
 /// Everything the shell needs beyond the player/library data itself.
 pub struct AppState {
     pub view: View,
@@ -55,6 +66,10 @@ pub struct AppState {
     /// Font size, list density and zebra striping (#309).
     pub appearance: Appearance,
     pub panels: PanelVisibility,
+    /// Navigator (left panel) width, in DIP; dragged by its splitter (#342).
+    pub navigator_width: f32,
+    /// Now-playing (right panel) width, in DIP; dragged by its splitter (#342).
+    pub right_panel_width: f32,
     pub search_query: String,
     /// Number of tracks the Music view's search box currently matches;
     /// `None` when no query is active. Set by the Music view each frame,
@@ -167,6 +182,8 @@ impl Default for AppState {
             accent: Accent::default(),
             appearance: Appearance::default(),
             panels: PanelVisibility::default(),
+            navigator_width: DEFAULT_NAVIGATOR_WIDTH,
+            right_panel_width: DEFAULT_RIGHT_PANEL_WIDTH,
             search_query: String::new(),
             search_result_count: None,
             search_popup: crate::views::search_popup::SearchPopup::default(),
