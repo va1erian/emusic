@@ -45,6 +45,22 @@
   #define AssetsDir AddBackslash(SourcePath) + "..\assets"
 #endif
 
+; Bundled projectM presets (#299). The always-installed base set (the
+; milkdrop-original presets plus the texture pack they need) is fetched by
+; scripts\fetch-presets.ps1 into target\presets\ and copied by [Files] below.
+; It is an optional packaging input: a warning rather than an #error, so a
+; local build still works (just without the base preset set).
+#ifndef PresetsDir
+  #define PresetsDir AddBackslash(SourcePath) + "..\target\presets"
+#endif
+
+; The "get more presets" helper, built from installer\emusic-presets.iss. It
+; is installed into {app}\ so it is always available offline. Optional too:
+; build it first with `ISCC.exe installer\emusic-presets.iss`.
+#ifndef PresetsHelper
+  #define PresetsHelper AddBackslash(SourcePath) + "Output\emusic-presets-setup.exe"
+#endif
+
 ; Require Inno Setup 7: SetupArchitecture (7.0) and the changed AppVerName
 ; default are used below. `VER` is the compiler version.
 #if VER < EncodeVer(7, 0, 0)
@@ -67,6 +83,10 @@
 #else
   #error BASS DLLs not found in the bass folder. Put the x64 BASS DLLs (bass.dll plus any codec add-ons) in the build's bass folder, or pass /DBassDir=<path> - see docs/installer.md.
 #endif
+
+; The optional projectM preset downloads (#299): merges in its own [Setup],
+; [UninstallDelete] and [Code] sections. See installer\presets.iss.
+#include "presets.iss"
 
 [Setup]
 ; Stable identity for upgrades/uninstall; the double brace yields a literal '{'.
@@ -108,6 +128,16 @@ VersionInfoCompany={#AppPublisher}
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Components]
+; Optional projectM preset packs (#299), downloaded at install time by
+; installer\presets.iss. The small base set is always installed, so this is
+; an opt-in extra; projectm-classic overlaps the other packs and is left
+; unchecked by default. No preset bytes are committed to the repository.
+Name: "vizpresets"; Description: "Visualization presets (optional download)"; Types: full; Flags: checkablealone
+Name: "vizpresets\cream"; Description: "cream-of-the-crop - 9,795 presets, 111 MB"
+Name: "vizpresets\end"; Description: "en-d - 40 presets, 2.8 MB"
+Name: "vizpresets\classic"; Description: "projectm-classic - 4,188 presets, 24.6 MB (overlaps the other packs)"
+
 [Files]
 Source: "{#BuildDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; BASS is required (#124): the early #error above guarantees this matches at
@@ -117,6 +147,25 @@ Source: "{#BassDir}\*.dll"; DestDir: "{app}\bass"; Flags: ignoreversion
 Source: "{#AssetsDir}\ico\*.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 #else
   #pragma warning "Icon files not found in the assets folder; building an installer without file-association icons. Pass /DAssetsDir=<path> if they live elsewhere."
+#endif
+; Bundled visualization presets (#299): the always-installed base set and the
+; textures many of them need. Both are optional packaging inputs (warnings, so
+; a local build works without the ~8 MB fetch).
+#if DirExists(AddBackslash(PresetsDir) + "milkdrop-original")
+Source: "{#PresetsDir}\milkdrop-original\*"; DestDir: "{app}\visualizations\presets\milkdrop-original"; Flags: ignoreversion recursesubdirs createallsubdirs
+#else
+  #pragma warning "Bundled presets not found; the base preset set will be missing. Run scripts\fetch-presets.ps1 or pass /DPresetsDir=<path>."
+#endif
+#if DirExists(AddBackslash(PresetsDir) + "textures")
+Source: "{#PresetsDir}\textures\*"; DestDir: "{app}\visualizations\textures"; Flags: ignoreversion recursesubdirs createallsubdirs
+#else
+  #pragma warning "Bundled preset textures not found; many presets will render without their textures. Run scripts\fetch-presets.ps1 or pass /DPresetsDir=<path>."
+#endif
+; The "get more presets" helper (#299), installed so it is available offline.
+#if FileExists(PresetsHelper)
+Source: "{#PresetsHelper}"; DestDir: "{app}"; Flags: ignoreversion
+#else
+  #pragma warning "Presets helper not found; the installer will not bundle it. Run `ISCC.exe installer\emusic-presets.iss` first, or pass /DPresetsHelper=<path>."
 #endif
 
 ; libprojectM visualization DLLs (#298), optional. Kept in its own include file
@@ -157,6 +206,10 @@ const
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssPostInstall then begin
     SaveStringToFile(ExpandConstant('{app}\bass\README.txt'), BassNotice, False);
+    // Download the optional preset packs chosen on the components page
+    // (#299). Failures are non-fatal and reported by the shared code.
+    PresetsInstallFromComponents;
+  end;
 end;
