@@ -3,6 +3,7 @@
 //! The egui (and later Win32) frontends render the panels; only the state
 //! that must survive across frames and be shared with config lives here.
 
+pub mod database_info;
 pub mod navigator;
 pub mod status_bar;
 pub mod top_bar;

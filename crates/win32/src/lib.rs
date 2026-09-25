@@ -8,6 +8,7 @@
 //! (placeholder) view widgets, and [`waker`] wakes the UI from workers.
 
 pub mod app;
+pub mod dialogs;
 pub mod menu;
 pub mod views;
 pub mod waker;

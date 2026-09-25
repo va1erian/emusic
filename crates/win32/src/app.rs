@@ -23,6 +23,7 @@ use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
 use win32ui::{column, dip, row};
 
+use crate::dialogs::database_info::{self, DatabaseInfoChoice};
 use crate::menu;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
 use crate::views::artists::ArtistsView;
@@ -50,7 +51,7 @@ pub enum Msg {
     Timer,
     /// Apply a command from the menu bar.
     Dispatch(Command),
-    /// Open File -> Database info (placeholder until the dialog lands).
+    /// Open File -> Database info.
     DatabaseInfo,
     /// Play the Music view row (double-click / Enter).
     PlayRow(usize),
@@ -642,7 +643,11 @@ impl App for Win32App {
                 self.tick(ui);
             }
             Msg::DatabaseInfo => {
-                self.shell.state.database_info_open = true;
+                let choice = database_info::show(ui, self.shell.library.as_ref());
+                if choice == Some(DatabaseInfoChoice::Rescan) {
+                    self.shell.dispatch(Command::LibraryRescan);
+                    self.tick(ui);
+                }
             }
             Msg::PlayRow(row) => {
                 let command = match self.shell.state.view {
