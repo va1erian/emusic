@@ -1,6 +1,6 @@
 # emusic
 
-Windows music player & library, built with Rust + egui, audio via [BASS](https://www.un4seen.com).
+Windows music player & library, built with Rust and a native Win32 UI, audio via [BASS](https://www.un4seen.com).
 
 ## Development
 
@@ -50,22 +50,22 @@ The installer needs these DLLs at packaging time and fails to compile if the `ba
 The app's icon set lives in `assets/` (`ico/`, `png/`, `svg/` — see
 `assets/README.txt`). Unlike the BASS DLLs it is committed. The app icon is
 embedded into `emusic.exe` at build time (via `crates/app/build.rs` and
-`embed-resource`) and set as the egui window icon; the per-extension
+`embed-resource`); the per-extension
 `file-<ext>.ico` files ship in an `icons/` folder next to the installed exe
 and back the file-association `DefaultIcon` entries. The installer packages
 them — see [docs/installer.md](docs/installer.md).
 
 ### Fonts
 
-The app ships **no bundled fonts**: it uses the fonts already installed on the machine (`C:\Windows\Fonts`), with Segoe UI as the primary UI font and the CJK/symbol/emoji fonts as fallbacks. If none of them are found (e.g. a non-Windows dev box) it logs a warning and falls back to egui's defaults.
+The app ships **no bundled fonts**: it uses the fonts already installed on the machine (`C:\Windows\Fonts`), with Segoe UI as the primary UI font and the CJK/symbol/emoji fonts as fallbacks. If none of them are found it logs a warning and uses the system default GUI font.
 
 ## Packaging (Windows installer)
 
-A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. A separate `installer/emusic-win32.iss` packages the native Win32 frontend (`emusic-win32.exe`) as its own installer, side by side with the egui build under a different app name and install dir. See [docs/installer.md](docs/installer.md) for the full steps, including how the two share config/library data but not file associations.
+A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
 
 ### Downloads
 
-Each [GitHub release](https://github.com/va1erian/emusic/releases) ships four assets, built by `.github/workflows/release.yml` on every `v*` tag: an installer and a portable zip for each frontend (`emusic-<version>-setup.exe` / `emusic-<version>-portable.zip` for egui, `emusic-win32-<version>-setup.exe` / `emusic-win32-<version>-portable.zip` for the native Win32 build). Both frontends can be installed at once; they read the same library.
+Each [GitHub release](https://github.com/va1erian/emusic/releases) ships two assets, built by `.github/workflows/release.yml` on every `v*` tag: an installer (`emusic-<version>-setup.exe`) and a portable zip (`emusic-<version>-portable.zip`).
 
 ## License
 

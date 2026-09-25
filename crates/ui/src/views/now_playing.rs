@@ -16,7 +16,7 @@ use crate::state::Command;
 use crate::views::Commands;
 
 /// Upcoming queue entries shown in the panel preview. Capped: the truncation
-/// lives here so every frontend shows the same preview and count.
+/// lives here so the app shows the same preview and count.
 pub const QUEUE_PREVIEW_LIMIT: usize = 20;
 
 /// Maximum length (in bytes) of a path shown in the metadata footer before it

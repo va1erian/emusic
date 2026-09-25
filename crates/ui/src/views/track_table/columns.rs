@@ -1,8 +1,7 @@
 //! Column definitions for the track table: identity, header label, sizing
 //! and each column's text for a given track.
 //!
-//! Moved from the egui frontend (#93) without the cell painters, which stay
-//! there; sorting (`sort`) builds on [`ColumnId`].
+//! The app paints the cells; sorting (`sort`) builds on [`ColumnId`].
 
 use std::borrow::Cow;
 
@@ -30,7 +29,7 @@ pub enum ColumnId {
 }
 
 impl ColumnId {
-    /// This column's text for `track`, so both frontends format cells
+    /// This column's text for `track`, so cells format
     /// identically. Borrows the track's own strings where possible.
     pub fn cell<'a>(self, track: &'a TrackInfo) -> Cow<'a, str> {
         match self {

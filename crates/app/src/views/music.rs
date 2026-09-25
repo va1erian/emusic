@@ -1,111 +1,194 @@
-//! egui renderer for the "Music" view (#15, #16, #99): the full library as a
-//! virtualized, sortable track table, filtered by the column browser and the
-//! top bar's search box.
+//! Win32 Music view (#107): the shared track table over the library, filtered
+//! by the column browser and the top-bar search.
 //!
-//! The column browser and table are both models in `emusic-ui`; this module
-//! only draws them and routes messages.
+//! All formatting and ordering comes from `emusic-ui`; this module only builds
+//! the filtered track slice and hands it to the reusable [`TrackView`]. The
+//! header row (track count + "Shuffle all", #242) sits above the table.
 
-use eframe::egui;
+use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::search::SearchEngine;
+use emusic_ui::state::{AppState, Command};
+use emusic_ui::views::column_browser::ColumnBrowser;
+use win32ui::prelude::*;
+use win32ui::{Button, Control, Label, LayoutItem, Menu, Rect, Result, Ui, dip, row};
 
-use super::EguiView;
-use crate::library_api::{LibraryDataSource, TrackInfo};
-use crate::player_api::PlayerApi;
-use crate::search::SearchEngine;
-use crate::state::AppState;
-use emusic_ui::views::music::{MusicMsg, MusicView};
-use emusic_ui::views::{Commands, Ctx};
+use crate::app::Msg;
+use crate::views::track_table::TrackView;
 
-pub fn show(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    music: &mut MusicView,
-    library: &dyn LibraryDataSource,
-    player: &dyn PlayerApi,
-    search: &SearchEngine,
-) {
-    if library.track_count() == 0 {
-        state.search_result_count = None;
-        empty_state(ui, state, library);
-        return;
-    }
+/// Header row height, in device-independent pixels.
+const HEADER_HEIGHT: f32 = 28.0;
+/// Width of the "Shuffle all" button, in device-independent pixels.
+const SHUFFLE_BUTTON_WIDTH: f32 = 100.0;
 
-    // The view model rebuilds the cascading facets and the filtered track
-    // list from the library snapshot and the live search.
-    let all: Vec<&TrackInfo> = library.tracks().iter().collect();
-    music.refresh(&all, search);
-    let tracks = music.visible_tracks(&all);
-    state.search_result_count = music.search_result_count();
-    // Keep the `Ctx`'s slice alive for the whole frame so the table can index
-    // into exactly what `refresh` produced.
-    let tracks: &[&TrackInfo] = &tracks;
-
-    let mut out = Commands::new();
-    let cx = Ctx::new(tracks, currently_playing_id(library, player));
-
-    if music.browser.visible {
-        music.browser.show(ui, "column_browser", &cx, &mut out);
-    }
-
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
-        if ui.button("Shuffle all").clicked() {
-            music.update(MusicMsg::ShuffleAll, &cx, &mut out);
-        }
-    });
-    ui.separator();
-
-    music.table.show(ui, "music_table", &cx, &mut out);
-    state.pending.extend(out.into_vec());
+/// What the model was built from; the table is only rebuilt when it changes.
+#[derive(PartialEq)]
+struct Signature {
+    track_count: usize,
+    scan: bool,
+    search_active: bool,
+    search_count: Option<usize>,
+    column_browser: ColumnBrowser,
 }
 
-/// First-run (or emptied-library) state: nothing to list, so offer to add a
-/// music folder right away. The text distinguishes "no folders configured"
-/// from "folders configured but nothing scanned yet" — and, during a scan,
-/// shows that the library is still being built plus the scan's progress
-/// instead of a contradictory "no tracks found" message (#69, #80).
-fn empty_state(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
-    ui.add_space(48.0);
-    ui.vertical_centered(|ui| {
-        let scanning = library.is_scanning() || library.status_text().is_some();
-        ui.heading(empty_heading(scanning));
-        ui.add_space(8.0);
-        if scanning {
-            ui.label(
-                library
-                    .status_text()
-                    .unwrap_or_else(|| "Scanning your music folders...".to_string()),
-            );
-            ui.spinner();
-            return;
+/// The Music view: the library track table filtered by the browser and search.
+pub struct MusicView {
+    count_label: Label,
+    shuffle_button: Button<Msg>,
+    table: TrackView,
+    signature: Option<Signature>,
+}
+
+impl MusicView {
+    /// Creates the view, its header row and its (empty) virtual list.
+    pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+        let count_label = Label::new(ui, Rect::default(), "0 tracks")?;
+        let shuffle_button =
+            Button::new(ui, "Shuffle all")?.on_click(|| Some(Msg::MusicShuffleAll));
+        Ok(Self {
+            count_label,
+            shuffle_button,
+            table: TrackView::new(ui)?,
+            signature: None,
+        })
+    }
+
+    /// The header row: the visible track count and the "Shuffle all" button.
+    pub fn header(&self) -> LayoutItem {
+        row![
+            self.count_label.fill(1),
+            self.shuffle_button.width(dip(SHUFFLE_BUTTON_WIDTH)),
+        ]
+        .height(dip(HEADER_HEIGHT))
+    }
+
+    /// Shows or hides the header row and the table together.
+    pub fn set_visible(&self, visible: bool) {
+        self.count_label.set_visible(visible);
+        self.shuffle_button.set_visible(visible);
+        self.table.set_visible(visible);
+    }
+
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
+    /// The command to shuffle-play the tracks currently visible in the table
+    /// (the "Shuffle all" button, #242).
+    pub fn shuffle_all(
+        &self,
+        state: &AppState,
+        library: &dyn LibraryDataSource,
+        search: &SearchEngine,
+    ) -> Command {
+        let ids: Vec<u64> = visible_tracks(library, search, &state.music.browser)
+            .iter()
+            .map(|track| track.id)
+            .collect();
+        Command::ShuffleScope {
+            ids,
+            label: "Music".to_string(),
         }
-        let message = if state.library_folders.is_empty() {
-            "Add a folder with your music to get started.".to_string()
-        } else {
-            "No tracks found in your music folders yet.".to_string()
+    }
+
+    /// Rebuilds the model and playing highlight from the shell state. `changed`
+    /// gates the expensive row rebuild.
+    pub fn sync(
+        &mut self,
+        state: &AppState,
+        library: &dyn emusic_ui::library_api::LibraryDataSource,
+        search: &SearchEngine,
+        playing_id: Option<u64>,
+        changed: emusic_ui::shell::Changes,
+    ) {
+        use emusic_ui::shell::Changes;
+
+        let signature = Signature {
+            track_count: library.track_count(),
+            scan: library.is_scanning(),
+            search_active: search.is_active(),
+            search_count: search.match_count(),
+            column_browser: state.music.browser.clone(),
         };
-        ui.label(message);
-        ui.add_space(12.0);
-        if ui.button("Add music folder").clicked() {
-            crate::settings::folder_picker::request();
+        let stale = self.signature.as_ref() != Some(&signature);
+        if stale {
+            let browser_changed = self
+                .signature
+                .as_ref()
+                .is_none_or(|previous| previous.column_browser != signature.column_browser);
+            if changed.intersects(Changes::LIBRARY | Changes::SEARCH) || browser_changed {
+                let tracks = visible_tracks(library, search, &signature.column_browser);
+                self.count_label
+                    .set_text(&format!("{} tracks", tracks.len()));
+                self.table.set_rows(&tracks, state.music.table.sort);
+                self.signature = Some(signature);
+            }
         }
-    });
-}
 
-/// Heading shown when the library has no tracks: while a scan is running the
-/// library is being built, so calling it "empty" would be misleading (#80).
-fn empty_heading(scanning: bool) -> &'static str {
-    if scanning {
-        "Building your music library..."
-    } else {
-        "Your library is empty"
+        self.table.sync_playing(playing_id);
+    }
+
+    /// Applies the current sort order to the model (after a header click).
+    pub fn resort(
+        &mut self,
+        state: &AppState,
+        library: &dyn emusic_ui::library_api::LibraryDataSource,
+        search: &SearchEngine,
+    ) {
+        let tracks = visible_tracks(library, search, &state.music.browser);
+        self.table.set_rows(&tracks, state.music.table.sort);
+    }
+
+    /// The command to play `index` in the context of the whole visible list.
+    pub fn activate(&self, index: usize) -> Option<emusic_ui::state::Command> {
+        self.table.activate(index)
+    }
+
+    /// The command to toggle the star of `index` (a star-cell click).
+    pub fn toggle_star(&self, index: usize) -> Option<emusic_ui::state::Command> {
+        self.table.toggle_star(index)
+    }
+
+    /// Runs a context action on the row that opened the menu.
+    pub fn run_context(
+        &self,
+        action: crate::views::track_table::ContextAction,
+        hwnd: win32ui::Hwnd,
+    ) -> Option<emusic_ui::state::Command> {
+        self.table.run_context(action, hwnd)
+    }
+
+    pub fn set_context_row(&self, row: usize) {
+        self.table.set_context_row(row);
+    }
+
+    /// The track whose context menu is open, if any.
+    pub fn context_track(&self) -> Option<emusic_ui::library_api::TrackInfo> {
+        self.table.context_track()
+    }
+
+    pub fn context_menu(&self) -> &Menu<Msg> {
+        self.table.context_menu()
     }
 }
 
-/// Matches the player's now-playing info back to a library track id, so the
-/// table can highlight the right row. Path is the most reliable identifier
-/// because the real player's [`NowPlayingInfo`](crate::player_api::NowPlayingInfo)
-/// only carries file-stem metadata today.
-fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
-    let now_playing = player.now_playing()?;
-    library.track_by_path(&now_playing.path).map(|t| t.id)
+impl AsControl for MusicView {
+    fn control(&self) -> &Control {
+        self.table.control()
+    }
+}
+
+/// The library tracks the Music view shows: those passing the column browser
+/// and the live search.
+fn visible_tracks<'a>(
+    library: &'a dyn emusic_ui::library_api::LibraryDataSource,
+    search: &SearchEngine,
+    browser: &ColumnBrowser,
+) -> Vec<&'a TrackInfo> {
+    library
+        .tracks()
+        .iter()
+        .filter(|track| browser.matches(track))
+        .filter(|track| search.is_match(track.id))
+        .collect()
 }

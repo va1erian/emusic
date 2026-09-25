@@ -1,6 +1,6 @@
 //! Visualizer strip state shared with the shell (#25, #97).
 //!
-//! Rendering the spectrum/oscilloscope stays in the frontends; here live the
+//! Rendering the spectrum/oscilloscope stays in the app; here live the
 //! per-frame target rate the shell's repaint policy needs and the transient
 //! state (peak-hold caps) that must survive across frames.
 

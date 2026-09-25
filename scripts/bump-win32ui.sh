@@ -4,10 +4,10 @@
 # win32ui's main) and nothing else.
 #
 # `cargo update -p win32ui` also unlocks the crates win32ui shares with the
-# rest of the graph (the `windows` family), and re-resolving them can move
-# gpu-allocator off the `windows` version wgpu-hal needs, breaking the build.
-# Rewriting only the pinned commit keeps every other lock entry as it was;
-# `cargo metadata --locked` then checks the lockfile is still consistent.
+# rest of the graph (the `windows` family), and re-resolving them can pick
+# versions that do not build together. Rewriting only the pinned commit keeps
+# every other lock entry as it was; `cargo metadata --locked` then checks the
+# lockfile is still consistent.
 set -euo pipefail
 REPO=$(git rev-parse --show-toplevel)
 URL=https://github.com/va1erian/win32ui

@@ -1,16 +1,16 @@
 //! Selectable UI font size, list density, zebra striping and the derived
 //! [`Metrics`] (#309).
 //!
-//! [`FontSize`] is a stepped scale rather than a raw point size, so every
-//! frontend maps it identically; the base point size a given scale starts
-//! from stays frontend-defined ([`Metrics::compute`] takes it as an
-//! argument). [`Density`] only pads rows, never text. Both frontends read the
-//! resulting [`Metrics`] instead of each computing their own row heights.
+//! [`FontSize`] is a stepped scale rather than a raw point size. The base
+//! point size a given scale starts from is supplied by the caller
+//! ([`Metrics::compute`] takes it as an argument). [`Density`] only pads rows,
+//! never text. The app reads the resulting [`Metrics`] instead of computing
+//! its own row heights.
 
 use serde::{Deserialize, Serialize};
 
 /// Stepped UI font scale, applied to every text style. Stored as an enum (not
-/// points) so both frontends scale from their own base size identically.
+/// points) so the scale derives identically from any base size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FontSize {
@@ -88,7 +88,7 @@ impl Density {
 }
 
 /// The user's appearance choices beyond the theme and accent (#309), persisted
-/// with the rest of the config and shared by both frontends.
+/// with the rest of the config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Appearance {
@@ -132,7 +132,7 @@ pub struct Metrics {
 
 impl Metrics {
     /// Sizes at [`FontSize::Default`] and [`Density::Comfortable`] with a
-    /// base body size of 13 points at 100% DPI, matching egui's current look.
+    /// base body size of 13 points at 100% DPI.
     pub const DEFAULT: Self = Self {
         body: 13.0,
         small: 9.0,
@@ -146,8 +146,7 @@ impl Metrics {
     const MIN_ROW_HEIGHT: f32 = 16.0;
 
     /// Ratios of the base body size, keeping the relative type scale and row
-    /// proportions fixed across frontends. The small ratio matches egui's
-    /// default caption size (`TextStyle::Small`).
+    /// proportions fixed. The small ratio is the default caption size.
     const SMALL_RATIO: f32 = 9.0 / 13.0;
     const TITLE_RATIO: f32 = 18.0 / 13.0;
     const ROW_HEIGHT_RATIO: f32 = 20.0 / 13.0;
@@ -186,7 +185,7 @@ mod tests {
     const DPIS: [f32; 4] = [1.0, 1.25, 1.5, 2.0];
 
     #[test]
-    fn default_metrics_match_todays_egui_look() {
+    fn default_metrics_match_the_base_look() {
         let metrics = Metrics::compute(FontSize::Default, Density::Comfortable, 13.0, 1.0);
         assert_eq!(metrics, Metrics::DEFAULT);
     }

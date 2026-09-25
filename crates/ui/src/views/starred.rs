@@ -1,7 +1,7 @@
 //! Starred-view model (#104, #131): the starred track list's count plus the
 //! shared track table's sort/selection. The tracks themselves come from the
 //! backend ([`crate::library_api::LibraryDataSource::starred_tracks`]);
-//! rendering stays in the frontends.
+//! rendering stays in the app.
 //!
 //! [`StarredView::refresh`] compares the incoming ids before allocating, so a
 //! stable list does no work per frame.

@@ -1,101 +1,149 @@
-//! egui renderer for the "Artists" view (#104): a full-width table of artists
-//! with per-artist album and track counts, whose row context menu can start a
-//! scoped shuffle.
+//! Win32 Artists view (#248): the shared name-sorted artist list, with album
+//! and track counts, in the reusable virtual [`NameCountsView`].
 //!
-//! All state and logic live in [`ArtistsView`] (`emusic-ui`); this module only
-//! draws the table and maps its context menu to [`ArtistsMsg`]s.
+//! All state and logic live in the shared
+//! [`ArtistsView`](emusic_ui::views::artists::ArtistsView) model (`emusic-ui`);
+//! this module only owns the count label and the native list, and maps the
+//! list's "Shuffle play" context menu to the model.
 
-use eframe::egui;
-use egui_extras::{Column, TableBuilder};
+use std::cell::Cell;
 
-use super::EguiView;
-use crate::library_api::LibraryDataSource;
-use crate::state::AppState;
-use emusic_ui::views::artists::{ArtistsMsg, ArtistsView};
+use emusic_ui::library_api::{ArtistInfo, LibraryDataSource};
+use emusic_ui::state::{AppState, Command};
+use emusic_ui::views::artists::ArtistsMsg;
 use emusic_ui::views::{Commands, Ctx};
+use win32ui::prelude::*;
+use win32ui::{Control, Label, Layout, Menu, column, dip};
 
-const HEADER_HEIGHT: f32 = 22.0;
-const NAME_MIN_WIDTH: f32 = 120.0;
-const COUNT_COL_WIDTH: f32 = 72.0;
+use crate::app::Msg;
+use crate::views::name_counts::{CountColumn, NameCountRow, NameCountsView};
 
-/// Draws the view, refreshing the model from `library`.
-pub fn show(ui: &mut egui::Ui, state: &mut AppState, library: &dyn LibraryDataSource) {
-    let cx = Ctx::with_library(&[], None, library);
-    let mut out = Commands::new();
-    state.artists.show(ui, "artists_table", &cx, &mut out);
-    state.pending.extend(out.into_vec());
+/// Height of the "N artists" label, in design units.
+const LABEL_HEIGHT: f32 = 20.0;
+/// Width of each count column, in design units.
+const COUNT_WIDTH: f32 = 72.0;
+/// The count columns, in display order.
+const COUNT_COLUMNS: [CountColumn; 2] = [
+    CountColumn {
+        title: "Albums",
+        width: COUNT_WIDTH,
+    },
+    CountColumn {
+        title: "Tracks",
+        width: COUNT_WIDTH,
+    },
+];
+
+/// The Win32 Artists view: an "N artists" label over the virtual count list.
+pub struct ArtistsView {
+    label: Label,
+    rows: NameCountsView,
+    /// The model revision the list rows were last built from.
+    applied_revision: Cell<u64>,
 }
 
-impl EguiView for ArtistsView {
-    fn show(&mut self, ui: &mut egui::Ui, id_salt: &str, cx: &Ctx, out: &mut Commands) {
-        self.refresh(cx);
+impl ArtistsView {
+    /// Creates the label and the (empty) virtual list.
+    pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+        Ok(Self {
+            label: Label::new(ui, Rect::default(), "0 artists")?,
+            rows: NameCountsView::new(ui, "Artist", &COUNT_COLUMNS)?,
+            applied_revision: Cell::new(u64::MAX),
+        })
+    }
 
-        ui.label(egui::RichText::new(self.count_label()).weak());
-        ui.separator();
-
-        let mut messages: Vec<ArtistsMsg> = Vec::new();
-        let available_height = ui.available_height();
-        let metrics = crate::appearance::metrics();
-        TableBuilder::new(ui)
-            .id_salt(id_salt)
-            .striped(crate::appearance::zebra())
-            .sense(egui::Sense::click())
-            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .min_scrolled_height(0.0)
-            .max_scroll_height(available_height)
-            .column(Column::remainder().at_least(NAME_MIN_WIDTH).clip(true))
-            .column(Column::exact(COUNT_COL_WIDTH))
-            .column(Column::exact(COUNT_COL_WIDTH))
-            .header(HEADER_HEIGHT, |mut header| {
-                header.col(|ui| {
-                    header_cell(ui, "Artist");
-                });
-                header.col(|ui| count_header(ui, "Albums"));
-                header.col(|ui| count_header(ui, "Tracks"));
-            })
-            .body(|body| {
-                body.rows(metrics.row_height, self.len(), |mut row| {
-                    let artist = &self.rows()[row.index()];
-                    row.col(|ui| {
-                        ui.add(egui::Label::new(&artist.name).truncate().selectable(false));
-                    });
-                    row.col(|ui| count_cell(ui, artist.album_count));
-                    row.col(|ui| count_cell(ui, artist.track_count));
-
-                    let response = row.response();
-                    response.context_menu(|ui| {
-                        if ui.button("Shuffle play").clicked() {
-                            messages.push(ArtistsMsg::Shuffle(artist.name.clone()));
-                            ui.close();
-                        }
-                    });
-                });
-            });
-
-        for msg in messages {
-            self.update(msg, cx, out);
+    /// Refreshes the shared model from `library` and rebuilds the list rows
+    /// when the model changed.
+    pub fn sync(&mut self, state: &mut AppState, library: &dyn LibraryDataSource) {
+        let cx = Ctx::with_library(&[], None, library);
+        state.artists.refresh(&cx);
+        if self.applied_revision.get() != state.artists.revision() {
+            self.applied_revision.set(state.artists.revision());
+            self.label.set_text(&state.artists.count_label());
+            let rows = state.artists.rows().iter().map(row_for).collect();
+            self.rows.set_rows(rows);
         }
+    }
+
+    /// Applies the "Shuffle play" action for `name`, returning the commands the
+    /// model queued.
+    pub fn shuffle(
+        &self,
+        name: String,
+        state: &mut AppState,
+        library: &dyn LibraryDataSource,
+    ) -> Vec<Command> {
+        let cx = Ctx::with_library(&[], None, library);
+        let mut out = Commands::new();
+        state
+            .artists
+            .update(ArtistsMsg::Shuffle(name), &cx, &mut out);
+        out.into_vec()
+    }
+
+    /// Remembers the row the context menu was opened on.
+    pub fn set_context_row(&self, row: usize) {
+        self.rows.set_context_row(row);
+    }
+
+    /// The list's row context menu.
+    pub fn context_menu(&self) -> &Menu<Msg> {
+        self.rows.context_menu()
+    }
+
+    /// The artist name of the row the context menu was opened on, if any.
+    pub fn context_name(&self) -> Option<String> {
+        self.rows.context_name()
+    }
+
+    /// Shows or hides the whole view.
+    pub fn set_visible(&self, visible: bool) {
+        self.label.set_visible(visible);
+        self.rows.set_visible(visible);
+    }
+
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.rows.apply_appearance();
+    }
+
+    /// The "N artists" label above the virtual list.
+    pub fn layout(&self) -> Layout {
+        column![self.label.height(dip(LABEL_HEIGHT)), self.rows.fill(1)]
     }
 }
 
-/// A left-aligned, strong header cell.
-fn header_cell(ui: &mut egui::Ui, label: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(label).strong()));
+impl AsControl for ArtistsView {
+    fn control(&self) -> &Control {
+        self.rows.control()
+    }
 }
 
-/// A count column header, right-aligned to match its cells.
-fn count_header(ui: &mut egui::Ui, label: &str) {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add(egui::Label::new(egui::RichText::new(label).strong()));
-    });
+/// Builds one list row from an artist.
+fn row_for(artist: &ArtistInfo) -> NameCountRow {
+    NameCountRow::new(
+        artist.name.clone(),
+        [
+            artist.album_count.to_string(),
+            artist.track_count.to_string(),
+        ],
+    )
 }
 
-/// A right-aligned, weak numeric cell (the track table's convention for
-/// secondary counts).
-fn count_cell(ui: &mut egui::Ui, count: usize) {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add(egui::Label::new(
-            egui::RichText::new(count.to_string()).weak(),
-        ));
-    });
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_for_formats_the_artist_counts() {
+        let artist = ArtistInfo {
+            name: "Autechre".to_string(),
+            album_count: 4,
+            track_count: 51,
+        };
+        let row = row_for(&artist);
+        assert_eq!(row.name(), "Autechre");
+        assert_eq!(row.count(0), "4");
+        assert_eq!(row.count(1), "51");
+    }
 }

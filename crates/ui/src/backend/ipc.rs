@@ -1,8 +1,7 @@
 //! Single-instance detection and IPC wiring (#11), built on `winshell`.
 //!
-//! Moved from the egui frontend (#93). The egui-bound `RepaintHandle` that
-//! used to live here is now the frontend-agnostic [`Waker`] seam (#95), so
-//! everything here works with any frontend.
+//! The repaint handle that used to live here is now the toolkit-agnostic
+//! [`Waker`] seam (#95).
 //!
 //! [`Waker`]: crate::waker::Waker
 

@@ -14,7 +14,7 @@ use crate::state::Command;
 ///
 /// The parent has already applied its filters, so `tracks` is exactly what
 /// the view is showing, in library order; a model's row indices refer to this
-/// slice. Anything both frontends must agree on but that no single model owns
+/// slice. Anything the UI must agree on but that no single model owns
 /// belongs here.
 pub struct Ctx<'a> {
     /// The tracks the view is currently showing, in library order.

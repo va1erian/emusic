@@ -1,6 +1,6 @@
 //! Most-Played-view state (#24, #97): the selected time window plus the
 //! shared track table's sort/selection. The ranking itself comes from the
-//! backend; rendering stays in the egui frontend.
+//! backend; rendering stays in the app.
 
 use crate::library_api::StatsWindow;
 use crate::views::track_table::TrackTable;

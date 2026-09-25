@@ -5,7 +5,7 @@
 //! dialog) plus the display order derived from the parent's visible tracks.
 //! User intents arrive as [`TrackTableMsg`]; [`TrackTable::update`] applies
 //! them and queues any [`Command`]s into a [`Commands`] sink. Rendering
-//! (cells, stars, playing marker) stays in the frontends; this module holds
+//! (cells, stars, playing marker) stays in the app; this module holds
 //! the column identities/widths/text, the sort order built from header
 //! clicks, keyboard navigation and the persistent per-instance state.
 
@@ -59,7 +59,7 @@ pub enum NavKey {
 }
 
 /// What a row's context menu asks for. Clipboard/Explorer actions stay in the
-/// frontends, since they need no shared state.
+/// app, since they need no shared state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextAction {
     Play,
@@ -85,7 +85,7 @@ pub enum TrackTableMsg {
     Context { row: usize, action: ContextAction },
 }
 
-/// Read-only display data for one row, so both frontends format identically.
+/// Read-only display data for one row, so cells format identically.
 #[derive(Debug, Clone, Copy)]
 pub struct RowView<'a> {
     /// Position in the current display order (0-based; the `#` column shows

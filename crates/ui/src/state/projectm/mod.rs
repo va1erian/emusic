@@ -1,7 +1,6 @@
 //! projectM visualization state (#295, #300): where it is shown, how it
-//! behaves, and the frontend-reported engine status. Toolkit-agnostic, so
-//! both frontends share it; the engine itself lives in the frontend's
-//! surface widget.
+//! behaves, and the engine status the app reports. Toolkit-agnostic, so
+//! the app shares it; the engine itself lives in the app's surface widget.
 
 mod layout;
 mod monitor;

@@ -1,18 +1,17 @@
 #![forbid(unsafe_code)]
 
-//! Toolkit-agnostic UI logic shared by emusic's frontends (#93, #97).
+//! Toolkit-agnostic UI logic behind emusic (#93, #97).
 //!
 //! Everything here is independent of any GUI toolkit: the [`PlayerApi`] and
-//! [`LibraryDataSource`] traits frontends program against, the real and mock
+//! [`LibraryDataSource`] traits the app programs against, the real and mock
 //! [`backend`]s implementing them, the CLI, search, persisted-folder picking,
-//! the frontend-agnostic [`waker`] and [`image_cache`] seams, the shared
-//! [`state`], [`config`] and view-model pieces each frontend renders with its
-//! own widgets, and the [`shell::Shell`] application controller that drives
-//! them.
+//! the toolkit-agnostic [`waker`] and [`image_cache`] seams, the shared
+//! [`state`], [`config`] and view-model pieces the app renders with its own
+//! widgets, and the [`shell::Shell`] application controller that drives them.
 //!
-//! The egui frontend (`crates/app`) depends on this crate and re-exports these
-//! modules at their old paths, so UI code only changes `use` paths. The
-//! egui-bound pieces (`backend::{smtc, thumbbar}`, theme/fonts) stay there.
+//! The application (`crates/app`) depends on this crate: it renders the shared
+//! state and view models with native Win32 controls. The toolkit-bound pieces
+//! (`backend::{smtc, thumbbar}`, theme/fonts) live there.
 
 pub mod auto_tag;
 pub mod backend;

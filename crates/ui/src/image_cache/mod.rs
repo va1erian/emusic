@@ -1,10 +1,10 @@
-//! Shared, frontend-agnostic image cache (#96).
+//! Shared, toolkit-agnostic image cache (#96).
 //!
 //! Album thumbnails and now-playing artwork both decode images off the UI
 //! thread, de-duplicate in-flight requests, keep a bounded LRU of uploaded
 //! handles and wake the UI when a decode finishes. That machinery lives here,
 //! generic over the frontend's [`ImageSink`] — which turns a decoded
-//! [`Rgba8Image`] into an `egui::TextureHandle`, an `HBITMAP`, ... — while the
+//! [`Rgba8Image`] into an `HBITMAP` or GPU texture — while the
 //! frontend supplies the decode policy (see [`thumbnail_decoder`] and
 //! [`load_artwork`]) and the byte budget.
 
@@ -98,7 +98,7 @@ struct Entry<H> {
     bytes: usize,
 }
 
-/// A bounded LRU cache of decoded images, shared by every frontend (#96).
+/// A bounded LRU cache of decoded images, shared by the UI (#96).
 pub struct ThumbCache<S: ImageSink> {
     entries: HashMap<u64, Entry<S::Handle>>,
     loading: HashSet<u64>,

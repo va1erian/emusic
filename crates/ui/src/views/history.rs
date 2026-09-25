@@ -1,6 +1,6 @@
 //! History-view state and grouping (#24, #97, #246): the shared table's
 //! selection, the "clear history" confirmation flag, and the toolkit-agnostic
-//! day grouping both frontends render.
+//! day grouping the app renders.
 //!
 //! Grouping is deliberately timezone-free: a play belongs to "Today",
 //! "Yesterday" or "N days ago" based on whole 24-hour periods before `now`,

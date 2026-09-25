@@ -1,6 +1,6 @@
 //! Artists-view model (#104): the name-sorted artist list with its album and
 //! track counts, plus the per-row "Shuffle play" intent. Rendering (the table
-//! and its context menu) stays in the frontends.
+//! and its context menu) stays in the app.
 //!
 //! [`ArtistsView::refresh`] rebuilds the rows only when the library's
 //! [`LibraryDataSource::revision`] counter changes, so an unchanged library

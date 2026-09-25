@@ -20,11 +20,6 @@ debug
 # Contains mutation testing data
 **/mutants.out*/
 
-# egui_kittest snapshot test scratch files (the baseline .png is committed)
-**/tests/snapshots/**/*.new.png
-**/tests/snapshots/**/*.diff.png
-**/tests/snapshots/**/*.old.png
-
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

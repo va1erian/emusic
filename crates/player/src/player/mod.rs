@@ -127,9 +127,9 @@ impl Player {
         }
     }
 
-    /// Registers a callback invoked whenever a new event is emitted, e.g.
-    /// `egui::Context::request_repaint`. Deliberately takes a plain
-    /// `Fn`, not an egui type, so this crate has no UI dependency.
+    /// Registers a callback invoked whenever a new event is emitted, e.g. to
+    /// wake the UI. Deliberately takes a plain `Fn`, not a UI type, so this
+    /// crate has no UI dependency.
     pub fn set_waker(&mut self, waker: Arc<dyn Fn() + Send + Sync>) {
         self.waker = Some(waker);
     }

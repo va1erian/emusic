@@ -5,8 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Opaque sRGB colour, one byte per channel. The shared colour currency for
-/// themes, accents and palettes; each frontend maps it to its own colour
-/// type (`egui::Color32`, `COLORREF`, …).
+/// themes, accents and palettes; the app maps it to its own colour type
+/// (`COLORREF`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb {
     /// Red channel, 0–255.

@@ -1,116 +1,271 @@
-//! egui renderer for the "Folders" view (#18, #101): a collapsible directory
-//! tree on the left, and the track table for the selected folder on the
-//! right, with an "include subfolders" toggle.
+//! Win32 Folders view (#111): a lazily-loaded directory `TreeView`, an
+//! "include subfolders" checkbox and the shared track table for the selected
+//! folder.
 //!
-//! The selected directory, filter, tree rows and track table live in the
-//! [`FoldersView`] model; this module only draws them.
+//! The selection, filter and track table live in `emusic-ui`'s
+//! [`FoldersView`](emusic_ui::views::folders::FoldersView); this module only
+//! owns the native controls and maps their events to [`Msg`]s.
 
-use eframe::egui;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
-use super::EguiView;
-use super::folder_tree;
-use crate::library_api::{LibraryDataSource, TrackInfo};
-use crate::player_api::PlayerApi;
-use crate::state::AppState;
-use emusic_ui::views::folders::{FoldersMsg, FoldersView};
-use emusic_ui::views::{Commands, Ctx};
+use emusic_ui::library_api::DirNodeInfo;
+use emusic_ui::views::folders::FoldersView as FoldersModel;
+use win32ui::prelude::*;
+use win32ui::{CheckBox, Control, Layout, Menu, Node, TreeModel, TreeView, column, dip, row};
 
-/// The tree panel's resizable width bounds.
-const MIN_TREE_WIDTH: f32 = 180.0;
-/// Generous upper bound so a real library's deeper/longer paths (unlike the
-/// short mock ones) have somewhere to grow; still bounded below by
-/// [`MIN_CENTRAL_WIDTH`] so the track table can't be squeezed to nothing.
-const MAX_TREE_WIDTH: f32 = 900.0;
-const DEFAULT_TREE_WIDTH: f32 = 260.0;
-/// Width the central view (track table) keeps for itself, same rationale as
-/// the now-playing panel's own `MIN_CENTRAL_WIDTH`.
-const MIN_CENTRAL_WIDTH: f32 = 320.0;
+use crate::app::Msg;
+use crate::views::track_table::TrackView;
 
-/// Renders the tree's own left panel. Shown as a real top-level panel
-/// (sibling to the navigator/right panel) *before* the `CentralPanel` is
-/// created, not nested inside the central view's `ScrollArea` — nesting a
-/// resizable `Panel` inside a scroll area let it compute its docking rect
-/// from the scroll content's (potentially offset) bounds instead of the
-/// screen, which let it paint over the navigator column instead of stopping
-/// at its edge.
-pub fn tree_panel(
-    ui: &mut egui::Ui,
-    view: &mut FoldersView,
-    library: &dyn LibraryDataSource,
-) -> Commands {
-    let mut messages = Vec::new();
-    // `ui.available_width()` here already excludes the navigator and right
-    // panel (shown earlier this frame), so this is genuinely the width left
-    // to split between the tree and the track table.
-    let max_width =
-        (ui.available_width() - MIN_CENTRAL_WIDTH).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
-    egui::Panel::left("folder_tree")
-        .resizable(true)
-        .default_size(DEFAULT_TREE_WIDTH)
-        .size_range(MIN_TREE_WIDTH..=max_width)
-        .show(ui, |ui| {
-            // Vertical only (#163): directory rows must stay inside the
-            // panel. Horizontal scrolling let a wide, deeply-indented row
-            // paint past the panel's right edge and over the track table, and
-            // is no longer needed now that the tree's indentation is small
-            // (#162). Overlong names are clipped to the panel instead.
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    folder_tree::show(ui, library.dir_tree(), view, &mut messages);
-                });
-        });
-    let cx = Ctx::with_library(&[], None, library);
-    let mut out = Commands::new();
-    for msg in messages {
-        view.update(msg, &cx, &mut out);
-    }
-    out
+/// The directory tree panel's width, in design units.
+const TREE_WIDTH: f32 = 260.0;
+
+/// One directory, flattened: its display data and its direct children's
+/// indices into [`DirTreeModel::nodes`]. Storing child indices (not child
+/// slices) means building the model never copies a subtree.
+struct FlatNode {
+    path: String,
+    name: String,
+    total_track_count: usize,
+    has_children: bool,
+    children: Vec<usize>,
 }
 
-pub fn show(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    library: &dyn LibraryDataSource,
-    player: &dyn PlayerApi,
-) {
-    let all: Vec<&TrackInfo> = library.tracks().iter().collect();
-    let mut out = Commands::new();
-    let cx_lib = Ctx::with_library(&all, None, library);
+/// A lazily-loaded [`TreeModel`] over the library's directory grouping.
+///
+/// The library snapshot is copied once into a flat array (the row strings
+/// only); expanding a node then walks a handful of indices. `children` is only
+/// called for the roots and for branches the control actually expands, so an
+/// unopened branch costs nothing beyond its own entry.
+struct DirTreeModel {
+    nodes: Vec<FlatNode>,
+    roots: Vec<usize>,
+    by_path: HashMap<String, usize>,
+}
 
-    let view = &mut state.folders;
-    view.refresh(&cx_lib);
-    let tracks: Vec<&TrackInfo> = view
-        .visible_ids()
-        .iter()
-        .filter_map(|id| all.iter().copied().find(|track| track.id == *id))
-        .collect();
-
-    ui.horizontal(|ui| {
-        ui.add(egui::Label::new(egui::RichText::new(view.selected_label()).strong()).truncate());
-        ui.separator();
-        let mut include = view.include_subfolders;
-        if ui.checkbox(&mut include, "Include subfolders").changed() {
-            view.update(
-                FoldersMsg::SetIncludeSubfolders(include),
-                &Ctx::new(&tracks, None),
-                &mut out,
-            );
+impl DirTreeModel {
+    fn new(tree: &[DirNodeInfo]) -> Self {
+        let mut nodes = Vec::new();
+        let mut by_path = HashMap::new();
+        let roots = flatten_level(tree, &mut nodes, &mut by_path);
+        Self {
+            nodes,
+            roots,
+            by_path,
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(egui::RichText::new(format!("{} tracks", tracks.len())).weak());
-        });
-    });
-    ui.separator();
-
-    let cx = Ctx::new(&tracks, currently_playing_id(library, player));
-    view.table.show(ui, "folders_table", &cx, &mut out);
-    state.pending.extend(out.into_vec());
+    }
 }
 
-/// Matches the player's now-playing info back to a library track id so the
-/// table can highlight the playing row; see the Music view's counterpart.
-fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
-    let now_playing = player.now_playing()?;
-    library.track_by_path(&now_playing.path).map(|t| t.id)
+/// Flattens one level, appending each node (and its descendants) to `flat` and
+/// returning the indices of this level's nodes.
+fn flatten_level(
+    level: &[DirNodeInfo],
+    flat: &mut Vec<FlatNode>,
+    by_path: &mut HashMap<String, usize>,
+) -> Vec<usize> {
+    let mut indices = Vec::with_capacity(level.len());
+    for node in level {
+        let index = flat.len();
+        indices.push(index);
+        flat.push(FlatNode {
+            path: node.path.clone(),
+            name: node.name.clone(),
+            total_track_count: node.total_track_count,
+            has_children: !node.children.is_empty(),
+            children: Vec::new(),
+        });
+        by_path.insert(node.path.clone(), index);
+        flat[index].children = flatten_level(&node.children, flat, by_path);
+    }
+    indices
+}
+
+impl TreeModel for DirTreeModel {
+    type Key = String;
+
+    fn children(&self, parent: Option<&String>) -> Vec<Node<String>> {
+        let indices: &[usize] = match parent {
+            None => &self.roots,
+            Some(path) => self
+                .by_path
+                .get(path)
+                .map_or(&[], |&index| self.nodes[index].children.as_slice()),
+        };
+        indices
+            .iter()
+            .map(|&index| {
+                let node = &self.nodes[index];
+                let text = format!("{} ({})", node.name, node.total_track_count);
+                if node.has_children {
+                    Node::branch(node.path.clone(), text)
+                } else {
+                    Node::leaf(node.path.clone(), text)
+                }
+            })
+            .collect()
+    }
+}
+
+/// The Folders view's native controls.
+pub struct FoldersView {
+    tree: TreeView<String, Msg>,
+    include: CheckBox<Msg>,
+    table: TrackView,
+    /// The library snapshot the tree was built from (`(scanning, track count)`),
+    /// or `None` before the first build.
+    applied_library: Cell<Option<(bool, usize)>>,
+    /// The model revision last mirrored into the table.
+    applied_revision: Cell<u64>,
+    applied_include: Cell<bool>,
+    applied_selection: RefCell<Option<String>>,
+}
+
+impl FoldersView {
+    /// Creates the tree, the checkbox and the track table.
+    pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+        let tree = TreeView::new(ui, DirTreeModel::new(&[]))?
+            .on_select(|path| Some(Msg::FoldersSelect(path.clone())))
+            .on_context(|path| Some(Msg::FoldersContext(path.clone())));
+        let include = CheckBox::new(ui, "Include subfolders")?
+            .on_toggle(|on| Some(Msg::FoldersSubfolders(on)));
+        let table = TrackView::new(ui)?;
+        Ok(Self {
+            tree,
+            include,
+            table,
+            applied_library: Cell::new(None),
+            applied_revision: Cell::new(u64::MAX),
+            applied_include: Cell::new(false),
+            applied_selection: RefCell::new(None),
+        })
+    }
+
+    /// Mirrors the model and the library into the controls.
+    pub fn sync(
+        &mut self,
+        model: &FoldersModel,
+        library: &dyn emusic_ui::library_api::LibraryDataSource,
+        playing_id: Option<u64>,
+    ) {
+        // Reinstall the tree only when it can actually differ and not while a
+        // scan is streaming batches (the count changes on every batch, which
+        // would reinstall and re-diff a large model each time). The first build
+        // happens immediately; a completed scan and any later non-scan change
+        // rebuild once.
+        let scanning = library.is_scanning();
+        let signature = (scanning, library.track_count());
+        let applied = self.applied_library.get();
+        if applied.is_none() || (!scanning && applied != Some(signature)) {
+            self.applied_library.set(Some(signature));
+            self.tree.set_model(DirTreeModel::new(library.dir_tree()));
+        }
+
+        if self.applied_include.get() != model.include_subfolders {
+            self.applied_include.set(model.include_subfolders);
+            self.include.set_checked(model.include_subfolders);
+        }
+
+        if *self.applied_selection.borrow() != model.selected {
+            *self.applied_selection.borrow_mut() = model.selected.clone();
+            if let Some(path) = &model.selected {
+                self.tree.select(path);
+            }
+        }
+
+        if self.applied_revision.get() != model.revision() {
+            self.applied_revision.set(model.revision());
+            self.set_table_rows(model, library);
+        }
+        self.table.sync_playing(playing_id);
+    }
+
+    /// Rebuilds the table after a header click, preserving the new sort.
+    pub fn resort(
+        &mut self,
+        model: &FoldersModel,
+        library: &dyn emusic_ui::library_api::LibraryDataSource,
+    ) {
+        self.set_table_rows(model, library);
+    }
+
+    fn set_table_rows(
+        &mut self,
+        model: &FoldersModel,
+        library: &dyn emusic_ui::library_api::LibraryDataSource,
+    ) {
+        let tracks: Vec<&emusic_ui::library_api::TrackInfo> = library
+            .tracks()
+            .iter()
+            .filter(|track| model.matches(track))
+            .collect();
+        self.table.set_rows(&tracks, model.table.sort);
+    }
+
+    /// The command to play `index` in the context of the whole visible list.
+    pub fn activate(&self, index: usize) -> Option<emusic_ui::state::Command> {
+        self.table.activate(index)
+    }
+
+    /// The command to toggle the star of `index` (a star-cell click).
+    pub fn toggle_star(&self, index: usize) -> Option<emusic_ui::state::Command> {
+        self.table.toggle_star(index)
+    }
+
+    /// Runs a context action on the row that opened the menu.
+    pub fn run_context(
+        &self,
+        action: crate::views::track_table::ContextAction,
+        hwnd: win32ui::Hwnd,
+    ) -> Option<emusic_ui::state::Command> {
+        self.table.run_context(action, hwnd)
+    }
+
+    pub fn set_context_row(&self, row: usize) {
+        self.table.set_context_row(row);
+    }
+
+    /// The track whose context menu is open, if any.
+    pub fn context_track(&self) -> Option<emusic_ui::library_api::TrackInfo> {
+        self.table.context_track()
+    }
+
+    pub fn context_menu(&self) -> &Menu<Msg> {
+        self.table.context_menu()
+    }
+
+    /// The context menu shown on a tree node: a scoped shuffle of that folder.
+    pub fn shuffle_menu(&self, path: &str) -> Menu<Msg> {
+        let path = path.to_string();
+        Menu::new().item("Shuffle play", None, move || {
+            Msg::FoldersShuffle(path.clone())
+        })
+    }
+
+    /// Shows or hides the whole view (its tree, checkbox and table).
+    pub fn set_visible(&self, visible: bool) {
+        self.tree.set_visible(visible);
+        self.include.set_visible(visible);
+        self.table.set_visible(visible);
+    }
+
+    /// Applies the current appearance metrics and zebra flag to the track
+    /// table (the folder tree is not a list view) (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
+    /// The tree on the left, and the checkbox above the track table on the
+    /// right.
+    pub fn layout(&self) -> Layout {
+        row![
+            self.tree.width(dip(TREE_WIDTH)),
+            column![self.include.layout_item(), self.table.fill(1)].fill(1),
+        ]
+    }
+}
+
+impl AsControl for FoldersView {
+    fn control(&self) -> &Control {
+        self.tree.control()
+    }
 }

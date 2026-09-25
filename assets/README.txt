@@ -10,8 +10,6 @@ Rust: embed the app icon into the exe (build.rs, with the `winres` or `embed-res
     let mut res = winres::WindowsResource::new();
     res.set_icon("assets/icons/ico/emusic-app.ico");
     res.compile().unwrap();
-egui window icon: load png/256/emusic-app.png into egui::IconData and pass it to
-ViewportBuilder::with_icon.
 
 Installer (Inno Setup):  SetupIconFile=ico\emusic-setup.ico   UninstallDisplayIcon={app}\emusic-uninstall.ico
 NSIS: !define MUI_ICON "ico\emusic-setup.ico"  !define MUI_UNICON "ico\emusic-uninstall.ico"

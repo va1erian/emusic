@@ -2,16 +2,11 @@
 
 The installer is an [Inno Setup 7](https://jrsoftware.org/isdl.php) script
 (`installer/emusic.iss`) that performs a **per-user** install of the 64-bit
-egui build into `%LOCALAPPDATA%\Programs\emusic` — no admin rights, nothing
+app into `%LOCALAPPDATA%\Programs\emusic` — no admin rights, nothing
 machine-wide. It copies `emusic.exe`, an `icons/` folder (the committed icon
 set, #125) and a **required** `bass/` folder (the x64 BASS DLLs, #124), adds a
 Start Menu shortcut, registers the file associations after install and removes
 them again on uninstall.
-
-A companion script, `installer/emusic-win32.iss`, packages the native Win32
-frontend (`emusic-win32.exe`, #91) the same way, as a separate installer that
-can be installed side by side with the egui build — see
-[The Win32 installer](#the-win32-installer) below.
 
 ## Prerequisites
 
@@ -43,7 +38,7 @@ with an `#error` instead of producing a BASS-less installer.
 `bass.dll` is the runtime core the app loads on startup; the codec add-ons are
 loaded automatically, one per file, for every other `bass*.dll` found in the
 folder (see `crates/bass/src/ffi/loader.rs` and
-`crates/app/src/backend/mod.rs`). The maintainer's packaging set is:
+`crates/ui/src/backend/mod.rs`). The maintainer's packaging set is:
 
 - `bass.dll` (required — audio engine)
 - `bassflac.dll` (FLAC)
@@ -90,7 +85,7 @@ ISCC.exe /DBuildDir=C:\path\to\release /DBassDir=C:\path\to\bass\  installer\emu
 - Creates a Start Menu shortcut.
 - Runs `emusic.exe --register-associations` after install (silently), and
   `emusic.exe --unregister` before uninstall, matching the flags parsed in
-  `crates/app/src/cli.rs`.
+  `crates/ui/src/cli.rs`.
 
 ## Icons
 
@@ -140,45 +135,6 @@ A commercial fork or build of emusic would need its own BASS license from
   conservative. `FindFirst` is used only to prove the `bass\` folder has at
   least one `bass*.dll` (an empty folder must fail too, #124).
 
-A `.github/workflows/release.yml` workflow builds both installers and a
-portable zip for each on every `v*` tag and attaches all four assets to the
-GitHub Release (#240), using the same BASS-download and packaging steps
-described above.
-
-## The Win32 installer
-
-`installer/emusic-win32.iss` packages the native Win32 frontend
-(`emusic-win32.exe`, #91) as a **separate** per-user install so it can sit
-side by side with the egui build instead of replacing it:
-
-- a different display name ("emusic (Win32)"), `AppId` GUID, install dir
-  (`{localappdata}\Programs\emusic-win32`), Start Menu shortcut and uninstall
-  entry — installing or uninstalling one build never touches the other;
-- the same `bass\` and `icons\` packaging inputs and the same `BuildDir`/
-  `BassDir`/`AssetsDir` overrides as `emusic.iss`, since `cargo build
-  --release --workspace` produces both exes into one `target\release\`;
-- `OutputBaseFilename=emusic-win32-{#AppVersion}-setup`, so
-  `ISCC.exe installer\emusic-win32.iss` produces
-  `installer\emusic-win32-<version>-setup.exe`.
-
-Build it the same way as the egui installer:
-
-```
-ISCC.exe installer\emusic-win32.iss
-```
-
-### Shared data, one set of file associations
-
-Both frontends read and write the same `%APPDATA%\emusic` config/library
-directory (`emusic_ui::config`) — installing both is safe, they see the same
-library. File associations are different: both frontends register under the
-same `AssocManager::new("emusic")` name (`crates/app/src/main.rs` and
-`crates/win32/src/main.rs`), so there is only **one** active default-player
-registration at a time, whichever frontend last ran
-`--register-associations`. The egui installer registers unconditionally on
-install; the Win32 installer instead makes it an opt-in `[Tasks]` checkbox
-("Make emusic (Win32) the default player...", unchecked by default) so
-installing the Win32 build next to the egui build does not silently steal its
-file associations. Both installers always run `--unregister` on uninstall
-regardless of that task, which is a harmless no-op if nothing was
-registered.
+A `.github/workflows/release.yml` workflow builds the installer and a portable
+zip on every `v*` tag and attaches both assets to the GitHub Release (#240),
+using the same BASS-download and packaging steps described above.

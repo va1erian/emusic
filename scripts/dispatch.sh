@@ -29,7 +29,7 @@ command -v sccache >/dev/null && export RUSTC_WRAPPER=${RUSTC_WRAPPER:-sccache}
 
 pr_url() { gh pr list -R $R --head "$BR" --state all --json url -q '.[0].url' 2>/dev/null; }
 
-TASK="You are working in a git worktree of va1erian/emusic (Windows music player, Rust + egui, audio via BASS). Branch: $BR (based on latest origin/main).
+TASK="You are working in a git worktree of va1erian/emusic (Windows music player, Rust with a native Win32 UI, audio via BASS). Branch: $BR (based on latest origin/main).
 Task: implement GitHub issue #$N. Read it: gh issue view $N -R $R --comments (plan: issue #1). Read AGENTS.md FIRST and follow it strictly: clean readable code, small focused files (<300 lines, split tests into separate files if needed), #![forbid(unsafe_code)], no unwrap outside tests, rebase-only git workflow. Look at existing crates in crates/ and reuse their public APIs (read their lib.rs and docs) rather than duplicating.
 $EXTRA
 Do NOT end your turn after exploring: keep reading to what you need, then write the code, run the checks and open the PR, all in this same run.

@@ -1,15 +1,13 @@
 //! Semantic colour [`Palette`] derived from [`Theme`] + [`Accent`] (#94).
 //!
-//! Plain RGB(A) data, no toolkit types: every frontend maps it to its own
-//! colours (the egui frontend does so in its `theme.rs`). The derivations
-//! mirror `ecolor` 0.36's gamma math exactly, so the egui mapping reproduces
-//! today's pixels bit-for-bit (guarded by the snapshot tests plus the
-//! golden mapping test in the frontend).
+//! Plain RGB(A) data, no toolkit types: the app maps it to its own colours in
+//! its `theme.rs`. The derivations use the same gamma math
+//! (`(c*f+0.5) as u8`), guarded by the golden mapping test in the app.
 
 use super::appearance::{Accent, Rgb, Theme};
 
 /// sRGB colour with alpha, for derived shades that blend (selection
-/// backgrounds, hover strokes, dimmed accent text). Frontends that cannot
+/// backgrounds, hover strokes, dimmed accent text). Callers that cannot
 /// blend per-pixel use the RGB channels as the solid colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgba {
@@ -115,7 +113,7 @@ fn toward_white(color: Rgb, t: f32) -> Rgb {
 
 /// Multiplies an opaque colour by `factor` in linear space, mirroring
 /// `ecolor` 0.36's `Color32::linear_multiply` for opaque inputs exactly
-/// (including the resulting alpha, which frontends blend).
+/// (including the resulting alpha, which the UI blends).
 fn linear_multiply(color: Rgb, factor: f32) -> Rgba {
     debug_assert!(0.0 <= factor && factor.is_finite());
     // Opaque input: `Rgba::from` gives alpha 1.0, `multiply` scales every
@@ -209,9 +207,9 @@ mod tests {
     }
 
     #[test]
-    fn text_colours_match_todays_egui_defaults() {
-        // `egui::Visuals` default text: dark `gray(140)` weakened ×0.6,
-        // light `gray(80)` weakened ×0.6 (`(c*f+0.5) as u8`).
+    fn text_colours_are_canonical() {
+        // Dark text is `gray(140)` weakened ×0.6, light `gray(80)` weakened
+        // ×0.6 (`(c*f+0.5) as u8`).
         let dark = Palette::of(Theme::Dark, Accent::Orange);
         assert_eq!(dark.fg, Rgb::from_rgb(140, 140, 140));
         assert_eq!(dark.weak, Rgb::from_rgb(84, 84, 84));

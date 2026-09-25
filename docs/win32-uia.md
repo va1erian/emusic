@@ -1,6 +1,6 @@
-# Driving the Win32 frontend with UI Automation
+# Driving the app with UI Automation
 
-The native frontend (`crates/win32`) exposes its controls to Windows UI
+The app (`crates/app`) exposes its controls to Windows UI
 Automation (UIA) through `win32ui`'s accessibility providers. Screen readers use
 the same tree, and so can agents and tests: read state, click, type and select
 without pixel coordinates.
@@ -8,9 +8,9 @@ without pixel coordinates.
 ## Quick start
 
 ```powershell
-cargo build -p emusic-win32
+cargo build -p emusic
 . .\scripts\win32-uia.ps1
-$app = Start-Emusic                 # `emusic-win32 --mock`, deterministic data
+$app = Start-Emusic                 # `emusic --mock`, deterministic data
 Show-UiaTree $app -MaxDepth 2
 Invoke-Uia $app 'Settings'          # File > Settings (menu items invoke directly)
 Invoke-Uia $app 'Playback'          # a tab
@@ -55,6 +55,6 @@ implementing `CustomWidget::accessibility` and `accessibility_action`
 
 If `Test-Responding` is `$false`: `Save-Dump $app "$env:TEMP\hung.dmp"`, then read
 the main thread's stack (the first thread in the dump; return addresses in
-`emusic-win32.exe` symbolize with `llvm-symbolizer --relative-address
---obj=target/debug/emusic-win32.exe`). A busy loop shows CPU time still rising
+`emusic.exe` symbolize with `llvm-symbolizer --relative-address
+--obj=target/debug/emusic.exe`). A busy loop shows CPU time still rising
 in `Get-Process`; a deadlock does not.

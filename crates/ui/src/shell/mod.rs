@@ -2,7 +2,7 @@
 //!
 //! [`Shell`] owns the shared [`AppState`], the library/player backends and
 //! the two search engines, drains IPC, applies queued [`Command`]s and
-//! persists the config (debounced, plus on exit). Frontends drive it once per
+//! persists the config (debounced, plus on exit). The app drives it once per
 //! frame with [`Shell::tick`], draw [`Shell::state`] themselves, and map
 //! [`Tick::next_wake`] onto their own repaint scheduling. [`Tick::changes`]
 //! reports what changed since the previous tick so a retained-mode frontend
@@ -37,7 +37,7 @@ pub const SAVE_DEBOUNCE: Duration = Duration::from_secs(2);
 /// backend's outcome is picked up even when nothing else is moving.
 pub const TAG_EDIT_REPAINT: Duration = Duration::from_millis(100);
 
-/// The application controller shared by every frontend.
+/// The application controller shared by the app.
 pub struct Shell {
     /// Everything the frontend's views read and queue commands into.
     pub state: AppState,

@@ -1,6 +1,6 @@
 //! Toolkit-agnostic maths behind the visualizer strip (#25): the spectrum's
 //! log-spaced bar bands and peak-hold caps, and the oscilloscope's
-//! decimation. Both frontends draw what these return.
+//! decimation. The app draws what these return.
 
 /// Number of bars across the strip. Kept low (24, the coarse end of the
 /// issue's 24–48 range) so the bars read as chunky blocks rather than a

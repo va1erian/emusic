@@ -1,5 +1,5 @@
 //! Global search popup model (#22, #102): the flattened result list, keyboard
-//! selection and activation, leaving only drawing to the frontends.
+//! selection and activation, leaving only drawing to the app.
 //!
 //! Artist/album matching is a plain normalized-substring search over the
 //! (small) artist/album lists; the track section reuses the

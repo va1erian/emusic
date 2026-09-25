@@ -2,13 +2,12 @@
 //! and arrow-key navigation. Selection is keyed by track id (not row index)
 //! so it survives re-sorting and filtering.
 //!
-//! Moved from the egui frontend (#97); the widget that turns egui responses
-//! into these calls stays there.
+//! The app's list control turns its click notifications into these calls.
 
 use std::collections::HashSet;
 
-/// Which modifier was held for a row click, decoupled from `egui::Modifiers`
-/// so selection logic stays independent of the UI layer and is easy to
+/// Which modifier was held for a row click, decoupled from the frontend's key
+/// state so selection logic stays independent of the UI layer and is easy to
 /// unit-test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ClickModifiers {

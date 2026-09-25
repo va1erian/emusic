@@ -1,9 +1,9 @@
 //! Single-track tag editor state (#172, #97).
 //!
 //! The dialog's editable form and its edit/submit/result cycle live here,
-//! independent of the frontend that draws the fields. The egui frontend's
-//! `show` reads and mutates these fields; the shell drains the backend's
-//! per-file outcomes with [`deliver`].
+//! independent of the toolkit that draws the fields. The dialog reads and
+//! mutates these fields; the shell drains the backend's per-file outcomes with
+//! [`deliver`].
 
 mod form;
 #[cfg(test)]

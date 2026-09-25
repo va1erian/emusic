@@ -1,8 +1,7 @@
 //! Album identity and sort order for the album grid (#17).
 //!
-//! Split out of the egui view (#93) so every frontend shares the same
-//! identity: [`AlbumInfo`] carries no stable id, so an album is its
-//! (name, artist) pair.
+//! Shared identity for the grid: [`AlbumInfo`] carries no stable id, so an
+//! album is its (name, artist) pair.
 
 use serde::{Deserialize, Serialize};
 
