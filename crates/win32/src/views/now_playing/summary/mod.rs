@@ -152,9 +152,9 @@ impl Fonts {
             };
         };
         Self {
-            title: Self::dip_font(&system, metrics.title, 700),
-            body: Self::dip_font(&system, metrics.body, 400),
-            small: Self::dip_font(&system, metrics.small, 400),
+            title: Self::dip_font(&system, crate::appearance::points(metrics.title), 700),
+            body: Self::dip_font(&system, crate::appearance::points(metrics.body), 400),
+            small: Self::dip_font(&system, crate::appearance::points(metrics.small), 400),
         }
     }
 }

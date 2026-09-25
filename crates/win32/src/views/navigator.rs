@@ -141,14 +141,14 @@ impl NavigatorWidget {
         let dpi = self.dpi.get();
         *self.body.borrow_mut() = Font::new(
             crate::appearance::UI_FAMILY,
-            metrics.body,
+            crate::appearance::points(metrics.body),
             FontWeight::Regular,
             dpi,
         )
         .ok();
         // The glyph font tracks the text scale rather than the body size: the
         // icon box is sized from it in `paint`.
-        let icon_points = ICON_POINTS * (metrics.body / crate::appearance::BASE_BODY_POINTS);
+        let icon_points = ICON_POINTS * (metrics.body / crate::appearance::BASE_BODY_DIP);
         *self.icons.borrow_mut() =
             Font::new(ICON_FAMILY, icon_points, FontWeight::Regular, dpi).ok();
     }
@@ -213,7 +213,9 @@ impl CustomWidget for NavigatorWidget {
         canvas.fill_rect(bounds, theme.background);
         let selected = self.selected.get();
         let hot = self.hot.get();
-        let scale = self.dpi.get() as f32 / 96.0;
+        // Match `for_each_row`: the row bands and the insets grow with the
+        // font-size setting, so the icon box always fits its larger glyph.
+        let scale = self.dpi.get() as f32 / 96.0 * crate::appearance::font_scale();
         let icon_left = (ICON_LEFT * scale).round() as i32;
         let icon_size = (ICON_SIZE * scale).round() as i32;
         let label_left = (LABEL_LEFT * scale).round() as i32;
