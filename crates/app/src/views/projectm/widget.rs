@@ -28,6 +28,7 @@ use super::engine::EngineSlot;
 use super::fallback;
 use super::feed::{Feed, FramePacer};
 use super::overlay;
+use super::presets::PresetFiles;
 
 /// The owner-drawn projectM surface.
 pub(super) struct ProjectMWidget {
@@ -121,6 +122,17 @@ impl ProjectMWidget {
     /// Queues a preset navigation request for the next paint.
     pub(super) fn request_preset(&self, request: PresetRequest) {
         self.requests.borrow_mut().push(request);
+    }
+
+    /// Replaces the scanned preset file list; a running instance is rebuilt on
+    /// the next paint.
+    pub(super) fn set_presets(&self, files: PresetFiles) {
+        self.engine.set_presets(files);
+    }
+
+    /// Frees the engine; the caller must have the GL context current.
+    pub(super) fn suspend(&self) {
+        self.engine.teardown();
     }
 
     /// Takes the events raised since the last call, oldest first.

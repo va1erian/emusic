@@ -70,6 +70,11 @@ pub struct ProjectMState {
     pub settings: ProjectMSettings,
     /// Engine status reported by the frontend. Transient.
     pub availability: ProjectMAvailability,
+    /// Whether a surface is actually rendering right now. The frontend clears
+    /// it while the visualization is hidden, collapsed or minimised, so the
+    /// shell's frame-rate wake falls back to its idle cadence (#305).
+    /// Transient, never persisted.
+    pub running: bool,
     /// Preset navigation queued for the frontend. Transient.
     requests: Vec<PresetRequest>,
 }

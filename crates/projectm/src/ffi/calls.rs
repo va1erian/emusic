@@ -97,6 +97,23 @@ impl RawInstance {
         Ok(added as usize)
     }
 
+    /// Adds `files` to the playlist, skipping ones already present; returns how
+    /// many were added. No GL (takes the file list ready-made).
+    pub fn add_preset_files(&self, libs: &Libs, files: &[&str]) -> Result<usize, ProjectMError> {
+        let owned = files
+            .iter()
+            .map(|file| c_string(file))
+            .collect::<Result<Vec<_>, _>>()?;
+        let pointers: Vec<*const c_char> = owned.iter().map(|file| file.as_ptr()).collect();
+        let playlist = self.playlist.as_ptr();
+        // SAFETY: the playlist is live; `pointers` holds `len` NUL-terminated
+        // strings kept alive by `owned` for the call, which copies them.
+        let added = unsafe {
+            (libs.playlist.add_presets)(playlist, pointers.as_ptr(), pointers.len() as u32, false)
+        };
+        Ok(added as usize)
+    }
+
     /// Empties the playlist. No GL.
     pub fn clear(&self, libs: &Libs) {
         // SAFETY: the playlist is live.

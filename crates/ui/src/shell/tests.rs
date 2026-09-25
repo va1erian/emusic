@@ -194,9 +194,16 @@ fn shown_projectm_wakes_at_frame_rate_even_when_stopped() {
     assert_eq!(shell.tick(Instant::now()).next_wake, None);
 
     shell.dispatch(Command::Viz(VizCommand::SetVisible(true)));
+    // The frontend reports the surface is actually rendering.
+    shell.state.projectm.running = true;
     let tick = shell.tick(Instant::now());
     assert_eq!(tick.next_wake, Some(FRAME_INTERVAL));
     assert!(tick.changes.contains(Changes::VISUALIZATION));
+
+    // While the frontend reports it is not running (minimised or collapsed),
+    // the surface is still shown but the shell falls back to its idle cadence.
+    shell.state.projectm.running = false;
+    assert_eq!(shell.tick(Instant::now()).next_wake, None);
 
     shell.dispatch(Command::Viz(VizCommand::SetVisible(false)));
     let tick = shell.tick(Instant::now());
