@@ -4,7 +4,7 @@
 //!
 //! [`MusicView`] owns both children and wraps their messages
 //! ([`MusicMsg`]), routing each to the right child and queueing any
-//! [`Command`]s they emit. Rendering stays in the frontends.
+//! [`Command`]s they emit. Rendering stays in the app.
 //!
 //! The model stores the *indices* of the tracks it shows (into the library
 //! snapshot the caller passes to [`MusicView::refresh`]), not the tracks

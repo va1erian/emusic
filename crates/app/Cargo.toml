@@ -3,6 +3,7 @@ name = "emusic"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+description = "emusic: Windows music player and library, native Win32 UI on win32ui"
 build = "build.rs"
 
 [[bin]]
@@ -15,42 +16,22 @@ path = "src/bin/emusic_shot.rs"
 required-features = ["shot"]
 
 [dependencies]
-eframe = { version = "0.36", default-features = false, features = ["glow", "accesskit"] }
-egui_extras = "0.36"
-raw-window-handle = "0.6"
-souvlaki = "0.8"
-emusic-player = { path = "../player" }
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-toml = "1"
-dirs = "5"
-thiserror = "2"
 anyhow = "1"
-rand = "0.8"
-rand_chacha = "0.3"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"], optional = true }
-bass = { path = "../bass" }
-emusic-core = { path = "../core" }
-emusic-library = { path = "../library" }
-emusic-search = { path = "../search" }
+clap = { version = "4", features = ["derive"] }
+emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
 rfd = { version = "0.15", default-features = false }
+png = { version = "0.18", optional = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
 winshell = { path = "../winshell" }
 
 [features]
-shot = ["dep:egui_kittest"]
-
-[target.'cfg(windows)'.dependencies]
-# Only to name winit's `EventLoopBuilderExtWindows` when installing the taskbar
-# message hook (#42); eframe re-exports the event-loop builder but not the
-# platform-specific extension trait.
-winit = { version = "0.30", default-features = false }
+# The headless screenshot tool (`emusic-shot`, #118). Off by default so the
+# PNG encoder and the WinRT capture bindings never enter the real binary's
+# dependency tree.
+shot = ["dep:png", "win32ui/wgc"]
 
 [build-dependencies]
 embed-resource = "3.0"
-
-[dev-dependencies]
-egui_kittest = { version = "0.36", features = ["eframe", "wgpu", "snapshot"] }

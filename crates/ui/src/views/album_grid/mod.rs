@@ -1,8 +1,8 @@
 //! Album-grid view model (#17, #93, #100).
 //!
 //! Identity, ordering, track matching and the scroll-independent grid layout
-//! live here, so both frontends virtualize the same way. The tile painters
-//! and the thumbnail cache stay in the frontends (the cache owns GPU/OS
+//! live here, so the grid virtualizes the same way. The tile painters
+//! and the thumbnail cache stay in the app (the cache owns GPU/OS
 //! handles, #96).
 
 pub mod catalog;
@@ -167,7 +167,7 @@ impl AlbumGrid {
     }
 
     /// Number of grid columns for a viewport `width`, given the item spacing.
-    /// Shared so both frontends virtualize identically.
+    /// Shared so the grid virtualizes identically.
     pub fn columns_for(&self, width: f32, spacing: f32) -> usize {
         (((width + spacing) / (self.tile_size + spacing)).floor() as usize).max(1)
     }
@@ -254,7 +254,7 @@ impl AlbumGrid {
     }
 }
 
-/// Re-exported for frontends that need the album's tracks outside the model
+/// Re-exported for callers that need the album's tracks outside the model
 /// (e.g. the now-playing panel's links).
 pub use catalog::{album_meta, album_tracks};
 
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn columns_for_matches_the_egui_layout_math() {
+    fn columns_for_matches_the_grid_layout_math() {
         let library = MockLibrary::new();
         let mut grid = grid_with_library(&library);
         grid.tile_size = 100.0;

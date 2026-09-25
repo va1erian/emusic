@@ -7,9 +7,8 @@
     1. Builds on the host (`cargo test --no-run`, or `cargo build`) into a
        separate target dir with a static CRT, because the sandbox image has no
        Visual C++ runtime.
-    2. Stages the executables, each crate's runtime test data (the
-       `egui_kittest` snapshot baselines), the BASS DLLs when available, and a
-       runner script under `<target>\sandbox-stage`.
+    2. Stages the executables, each crate's runtime test data, the BASS DLLs
+       when available, and a runner script under `<target>\sandbox-stage`.
     3. Launches a disposable, network-less Windows Sandbox that maps the stage
        folder, runs every executable with the right working directory, writes
        logs to `out\` and shuts down.
@@ -18,9 +17,8 @@
     Nothing is installed in the sandbox and nothing survives it.
 
     Unlike a plain `cargo test`, this runs each test binary from a staged copy
-    of its crate's `tests\` folder, so `egui_kittest` finds (and can diff) the
-    committed snapshots instead of silently reporting "no GPU adapter". Pass
-    `-CargoArgs '--features','emusic/shot'` to match CI's feature set, and
+    of its crate's `tests\` folder, so tests that read runtime data find it.
+    Pass `-CargoArgs '--features','emusic/shot'` to match CI's feature set, and
     `-BassDir` to run the BASS-backed tests for real.
 
 .EXAMPLE
@@ -32,8 +30,8 @@
     scripts\sandbox\run.ps1 -CargoArgs '--features','emusic/shot' -TestArgs 'music'
 
 .EXAMPLE
-    # The real Win32 app: launch it, capture the sandbox desktop, stop it
-    scripts\sandbox\run.ps1 -Build -CargoArgs '--bin','emusic-win32' -Screenshot
+    # The real app: launch it, capture the sandbox desktop, stop it
+    scripts\sandbox\run.ps1 -Build -CargoArgs '--bin','emusic' -Screenshot
 
 .EXAMPLE
     # An executable you already built, with BASS staged next to it
@@ -61,9 +59,9 @@ param(
     [int]$TimeoutMinutes = 30,
     [int]$MemoryMB = 4096,
     # Turn the virtual GPU on. Off by default: on some GPU drivers it makes the
-    # whole sandbox VM die (0x80370106) as soon as a wgpu test starts, and the
-    # native frontend's Direct2D/Mica render fine on wgpu's WARP software
-    # adapter (verified). Enable it only when you need a hardware GPU path.
+    # whole sandbox VM die (0x80370106) as soon as a GPU test starts, and the
+    # app's Direct2D/Mica render fine on WARP, the software rasteriser
+    # (verified). Enable it only when you need a hardware GPU path.
     [switch]$EnableVgpu,
     # Override the build/stage root. Defaults to `<manifest dir>\target\sandbox`.
     [string]$TargetDir,
@@ -107,8 +105,8 @@ New-Item -ItemType Directory $bin, $out, $pkg | Out-Null
 
 # --- Build on the host ------------------------------------------------------
 # Each entry becomes one run in the sandbox: a staged file name, the host
-# executable, and (when the crate has a `tests\` folder) the crate root that
-# must be the working directory for `egui_kittest` to find its snapshots.
+# executable, and the crate root that must be the working directory when the
+# crate has a `tests\` folder.
 $artifacts = @()
 if ($Exe.Count -eq 0) {
     $env:CARGO_TARGET_DIR = $targetDir
@@ -180,9 +178,9 @@ foreach ($artifact in $artifacts) {
             # The destination must exist first, or `Copy-Item` renames the
             # source folder to the destination instead of nesting it.
             New-Item -ItemType Directory -Force $pkgStage | Out-Null
-            # `tests\snapshots` is the `egui_kittest` baseline; the rest are
-            # copy-if-present so a test that reads something relative to the
-            # crate root (which cargo makes the working directory) finds it.
+            # These are copy-if-present, so a test that reads something
+            # relative to the crate root (which cargo makes the working
+            # directory) finds it.
             foreach ($sub in 'tests', 'Cargo.toml', 'kittest.toml', 'assets') {
                 $from = Join-Path $pkgDir $sub
                 if (Test-Path -LiteralPath $from) {

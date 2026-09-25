@@ -43,7 +43,7 @@ Per PR: rebase on `origin/main`, auto-resolve `Cargo.lock` only, run `fmt`/`chec
 
 ### `scripts/sandbox/run.ps1` — run the tests off the shared desktop
 
-Runs the whole workspace (or one test binary, or the real app) inside Windows Sandbox, staging each binary with its crate's `tests\` folder (the `egui_kittest` snapshots) and the BASS DLLs. Use it for `cargo test --workspace` on a shared desktop, and `-BassDir` to turn the silently-skipped BASS tests into real coverage. See [sandbox-testing.md](sandbox-testing.md).
+Runs the whole workspace (or one test binary, or the real app) inside Windows Sandbox, staging each binary with its crate's `tests\` folder and the BASS DLLs. Use it for `cargo test --workspace` on a shared desktop, and `-BassDir` to turn the silently-skipped BASS tests into real coverage. See [sandbox-testing.md](sandbox-testing.md).
 
 ## Choosing a model
 
@@ -57,7 +57,7 @@ Avoid `glm-5.3`: it repeatedly ended runs after only reading files.
 
 ## Verification that actually caught bugs
 
-- **The sandbox suite** (`scripts\sandbox\run.ps1`, with `-BassDir`) runs the real windows, wgpu snapshots and Direct2D rendering on a throwaway desktop; the committed `egui_kittest` baselines are only compared there, because a plain binary run misses them.
+- **The sandbox suite** (`scripts\sandbox\run.ps1`, with `-BassDir`) runs the real windows and Direct2D rendering on a throwaway desktop, so focus and input never touch the host.
 - **Real BASS DLLs** (`EMUSIC_BASS_DIR`) found a parallel-init failure and wrong codec names that a DLL-less sandbox could not.
 - **The official `bass.h`** caught two wrong tag constants that were written from memory.
 - **Headless screenshots** (`emusic-shot`) caught a centred-instead-of-left-aligned column browser and an off-centre play icon.

@@ -1,7 +1,7 @@
 //! Navigator model (#104): the sidebar's sections of views and the intent to
 //! switch the central view.
 //!
-//! Both frontends render the same [`SECTIONS`]; the win32 one adds a per-view
+//! The app renders the same [`SECTIONS`], adding a per-view
 //! icon. Clicks map to [`NavigatorMsg`].
 
 use crate::state::{Command, View};

@@ -1,4 +1,4 @@
-//! Image decoding shared by every frontend (#96): embedded/folder artwork via
+//! Image decoding shared by the UI (#96): embedded/folder artwork via
 //! `lofty`/`image`, plus the resized, on-disk thumbnail cache.
 //!
 //! The decode work runs on the cache's worker threads, never on the UI thread
@@ -70,7 +70,7 @@ fn folder_image(dir: Option<&Path>) -> Option<DynamicImage> {
 
 /// The bytes of the embedded cover picture in `path`'s primary tag, if any.
 ///
-/// Frontends that decode with their own backend (e.g. WIC on Windows) use this
+/// Callers that decode with their own backend (e.g. WIC on Windows) use this
 /// to read the artwork without going through the `image` crate.
 #[must_use]
 pub fn embedded_artwork(path: &Path) -> Option<Vec<u8>> {
@@ -116,7 +116,7 @@ impl Rgba8Image {
 /// `%LOCALAPPDATA%\emusic\thumbs\<hash>.jpg`, or `None` if there is no local
 /// data directory (thumbnails are then decoded on every request).
 ///
-/// Public so every frontend names the on-disk thumbnail for a source path the
+/// Public so callers name the on-disk thumbnail for a source path the
 /// same way and shares one cache.
 #[must_use]
 pub fn thumbnail_cache_path(source: &Path) -> Option<PathBuf> {

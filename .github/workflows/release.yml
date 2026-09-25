@@ -1,10 +1,10 @@
 name: Release
 
-# Builds the egui and Win32 installers and a portable zip for each, and
-# attaches all four assets to a GitHub Release whenever a `v*` tag is pushed
-# (#240). BASS is never committed to the repo (see docs/installer.md); this
-# workflow downloads the redistributable x64 DLLs from un4seen at build time,
-# the same set the README lists under "BASS DLLs".
+# Builds the installer and a portable zip and attaches both assets to a GitHub
+# Release whenever a `v*` tag is pushed (#240). BASS is never committed to the
+# repo (see docs/installer.md); this workflow downloads the redistributable x64
+# DLLs from un4seen at build time, the same set the README lists under
+# "BASS DLLs".
 on:
   push:
     tags: ["v*"]
@@ -27,18 +27,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # The tag is the source of truth for the version (#188): stamp it into
-      # the crate manifest (shown in About) and both installer scripts (#240:
-      # the Win32 build ships its own installer alongside the egui one).
+      # the crate manifest (shown in About) and the installer script (#240).
       - name: Stamp version from tag
         shell: bash
         run: |
           set -eu
           version="${GITHUB_REF_NAME#v}"
           sed -i "0,/^version = \".*\"/s//version = \"$version\"/" crates/app/Cargo.toml
-          for iss in installer/emusic.iss installer/emusic-win32.iss; do
-            sed -i "s/^#define AppVersion \".*\"/#define AppVersion \"$version\"/" "$iss"
-            sed -i "s/^VersionInfoVersion=.*/VersionInfoVersion=${version%%[-+]*}.0/" "$iss"
-          done
+          sed -i "s/^#define AppVersion \".*\"/#define AppVersion \"$version\"/" installer/emusic.iss
+          sed -i "s/^VersionInfoVersion=.*/VersionInfoVersion=${version%%[-+]*}.0/" installer/emusic.iss
           cargo update -p emusic --offline || true
 
       - run: cargo build --release --workspace
@@ -65,28 +62,24 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe" -OutFile innosetup.exe
           Start-Process -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
 
-      - name: Build installers
+      - name: Build installer
         shell: pwsh
         run: |
           $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -ErrorAction Stop | Select-Object -First 1
           & $iscc.FullName installer\emusic.iss
-          & $iscc.FullName installer\emusic-win32.iss
 
-      # Portable zips for both frontends (#240): same bass/icons payload,
-      # different exe.
-      - name: Package portable zips
+      # Portable zip with the same bass/icons payload.
+      - name: Package portable zip
         shell: bash
         run: |
           set -eu
           version="${GITHUB_REF_NAME#v}"
-          for name in emusic emusic-win32; do
-            stage="$name-portable"
-            mkdir -p "$stage/bass" "$stage/icons"
-            cp "target/release/$name.exe" "$stage/"
-            cp target/release/bass/*.dll "$stage/bass/"
-            cp assets/ico/*.ico "$stage/icons/"
-            7z a "$name-$version-portable.zip" "$stage"
-          done
+          stage="emusic-portable"
+          mkdir -p "$stage/bass" "$stage/icons"
+          cp target/release/emusic.exe "$stage/"
+          cp target/release/bass/*.dll "$stage/bass/"
+          cp assets/ico/*.ico "$stage/icons/"
+          7z a "emusic-$version-portable.zip" "$stage"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

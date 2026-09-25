@@ -4,7 +4,7 @@
 //! and per-pane selections), the cascading facet lists the three panes show,
 //! and the track-matching rule. User intents arrive as
 //! [`ColumnBrowserMsg`]; the pane widgets and rendering stay in the
-//! frontends. The facet lists are rebuilt from the library snapshot each
+//! app. The facet lists are rebuilt from the library snapshot each
 //! frame by [`ColumnBrowser::refresh`].
 
 pub mod selection;
@@ -168,7 +168,7 @@ impl ColumnBrowser {
     }
 
     /// Replaces the facet lists wholesale, marking the revision changed.
-    /// Used to seed a fresh model in tests and by retained-mode frontends
+    /// Used to seed a fresh model in tests and by the retained-mode app
     /// that build the lists themselves.
     pub fn set_facets(&mut self, facets: ColumnBrowserFacets) {
         if facets != self.facets {

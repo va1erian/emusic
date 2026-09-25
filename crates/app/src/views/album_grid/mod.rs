@@ -1,218 +1,443 @@
-//! egui renderer for the "Albums" view (#17, #100): a virtualized grid of
-//! cover tiles, backed by an off-thread thumbnail cache, with the selected
-//! album's tracks shown in the shared track table below.
+//! Win32 Albums view (#113): a custom-painted, virtualized [`GridView`] of
+//! cover tiles, with the selected album's tracks in a virtual [`ListView`]
+//! below.
 //!
-//! All state and logic live in [`AlbumGrid`] (`emusic-ui`); this module only
-//! draws. The grid is virtualized by `ScrollArea::show_rows` over the rows
-//! the model computes (`columns_for`/`rows`), so only on-screen tiles are laid
-//! out and only those request their cover art.
+//! All state and logic live in the shared [`AlbumGrid`] model (`emusic-ui`):
+//! sorting, identity, the album list and the selected album's track table.
+//! This module only owns the native controls, draws the tiles (through
+//! [`tile::content`]) and turns control events into [`AlbumMsg`]s.
 //!
-//! The thumbnail cache is egui-bound (it owns GPU handles via
-//! [`EguiImageSink`], #96) and is passed in by the frontend.
+//! [`ListView`]: win32ui::ListView
 
-#[cfg(test)]
-mod tests;
-pub(crate) mod thumbs;
-mod tile;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
-use eframe::egui;
-
-use self::thumbs::ThumbnailCache;
-use super::EguiView;
-use crate::image_sink::EguiImageSink;
-use crate::library_api::{LibraryDataSource, TrackInfo};
-use crate::player_api::PlayerApi;
-use crate::state::AppState;
+use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::state::AppState;
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
-use emusic_ui::views::album_grid::{AlbumGrid, AlbumGridMsg};
+use emusic_ui::views::album_grid::{
+    self, AlbumGrid, AlbumGridMsg, DEFAULT_TILE_SIZE, MAX_TILE_SIZE, MIN_TILE_SIZE,
+};
+use emusic_ui::views::track_table::TrackTableMsg;
 use emusic_ui::views::{Commands, Ctx};
+use emusic_ui::waker::WakerHandle;
+use win32ui::prelude::*;
+use win32ui::{Button, ComboBox, Label, column, dip, row};
 
-/// Smallest height the cover grid is given, whatever space is left.
-const MIN_GRID_HEIGHT: f32 = 160.0;
+use crate::app::Msg;
+use crate::views::track_table::{ContextAction, column_id};
 
-/// Renders the album grid and, when an album is selected, its track table.
-pub fn show(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    thumbs: &mut ThumbnailCache,
-    library: &dyn LibraryDataSource,
-    player: &dyn PlayerApi,
-) {
-    if library.albums().is_empty() {
-        empty_state(ui);
-        return;
-    }
+mod thumbs;
+mod tile;
+mod tracks;
 
-    let playing_id = currently_playing_id(library, player);
-    let mut commands = Commands::new();
+use self::thumbs::ThumbState;
+use self::tile::{AlbumTile, TileModel};
+use self::tracks::TrackList;
 
-    let grid = &mut state.album_grid;
-    let mut control_msgs = Vec::new();
-    grid.refresh(&Ctx::with_library(&[], playing_id, library));
+/// The toolbar band height, in design units.
+const TOOLBAR_HEIGHT: f32 = 34.0;
+/// Nominal control heights, used to centre each toolbar control vertically
+/// within the band.
+const LABEL_HEIGHT: f32 = 18.0;
+const COMBO_HEIGHT: f32 = 26.0;
+const SLIDER_HEIGHT: f32 = 28.0;
+const BUTTON_HEIGHT: f32 = 28.0;
 
-    let album_count = grid.len();
-    controls(ui, grid, album_count, &mut control_msgs);
-    let control_cx = Ctx::with_library(&[], playing_id, library);
-    for msg in control_msgs {
-        grid.update(msg, &control_cx, &mut commands);
-    }
-    ui.separator();
-
-    let selected_ids = grid.selected_track_ids().to_vec();
-    let selected_tracks: Vec<&TrackInfo> = selected_ids
-        .iter()
-        .filter_map(|id| library.tracks().iter().find(|track| track.id == *id))
-        .collect();
-
-    // Give the grid a definite height so its virtualization only lays out (and
-    // loads covers for) the visible tiles.
-    let visible_height = ui.available_height().max(MIN_GRID_HEIGHT);
-    if selected_tracks.is_empty() {
-        ui.allocate_ui(egui::vec2(ui.available_width(), visible_height), |ui| {
-            grid_view(ui, grid, thumbs, library, playing_id, &mut commands);
-        });
-    } else {
-        let grid_height = (visible_height * 0.45).clamp(MIN_GRID_HEIGHT, 360.0);
-        ui.allocate_ui(egui::vec2(ui.available_width(), grid_height), |ui| {
-            grid_view(ui, grid, thumbs, library, playing_id, &mut commands);
-        });
-        ui.separator();
-        let cx = Ctx::new(&selected_tracks, playing_id);
-        grid.table.show(ui, "album_table", &cx, &mut commands);
-    }
-
-    state.pending.extend(commands.into_vec());
+/// Wraps a toolbar control so it is centred vertically in the [`TOOLBAR_HEIGHT`]
+/// band: symmetric top/bottom margins shrink its area to `height`, and the
+/// control fills that area.
+fn centered(control: &impl AsControl, height: f32) -> Layout {
+    let pad = ((TOOLBAR_HEIGHT - height) / 2.0).max(0.0);
+    Layout::row()
+        .item(control.fill(1))
+        .margins(Insets::new(dip(0.0), dip(pad), dip(0.0), dip(pad)))
 }
 
-fn empty_state(ui: &mut egui::Ui) {
-    ui.add_space(48.0);
-    ui.vertical_centered(|ui| {
-        ui.heading("No albums yet");
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new("Scan a music folder to build your library.").weak());
-    });
+/// Everything the Albums view's controls can ask the app to do.
+pub enum AlbumMsg {
+    /// A tile was clicked; select that album.
+    Select(usize),
+    /// A tile was double-clicked; play the album.
+    Activate(usize),
+    /// The sort combo changed.
+    SetSort(AlbumSort),
+    /// The tile-size slider moved (live).
+    SetTileSize(f32),
+    /// The tile-size slider was released; rebuild the cover cache.
+    CommitTileSize(f32),
+    /// The "Close album" button was clicked.
+    CloseAlbum,
+    /// The "Shuffle" button was clicked; shuffle the selected album.
+    Shuffle,
+    /// A track column header was clicked.
+    TableSort(usize),
+    /// A track row was double-clicked; play it.
+    TableActivate(usize),
+    /// A track row's star cell was clicked; toggle it.
+    TableToggleStar(usize),
+    /// A track row was right-clicked; open its context menu.
+    TableContext(usize),
+    /// A track context-menu entry was chosen.
+    TableAction(ContextAction),
 }
 
-/// Sort menu, cover-size slider and the selected-album close button.
-/// Records intents as messages so the model stays the source of truth.
-fn controls(
-    ui: &mut egui::Ui,
-    grid: &AlbumGrid,
-    album_count: usize,
-    messages: &mut Vec<AlbumGridMsg>,
-) {
-    use emusic_ui::views::album_grid::{MAX_TILE_SIZE, MIN_TILE_SIZE};
+/// The Win32 Albums view: the sort/size toolbar, the album grid and the
+/// selected album's track list.
+pub struct AlbumGridView {
+    count: Label,
+    sort_label: Label,
+    sort: ComboBox<AlbumSort, Msg>,
+    size_label: Label,
+    size: Slider<Msg>,
+    shuffle: Button<Msg>,
+    close: Button<Msg>,
+    grid: GridView<AlbumTile, Msg>,
+    tracks: TrackList,
+    /// The shared thumbnail cache and the sink its uploads go through.
+    thumbs: Rc<RefCell<ThumbState>>,
+    /// The theme the tile painter draws text/placeholder colours from.
+    theme: Rc<Cell<Theme>>,
+    waker: WakerHandle,
+    dpi: u32,
+    /// The albums currently in the grid, for index-to-key mapping.
+    tiles: Rc<Vec<AlbumTile>>,
+    /// The album-grid revision the model was last built from.
+    grid_revision: u64,
+    /// The model tile size last applied to the grid.
+    applied_tile_size: f32,
+    /// The grid viewport width last resynced, so a window resize recomputes the
+    /// scrollable extent (the number of columns changed).
+    applied_width: i32,
+    /// Whether the Albums view is the active central view.
+    active: Cell<bool>,
+    /// Whether an album is selected (drives the close button and shuffle).
+    selected: Cell<bool>,
+    /// Whether the track list is currently shown.
+    tracks_visible: Cell<bool>,
+}
 
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("{album_count} albums")).weak());
-        ui.separator();
-        ui.label("Sort");
-        egui::ComboBox::from_id_salt("album_sort")
-            .selected_text(grid.sort.label())
-            .show_ui(ui, |ui| {
-                for sort in AlbumSort::ALL {
-                    if ui
-                        .selectable_label(grid.sort == sort, sort.label())
-                        .clicked()
-                    {
-                        messages.push(AlbumGridMsg::SetSort(sort));
-                    }
-                }
-            });
-        ui.separator();
-        ui.label("Size");
-        let mut tile_size = grid.tile_size;
-        if ui
-            .add(egui::Slider::new(&mut tile_size, MIN_TILE_SIZE..=MAX_TILE_SIZE).show_value(false))
-            .changed()
+impl AlbumGridView {
+    /// Creates the view and its (empty) controls. `waker` lets the thumbnail
+    /// workers repaint the grid when a decode finishes.
+    pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> Result<Self> {
+        let dpi = ui.dpi();
+        let cover_px = dip(DEFAULT_TILE_SIZE).to_px(dpi).value();
+        let thumbs = Rc::new(RefCell::new(ThumbState::new(cover_px, waker.clone())));
+        let theme = Rc::new(Cell::new(ui.theme()));
+
+        let grid = GridView::<AlbumTile, Msg>::new(ui)?
+            .tile_size(
+                dip(MIN_TILE_SIZE + tile::CAPTION_DIP)..dip(MAX_TILE_SIZE + tile::CAPTION_DIP),
+            )
+            .content_d2d(tile::content(Rc::clone(&thumbs), Rc::clone(&theme)))
+            .on_select(|index| Some(Msg::Album(AlbumMsg::Select(index))))
+            .on_activate(|index| Some(Msg::Album(AlbumMsg::Activate(index))));
+        grid.set_tile_size(dip(DEFAULT_TILE_SIZE + tile::CAPTION_DIP));
+
+        let sort = ComboBox::new(ui, AlbumSort::ALL.map(|sort| (sort.label(), sort)))?
+            .select(&AlbumSort::default())
+            .on_select(|sort| Some(Msg::Album(AlbumMsg::SetSort(*sort))));
+
+        let size = Slider::new(ui, f64::from(MIN_TILE_SIZE)..=f64::from(MAX_TILE_SIZE))?
+            .value(f64::from(DEFAULT_TILE_SIZE))
+            .on_change(|value| Some(Msg::Album(AlbumMsg::SetTileSize(value as f32))))
+            .on_commit(|value| Some(Msg::Album(AlbumMsg::CommitTileSize(value as f32))));
+
+        let shuffle = Button::new(ui, "Shuffle")?.on_click(|| Some(Msg::Album(AlbumMsg::Shuffle)));
+        let close =
+            Button::new(ui, "Close album")?.on_click(|| Some(Msg::Album(AlbumMsg::CloseAlbum)));
+        let tracks = TrackList::new(ui)?;
+
+        let view = Self {
+            count: Label::new(ui, Rect::default(), "0 albums")?,
+            sort_label: Label::new(ui, Rect::default(), "Sort")?,
+            sort,
+            size_label: Label::new(ui, Rect::default(), "Size")?,
+            size,
+            shuffle,
+            close,
+            grid,
+            tracks,
+            thumbs,
+            theme,
+            waker,
+            dpi,
+            tiles: Rc::new(Vec::new()),
+            grid_revision: u64::MAX,
+            applied_tile_size: DEFAULT_TILE_SIZE,
+            applied_width: 0,
+            active: Cell::new(true),
+            selected: Cell::new(false),
+            tracks_visible: Cell::new(false),
+        };
+        view.apply_visibility();
+        Ok(view)
+    }
+
+    /// Shows or hides the whole view (central-area routing). The track list
+    /// and close button stay governed by the selection.
+    pub fn set_visible(&self, visible: bool) {
+        if self.active.get() != visible {
+            self.active.set(visible);
+            self.apply_visibility();
+        }
+    }
+
+    /// Applies the current appearance metrics and zebra flag to the track list
+    /// and repaints the tiles, whose captions follow the live metrics (#309).
+    pub fn apply_appearance(&self) {
+        self.tracks.apply_appearance();
+        self.grid.invalidate();
+    }
+
+    /// Pushes each control's visibility from the active/selection state, so a
+    /// hidden view never shows a stray control.
+    fn apply_visibility(&self) {
+        let active = self.active.get();
+        self.count.set_visible(active);
+        self.sort_label.set_visible(active);
+        self.sort.set_visible(active);
+        self.size_label.set_visible(active);
+        self.size.set_visible(active);
+        self.shuffle.set_visible(active);
+        self.close.set_visible(active && self.selected.get());
+        self.grid.set_visible(active);
+        self.tracks.set_visible(active && self.tracks_visible.get());
+    }
+
+    /// The view's layout: a sort/size toolbar over the grid and the selected
+    /// album's track list. The track list is hidden (and takes no space) until
+    /// an album is selected.
+    pub fn layout(&self) -> Layout {
+        column![
+            row![
+                centered(&self.count, LABEL_HEIGHT).width(dip(96.0)),
+                centered(&self.sort_label, LABEL_HEIGHT).width(dip(34.0)),
+                centered(&self.sort, COMBO_HEIGHT).width(dip(150.0)),
+                centered(&self.size_label, LABEL_HEIGHT).width(dip(34.0)),
+                centered(&self.size, SLIDER_HEIGHT).fill(1),
+                centered(&self.shuffle, BUTTON_HEIGHT).width(dip(88.0)),
+                centered(&self.close, BUTTON_HEIGHT).width(dip(104.0)),
+            ]
+            .spacing(dip(6.0))
+            .height(dip(TOOLBAR_HEIGHT)),
+            self.grid.fill(1),
+            self.tracks.fill(1),
+        ]
+        .spacing(dip(4.0))
+    }
+
+    /// Pushes the shared model into the controls. Returns whether the layout
+    /// must be recomputed (the track list was shown or hidden).
+    pub fn sync(
+        &mut self,
+        state: &mut AppState,
+        library: &dyn LibraryDataSource,
+        playing_id: Option<u64>,
+        theme: Theme,
+    ) -> bool {
+        self.theme.set(theme);
+        self.thumbs.borrow_mut().drain();
+
+        let grid_revision = {
+            let cx = Ctx::with_library(&[], playing_id, library);
+            state.album_grid.refresh(&cx);
+            state.album_grid.revision()
+        };
+
+        self.count
+            .set_text(&format!("{} albums", state.album_grid.len()));
+        if self.sort.selected() != Some(&state.album_grid.sort) {
+            self.sort.set_selected(&state.album_grid.sort);
+        }
+        let tile_size = f64::from(state.album_grid.tile_size);
+        if (self.size.current_value() - tile_size).abs() > f64::EPSILON {
+            self.size.set_value(tile_size);
+        }
+        let selected = state.album_grid.selected_key().is_some();
+        self.shuffle.set_enabled(selected);
+        let selection_changed = self.selected.replace(selected) != selected;
+
+        if grid_revision != self.grid_revision {
+            self.rebuild_grid(&state.album_grid, library);
+            self.grid_revision = grid_revision;
+        }
+        if (self.applied_tile_size - state.album_grid.tile_size).abs() > f32::EPSILON {
+            self.grid
+                .set_tile_size(dip(state.album_grid.tile_size + tile::CAPTION_DIP));
+            self.applied_tile_size = state.album_grid.tile_size;
+        }
+        // The number of columns (and so the scrollable extent) depends on the
+        // viewport width; the `GridView` does not observe its own resize, so
+        // resync it here when the layout gave it a new width.
+        let width = self.grid.bounds().width();
+        if width != self.applied_width {
+            self.applied_width = width;
+            self.grid
+                .set_tile_size(dip(state.album_grid.tile_size + tile::CAPTION_DIP));
+        }
+
+        let selected_index = state
+            .album_grid
+            .selected_key()
+            .and_then(|key| self.tiles.iter().position(|tile| &tile.key == key));
+        if self.grid.selected() != selected_index {
+            self.grid.set_selected(selected_index);
+        }
+
+        let selected_tracks = self.selected_tracks(&state.album_grid, library);
         {
-            messages.push(AlbumGridMsg::SetTileSize(tile_size));
+            let cx = Ctx::new(&selected_tracks, playing_id);
+            state.album_grid.table.refresh(&cx);
         }
-        if grid.selected.is_some() {
-            ui.separator();
-            if ui.button("Close album").clicked() {
-                messages.push(AlbumGridMsg::CloseAlbum);
+        self.tracks
+            .sync(&state.album_grid.table, &selected_tracks, playing_id);
+
+        let visible = !selected_tracks.is_empty();
+        let tracks_changed = self.tracks_visible.replace(visible) != visible;
+        if selection_changed || tracks_changed {
+            self.apply_visibility();
+        }
+        selection_changed || tracks_changed
+    }
+
+    /// Applies one control event, queueing any resulting commands. `ui` is
+    /// needed to open the track list's context menu at the cursor.
+    pub fn update(
+        &mut self,
+        msg: AlbumMsg,
+        state: &mut AppState,
+        library: &dyn LibraryDataSource,
+        playing_id: Option<u64>,
+        ui: &mut Ui<Msg>,
+        out: &mut Commands,
+    ) {
+        match msg {
+            AlbumMsg::Select(index) => {
+                if let Some(key) = self.key_at(index) {
+                    let cx = Ctx::with_library(&[], playing_id, library);
+                    state
+                        .album_grid
+                        .update(AlbumGridMsg::TileClicked(key), &cx, out);
+                }
+            }
+            AlbumMsg::Activate(index) => {
+                if let Some(key) = self.key_at(index) {
+                    let cx = Ctx::with_library(&[], playing_id, library);
+                    state
+                        .album_grid
+                        .update(AlbumGridMsg::TileActivated(key), &cx, out);
+                }
+            }
+            AlbumMsg::SetSort(sort) => {
+                let cx = Ctx::with_library(&[], playing_id, library);
+                state
+                    .album_grid
+                    .update(AlbumGridMsg::SetSort(sort), &cx, out);
+            }
+            AlbumMsg::SetTileSize(size) => {
+                let cx = Ctx::with_library(&[], playing_id, library);
+                state
+                    .album_grid
+                    .update(AlbumGridMsg::SetTileSize(size), &cx, out);
+            }
+            AlbumMsg::CommitTileSize(size) => {
+                let cover_px = dip(size).to_px(self.dpi).value();
+                *self.thumbs.borrow_mut() = ThumbState::new(cover_px, self.waker.clone());
+                self.grid.set_tile_size(dip(size + tile::CAPTION_DIP));
+            }
+            AlbumMsg::CloseAlbum => {
+                let cx = Ctx::with_library(&[], playing_id, library);
+                state.album_grid.update(AlbumGridMsg::CloseAlbum, &cx, out);
+            }
+            AlbumMsg::Shuffle => {
+                if let Some(key) = state.album_grid.selected_key().cloned() {
+                    let cx = Ctx::with_library(&[], playing_id, library);
+                    state
+                        .album_grid
+                        .update(AlbumGridMsg::Shuffle(key), &cx, out);
+                }
+            }
+            AlbumMsg::TableSort(column) => {
+                let Some(id) = column_id(column) else {
+                    return;
+                };
+                let selected = self.selected_tracks(&state.album_grid, library);
+                let cx = Ctx::new(&selected, playing_id);
+                state.album_grid.update(
+                    AlbumGridMsg::Table(TrackTableMsg::HeaderClicked(id)),
+                    &cx,
+                    out,
+                );
+            }
+            AlbumMsg::TableActivate(row) => {
+                if let Some(command) = self.tracks.activate(row) {
+                    out.push(command);
+                }
+            }
+            AlbumMsg::TableToggleStar(row) => {
+                if let Some(command) = self.tracks.toggle_star(row) {
+                    out.push(command);
+                }
+            }
+            AlbumMsg::TableContext(row) => {
+                self.tracks.set_context_row(row);
+                ui.popup(self.tracks.context_menu(), ui.cursor_position());
+            }
+            AlbumMsg::TableAction(action) => {
+                if let Some(command) = self.tracks.run_context(action, ui.hwnd()) {
+                    out.push(command);
+                }
             }
         }
-    });
-}
+    }
 
-/// The virtualized grid itself. Only the visible rows are laid out; each tile
-/// requests its cover from the thumbnail cache and, on a double-click, plays
-/// the whole album.
-fn grid_view(
-    ui: &mut egui::Ui,
-    grid: &mut AlbumGrid,
-    thumbs: &mut ThumbnailCache,
-    library: &dyn LibraryDataSource,
-    playing_id: Option<u64>,
-    commands: &mut Commands,
-) {
-    let mut sink = EguiImageSink::new(ui.ctx().clone(), "album_thumb");
-    thumbs.drain(&mut sink);
-
-    let meta = emusic_ui::views::album_grid::album_meta(library);
-    let spacing = ui.spacing().item_spacing.x;
-    let tile = grid.tile_size;
-    // Reserve the vertical scroll bar's width, or the last column of each row
-    // overflows the scroll area and triggers a horizontal scroll bar.
-    let width = ui.available_width() - ui.spacing().scroll.allocated_width();
-    let columns = grid.columns_for(width, spacing);
-    let rows = grid.rows(columns);
-
-    egui::ScrollArea::vertical()
-        .id_salt("album_grid_scroll")
-        .auto_shrink([false, false])
-        .show_rows(ui, tile + tile::CAPTION_HEIGHT, rows, |ui, row_range| {
-            for row in row_range {
-                ui.horizontal(|ui| {
-                    for column in 0..columns {
-                        let Some(index) = grid.tile_index(row, column, columns) else {
-                            break;
-                        };
-                        let Some(view) = grid.tile(index) else {
-                            break;
-                        };
-                        let key = AlbumKey::of(view.album);
-                        let texture = meta
-                            .get(&key)
-                            .and_then(|meta| thumbs.get(&mut sink, &meta.art_path));
-                        let response = tile::show(ui, view.album, texture, tile, view.selected);
-                        if response.clicked() {
-                            grid.selected = Some(key.clone());
-                        }
-                        if response.double_clicked() {
-                            let cx = Ctx::with_library(&[], playing_id, library);
-                            grid.update(
-                                emusic_ui::views::album_grid::AlbumGridMsg::TileActivated(
-                                    key.clone(),
-                                ),
-                                &cx,
-                                commands,
-                            );
-                        }
-                        response.context_menu(|ui| {
-                            if ui.button("Shuffle play").clicked() {
-                                let cx = Ctx::with_library(&[], playing_id, library);
-                                grid.update(
-                                    emusic_ui::views::album_grid::AlbumGridMsg::Shuffle(
-                                        key.clone(),
-                                    ),
-                                    &cx,
-                                    commands,
-                                );
-                                ui.close();
-                            }
-                        });
-                    }
-                });
-            }
+    /// Rebuilds the grid model from the album list, resolving each album's
+    /// cover source from the shared catalog.
+    fn rebuild_grid(&mut self, grid: &AlbumGrid, library: &dyn LibraryDataSource) {
+        let meta = album_grid::album_meta(library);
+        let tiles: Vec<AlbumTile> = grid
+            .albums()
+            .iter()
+            .map(|album| {
+                let key = AlbumKey::of(album);
+                let art_path = meta
+                    .get(&key)
+                    .map(|meta| meta.art_path.clone())
+                    .unwrap_or_default();
+                AlbumTile::new(
+                    key,
+                    album.name.clone(),
+                    album.artist.clone(),
+                    album.year,
+                    art_path,
+                )
+            })
+            .collect();
+        self.tiles = Rc::new(tiles);
+        self.grid.set_model(TileModel {
+            tiles: Rc::clone(&self.tiles),
         });
-}
+    }
 
-fn currently_playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
-    let now_playing = player.now_playing()?;
-    library
-        .track_by_path(&now_playing.path)
-        .map(|track| track.id)
+    /// The selected album's tracks, resolved from the library snapshot.
+    fn selected_tracks<'a>(
+        &self,
+        grid: &AlbumGrid,
+        library: &'a dyn LibraryDataSource,
+    ) -> Vec<&'a TrackInfo> {
+        grid.selected_track_ids()
+            .iter()
+            .filter_map(|id| library.tracks().iter().find(|track| track.id == *id))
+            .collect()
+    }
+
+    /// The album key at grid position `index`.
+    fn key_at(&self, index: usize) -> Option<AlbumKey> {
+        self.tiles
+            .as_slice()
+            .get(index)
+            .map(|tile| tile.key.clone())
+    }
 }

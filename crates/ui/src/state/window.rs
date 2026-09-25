@@ -1,9 +1,9 @@
 //! Persistable window geometry (#214): the size, position and maximized
 //! state the frontend should restore on the next launch.
 //!
-//! The egui frontend records the live viewport here each frame and applies
-//! the saved values when it builds the window; the toolkit-agnostic shell
-//! only carries the value through [`Config`](crate::config::Config).
+//! The app records the live window geometry here and applies the saved values
+//! when it builds the window; the toolkit-agnostic shell only carries the value
+//! through [`Config`](crate::config::Config).
 
 use serde::{Deserialize, Serialize};
 

@@ -1,22 +1,20 @@
 //! Frontend-agnostic waker (#95).
 //!
 //! Background workers (the IPC listener, thumbnail decodes, library scans,
-//! player events, ...) run off the UI thread and need to ask the frontend to
-//! repaint when they have something new. Hard-coding an `egui::Context` for
-//! that would tie every worker to one toolkit, so they instead hold a
+//! player events, ...) run off the UI thread and need to ask the UI to
+//! repaint when they have something new. Hard-coding a particular UI handle
+//! for that would tie every worker to one toolkit, so they instead hold a
 //! [`WakerHandle`] and the frontend binds its own [`Waker`] once the UI exists.
 //!
 //! The binding is late because some workers start before the window does (the
-//! single-instance listener is acquired before `eframe::run_native` creates
-//! the egui context); until then a handle's [`Waker::wake`] is a harmless
-//! no-op. This is what the egui-bound `RepaintHandle` used to do, generalised
-//! so a second frontend can implement it too.
+//! single-instance listener is acquired before the window is created); until
+//! then a handle's [`Waker::wake`] is a harmless no-op.
 
 use std::sync::{Arc, OnceLock};
 
 /// Something that can ask a frontend to repaint its UI.
 ///
-/// Implemented by each frontend (egui: `ctx.request_repaint()`). The wake is
+/// Implemented by the app (posted to its window). The wake is
 /// only a hint to redraw; callers must not assume it runs synchronously.
 pub trait Waker: Send + Sync + 'static {
     /// Requests that the UI repaint at its next opportunity.

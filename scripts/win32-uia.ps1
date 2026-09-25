@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-  Drive the native Win32 frontend through UI Automation (for agents and tests).
+  Drive the app through UI Automation (for agents and tests).
 
 .DESCRIPTION
   Dot-source this file, then use the functions:
 
     . .\scripts\win32-uia.ps1
-    $app = Start-Emusic                       # launches `emusic-win32 --mock`
+    $app = Start-Emusic                       # launches `emusic --mock`
     Show-UiaTree $app -MaxDepth 2             # print the element tree
     Invoke-Uia $app 'Settings'                # menu item / button: Invoke, else Select
     Invoke-Uia $app 'Playback'                # a tab
@@ -39,7 +39,7 @@ $script:AE = [System.Windows.Automation.AutomationElement]
 $script:Walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 
 function Start-Emusic {
-  param([string]$Exe = "$PSScriptRoot\..\target\debug\emusic-win32.exe", [string[]]$Arguments = @('--mock'), [int]$WaitSeconds = 4)
+  param([string]$Exe = "$PSScriptRoot\..\target\debug\emusic.exe", [string[]]$Arguments = @('--mock'), [int]$WaitSeconds = 4)
   $process = Start-Process (Resolve-Path $Exe) -ArgumentList $Arguments -PassThru
   Start-Sleep $WaitSeconds
   $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $process.Id)

@@ -1,18 +1,17 @@
 # Running UI tests without taking over your desktop
 
 emusic's test suite opens real top-level windows, moves focus
-(`SetForegroundWindow`), sends synthetic input and renders frames with wgpu
-(`egui_kittest`) or Direct2D (the Win32 frontend). On a shared desktop that
-steals focus while you (or another agent) type, and your typing can make the
-tests flaky.
+(`SetForegroundWindow`), sends synthetic input and renders Direct2D frames. On
+a shared desktop that steals focus while you (or another agent) type, and your
+typing can make the tests flaky.
 
 `scripts/sandbox/run.ps1` runs them inside **Windows Sandbox**, a throwaway
 Hyper-V VM that ships with Windows. It has its own desktop, input queue and
 foreground window, so nothing inside reaches the host. The script is a copy of
 the one in [va1erian/win32ui](https://github.com/va1erian/win32ui)
 (`scripts/sandbox/run.ps1`), adapted to emusic's workspace: it stages the BASS
-DLLs and the `egui_kittest` snapshot baselines, and gives every test binary a
-unique name and the working directory it expects.
+DLLs, and gives every test binary a unique name and the working directory it
+expects.
 
 ## One-time setup (Windows 10/11 Pro, Enterprise or Education)
 
@@ -35,7 +34,7 @@ scripts\sandbox\run.ps1
 scripts\sandbox\run.ps1 -CargoArgs '--features','emusic/shot'
 
 # One integration test binary, with a libtest filter
-scripts\sandbox\run.ps1 -CargoArgs '--test','snapshot_views' -TestArgs 'music'
+scripts\sandbox\run.ps1 -CargoArgs '--test','smoke' -TestArgs 'music'
 
 # Run the tests marked #[ignore] too
 scripts\sandbox\run.ps1 -TestArgs '--include-ignored'
@@ -52,8 +51,8 @@ How it works:
 2. Stages everything under `target\sandbox\sandbox-stage`:
    - `bin\` — the test/executable binaries, each renamed uniquely (two crates
      both have a `smoke.exe`);
-   - `pkg\<crate>\` — the crate's `tests\` folder (the `egui_kittest`
-     snapshots), so a binary can run from the crate root it expects;
+   - `pkg\<crate>\` — the crate's `tests\` folder and other runtime data, so a
+     binary can run from the crate root it expects;
    - `bass\` — `bass*.dll` copied from `-BassDir`/`EMUSIC_BASS_DIR`;
    - `out\` — the logs and screenshots that come back to you.
 3. Starts a network-less sandbox (no vGPU by default), maps that folder as
@@ -71,13 +70,9 @@ The sandbox has its own desktop with nothing else on it, so a plain full-screen
 capture is enough, and focus and occlusion don't matter:
 
 ```powershell
-# The real Win32 app against deterministic mock data: launch, capture, stop
-scripts\sandbox\run.ps1 -Build -CargoArgs '--bin','emusic-win32' `
-    -TestArgs '--mock' -Screenshot
-
-# The real egui app
+# The real app against deterministic mock data: launch, capture, stop
 scripts\sandbox\run.ps1 -Build -CargoArgs '--bin','emusic' `
-    -TestArgs '--mock' -Screenshot -ScreenshotDelayMs 6000
+    -TestArgs '--mock' -Screenshot
 ```
 
 The PNG lands in `target\sandbox\sandbox-stage\out\<name>.png`; `-Screenshot`
@@ -89,12 +84,8 @@ so the PNGs come back to the host:
 ```powershell
 # One PNG per view, in both themes, with DWM frame and Mica
 scripts\sandbox\run.ps1 -Build `
-    -CargoArgs '--features','emusic-win32/shot','--bin','emusic-win32-shot' `
-    -TestArgs '--all','--theme','dark','--out','C:\stage\out\win32-dark'
-
-scripts\sandbox\run.ps1 -Build `
     -CargoArgs '--features','emusic/shot','--bin','emusic-shot' `
-    -TestArgs '--all','--theme','light','--out','C:\stage\out\egui-light'
+    -TestArgs '--all','--theme','light','--out','C:\stage\out\light'
 ```
 
 `-Exe <path>` runs an executable you already built, skipping cargo entirely.
@@ -104,13 +95,10 @@ scripts\sandbox\run.ps1 -Build `
 - **BASS.** `cargo test` on a machine without BASS silently skips the
   BASS-backed tests. Pass `-BassDir` and they run for real: the DLLs are staged
   and `EMUSIC_BASS_DIR` is set inside the sandbox.
-- **Snapshots.** `egui_kittest` resolves `tests\snapshots` relative to the
-  process's working directory. A binary run straight from a staging folder
-  would miss the baselines, panic, and be swallowed by emusic's
-  "no headless GPU adapter" skip in `snapshot_views.rs` — so UI regressions
-  would pass. The script stages `tests\` and runs each binary from its crate
-  root, so the snapshots are really compared.
-- **Name collisions.** `win32` and `win32ui-demo` both build `smoke.exe`; a
+- **Working directory.** Some tests read files relative to their crate root.
+  The script stages `tests\` and runs each binary from its crate root, so those
+  tests really run.
+- **Name collisions.** `emusic` and `win32ui-demo` both build `smoke.exe`; a
   single `bin\` folder would overwrite one. Each gets a unique name.
 - **Runtime.** A static CRT makes the binaries self-contained (no
   `vcruntime140.dll` in the sandbox image).
@@ -120,13 +108,13 @@ scripts\sandbox\run.ps1 -Build `
 - **One sandbox at a time.** If the script says one is already running, it
   probably belongs to someone else: wait for it or report it. Never kill it.
 - **vGPU.** The sandbox's virtual GPU is **off by default**. On some GPU
-  drivers it makes the whole VM die (`0x80370106`) as soon as a wgpu test (the
-  `egui_kittest` snapshots) starts. WARP, wgpu's software adapter, renders both
-  the snapshots and the native app's Direct2D/Mica correctly, so the default is
-  the reliable one; pass `-EnableVgpu` only if you need a hardware GPU path.
+  drivers it makes the whole VM die (`0x80370106`) as soon as a GPU test
+  starts. WARP (the software rasteriser) renders the app's Direct2D/Mica
+  correctly, so the default is the reliable one; pass `-EnableVgpu` only if you
+  need a hardware GPU path.
   The script detects a mid-run VM death early and tells you so instead of
   waiting out the timeout.
-- **Skips are silent.** Tests that need BASS or a GPU skip with a message in
+- **Skips are silent.** Tests that need BASS skip with a message in
   the log rather than failing. Read `out\<name>.log` before believing a green
   run; `-BassDir` removes the BASS skips.
 - **Doctests don't run.** `cargo test --no-run` doesn't produce doctest

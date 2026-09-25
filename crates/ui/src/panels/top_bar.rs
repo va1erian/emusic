@@ -2,7 +2,7 @@
 //! intents of the prev/play-pause/stop/next buttons, the repeat and shuffle
 //! toggles, the seek and volume sliders, and the search box.
 //!
-//! All state and display logic live here; each frontend owns the widgets and
+//! All state and display logic live here; the app owns the widgets and
 //! maps their events to [`TopBarMsg`]. The search *text* stays in
 //! [`AppState::search_query`](crate::state::AppState::search_query) — it is
 //! shared with the views and the global search popup — so the search box only
@@ -176,7 +176,7 @@ impl TopBar {
     }
 }
 
-/// Formats a duration in seconds as `m:ss`, matching the other frontends.
+/// Formats a duration in seconds as `m:ss`, matching the other labels.
 pub fn format_time(seconds: f64) -> String {
     let seconds = seconds.max(0.0) as u64;
     format!("{}:{:02}", seconds / 60, seconds % 60)
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn labels_format_like_the_frontends() {
+    fn labels_format_like_the_ui() {
         assert_eq!(format_time(0.0), "0:00");
         assert_eq!(format_time(83.9), "1:23");
         assert_eq!(format_time(-4.0), "0:00");

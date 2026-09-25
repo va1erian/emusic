@@ -1,423 +1,565 @@
 #![forbid(unsafe_code)]
 
-//! Headless screenshot tool (#32): renders the app (always with mock data)
-//! off-screen via `egui_kittest`'s wgpu snapshot rendering (falls back to a
-//! software adapter such as WARP where no GPU is available) and writes a
-//! PNG. Kept as a separate binary, gated behind the `shot` feature, so
-//! `egui_kittest`/wgpu never end up in the real `emusic.exe` dependency
-//! tree.
+//! Headless screenshot tool for the app (#118).
+//!
+//! Runs the real [`Win32App`](emusic::app::Win32App) against the
+//! deterministic mock backend and writes one PNG per view. Capture uses
+//! `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path
+//! (`Ui::capture_composited`, the `wgc` feature): it reads the DWM-composited
+//! surface, so it includes the frame, caption buttons and any backdrop
+//! material and is not sensitive to child-window paint timing. When that is
+//! unavailable at runtime it falls back to `PrintWindow`.
+//!
+//! One window per process: `--all` re-invokes this binary once per view. A
+//! second window created in the same process was captured before it painted
+//! (the placeholder views came out blank), so each view gets a fresh process.
+//!
+//! Kept as a separate binary, gated behind the `shot` feature, so the PNG
+//! encoder and the WinRT capture bindings never end up in the real
+//! `emusic.exe` dependency tree.
 //!
 //! ```text
 //! cargo run -p emusic --features shot --bin emusic-shot -- \
-//!     --view music --size 1280x800 --theme dark --out target/shots/music.png
-//! cargo run -p emusic --features shot --bin emusic-shot -- \
-//!     --view music --accent blue --out target/shots/accent.png
+//!     --view music --theme dark --out target/shots/music.png
 //! cargo run -p emusic --features shot --bin emusic-shot -- --all
 //! ```
 
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
+use anyhow::{Context as _, anyhow, bail};
 use clap::Parser;
-use eframe::egui;
-use egui_kittest::Harness;
+use win32ui::prelude::*;
 
-use emusic::app::EguiApp;
-use emusic::config::Config;
-use emusic::library_api::{Candidate, LibraryDataSource};
-use emusic::mock::{MockLibrary, MockPlayer};
-use emusic::state::{Accent, SettingsTab, Theme, View, VisualizerMode};
-use emusic::tag_editor::AutoTagState;
+use emusic_ui::backend;
+use emusic_ui::config::Config;
+use emusic_ui::state::{
+    Accent, Appearance, Density, FontSize, SettingsTab, Theme, View, VisualizerMode,
+};
+use emusic_ui::waker::WakerSlot;
+
+use emusic::app::{Msg, Win32App};
+use emusic::theme::win32_theme;
+use emusic::views::settings::SettingsMsg;
+use emusic::window::window_spec;
+
+/// How long the window is left to settle (create its controls) before the
+/// capture. The capture itself waits for a composited frame, so this is only
+/// a small head start, not a paint-timing guess.
+const SETTLE: Duration = Duration::from_millis(300);
+/// The tool's own tick interval, so it keeps driving even when the shell's
+/// repaint timer is idle (a stopped player schedules no frame).
+const TICK_MS: u32 = 40;
 
 #[derive(Parser, Debug)]
 #[command(name = "emusic-shot")]
 struct Cli {
-    /// View to render, e.g. `music`, `albums`, `now-playing`. Ignored if
-    /// `--all` is set.
+    /// View to render, e.g. `music`, `albums`, `now-playing`. Ignored with
+    /// `--all`.
     #[arg(long)]
     view: Option<String>,
 
-    /// Render every view into `--out`'s directory, one PNG per view.
+    /// Render every view into `--out`'s directory, one PNG per view. Runs one
+    /// fresh process per view.
     #[arg(long)]
     all: bool,
 
-    /// Render against an empty mock library (shows the first-run empty state).
-    #[arg(long)]
-    empty: bool,
+    #[arg(long, value_enum, default_value = "dark")]
+    theme: ThemeArg,
 
-    /// Render against an empty mock library that is mid-scan (shows the
-    /// first-run "building your music library" state). Takes precedence over
-    /// `--empty`.
-    #[arg(long)]
-    scanning: bool,
+    /// Accent colour: a preset name or `#rrggbb`.
+    #[arg(long, value_parser = parse_accent, default_value = "orange")]
+    accent: Accent,
 
-    /// Render against a populated mock library with an auto-tag lookup in
-    /// flight, so the status bar's lookup line and Cancel button can be
-    /// screenshotted (#210). Takes precedence over `--empty`/`--scanning`.
+    /// UI font-size scale (#309): `small`, `default`, `large`, `larger`.
+    #[arg(long, value_parser = parse_font_size, default_value = "default")]
+    font_size: FontSize,
+
+    /// List density (#309): `compact`, `comfortable`, `spacious`.
+    #[arg(long, value_parser = parse_density, default_value = "comfortable")]
+    density: Density,
+
+    /// Turn zebra striping off for the capture (#309). Striping is on by
+    /// default.
     #[arg(long)]
-    auto_tagging: bool,
+    no_zebra: bool,
+
+    /// Settings tab to show: `library`, `appearance`, `associations`,
+    /// `playback`, `about`. Only meaningful for the Settings view.
+    #[arg(long, value_parser = parse_settings_tab)]
+    settings_tab: Option<SettingsTab>,
+
+    /// Show the top-bar visualizer in this mode (`spectrum`, `oscilloscope`).
+    #[arg(long, value_parser = parse_visualizer)]
+    visualizer: Option<VisualizerMode>,
+
+    /// Capture the track Properties dialog (opened for a mock track) instead
+    /// of the main window (#280). Ignored with `--all`.
+    #[arg(long)]
+    properties: bool,
+
+    /// Capture the tag editor dialog (opened for a mock track) instead of the
+    /// main window (#278). Ignored with `--all`.
+    #[arg(long)]
+    tag_editor: bool,
 
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
 
-    #[arg(long, value_enum, default_value = "dark")]
-    theme: ThemeArg,
-
-    /// Accent colour: a preset name (`orange`, `blue`, `green`, `purple`,
-    /// `red`, `teal`) or `#rrggbb`.
-    #[arg(long, value_parser = parse_accent)]
-    accent: Option<Accent>,
-
     /// Output PNG path (single view) or directory (`--all`).
     #[arg(long, default_value = "target/shots/shot.png")]
     out: PathBuf,
-
-    /// Pre-fills the top-bar search box with this query before rendering
-    /// (#22), so a filtered Music view can be screenshotted headlessly.
-    #[arg(long)]
-    query: Option<String>,
-
-    /// Opens the global search popup, pre-filled with `--query` (or empty),
-    /// before rendering (#22).
-    #[arg(long)]
-    search_popup: bool,
-
-    /// Opens the Music table's track Properties dialog for the first track
-    /// before rendering (#136), so the dialog can be screenshotted headlessly.
-    #[arg(long)]
-    properties: bool,
-
-    /// Opens the single-track tag editor for the first track before rendering
-    /// (#172), so the dialog can be screenshotted headlessly.
-    #[arg(long)]
-    tag_editor: bool,
-
-    /// Auto-tag lookup state to render in the open tag editor (#209):
-    /// `searching`, `matches`, `no-match` or `failed`. Requires `--tag-editor`.
-    #[arg(long, value_enum)]
-    tag_editor_state: Option<AutoTagArg>,
-
-    /// Opens the File -> Database info dialog before rendering (#193), so it
-    /// can be screenshotted headlessly.
-    #[arg(long)]
-    database_info: bool,
-
-    /// Visualizer strip mode to render (#25): `spectrum`, `oscilloscope` or
-    /// `off`. Omitted, the strip stays hidden, matching the app's default.
-    #[arg(long, value_parser = parse_visualizer)]
-    visualizer: Option<VisualizerMode>,
-
-    /// Pre-populate the config with this many synthetic library folders, so
-    /// Settings → Library can be screenshotted with a long, scrollable list
-    /// (#137).
-    #[arg(long, default_value = "0")]
-    folders: usize,
-
-    /// Settings sub-page to select when rendering `--view settings` (#137):
-    /// `library` (the default), `appearance` or `associations`.
-    #[arg(long, value_parser = parse_settings_tab)]
-    settings_tab: Option<SettingsTab>,
 }
 
+/// The CLI's theme spelling, mapped to the shell's and `win32ui`'s palettes.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum ThemeArg {
     Dark,
     Light,
 }
 
-/// The tag editor's auto-tag lookup state to render (#209).
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum AutoTagArg {
-    Searching,
-    Matches,
-    NoMatch,
-    Failed,
-}
-
-impl AutoTagArg {
-    /// The dialog state to render, with canned candidates for `Matches`.
-    fn into_state(self) -> AutoTagState {
+impl ThemeArg {
+    fn shell(self) -> Theme {
         match self {
-            Self::Searching => AutoTagState::Searching,
-            Self::Matches => AutoTagState::Matches(demo_candidates()),
-            Self::NoMatch => AutoTagState::NoMatch,
-            Self::Failed => AutoTagState::Failed(
-                "Could not reach MusicBrainz; check your connection".to_string(),
-            ),
+            Self::Dark => Theme::Dark,
+            Self::Light => Theme::Light,
+        }
+    }
+
+    /// Opaque stand-in for the system backdrop material behind the title
+    /// strip, which the compositor capture leaves transparent in dark mode.
+    fn backdrop(self) -> [u8; 3] {
+        match self {
+            Self::Dark => [32, 32, 32],
+            Self::Light => [243, 243, 243],
+        }
+    }
+
+    fn win32(self, accent: Accent) -> win32ui::Theme {
+        win32_theme(self.shell(), accent)
+    }
+
+    /// The `--theme` value to pass on to a child process.
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
         }
     }
 }
 
-/// Canned candidates for the `--tag-editor-state matches` screenshot.
-fn demo_candidates() -> Vec<Candidate> {
-    vec![
-        Candidate {
-            title: Some("Around the World".to_string()),
-            artist: Some("Daft Punk".to_string()),
-            album: Some("Homework".to_string()),
-            album_artist: Some("Daft Punk".to_string()),
-            year: Some(1997),
-            track_no: Some(5),
-            disc_no: Some(1),
-            score: 0.96,
-            ..Default::default()
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    // Validate `--size` up front so `--all` fails fast rather than in each
+    // child.
+    parse_size(&cli.size)?;
+
+    if cli.all {
+        return run_all(&cli);
+    }
+
+    let view = match cli.view.as_deref() {
+        Some(slug) => parse_view(slug)?,
+        None => View::Music,
+    };
+    let (width, height) = parse_size(&cli.size)?;
+    if let Some(parent) = cli.out.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create output directory {}", parent.display()))?;
+    }
+    render_one(
+        view,
+        cli.theme,
+        cli.accent,
+        Appearance {
+            font_size: cli.font_size,
+            density: cli.density,
+            zebra: !cli.no_zebra,
         },
-        Candidate {
-            title: Some("Around the World (radio edit)".to_string()),
-            artist: Some("Daft Punk".to_string()),
-            year: Some(1997),
-            score: 0.61,
-            ..Default::default()
-        },
-    ]
+        cli.visualizer,
+        cli.properties,
+        cli.tag_editor,
+        cli.settings_tab,
+        width,
+        height,
+        &cli.out,
+    )
 }
 
-fn parse_accent(s: &str) -> Result<Accent, String> {
-    Accent::parse(s).ok_or_else(|| {
-        format!(
-            "invalid accent {s:?}: expected a preset name or #rrggbb \
-             (presets: orange, blue, green, purple, red, teal)"
+/// Renders every view by re-invoking this binary once per view, so each gets a
+/// fresh process and window.
+fn run_all(cli: &Cli) -> anyhow::Result<()> {
+    let dir = output_dir(&cli.out);
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("create output directory {}", dir.display()))?;
+    let exe = std::env::current_exe().context("resolve current executable")?;
+    for view in View::ALL {
+        let out = dir.join(format!("{}.png", view.slug()));
+        let status = Command::new(&exe)
+            .arg("--view")
+            .arg(view.slug())
+            .arg("--theme")
+            .arg(cli.theme.slug())
+            .arg("--accent")
+            .arg(cli.accent.to_config_str())
+            .arg("--font-size")
+            .arg(font_size_slug(cli.font_size))
+            .arg("--density")
+            .arg(density_slug(cli.density))
+            .args(if cli.no_zebra {
+                vec!["--no-zebra"]
+            } else {
+                vec![]
+            })
+            .args(
+                cli.settings_tab
+                    .iter()
+                    .flat_map(|tab| ["--settings-tab", tab.slug()]),
+            )
+            .args(
+                cli.visualizer
+                    .iter()
+                    .flat_map(|mode| ["--visualizer", mode.slug()]),
+            )
+            .arg("--size")
+            .arg(&cli.size)
+            .arg("--out")
+            .arg(&out)
+            .status()
+            .with_context(|| format!("spawn {}", exe.display()))?;
+        if !status.success() {
+            bail!("emusic-shot: rendering {} failed ({status})", view.slug());
+        }
+    }
+    Ok(())
+}
+
+/// The `--out` directory for `--all` (a `.png` `--out` uses its parent).
+fn output_dir(out: &Path) -> PathBuf {
+    if out.extension().is_some() {
+        out.parent()
+            .unwrap_or(Path::new("target/shots"))
+            .to_path_buf()
+    } else {
+        out.to_path_buf()
+    }
+}
+
+/// Parses `--accent`: a preset name or `#rrggbb`.
+fn parse_accent(s: &str) -> std::result::Result<Accent, String> {
+    Accent::parse(s)
+        .ok_or_else(|| format!("invalid accent {s:?}: expected a preset name or #rrggbb"))
+}
+
+/// Parses `--visualizer`: a mode slug.
+fn parse_visualizer(s: &str) -> std::result::Result<VisualizerMode, String> {
+    VisualizerMode::from_slug(s).ok_or_else(|| format!("invalid visualizer {s:?}"))
+}
+
+/// Parses `--font-size`: one of the [`FontSize`] labels, case-insensitively.
+fn parse_font_size(s: &str) -> std::result::Result<FontSize, String> {
+    FontSize::ALL
+        .into_iter()
+        .find(|size| size.label().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = FontSize::ALL.iter().map(|size| size.label()).collect();
+            format!(
+                "invalid font size {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// Parses `--density`: one of the [`Density`] labels, case-insensitively.
+fn parse_density(s: &str) -> std::result::Result<Density, String> {
+    Density::ALL
+        .into_iter()
+        .find(|density| density.label().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = Density::ALL.iter().map(|density| density.label()).collect();
+            format!(
+                "invalid density {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// Parses `--settings-tab`: one of the [`SettingsTab`] slugs.
+fn parse_settings_tab(s: &str) -> std::result::Result<SettingsTab, String> {
+    SettingsTab::ALL
+        .into_iter()
+        .find(|tab| tab.slug().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.slug()).collect();
+            format!(
+                "invalid settings tab {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// The `--font-size` value to pass on to a child process.
+fn font_size_slug(size: FontSize) -> &'static str {
+    size.label()
+}
+
+/// The `--density` value to pass on to a child process.
+fn density_slug(density: Density) -> &'static str {
+    density.label()
+}
+
+/// Resolves a `--view` slug, listing the known ones on error.
+fn parse_view(slug: &str) -> anyhow::Result<View> {
+    View::from_slug(slug).ok_or_else(|| {
+        let known: Vec<&str> = View::ALL.iter().map(|view| view.slug()).collect();
+        anyhow!(
+            "unknown --view {slug:?}; expected one of: {}",
+            known.join(", ")
         )
     })
 }
 
-fn parse_visualizer(s: &str) -> Result<VisualizerMode, String> {
-    VisualizerMode::from_slug(s)
-        .ok_or_else(|| format!("invalid visualizer {s:?}: expected spectrum, oscilloscope or off"))
-}
-
-fn parse_settings_tab(s: &str) -> Result<SettingsTab, String> {
-    SettingsTab::from_slug(s).ok_or_else(|| {
-        format!("invalid settings tab {s:?}: expected library, appearance, associations, playback or about")
-    })
-}
-
-fn main() {
-    let cli = Cli::parse();
-    let (width, height) = parse_size(&cli.size);
-    let mode = LibraryMode::from_flags(cli.empty, cli.scanning, cli.auto_tagging);
-
-    let search = SearchArgs {
-        query: cli.query.clone(),
-        popup: cli.search_popup,
-    };
-
-    if cli.all {
-        let dir = if cli.out.extension().is_some() {
-            cli.out
-                .parent()
-                .unwrap_or(Path::new("target/shots"))
-                .to_path_buf()
-        } else {
-            cli.out.clone()
-        };
-        std::fs::create_dir_all(&dir).expect("create output directory");
-        let args = RenderArgs {
-            size: (width, height),
-            theme: cli.theme,
-            accent: cli.accent,
-            mode,
-            search: &search,
-            visualizer: cli.visualizer,
-            properties: cli.properties,
-            tag_editor: cli.tag_editor,
-            tag_editor_state: cli.tag_editor_state,
-            database_info: cli.database_info,
-            folders: cli.folders,
-            settings_tab: cli.settings_tab,
-        };
-        for view in View::ALL {
-            let out = dir.join(format!("{}.png", view.slug()));
-            render_one(view, &args, &out);
-        }
-        return;
-    }
-
-    let view = cli
-        .view
-        .as_deref()
-        .and_then(View::from_slug)
-        .unwrap_or(View::Music);
-    if let Some(parent) = cli.out.parent() {
-        std::fs::create_dir_all(parent).expect("create output directory");
-    }
-    let args = RenderArgs {
-        size: (width, height),
-        theme: cli.theme,
-        accent: cli.accent,
-        mode,
-        search: &search,
-        visualizer: cli.visualizer,
-        properties: cli.properties,
-        tag_editor: cli.tag_editor,
-        tag_editor_state: cli.tag_editor_state,
-        database_info: cli.database_info,
-        folders: cli.folders,
-        settings_tab: cli.settings_tab,
-    };
-    render_one(view, &args, &cli.out);
-}
-
-/// Search state (#22) to apply before rendering: a top-bar query and/or the
-/// global popup, pre-filled and left open.
-#[derive(Clone, Default)]
-struct SearchArgs {
-    query: Option<String>,
-    popup: bool,
-}
-
-/// Mock library to render: the populated default, the first-run empty state,
-/// the first-run mid-scan state, or a populated library with an auto-tag
-/// lookup in flight (#210).
-#[derive(Clone, Copy)]
-enum LibraryMode {
-    Populated,
-    Empty,
-    Scanning,
-    AutoTagging,
-}
-
-impl LibraryMode {
-    fn from_flags(empty: bool, scanning: bool, auto_tagging: bool) -> Self {
-        if auto_tagging {
-            Self::AutoTagging
-        } else if scanning {
-            Self::Scanning
-        } else if empty {
-            Self::Empty
-        } else {
-            Self::Populated
-        }
-    }
-
-    fn build(self) -> (MockLibrary, MockPlayer) {
-        match self {
-            Self::Populated | Self::AutoTagging => {
-                let library = match self {
-                    Self::AutoTagging => MockLibrary::auto_tagging(),
-                    _ => MockLibrary::new(),
-                };
-                let player = MockPlayer::playing_demo(&library.tracks()[0]);
-                (library, player)
-            }
-            Self::Empty => (MockLibrary::empty(), MockPlayer::default()),
-            Self::Scanning => (MockLibrary::scanning(), MockPlayer::default()),
-        }
-    }
-}
-
-/// Bundles the CLI-derived rendering settings so [`render_one`] stays a
-/// small, single-purpose function.
-struct RenderArgs<'a> {
-    size: (f32, f32),
+/// Runs the app for one view and writes its capture to `out`.
+#[expect(clippy::too_many_arguments, reason = "one flag per CLI switch")]
+fn render_one(
+    view: View,
     theme: ThemeArg,
-    accent: Option<Accent>,
-    mode: LibraryMode,
-    search: &'a SearchArgs,
-    /// Visualizer strip mode to render; `None` leaves the strip hidden, as in
-    /// a default app run.
+    accent: Accent,
+    appearance: Appearance,
     visualizer: Option<VisualizerMode>,
-    /// Open the track Properties dialog before rendering (#136).
     properties: bool,
-    /// Open the single-track tag editor before rendering (#172).
     tag_editor: bool,
-    /// The tag editor's auto-tag lookup state to render (#209).
-    tag_editor_state: Option<AutoTagArg>,
-    /// Open the File -> Database info dialog before rendering (#193).
-    database_info: bool,
-    folders: usize,
     settings_tab: Option<SettingsTab>,
-}
-
-fn render_one(view: View, args: &RenderArgs, out: &Path) {
-    let (width, height) = args.size;
-    // Theme/accent go through the config so the shell applies them the
-    // same way it applies user settings.
-    let defaults = Config::default();
+    width: f32,
+    height: f32,
+    out: &Path,
+) -> anyhow::Result<()> {
+    // Theme, view and appearance go through the config so the shell adopts
+    // them exactly as it adopts a user's saved settings.
     let config = Config {
-        theme: match args.theme {
-            ThemeArg::Dark => Theme::Dark,
-            ThemeArg::Light => Theme::Light,
-        },
-        accent: args.accent.unwrap_or(defaults.accent),
-        // The strip is opt-in, so it is only shown when `--visualizer` asked
-        // for a mode; otherwise the shot matches a default app run.
-        visualizer_enabled: args.visualizer.is_some(),
-        visualizer: args.visualizer.unwrap_or(defaults.visualizer),
-        library_folders: synthetic_folders(args.folders),
-        ..defaults
+        theme: theme.shell(),
+        accent,
+        appearance,
+        visualizer_enabled: visualizer.is_some(),
+        visualizer: visualizer.unwrap_or_default(),
+        last_view: view,
+        ..Config::default()
     };
+    let out = out.to_path_buf();
+    let spec = window_spec(width, height, theme.win32(accent));
 
-    let mut harness = Harness::builder()
-        .with_size(egui::Vec2::new(width, height))
-        .build_eframe(|cc| {
-            let (library, player) = args.mode.build();
-            EguiApp::with_config(cc, Box::new(library), Box::new(player), config)
+    win32ui::run_app(spec, move |ui| {
+        let waker = WakerSlot::new();
+        let backends = backend::build(true, waker.handle());
+        // A track with rich tags/stats makes the dialog shot representative.
+        let showcase = (properties || tag_editor).then(|| {
+            let tracks = backends.library.tracks();
+            tracks
+                .iter()
+                .find(|track| !track.comment.is_empty() && track.play_count > 0)
+                .or_else(|| tracks.first())
+                .cloned()
         });
-
-    harness.state_mut().set_view(view);
-    if let Some(tab) = args.settings_tab {
-        harness.state_mut().set_settings_tab(tab);
-    }
-    if let Some(query) = &args.search.query {
-        harness.state_mut().set_search_query(query.clone());
-    }
-    if args.search.popup {
-        harness
-            .state_mut()
-            .open_search_popup(args.search.query.clone().unwrap_or_default());
-    }
-    if args.properties {
-        harness.state_mut().open_track_properties();
-    }
-    if args.tag_editor {
-        harness.state_mut().open_tag_editor();
-    }
-    if let Some(state) = args.tag_editor_state {
-        harness
-            .state_mut()
-            .set_tag_editor_auto_tag(state.into_state());
-    }
-    if args.database_info {
-        harness.state_mut().open_database_info();
-    }
-    // A single step is enough for a static screenshot; `Harness::run` would
-    // wait for the UI to go idle, which it never does here because the
-    // shell's repaint policy (#6) keeps requesting frames while "playing".
-    // When a search query is active, the match runs on a background thread
-    // (#22): give it real wall-clock time to answer, then run a couple more
-    // steps so the UI thread polls and renders the result rather than a
-    // still-empty "pending" frame.
-    harness.run_steps(1);
-    if args.search.query.is_some()
-        || args.search.popup
-        || args.properties
-        || args.tag_editor
-        || args.database_info
-    {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        harness.run_steps(2);
-    } else if view == View::Settings {
-        // The Settings folder list's scroll bar is sized from the previous
-        // frame's content and fades in over a few frames, so run several
-        // more steps before the screenshot (#137).
-        harness.run_steps(8);
-    }
-
-    let image = harness.render().expect("headless render failed");
-    image.save(out).expect("write screenshot PNG");
-    eprintln!("wrote {}", out.display());
+        let showcase = showcase.flatten();
+        let tag_editor = if tag_editor {
+            showcase
+                .as_ref()
+                .map(emusic_ui::tag_editor::TagEditorState::new)
+        } else {
+            None
+        };
+        let mut app = Win32App::new(
+            ui,
+            backends.library,
+            backends.player,
+            config,
+            None,
+            None,
+            None,
+            waker,
+        );
+        if let Some(notice) = backends.notice {
+            app.set_backend_notice(notice);
+        }
+        // Show the requested Settings tab (the tab strip is built from the
+        // shell state when the layout is next installed).
+        if let (View::Settings, Some(tab)) = (view, settings_tab) {
+            ui.emit(Msg::Settings(SettingsMsg::SelectTab(tab)));
+        }
+        let timer = ui.set_timer(TICK_MS).ok();
+        ShotApp {
+            app,
+            out,
+            backdrop: theme.backdrop(),
+            timer,
+            deadline: Instant::now() + SETTLE,
+            done: false,
+            properties: if properties { showcase.clone() } else { None },
+            tag_editor,
+            dialog: None,
+            dialog_deadline: None,
+        }
+    })
+    .map_err(|error| anyhow!("{error}"))
 }
 
-/// Synthetic library folders for `--folders N` (#137): a long, deterministic
-/// list that exercises the Settings folder list's scroll area.
-fn synthetic_folders(count: usize) -> Vec<PathBuf> {
-    (0..count)
-        .map(|i| PathBuf::from(format!("D:/Music/Library/album-{i:03}")))
-        .collect()
+/// Wraps the real app: after the settle period it captures the window, writes
+/// the PNG and closes, ending the run for this view. With `--properties` or
+/// `--tag-editor` it first opens that dialog (non-modal, so the tool's tick
+/// keeps running) and captures the dialog's window instead.
+struct ShotApp {
+    app: Win32App,
+    out: PathBuf,
+    backdrop: [u8; 3],
+    timer: Option<TimerId>,
+    deadline: Instant,
+    done: bool,
+    /// The track to open the Properties dialog for, if `--properties`.
+    properties: Option<emusic_ui::library_api::TrackInfo>,
+    /// The state to open the tag editor with, if `--tag-editor`.
+    tag_editor: Option<emusic_ui::tag_editor::TagEditorState>,
+    dialog: Option<ShotDialog>,
+    dialog_deadline: Option<Instant>,
 }
 
-fn parse_size(spec: &str) -> (f32, f32) {
-    let (w, h) = spec.split_once('x').unwrap_or(("1280", "800"));
-    (w.parse().unwrap_or(1280.0), h.parse().unwrap_or(800.0))
+/// One of the capturable dialogs, opened non-modal for the shot.
+enum ShotDialog {
+    Properties(win32ui::WindowHandle<emusic::dialogs::properties::Msg>),
+    TagEditor(win32ui::WindowHandle<emusic::dialogs::tag_editor::Msg>),
+}
+
+impl ShotDialog {
+    fn capture(&self) -> win32ui::Result<RgbaImage> {
+        match self {
+            Self::Properties(handle) => handle.capture(),
+            Self::TagEditor(handle) => handle.capture(),
+        }
+    }
+}
+
+impl App for ShotApp {
+    type Msg = Msg;
+
+    fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        self.app.update(msg, ui);
+        if self.done || Instant::now() < self.deadline {
+            return;
+        }
+        if self.dialog.is_none() {
+            let opened = if let Some(track) = self.properties.take() {
+                Some(emusic::dialogs::properties::open(ui, &track).map(ShotDialog::Properties))
+            } else if let Some(state) = self.tag_editor.take() {
+                let bridge = std::rc::Rc::new(std::cell::RefCell::new(
+                    emusic::dialogs::tag_editor::Bridge::new(
+                        emusic_ui::tag_editor::Status::Editing,
+                    ),
+                ));
+                Some(
+                    emusic::dialogs::tag_editor::open(ui, &state, bridge, ui.proxy())
+                        .map(ShotDialog::TagEditor),
+                )
+            } else {
+                None
+            };
+            if let Some(opened) = opened {
+                match opened {
+                    Ok(handle) => {
+                        // Give the dialog a few ticks to paint before the
+                        // capture below.
+                        self.dialog_deadline = Some(Instant::now() + SETTLE);
+                        self.dialog = Some(handle);
+                    }
+                    Err(error) => {
+                        eprintln!("emusic-shot: open dialog: {error:#}");
+                        self.done = true;
+                        ui.close();
+                    }
+                }
+                return;
+            }
+        }
+        if let Some(deadline) = self.dialog_deadline
+            && Instant::now() < deadline
+        {
+            return;
+        }
+        self.done = true;
+        if let Some(id) = self.timer.take() {
+            ui.kill_timer(id);
+        }
+        let image = match &self.dialog {
+            Some(dialog) => dialog.capture().map_err(|error| anyhow!("{error}")),
+            None => capture(ui),
+        };
+        match image {
+            Ok(mut image) => match write_png(flatten(&mut image, self.backdrop), &self.out) {
+                Ok(()) => eprintln!("wrote {}", self.out.display()),
+                Err(error) => eprintln!(
+                    "emusic-shot: failed to write {}: {error:#}",
+                    self.out.display()
+                ),
+            },
+            Err(error) => eprintln!("emusic-shot: capture failed: {error:#}"),
+        }
+        ui.close();
+    }
+}
+
+/// Captures the window's DWM-composited surface, falling back to `PrintWindow`
+/// where `Windows.Graphics.Capture` is unavailable.
+fn capture(ui: &Ui<Msg>) -> anyhow::Result<RgbaImage> {
+    match ui.capture_composited() {
+        Ok(image) => Ok(image),
+        Err(error) => {
+            eprintln!(
+                "emusic-shot: composited capture unavailable ({error}); \
+                 falling back to PrintWindow"
+            );
+            ui.capture().map_err(|error| anyhow!("{error}"))
+        }
+    }
+}
+
+/// Composites the image over an opaque `backdrop` colour, so shots never
+/// contain transparent regions that viewers would paint arbitrarily.
+fn flatten(image: &mut RgbaImage, backdrop: [u8; 3]) -> &RgbaImage {
+    for pixel in image.pixels.as_chunks_mut::<4>().0.iter_mut() {
+        let alpha = u16::from(pixel[3]);
+        for (channel, behind) in pixel.iter_mut().zip(backdrop) {
+            let blended = u16::from(*channel) * alpha + u16::from(behind) * (255 - alpha);
+            *channel = u8::try_from(blended / 255).unwrap_or(u8::MAX);
+        }
+        pixel[3] = u8::MAX;
+    }
+    image
+}
+
+/// Writes an RGBA image as a PNG, creating the parent directory if needed.
+fn write_png(image: &RgbaImage, path: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::File::create(path)?;
+    let mut encoder = png::Encoder::new(BufWriter::new(file), image.width, image.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(&image.pixels)?;
+    Ok(())
+}
+
+/// Parses `--size` as `<width>x<height>`.
+fn parse_size(spec: &str) -> anyhow::Result<(f32, f32)> {
+    let (width, height) = spec
+        .split_once('x')
+        .ok_or_else(|| anyhow!("invalid --size {spec:?}: expected <width>x<height>"))?;
+    let width = width
+        .parse()
+        .with_context(|| format!("invalid --size width {width:?} in {spec:?}"))?;
+    let height = height
+        .parse()
+        .with_context(|| format!("invalid --size height {height:?} in {spec:?}"))?;
+    Ok((width, height))
 }

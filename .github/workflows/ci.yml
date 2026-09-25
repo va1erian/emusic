@@ -22,11 +22,9 @@ jobs:
   # `cargo check --all-targets` would, so the separate `check` invocations the
   # old single job ran are redundant and were dropped (#90).
   #
-  # `--features emusic/shot` is used for *every* CI invocation: the feature is
-  # a strict superset (it only adds the `emusic-shot` binary and its optional
-  # egui_kittest dependency; the integration tests already get egui_kittest
-  # through dev-dependencies), so one feature set covers both the plain and
-  # the `shot` passes, without building the whole `emusic` crate twice.
+  # `--features emusic/shot` adds the `emusic-shot` screenshot tool and its
+  # optional `png`/WinRT capture dependencies, so one feature set covers both
+  # the plain and the `shot` passes, without building the crate twice.
   lint:
     runs-on: windows-latest
     steps:
@@ -44,12 +42,11 @@ jobs:
 
       - run: cargo fmt --all --check
 
-      - run: cargo clippy --workspace --all-targets --features emusic/shot,emusic-win32/shot -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features emusic/shot -- -D warnings
 
-  # Tests, including the `shot`-gated snapshot tests. Running only the
-  # superset invocation keeps every test that `cargo test --workspace` ran
-  # (same lib/bin/integration tests, plus the `emusic-shot` target) while
-  # avoiding a second `emusic` build with a different feature set.
+  # Tests, including the `shot`-gated `emusic-shot` tool. Running only the
+  # superset invocation keeps every test that `cargo test --workspace` ran and
+  # avoids a second build with a different feature set.
   test:
     runs-on: windows-latest
     steps:
@@ -61,7 +58,7 @@ jobs:
         with:
           save-if: "true" # TEMP: populate caches from this PR branch for a warm measurement
 
-      - run: cargo test --workspace --features emusic/shot,emusic-win32/shot
+      - run: cargo test --workspace --features emusic/shot
 
   # Aggregator that preserves the branch-protection required check named
   # `ci`. It succeeds only if both `lint` and `test` succeeded, so the

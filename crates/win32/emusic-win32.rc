@@ -1,7 +1,0 @@
-#include <winres.h>
-
-// Windows resources compiled into emusic-win32.exe by build.rs.
-// The icon makes Explorer, the taskbar and Alt-Tab show the app icon; the
-// manifest turns on Common Controls v6 and per-monitor-v2 DPI.
-1 ICON "../../assets/ico/emusic-app.ico"
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "emusic-win32.manifest"

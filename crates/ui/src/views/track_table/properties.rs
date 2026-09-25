@@ -1,9 +1,8 @@
 //! Toolkit-agnostic content of the track "Properties" dialog (#280): the
-//! sectioned, labelled fields both frontends show, formatted for display.
+//! sectioned, labelled fields the app shows, formatted for display.
 //!
-//! The dialog itself is frontend-owned (an `egui::Modal` in `crates/app`, a
-//! native modal window in `crates/win32`); the field list, grouping and value
-//! formatting live here so the two never drift apart.
+//! The dialog itself is owned by the app (a native modal window); the field
+//! list, grouping and value formatting live here so they can be reused.
 
 use crate::library_api::{TrackInfo, format_minutes_ago};
 

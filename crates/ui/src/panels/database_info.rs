@@ -1,5 +1,5 @@
 //! Toolkit-agnostic content of File -> Database info (#193): the labelled
-//! fields both frontends show, and the formatting behind them.
+//! fields the app shows, and the formatting behind them.
 
 use std::time::SystemTime;
 

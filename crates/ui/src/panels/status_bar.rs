@@ -2,8 +2,8 @@
 //! search result count, total library duration, player state, the active
 //! shuffle scope, and scan / auto-tag progress.
 //!
-//! Both frontends lay the same strings out; buttons (Cancel scan, Stop
-//! shuffle) stay in each frontend and map to the usual
+//! The app lays the same strings out; buttons (Cancel scan, Stop
+//! shuffle) stay in the view and map to the usual
 //! [`Command`](crate::state::Command)s.
 
 use std::time::Duration;

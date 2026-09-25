@@ -2,9 +2,9 @@
 //! selection/filter state, the display rows built from the library's
 //! directory grouping, and the selected folder's track table.
 //!
-//! The tree is rendered by each frontend (expansion state lives in egui's
-//! widget memory); this module holds the persistent selection, the flattened
-//! display rows, and the "include subfolders" filter.
+//! The tree is rendered by the app (expansion state lives in its tree control);
+//! this module holds the persistent selection, the flattened display rows, and
+//! the "include subfolders" filter.
 
 use std::path::Path;
 

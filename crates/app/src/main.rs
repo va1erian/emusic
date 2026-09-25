@@ -1,22 +1,21 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
-//! Thin entry point (#11): parses the CLI, handles the one-shot
-//! `--register-associations`/`--unregister` actions, acquires single
-//! instance *before* creating any window (forwarding to, and exiting in
-//! favor of, an already-running primary), then starts the UI. All the
-//! actual wiring lives in [`emusic::backend`] and [`emusic::cli`].
+//! A thin shell around `emusic-ui`: `main` handles the CLI, file associations
+//! and the single-instance handshake, then opens a `win32ui` window whose app
+//! owns the shared [`Shell`](emusic_ui::shell::Shell).
 
 use std::env;
 
 use clap::Parser;
-use eframe::egui;
+use emusic_ui::backend::{self, ipc};
+use emusic_ui::cli::Cli;
+use emusic_ui::config::{self, Config};
 use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
-use emusic::app::EguiApp;
-use emusic::backend::{self, ipc, smtc, thumbbar, waker::EguiWaker};
-use emusic::cli::Cli;
+use emusic::app::Win32App;
+use emusic::window::window_spec;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -50,120 +49,51 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
+/// Opens the main window and runs the message loop until it closes.
 fn run_ui(
     cli: Cli,
-    startup_message: IpcMessage,
+    startup: IpcMessage,
     waker: WakerSlot,
     listener: winshell::Listener,
 ) -> anyhow::Result<()> {
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("emusic")
-        .with_inner_size([1200.0, 760.0]);
-    // Restore the window size/position saved on the previous exit (#214).
-    // `--mock` never persists, so it always starts at the default size.
-    if !cli.mock {
-        let saved = saved_window_geometry();
-        if let Some([width, height]) = saved.size {
-            viewport = viewport.with_inner_size([width, height]);
-        }
-        if let Some([x, y]) = saved.position {
-            viewport = viewport.with_position([x, y]);
-        }
-        if saved.maximized {
-            viewport = viewport.with_maximized(true);
-        }
-    }
-    if let Some(icon) = emusic::window_icon::window_icon() {
-        viewport = viewport.with_icon(icon);
-    }
-    let mut options = eframe::NativeOptions {
-        viewport,
-        ..Default::default()
+    let mock = cli.mock;
+    // A `--mock` run never touches the real user's config (#135).
+    let config_path = if mock { None } else { config::config_path() };
+    let config = config_path
+        .as_deref()
+        .map_or_else(Config::default, config::load);
+    let startup = (!startup.files.is_empty()).then_some(startup);
+    let ipc = ipc::IpcBridge::primary(listener);
+
+    // The window chrome follows the theme the shell was configured with.
+    let window_theme = match config.theme {
+        emusic_ui::state::Theme::Dark => win32ui::Theme::dark(),
+        emusic_ui::state::Theme::Light => win32ui::Theme::light(),
     };
-    // Install the taskbar thumbnail-toolbar message hook (#42) before winit
-    // runs its loop. It claims button presses and, crucially, wakes egui so
-    // the click is drained even while the app is otherwise idle (there is no
-    // continuous repaint when paused). The hook runs before the window/egui
-    // context exist, so it goes through the same late-bound [`WakerSlot`] as
-    // IPC (#11, #95).
-    #[cfg(target_os = "windows")]
-    {
-        let hook_waker = waker.clone();
-        options.event_loop_builder = Some(Box::new(move |builder| {
-            use winit::platform::windows::EventLoopBuilderExtWindows as _;
 
-            // Register the shell's `TaskbarButtonCreated` message before the
-            // window exists, so the hook below recognises it even if the
-            // taskbar announces the button while the window is being created.
-            // The buttons are added by `ThumbBar::sync` once the hook wakes
-            // the app.
-            winshell::thumbbar::taskbar_button_created_message();
-            let wake = hook_waker.handle();
-            builder.with_msg_hook(move |msg| {
-                let claimed = winshell::thumbbar::msg_hook(msg);
-                if claimed {
-                    wake.wake();
-                }
-                claimed
-            });
-        }));
-    }
-
-    eframe::run_native(
-        "emusic",
-        options,
-        Box::new(move |cc| {
-            waker.bind(EguiWaker::new(cc.egui_ctx.clone()));
-            let backends = backend::build(cli.mock, waker.handle());
-            let mut app = EguiApp::for_run(
-                cc,
-                backends.library,
-                backends.player,
-                cli.mock,
-                waker.clone(),
-            );
-            if let Some(notice) = backends.notice {
-                app.set_backend_notice(notice);
-            }
-            app.attach_smtc(smtc::Smtc::new(window_handle(cc)));
-            app.attach_thumbbar(thumbbar::ThumbBar::new(window_handle(cc)));
-            app.attach_ipc(ipc::IpcBridge::primary(listener));
-            if !startup_message.files.is_empty() {
-                app.handle_ipc_message(startup_message);
-            }
-            Ok(Box::new(app))
-        }),
-    )
-    .map_err(|err| anyhow::anyhow!("eframe: {err}"))
-}
-
-/// Window geometry saved on the previous exit (#214). Read once here so the
-/// window can be created at the right size/position, before the app loads the
-/// config again for everything else. Defaults on a first launch or when there
-/// is no config directory.
-fn saved_window_geometry() -> emusic_ui::state::WindowGeometry {
-    emusic_ui::config::config_path()
-        .map(|path| emusic_ui::config::load(&path).ui.window)
-        .unwrap_or_default()
-}
-
-/// Native window handle the OS integrations (SMTC, taskbar buttons) bind to
-/// on Windows; `None` elsewhere. Extracted through `raw-window-handle`, the
-/// same abstraction eframe uses, so no unsafe pointer juggling is needed here.
-#[cfg(target_os = "windows")]
-fn window_handle(cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
-    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
-
-    let handle = cc.window_handle().ok()?;
-    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
-        return None;
-    };
-    Some(win32.hwnd.get() as *mut std::ffi::c_void)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn window_handle(_cc: &eframe::CreationContext<'_>) -> Option<*mut std::ffi::c_void> {
-    None
+    win32ui::run_app(window_spec(1100.0, 720.0, window_theme), move |ui| {
+        let backends = backend::build(mock, waker.handle());
+        let emusic_ui::backend::Backends {
+            library,
+            player,
+            notice,
+        } = backends;
+        let mut app = Win32App::new(
+            ui,
+            library,
+            player,
+            config,
+            config_path,
+            Some(ipc),
+            startup,
+            waker,
+        );
+        if let Some(notice) = notice {
+            app.set_backend_notice(notice);
+        }
+        app
+    })
+    .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
 }
 
 fn register_associations() -> anyhow::Result<()> {

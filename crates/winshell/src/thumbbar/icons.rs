@@ -2,7 +2,7 @@
 //! icon resources.
 //!
 //! The shell's `THUMBBUTTON`s need `HICON`s, and the app has no transport
-//! icon assets of its own (the egui UI paints its glyphs). Instead of
+//! icon assets of its own (its UI paints the glyphs). Instead of
 //! committing four binary icons, the glyphs are rasterised here, with 4x
 //! supersampling, into the `BITMAPINFOHEADER` + 32bpp XOR + 1bpp AND layout
 //! [`CreateIconFromResourceEx`] consumes. Keeping this pure Rust and
@@ -35,8 +35,8 @@ pub(super) enum Glyph {
 /// A filled polygon in normalised `[0, 1]` icon coordinates.
 type Poly = &'static [(f32, f32)];
 
-/// Previous: a bar next to a left-pointing triangle. Proportions match the
-/// egui transport icons (`crate::icons`).
+/// Previous: a bar next to a left-pointing triangle, in the same proportions
+/// the app's transport bar uses.
 const PREVIOUS: &[Poly] = &[
     &[(0.21, 0.21), (0.3028, 0.21), (0.3028, 0.79), (0.21, 0.79)],
     &[(0.79, 0.21), (0.79, 0.79), (0.3376, 0.5)],

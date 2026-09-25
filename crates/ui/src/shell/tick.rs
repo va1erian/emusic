@@ -6,8 +6,8 @@ use std::time::Duration;
 use bitflags::bitflags;
 
 bitflags! {
-    /// What changed between two ticks, for retained-mode frontends. An
-    /// immediate-mode frontend (egui) ignores it and redraws.
+    /// What changed between two ticks, so the app only updates the affected
+    /// controls instead of rebuilding every view.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct Changes: u32 {
         /// The library snapshot, scan progress or history changed.

@@ -1,10 +1,10 @@
 //! Off-thread folder picker (#69).
 //!
 //! `rfd`'s synchronous `pick_folder()` runs a modal dialog on the calling
-//! thread; called from a view's `ui()` that blocks egui's redraw and Windows
-//! marks the window as "not responding". This module runs the dialog on a
-//! dedicated thread and delivers the chosen path through a channel that the
-//! shell drains each frame.
+//! thread; called straight from a view's sync it would block the UI thread and
+//! Windows marks the window as "not responding". This module runs the dialog
+//! on a dedicated thread and delivers the chosen path through a channel that
+//! the shell drains each frame.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};

@@ -1,6 +1,6 @@
 //! Genres-view model (#104): the name-sorted genre list with its track
 //! counts, plus the per-row "Shuffle play" intent. Rendering (the table and
-//! its context menu) stays in the frontends.
+//! its context menu) stays in the app.
 //!
 //! [`GenresView::refresh`] rebuilds the rows only when the library's
 //! [`LibraryDataSource::revision`] counter changes, so an unchanged library
