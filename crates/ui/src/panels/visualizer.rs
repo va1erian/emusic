@@ -5,6 +5,7 @@
 //! the transient state (peak-hold caps, the milkdrop placeholder engine)
 //! that must survive across frames.
 
+pub mod analysis;
 use std::time::Duration;
 
 use emusic_milkdrop::PlaceholderEngine;

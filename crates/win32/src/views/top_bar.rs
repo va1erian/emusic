@@ -9,9 +9,12 @@
 use std::time::Duration;
 
 use emusic_ui::panels::top_bar::{TopBar, TopBarMsg};
+use emusic_ui::player_api::PlayerApi;
+use emusic_ui::state::VisualizerMode;
 use win32ui::prelude::*;
 
 use crate::app::Msg;
+use crate::views::visualizer::{self, VisualizerView};
 
 /// The bar's items, so `set_value`/`set_checked`/`set_enabled` can update them
 /// cheaply without rebuilding the list.
@@ -27,6 +30,7 @@ enum BarItem {
     Seek,
     Total,
     Volume,
+    Visualizer,
     Search,
     /// The clear button shown while the search query is non-empty.
     ClearSearch,
@@ -64,6 +68,7 @@ struct Signature {
     shuffle: bool,
     seek_supported: bool,
     has_duration: bool,
+    visualizer: bool,
 }
 
 /// The Win32 transport bar and its app-owned search box.
@@ -71,6 +76,8 @@ pub struct TopBarView {
     bar: MaterialTopBar<Msg>,
     /// Owned here; the bar moves and resizes it with its slot.
     search: Edit<Msg>,
+    /// The spectrum / oscilloscope strip left of the search box.
+    visualizer: VisualizerView,
     signature: Option<Signature>,
 }
 
@@ -81,29 +88,35 @@ impl TopBarView {
     /// DirectWrite is unavailable, so the app can run without the bar.
     pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
         let bar = MaterialTopBar::new(ui)?;
+        let visualizer = VisualizerView::new(ui)?;
         bar.set_height(dip(HEIGHT_DIP));
         let search = Edit::single_line(ui)?
             .cue(SEARCH_CUE)
             .on_change(|text| Some(Msg::TopBarSearch(text.to_owned())));
+
         let bar = bar.on_event(|event| Some(Msg::TopBar(event)));
         Ok(Self {
             bar,
             search,
+            visualizer,
             signature: None,
         })
     }
 
     /// Pushes the model into the band and mirrors the search query.
-    pub fn sync(&mut self, top_bar: &TopBar, search_query: &str) {
+    pub fn sync(&mut self, top_bar: &TopBar, search_query: &str, visualizer: bool) {
         let signature = Signature {
             playing: top_bar.is_playing(),
             repeat: top_bar.repeat_active(),
             shuffle: top_bar.shuffle(),
             seek_supported: top_bar.seek_supported(),
             has_duration: top_bar.duration_secs().is_some(),
+            visualizer,
         };
         if self.signature.as_ref() != Some(&signature) {
-            self.bar.set_items(items(top_bar, &signature, &self.search));
+            self.visualizer.set_visible(visualizer);
+            self.bar
+                .set_items(items(top_bar, &signature, &self.search, &self.visualizer));
             self.signature = Some(signature);
         }
 
@@ -134,7 +147,12 @@ impl TopBarView {
 }
 
 /// Builds the item list for the current structural state.
-fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<TopBarItem> {
+fn items(
+    top_bar: &TopBar,
+    signature: &Signature,
+    search: &Edit<Msg>,
+    visualizer: &VisualizerView,
+) -> Vec<TopBarItem> {
     let (play_glyph, play_tip) = if signature.playing {
         (Fluent::PAUSE, "Pause")
     } else {
@@ -149,7 +167,7 @@ fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<Top
         .unwrap_or(position.max(1.0))
         .max(0.001);
 
-    let items = vec![
+    let mut items = vec![
         TopBarItem::icon_button(BarItem::Previous.id(), Fluent::PREVIOUS).tooltip("Previous"),
         TopBarItem::icon_button(BarItem::PlayPause.id(), play_glyph).tooltip(play_tip),
         TopBarItem::icon_button(BarItem::Stop.id(), Fluent::STOP).tooltip("Stop"),
@@ -180,18 +198,38 @@ fn items(top_bar: &TopBar, signature: &Signature, search: &Edit<Msg>) -> Vec<Top
         TopBarItem::slider(BarItem::Volume.id(), f64::from(top_bar.volume()), 0.0..=1.0)
             .width(dip(VOLUME_WIDTH_DIP)),
         TopBarItem::spacer(),
+    ];
+    if signature.visualizer {
+        items.push(
+            TopBarItem::native(BarItem::Visualizer.id(), dip(visualizer::WIDTH))
+                .height(dip(visualizer::HEIGHT))
+                .child(visualizer)
+                .tooltip("Visualizer (click to change mode)"),
+        );
+        items.push(TopBarItem::spacer());
+    }
+    items.push(
         TopBarItem::native(BarItem::Search.id(), dip(SEARCH_WIDTH_DIP))
             .height(dip(SEARCH_HEIGHT_DIP))
             .child(search)
             .tooltip("Search library"),
-        // Always present, so appearing/disappearing never shifts the layout; it
-        // is the edit's height, with a proportionally smaller glyph.
+    );
+    // Always present, so appearing/disappearing never shifts the layout; it
+    // is the edit's height, with a proportionally smaller glyph.
+    items.push(
         TopBarItem::icon_button(BarItem::ClearSearch.id(), CLEAR_GLYPH)
             .width(dip(CLEAR_SIZE_DIP))
             .height(dip(CLEAR_SIZE_DIP))
             .tooltip("Clear search"),
-    ];
+    );
     items
+}
+
+impl TopBarView {
+    /// Feeds the visualizer strip for this frame (see [`VisualizerView::feed`]).
+    pub fn feed_visualizer(&self, mode: VisualizerMode, player: &dyn PlayerApi) {
+        self.visualizer.feed(mode, player);
+    }
 }
 
 /// Maps a band event onto the shared model's intent, or `None` when the item
