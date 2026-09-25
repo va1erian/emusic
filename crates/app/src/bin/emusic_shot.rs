@@ -102,9 +102,8 @@ struct Cli {
     #[arg(long)]
     database_info: bool,
 
-    /// Visualizer strip mode to render (#25): `spectrum`, `oscilloscope`,
-    /// `milkdrop` or `off`. Omitted, the strip stays hidden, matching the
-    /// app's default.
+    /// Visualizer strip mode to render (#25): `spectrum`, `oscilloscope` or
+    /// `off`. Omitted, the strip stays hidden, matching the app's default.
     #[arg(long, value_parser = parse_visualizer)]
     visualizer: Option<VisualizerMode>,
 
@@ -183,9 +182,8 @@ fn parse_accent(s: &str) -> Result<Accent, String> {
 }
 
 fn parse_visualizer(s: &str) -> Result<VisualizerMode, String> {
-    VisualizerMode::from_slug(s).ok_or_else(|| {
-        format!("invalid visualizer {s:?}: expected spectrum, oscilloscope, milkdrop or off")
-    })
+    VisualizerMode::from_slug(s)
+        .ok_or_else(|| format!("invalid visualizer {s:?}: expected spectrum, oscilloscope or off"))
 }
 
 fn parse_settings_tab(s: &str) -> Result<SettingsTab, String> {

@@ -56,7 +56,6 @@ impl AppearancePage {
             &mut panel,
             VisualizerMode::ALL
                 .into_iter()
-                .filter(|mode| *mode != VisualizerMode::Milkdrop)
                 .map(|mode| (mode.label(), mode)),
         )?
         .on_select(|mode| Some(Msg::Settings(SettingsMsg::SetVisualizerMode(*mode))));

@@ -1082,10 +1082,6 @@ impl App for Win32App {
             }
             Msg::CycleVisualizer => {
                 self.shell.dispatch(Command::CycleVisualizer);
-                // The native strip has no MilkDrop renderer; skip that mode.
-                if self.shell.state.visualizer == VisualizerMode::Milkdrop {
-                    self.shell.dispatch(Command::CycleVisualizer);
-                }
                 self.tick(ui);
             }
             Msg::Quit => {

@@ -14,6 +14,7 @@ use emusic_player::{ExplicitQueueSnapshot, QueueSnapshot, RepeatMode as PlayerRe
 use crate::config::{Config, PlaybackSession, UiState, load, save};
 use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
+use crate::state::projectm::{ProjectMSettings, VizDock, VizLayout, VizMonitor};
 use crate::state::{
     Accent, AppState, PanelVisibility, Rgb, Theme, View, VisualizerMode, WindowGeometry,
 };
@@ -90,6 +91,26 @@ fn non_default_config() -> Config {
         },
         visualizer_enabled: true,
         visualizer: VisualizerMode::Oscilloscope,
+        projectm_layout: VizLayout {
+            visible: true,
+            dock: VizDock::Window,
+            fullscreen: true,
+            fullscreen_monitor: Some(VizMonitor {
+                device: r"\\.\DISPLAY2".to_string(),
+                name: "DELL U2720Q".to_string(),
+            }),
+        },
+        projectm: ProjectMSettings {
+            preset_duration_secs: 45.0,
+            hard_cuts: true,
+            shuffle: false,
+            preset_locked: true,
+            fps_cap: 30,
+            disabled_packs: vec!["projectm-classic".to_string()],
+            user_preset_dir: Some(PathBuf::from(r"D:\presets")),
+            last_preset: Some(PathBuf::from(r"cream-of-the-crop\Dancer\a.milk")),
+            ..ProjectMSettings::default()
+        },
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
         tracker_settings: TrackerSettings {
             interpolation: Interpolation::Sinc,
@@ -346,4 +367,46 @@ fn apply_to_player_skips_the_session_when_resuming_is_off() {
     config.apply_to_player(&mut player);
 
     assert!(player.now_playing().is_none());
+}
+
+#[test]
+fn saved_milkdrop_strip_mode_loads_as_spectrum() {
+    let dir = scratch_dir("milkdrop-migration");
+    let path = config_file(&dir);
+    fs::write(
+        &path,
+        "visualizer_enabled = true\nvisualizer = \"milkdrop\"\n",
+    )
+    .expect("write old config");
+
+    let config = load(&path);
+    assert!(
+        config.visualizer_enabled,
+        "the rest of the file still loads"
+    );
+    assert_eq!(config.visualizer, VisualizerMode::Spectrum);
+
+    fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn apply_to_state_restores_and_sanitizes_projectm() {
+    let config = Config {
+        projectm_layout: VizLayout {
+            visible: true,
+            dock: VizDock::Window,
+            ..VizLayout::default()
+        },
+        projectm: ProjectMSettings {
+            fps_cap: 0,
+            ..ProjectMSettings::default()
+        },
+        ..Config::default()
+    };
+    let mut state = AppState::default();
+    config.apply_to_state(&mut state);
+
+    assert!(state.projectm.layout.visible);
+    assert_eq!(state.projectm.layout.dock, VizDock::Window);
+    assert_eq!(state.projectm.settings.fps_cap, 10);
 }

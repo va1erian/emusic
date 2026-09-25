@@ -1,25 +1,19 @@
 #![forbid(unsafe_code)]
 
-//! Toolkit-agnostic visualization-engine seam for a future MilkDrop/projectM
-//! integration.
+//! A small CPU-side, audio-reactive stand-in for the projectM visualization.
 //!
-//! [`MilkdropEngine`] is the trait a frontend panel drives once per frame:
-//! [`MilkdropEngine::feed_pcm`] with raw samples (the same source the
-//! existing oscilloscope reads via `PlayerApi::samples`), then
-//! [`MilkdropEngine::tick`] to advance and read back a [`Frame`] to paint.
-//! [`PlaceholderEngine`] is the only implementation shipped here: a small
-//! audio-reactive plasma with no external dependencies, standing in for a
-//! real engine.
+//! The real MilkDrop visuals come from libprojectM (#295), which renders
+//! with OpenGL straight into the frontend's surface and so does not go
+//! through this crate. [`PlaceholderEngine`] is what those surfaces draw
+//! instead when projectM can't run (its libraries are missing, or no
+//! OpenGL 3.3 context is available): a smooth plasma with no external
+//! dependencies.
 //!
-//! A real binding (e.g. `projectm-rs`/`projectm-sys` against libprojectM)
-//! would live in its own crate implementing this same trait and feeding a
-//! GPU-texture-backed `Frame` instead of the placeholder's plain numbers —
-//! only this crate and the panel that paints [`Frame`] would need to change
-//! to offer it as an alternative to [`PlaceholderEngine`]; the audio path
-//! and the frontend/backend split stay as they are. It isn't included here:
-//! it needs real `unsafe` FFI against a vendored or runtime-loaded native
-//! library (mirroring how the `bass` crate isolates its FFI), which is out
-//! of scope for this prototype.
+//! [`MilkdropEngine`] is the trait a surface drives once per frame:
+//! [`MilkdropEngine::feed_pcm`] with raw samples (the source the
+//! oscilloscope reads via `PlayerApi::samples`), then
+//! [`MilkdropEngine::tick`] to advance and read back a [`Frame`] to paint
+//! with a plain 2D painter.
 
 mod engine;
 mod placeholder;

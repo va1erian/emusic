@@ -22,6 +22,7 @@ use crate::library_api::{AutoTagStatus, LibraryDataSource};
 use crate::panels::visualizer::FRAME_INTERVAL;
 use crate::player_api::{PlaybackStatus, PlayerApi};
 use crate::search::SearchEngine;
+use crate::state::projectm::{ProjectMAvailability, VizSurface};
 use crate::state::{Accent, AppState, Command, PanelVisibility, Theme, View, VisualizerMode};
 use crate::tag_editor::{self, Status as TagStatus};
 use crate::waker::WakerSlot;
@@ -94,6 +95,8 @@ struct Observed {
     theme: Theme,
     accent: Accent,
     panels: PanelVisibility,
+    viz_surface: Option<VizSurface>,
+    viz_availability: ProjectMAvailability,
 }
 
 impl Shell {
@@ -288,11 +291,16 @@ impl Shell {
         }
     }
 
-    /// Repaint policy (#6, #25): while something is playing, wake on a coarse
-    /// one-second tick (or at [`FRAME_INTERVAL`] while the opt-in visualizer
-    /// animates); otherwise only while a tag edit is in flight. `None` means
-    /// the frontend may stay idle until woken by a [`Waker`](crate::waker::Waker).
+    /// Repaint policy (#6, #25, #300): at [`FRAME_INTERVAL`] while the
+    /// projectM visualization is shown (it keeps animating while paused);
+    /// while something is playing, on a coarse one-second tick (or at
+    /// [`FRAME_INTERVAL`] while the opt-in visualizer strip animates);
+    /// otherwise only while a tag edit is in flight. `None` means the
+    /// frontend may stay idle until woken by a [`Waker`](crate::waker::Waker).
     fn next_wake(&self) -> Option<Duration> {
+        if self.state.projectm.surface().is_some() {
+            return Some(FRAME_INTERVAL);
+        }
         if self.player.status() == PlaybackStatus::Playing {
             if self.state.visualizer_enabled && self.state.visualizer != VisualizerMode::Off {
                 return Some(FRAME_INTERVAL);
@@ -354,6 +362,11 @@ impl Shell {
         if current.panels != self.observed.panels {
             changes |= Changes::PANELS;
         }
+        if current.viz_surface != self.observed.viz_surface
+            || current.viz_availability != self.observed.viz_availability
+        {
+            changes |= Changes::VISUALIZATION;
+        }
         self.observed = current;
         changes
     }
@@ -378,6 +391,8 @@ impl Shell {
             theme: self.state.theme,
             accent: self.state.accent,
             panels: self.state.panels,
+            viz_surface: self.state.projectm.surface(),
+            viz_availability: self.state.projectm.availability.clone(),
         }
     }
 }

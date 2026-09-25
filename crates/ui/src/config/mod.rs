@@ -15,6 +15,7 @@ use emusic_player::tracker::TrackerSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::player_api::{PlayerApi, RepeatMode};
+use crate::state::projectm::{ProjectMSettings, VizLayout};
 use crate::state::{Accent, AppState, PanelVisibility, Theme, View, VisualizerMode};
 
 pub use io::{ConfigError, config_path, load, save};
@@ -124,6 +125,13 @@ pub struct Config {
     pub visualizer_enabled: bool,
     /// Visualizer strip mode (#25): spectrum, oscilloscope or off.
     pub visualizer: VisualizerMode,
+    /// Where the projectM visualization is shown (#300): visible, dock,
+    /// fullscreen and its monitor.
+    #[serde(default)]
+    pub projectm_layout: VizLayout,
+    /// projectM preset timing, sensitivity and preset selection (#300).
+    #[serde(default)]
+    pub projectm: ProjectMSettings,
     /// Library folders to scan at startup, edited in Settings → Library
     /// (#19); can also be set by hand in `config.toml`.
     #[serde(default)]
@@ -172,6 +180,8 @@ impl Default for Config {
             ui: UiState::default(),
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
+            projectm_layout: VizLayout::default(),
+            projectm: ProjectMSettings::default(),
             library_folders: Vec::new(),
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
@@ -208,6 +218,8 @@ impl Config {
             ui: UiState::capture(state),
             visualizer_enabled: state.visualizer_enabled,
             visualizer: state.visualizer,
+            projectm_layout: state.projectm.layout.clone(),
+            projectm: state.projectm.settings.clone(),
             library_folders: state.library_folders.clone(),
             tracker_settings: state.tracker_settings,
             midi_soundfont: state.midi_soundfont.clone(),
@@ -231,6 +243,8 @@ impl Config {
         self.ui.apply_to_state(state);
         state.visualizer_enabled = self.visualizer_enabled;
         state.visualizer = self.visualizer;
+        state.projectm.layout = self.projectm_layout.clone();
+        state.projectm.settings = self.projectm.sanitized();
         state.library_folders = self.library_folders.clone();
         state.tracker_settings = self.tracker_settings;
         state.midi_soundfont = self.midi_soundfont.clone();

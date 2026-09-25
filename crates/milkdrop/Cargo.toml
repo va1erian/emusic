@@ -3,7 +3,7 @@ name = "emusic-milkdrop"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Toolkit-agnostic MilkDrop/projectM-style visualization engine seam, with a placeholder audio-reactive engine"
+description = "CPU-side audio-reactive placeholder drawn when the projectM visualization is unavailable"
 
 [lib]
 name = "emusic_milkdrop"

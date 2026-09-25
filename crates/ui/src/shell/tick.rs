@@ -26,6 +26,9 @@ bitflags! {
         const THEME = 1 << 6;
         /// Panel visibility changed.
         const PANELS = 1 << 7;
+        /// The projectM visualization was shown, hidden or moved to another
+        /// surface, or its engine status changed (#300).
+        const VISUALIZATION = 1 << 8;
     }
 }
 
