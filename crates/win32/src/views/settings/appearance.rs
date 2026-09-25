@@ -7,7 +7,9 @@
 
 use std::cell::Cell;
 
-use emusic_ui::state::{Accent, AppState, Rgb, Theme as UiTheme, VisualizerMode};
+use emusic_ui::state::{
+    Accent, AppState, Density, FontSize, Rgb, Theme as UiTheme, VisualizerMode,
+};
 use emusic_ui::views::Commands;
 use win32ui::prelude::*;
 
@@ -25,6 +27,11 @@ pub(super) struct AppearancePage {
     heading: Label,
     theme_label: Label,
     theme: RadioGroup<UiTheme, Msg>,
+    font_label: Label,
+    font: RadioGroup<FontSize, Msg>,
+    density_label: Label,
+    density: RadioGroup<Density, Msg>,
+    zebra: CheckBox<Msg>,
     accent_label: Label,
     accent: Custom<AccentSwatches, Msg>,
     custom_label: Label,
@@ -47,6 +54,18 @@ impl AppearancePage {
         )?
         .selected(UiTheme::Dark)
         .on_select(|theme| Some(Msg::Settings(SettingsMsg::SetTheme(*theme))));
+
+        let font = RadioGroup::new(&mut panel, FontSize::ALL.map(|size| (size.label(), size)))?
+            .on_select(|size| Some(Msg::Settings(SettingsMsg::SetFontSize(*size))));
+
+        let density = RadioGroup::new(
+            &mut panel,
+            Density::ALL.map(|density| (density.label(), density)),
+        )?
+        .on_select(|density| Some(Msg::Settings(SettingsMsg::SetDensity(*density))));
+
+        let zebra = CheckBox::new(&mut panel, "Zebra striping")?
+            .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleZebra(on))));
 
         let accent = accent_swatches::create(&mut panel, |accent| {
             Some(Msg::Settings(SettingsMsg::SetAccent(accent)))
@@ -74,6 +93,11 @@ impl AppearancePage {
             heading: Label::new(&mut panel, Rect::default(), "Appearance")?,
             theme_label: Label::new(&mut panel, Rect::default(), "Theme")?,
             theme,
+            font_label: Label::new(&mut panel, Rect::default(), "Font size")?,
+            font,
+            density_label: Label::new(&mut panel, Rect::default(), "List density")?,
+            density,
+            zebra,
             accent_label: Label::new(&mut panel, Rect::default(), "Accent colour")?,
             accent,
             custom_label: Label::new(&mut panel, Rect::default(), "Custom colour")?,
@@ -105,6 +129,21 @@ impl AppearancePage {
                 ),
                 ROW_HEIGHT,
             ),
+            (
+                labelled(
+                    &self.font_label,
+                    radio_row(&self.font).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
+            ),
+            (
+                labelled(
+                    &self.density_label,
+                    radio_row(&self.density).height(dip(ROW_HEIGHT)),
+                ),
+                ROW_HEIGHT,
+            ),
+            (self.zebra.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
             (
                 labelled(&self.accent_label, self.accent.width(dip(STRIP_WIDTH))),
                 ROW_HEIGHT,
@@ -156,6 +195,9 @@ impl AppearancePage {
     /// Pushes the shared state onto the controls.
     pub(super) fn sync(&mut self, ui: &Ui<Msg>, state: &AppState) {
         self.theme.set_selected(&state.theme);
+        self.font.set_selected(&state.appearance.font_size);
+        self.density.set_selected(&state.appearance.density);
+        self.zebra.set_checked(state.appearance.zebra);
         if self.accent.widget().borrow().select(state.accent) {
             self.accent.invalidate();
         }
@@ -194,6 +236,9 @@ impl AppearancePage {
                 self.apply(ui);
             }
             SettingsMsg::SetVisualizerMode(mode) => state.visualizer = *mode,
+            SettingsMsg::SetFontSize(size) => state.appearance.font_size = *size,
+            SettingsMsg::SetDensity(density) => state.appearance.density = *density,
+            SettingsMsg::ToggleZebra(on) => state.appearance.zebra = *on,
             _ => return false,
         }
         true

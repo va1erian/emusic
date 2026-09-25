@@ -105,6 +105,11 @@ impl StarredView {
         self.table.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
     /// The count header above the track table.
     pub fn layout(&self) -> Layout {
         column![self.header.height(dip(HEADER_HEIGHT)), self.table.fill(1)]

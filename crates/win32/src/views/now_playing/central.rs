@@ -65,6 +65,11 @@ impl CentralNowPlayingView {
         self.pair.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.pair.apply_appearance();
+    }
+
     /// Pushes the model into the controls, decoding artwork through the cache.
     pub fn sync(&mut self, model: &Model) {
         self.pair.sync(model);

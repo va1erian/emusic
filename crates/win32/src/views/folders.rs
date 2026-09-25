@@ -248,6 +248,12 @@ impl FoldersView {
         self.table.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag to the track
+    /// table (the folder tree is not a list view) (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
     /// The tree on the left, and the checkbox above the track table on the
     /// right.
     pub fn layout(&self) -> Layout {

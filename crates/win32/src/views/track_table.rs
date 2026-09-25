@@ -241,6 +241,12 @@ impl TrackView {
         })
     }
 
+    /// Applies the current appearance metrics and zebra flag: the row font,
+    /// row height and striping (#309).
+    pub fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.list);
+    }
+
     /// Rebuilds the model from `tracks`, sorted by `sort_state`, and updates
     /// the sort indicator.
     pub fn set_rows(&mut self, tracks: &[&TrackInfo], sort_state: SortState) {

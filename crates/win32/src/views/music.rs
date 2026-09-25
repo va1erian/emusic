@@ -69,6 +69,11 @@ impl MusicView {
         self.table.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
     /// The command to shuffle-play the tracks currently visible in the table
     /// (the "Shuffle all" button, #242).
     pub fn shuffle_all(

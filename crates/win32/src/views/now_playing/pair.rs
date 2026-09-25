@@ -63,6 +63,17 @@ impl WidgetPair {
         self.queue.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag to the queue list
+    /// and the summary fonts (#309).
+    pub(super) fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.queue);
+        self.summary
+            .widget()
+            .borrow_mut()
+            .set_metrics(crate::appearance::metrics());
+        self.summary.invalidate();
+    }
+
     /// Pushes the model into the controls, decoding artwork through the cache.
     ///
     /// The artwork is polled every tick (a decode may finish between model

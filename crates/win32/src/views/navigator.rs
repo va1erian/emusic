@@ -11,7 +11,7 @@
 use std::cell::{Cell, RefCell};
 
 use emusic_ui::panels::navigator::{Navigator, SECTIONS};
-use emusic_ui::state::View;
+use emusic_ui::state::{Metrics, View};
 use win32ui::accessibility::{AccessCx, Action, Node, Role};
 use win32ui::gdi::{Canvas, Font, FontWeight, TextFormat};
 use win32ui::prelude::*;
@@ -19,6 +19,10 @@ use win32ui::{Custom, CustomWidget, Input, Rect, Size, Theme, WidgetCx};
 
 use crate::app::Msg;
 
+/// The face the navigator's icons are drawn with.
+const ICON_FAMILY: &str = "Segoe Fluent Icons";
+/// Base icon point size at [`FontSize::Default`](emusic_ui::state::FontSize::Default).
+const ICON_POINTS: f32 = 11.0;
 /// Row height, in device-independent pixels.
 const ROW_HEIGHT: f32 = 26.0;
 /// Section-heading row height.
@@ -87,6 +91,15 @@ impl NavigatorView {
             .set_selected(navigator.selected());
         self.custom.invalidate();
     }
+
+    /// Rebuilds the row fonts from the current appearance metrics and repaints.
+    pub fn apply_appearance(&self, ui: &Ui<Msg>) {
+        self.custom
+            .widget()
+            .borrow_mut()
+            .set_metrics(crate::appearance::metrics(), ui.dpi());
+        self.custom.invalidate();
+    }
 }
 
 impl AsControl for NavigatorView {
@@ -108,17 +121,42 @@ struct NavigatorWidget {
 
 impl NavigatorWidget {
     fn new(dpi: u32) -> Self {
-        Self {
+        let widget = Self {
             dpi: Cell::new(dpi),
             selected: Cell::new(View::default()),
             hot: Cell::new(None),
             pressed: Cell::new(None),
             pressed_right: Cell::new(None),
-            body: RefCell::new(Font::new("Segoe UI", 9.75, FontWeight::Regular, dpi).ok()),
-            icons: RefCell::new(
-                Font::new("Segoe Fluent Icons", 11.0, FontWeight::Regular, dpi).ok(),
-            ),
-        }
+            body: RefCell::new(None),
+            icons: RefCell::new(None),
+        };
+        widget.rebuild_fonts(crate::appearance::metrics());
+        widget
+    }
+
+    /// Rebuilds the body and icon fonts from `metrics` at the current DPI.
+    /// New fonts are created before the old handles are replaced, so a paint in
+    /// flight can never touch a deleted `HFONT`.
+    fn rebuild_fonts(&self, metrics: Metrics) {
+        let dpi = self.dpi.get();
+        *self.body.borrow_mut() = Font::new(
+            crate::appearance::UI_FAMILY,
+            metrics.body,
+            FontWeight::Regular,
+            dpi,
+        )
+        .ok();
+        // The glyph font tracks the text scale rather than the body size: the
+        // icon box is sized from it in `paint`.
+        let icon_points = ICON_POINTS * (metrics.body / crate::appearance::BASE_BODY_POINTS);
+        *self.icons.borrow_mut() =
+            Font::new(ICON_FAMILY, icon_points, FontWeight::Regular, dpi).ok();
+    }
+
+    /// Applies new appearance metrics, rebuilding the fonts and repainting.
+    fn set_metrics(&mut self, metrics: Metrics, dpi: u32) {
+        self.dpi.set(dpi);
+        self.rebuild_fonts(metrics);
     }
 
     fn set_selected(&mut self, view: View) {
@@ -161,7 +199,10 @@ impl CustomWidget for NavigatorWidget {
     type Event = NavigatorEvent;
 
     fn preferred_size(&self, dpi: u32) -> Option<Size> {
-        self.dpi.set(dpi);
+        if self.dpi.get() != dpi {
+            self.dpi.set(dpi);
+            self.rebuild_fonts(crate::appearance::metrics());
+        }
         Some(Size::new(
             dip(INITIAL_WIDTH).to_px(dpi).value(),
             dip(INITIAL_HEIGHT).to_px(dpi).value(),
@@ -350,7 +391,10 @@ impl CustomWidget for NavigatorWidget {
 /// Walks the rows of `bounds`, calling `f` with each row and its rectangle (in
 /// the widget's client coordinates), without allocating.
 fn for_each_row<'a>(dpi: u32, bounds: Rect, mut f: impl FnMut(Row<'a>, Rect)) {
-    let scale = dpi as f32 / 96.0;
+    // Row bands scale with both the DPI and the font-size setting, so a larger
+    // font does not crowd the labels; the metric row height only sets the
+    // relative growth.
+    let scale = dpi as f32 / 96.0 * crate::appearance::font_scale();
     let row_h = (ROW_HEIGHT * scale).round() as i32;
     let heading_h = (HEADING_HEIGHT * scale).round() as i32;
     let gap = (SECTION_GAP * scale).round() as i32;
@@ -390,6 +434,34 @@ mod tests {
             .flat_map(|section| section.views.iter().copied())
             .collect();
         assert_eq!(views, expected);
+    }
+
+    #[test]
+    fn rows_scale_with_the_font_size() {
+        use emusic_ui::state::{Appearance, FontSize};
+
+        let bounds = Rect::new(0, 0, 200, 600);
+        let music_height = |appearance| {
+            crate::appearance::install(appearance, 96);
+            let mut height = 0;
+            for_each_row(96, bounds, |row, rect| {
+                if matches!(row, Row::View(View::Music)) {
+                    height = rect.height();
+                }
+            });
+            height
+        };
+        let default = music_height(Appearance::default());
+        let larger = music_height(Appearance {
+            font_size: FontSize::Larger,
+            ..Appearance::default()
+        });
+        assert!(
+            larger > default,
+            "a larger font must give the navigator taller rows ({larger} vs {default})"
+        );
+        // Leave the thread-local in its default state for the other tests.
+        crate::appearance::install(Appearance::default(), 96);
     }
 
     #[test]

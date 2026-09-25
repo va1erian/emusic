@@ -107,6 +107,11 @@ impl NameCountsView {
         })
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.list);
+    }
+
     /// Rebuilds the virtual list from `rows`.
     pub fn set_rows(&mut self, rows: Vec<NameCountRow>) {
         self.rows = Rc::new(rows);
