@@ -14,7 +14,6 @@ use crate::state::AppState;
 use emusic_ui::views::artists::{ArtistsMsg, ArtistsView};
 use emusic_ui::views::{Commands, Ctx};
 
-const ROW_HEIGHT: f32 = 20.0;
 const HEADER_HEIGHT: f32 = 22.0;
 const NAME_MIN_WIDTH: f32 = 120.0;
 const COUNT_COL_WIDTH: f32 = 72.0;
@@ -36,9 +35,10 @@ impl EguiView for ArtistsView {
 
         let mut messages: Vec<ArtistsMsg> = Vec::new();
         let available_height = ui.available_height();
+        let metrics = crate::appearance::metrics();
         TableBuilder::new(ui)
             .id_salt(id_salt)
-            .striped(true)
+            .striped(crate::appearance::zebra())
             .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .min_scrolled_height(0.0)
@@ -54,7 +54,7 @@ impl EguiView for ArtistsView {
                 header.col(|ui| count_header(ui, "Tracks"));
             })
             .body(|body| {
-                body.rows(ROW_HEIGHT, self.len(), |mut row| {
+                body.rows(metrics.row_height, self.len(), |mut row| {
                     let artist = &self.rows()[row.index()];
                     row.col(|ui| {
                         ui.add(egui::Label::new(&artist.name).truncate().selectable(false));

@@ -16,7 +16,8 @@ use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::projectm::{ProjectMSettings, VizDock, VizLayout, VizMonitor};
 use crate::state::{
-    Accent, AppState, PanelVisibility, Rgb, Theme, View, VisualizerMode, WindowGeometry,
+    Accent, AppState, Appearance, Density, FontSize, PanelVisibility, Rgb, Theme, View,
+    VisualizerMode, WindowGeometry,
 };
 
 /// A single-track explicit queue snapshot, for session tests.
@@ -65,6 +66,11 @@ fn non_default_config() -> Config {
         shuffle: true,
         theme: Theme::Light,
         accent: Accent::Blue,
+        appearance: Appearance {
+            font_size: FontSize::Larger,
+            density: Density::Spacious,
+            zebra: false,
+        },
         panels: PanelVisibility {
             navigator: false,
             right_panel: true,
@@ -160,6 +166,22 @@ fn apply_to_state_restores_column_browser() {
 }
 
 #[test]
+fn apply_to_state_restores_appearance() {
+    let config = Config {
+        appearance: Appearance {
+            font_size: FontSize::Small,
+            density: Density::Spacious,
+            zebra: false,
+        },
+        ..Config::default()
+    };
+    let mut state = AppState::default();
+    config.apply_to_state(&mut state);
+
+    assert_eq!(state.appearance, config.appearance);
+}
+
+#[test]
 fn missing_file_yields_defaults() {
     let dir = scratch_dir("missing");
     assert_eq!(load(&config_file(&dir)), Config::default());
@@ -179,6 +201,10 @@ fn missing_fields_fall_back_to_defaults() {
     // Everything absent keeps its default.
     assert_eq!(config.theme, Theme::default());
     assert_eq!(config.accent, Accent::default());
+    // A config written before #309 has no appearance section: size/density
+    // fall back to the defaults and zebra stays on.
+    assert_eq!(config.appearance, Appearance::default());
+    assert!(config.appearance.zebra);
     assert_eq!(config.panels, PanelVisibility::default());
     assert_eq!(
         config.column_browser_visible,
@@ -214,6 +240,7 @@ fn unknown_fields_are_ignored() {
     assert_eq!(config.repeat_mode, defaults.repeat_mode);
     assert_eq!(config.theme, defaults.theme);
     assert_eq!(config.accent, defaults.accent);
+    assert_eq!(config.appearance, defaults.appearance);
     assert_eq!(config.panels, defaults.panels);
     assert_eq!(
         config.column_browser_visible,
@@ -257,6 +284,30 @@ fn preset_accent_stored_by_name() {
     let text = fs::read_to_string(&path).expect("read config");
     assert!(text.contains("accent = \"teal\""), "toml was: {text}");
     assert_eq!(load(&path), config);
+
+    fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn appearance_round_trips_as_lowercase_names() {
+    let dir = scratch_dir("appearance");
+    let path = config_file(&dir);
+    let config = Config {
+        appearance: Appearance {
+            font_size: FontSize::Large,
+            density: Density::Compact,
+            zebra: false,
+        },
+        ..Config::default()
+    };
+
+    save(&path, &config).expect("save config");
+    assert_eq!(load(&path), config);
+    // Human-editable spellings the same enums accept from the config file.
+    let text = fs::read_to_string(&path).expect("read config");
+    assert!(text.contains("font_size = \"large\""), "toml was: {text}");
+    assert!(text.contains("density = \"compact\""), "toml was: {text}");
+    assert!(text.contains("zebra = false"), "toml was: {text}");
 
     fs::remove_dir_all(&dir).expect("clean up scratch dir");
 }

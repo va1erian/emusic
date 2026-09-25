@@ -29,6 +29,8 @@ bitflags! {
         /// The projectM visualization was shown, hidden or moved to another
         /// surface, or its engine status changed (#300).
         const VISUALIZATION = 1 << 8;
+        /// The font size, list density or zebra setting changed (#309).
+        const APPEARANCE = 1 << 9;
     }
 }
 

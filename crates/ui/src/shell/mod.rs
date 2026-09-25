@@ -94,6 +94,7 @@ struct Observed {
     view: View,
     theme: Theme,
     accent: Accent,
+    appearance: crate::state::Appearance,
     panels: PanelVisibility,
     viz_surface: Option<VizSurface>,
     viz_availability: ProjectMAvailability,
@@ -359,6 +360,9 @@ impl Shell {
         if current.theme != self.observed.theme || current.accent != self.observed.accent {
             changes |= Changes::THEME;
         }
+        if current.appearance != self.observed.appearance {
+            changes |= Changes::APPEARANCE;
+        }
         if current.panels != self.observed.panels {
             changes |= Changes::PANELS;
         }
@@ -390,6 +394,7 @@ impl Shell {
             view: self.state.view,
             theme: self.state.theme,
             accent: self.state.accent,
+            appearance: self.state.appearance,
             panels: self.state.panels,
             viz_surface: self.state.projectm.surface(),
             viz_availability: self.state.projectm.availability.clone(),

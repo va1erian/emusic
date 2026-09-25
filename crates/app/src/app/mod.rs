@@ -15,11 +15,13 @@ mod update;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use eframe::egui;
+
 use crate::config::{self, Config};
 use crate::library_api::LibraryDataSource;
 use crate::player_api::PlayerApi;
 use crate::shell::Shell;
-use crate::state::View;
+use crate::state::{Accent, Appearance, Theme, View};
 use crate::waker::WakerSlot;
 use crate::{fonts, theme};
 
@@ -41,6 +43,19 @@ pub struct EguiApp {
     /// time), so headless renders (#32) stay reproducible. Only differences
     /// matter to [`Shell::tick`].
     synthetic_now: Instant,
+    /// The theme/accent/appearance actually applied to egui, so the style is
+    /// rebuilt on change (not every frame) and a DPI move re-applies it.
+    applied: Option<AppliedAppearance>,
+}
+
+/// The inputs [`theme::apply`] was last called with, for change detection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AppliedAppearance {
+    theme: Theme,
+    accent: Accent,
+    appearance: Appearance,
+    /// `pixels_per_point().to_bits()`, so the float is compared exactly.
+    dpi_bits: u32,
 }
 
 impl EguiApp {
@@ -94,14 +109,44 @@ impl EguiApp {
         crate::settings::folder_picker::init();
         let images = ImageCaches::new(waker.handle());
         let shell = Shell::new(library, player, config, config_path, waker);
-        theme::apply(&cc.egui_ctx, shell.state.theme, shell.state.accent);
+        theme::apply(
+            &cc.egui_ctx,
+            shell.state.theme,
+            shell.state.accent,
+            shell.state.appearance,
+        );
+        let applied = AppliedAppearance {
+            theme: shell.state.theme,
+            accent: shell.state.accent,
+            appearance: shell.state.appearance,
+            dpi_bits: cc.egui_ctx.pixels_per_point().to_bits(),
+        };
         Self {
             shell,
             images,
             smtc: None,
             thumbbar: None,
             synthetic_now: Instant::now(),
+            applied: Some(applied),
         }
+    }
+
+    /// Re-applies the theme when the theme, accent, appearance or DPI changed
+    /// since the last frame, so text sizes and row metrics stay in sync with
+    /// the Settings choices without rebuilding egui's style every frame.
+    pub(crate) fn sync_appearance(&mut self, ctx: &egui::Context) {
+        let state = &self.shell.state;
+        let applied = AppliedAppearance {
+            theme: state.theme,
+            accent: state.accent,
+            appearance: state.appearance,
+            dpi_bits: ctx.pixels_per_point().to_bits(),
+        };
+        if self.applied == Some(applied) {
+            return;
+        }
+        theme::apply(ctx, applied.theme, applied.accent, applied.appearance);
+        self.applied = Some(applied);
     }
 
     /// The shell this frontend drives, for tests and the screenshot tool.

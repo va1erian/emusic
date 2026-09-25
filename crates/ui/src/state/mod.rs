@@ -6,6 +6,7 @@
 
 mod appearance;
 mod command;
+mod metrics;
 mod palette;
 mod panels;
 pub mod projectm;
@@ -17,6 +18,7 @@ mod window;
 
 pub use appearance::{Accent, DEFAULT_ACCENT, Rgb, Theme};
 pub use command::Command;
+pub use metrics::{Appearance, Density, FontSize, Metrics};
 pub use palette::{Palette, Rgba};
 pub use panels::{PanelKind, PanelVisibility};
 pub use projectm::{ProjectMState, VizCommand};
@@ -50,6 +52,8 @@ pub struct AppState {
     pub view: View,
     pub theme: Theme,
     pub accent: Accent,
+    /// Font size, list density and zebra striping (#309).
+    pub appearance: Appearance,
     pub panels: PanelVisibility,
     pub search_query: String,
     /// Number of tracks the Music view's search box currently matches;
@@ -158,6 +162,7 @@ impl Default for AppState {
             view: View::Music,
             theme: Theme::Dark,
             accent: Accent::default(),
+            appearance: Appearance::default(),
             panels: PanelVisibility::default(),
             search_query: String::new(),
             search_result_count: None,
