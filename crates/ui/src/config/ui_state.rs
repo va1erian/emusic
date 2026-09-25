@@ -19,6 +19,10 @@ use crate::views::track_table::sort::SortState;
 pub struct UiState {
     /// Window size/position/maximized, restored when the window is built.
     pub window: WindowGeometry,
+    /// Independent visualization window (#303) size/position/maximized,
+    /// restored when it is next opened.
+    #[serde(default)]
+    pub viz_window: WindowGeometry,
     /// Top-bar search query.
     pub search_query: String,
     /// Music view's track-table sort.
@@ -74,6 +78,7 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             window: WindowGeometry::default(),
+            viz_window: WindowGeometry::default(),
             search_query: String::new(),
             music_sort: SortState::default(),
             music_selection: Vec::new(),
@@ -92,6 +97,7 @@ impl UiState {
     pub fn capture(state: &AppState) -> Self {
         Self {
             window: state.window,
+            viz_window: state.viz_window,
             search_query: state.search_query.clone(),
             music_sort: state.music.table.sort,
             music_selection: state.music.table.selection.selected_ids_sorted(),
@@ -116,6 +122,7 @@ impl UiState {
     /// (stale selections are pruned by the table once tracks are known).
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.window = self.window;
+        state.viz_window = self.viz_window;
         state.search_query = self.search_query.clone();
         state.music.table.sort = self.music_sort;
         state

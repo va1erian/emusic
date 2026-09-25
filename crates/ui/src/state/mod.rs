@@ -94,6 +94,9 @@ pub struct AppState {
     /// Last known window geometry (#214), recorded by the frontend and
     /// applied when it builds the window on the next launch.
     pub window: WindowGeometry,
+    /// Last known geometry of the independent visualization window (#303),
+    /// recorded while it is open and applied when it is next opened.
+    pub viz_window: WindowGeometry,
     /// Whether the status-bar visualizer strip (#25) is shown at all. Off by
     /// default: an animated strip needs a continuous repaint while playing,
     /// which costs CPU even when the user is not looking at it.
@@ -175,6 +178,7 @@ impl Default for AppState {
             resume_playback: true,
             autoplay_on_restore: false,
             window: WindowGeometry::default(),
+            viz_window: WindowGeometry::default(),
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
