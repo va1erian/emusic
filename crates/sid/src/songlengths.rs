@@ -251,10 +251,19 @@ mod tests {
 
     #[test]
     fn resolve_database_path_accepts_a_file_and_a_root_folder() {
-        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        // Build the fixtures in the temp dir rather than pointing at a real
+        // file in the source tree: an absolute path baked in at compile time
+        // (like `CARGO_MANIFEST_DIR`) does not exist in another environment,
+        // e.g. inside Windows Sandbox.
+        let temp = std::env::temp_dir();
+        let file_root = temp.join(format!("emusic-sid-sl-file-{}", std::process::id()));
+        std::fs::create_dir_all(&file_root).expect("create temp dir");
+        let file = file_root.join("Songlengths.md5");
+        std::fs::write(&file, "[Database]\n").expect("write database");
         assert_eq!(resolve_database_path(&file), Some(file.clone()));
+        let _ = std::fs::remove_dir_all(&file_root);
 
-        let root = std::env::temp_dir().join(format!("emusic-sid-sl-{}", std::process::id()));
+        let root = temp.join(format!("emusic-sid-sl-root-{}", std::process::id()));
         let documents = root.join("DOCUMENTS");
         std::fs::create_dir_all(&documents).expect("create temp HVSC root");
         let database = documents.join("Songlengths.md5");

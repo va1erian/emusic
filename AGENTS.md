@@ -39,6 +39,18 @@ cargo test --workspace
 
 Do not submit work with failing or skipped checks. PR bodies must contain `Closes #<issue>`.
 
+## Running tests on a shared desktop: use the Windows Sandbox
+
+The UI tests create real top-level windows, move focus and send synthetic input, and the `egui_kittest` snapshots render frames with wgpu. On your own (or another agent's) desktop that steals focus and makes runs flaky, so run the test suite inside Windows Sandbox:
+
+```powershell
+scripts\sandbox\run.ps1                                    # every test
+scripts\sandbox\run.ps1 -CargoArgs '--features','emusic/shot'
+scripts\sandbox\run.ps1 -BassDir C:\BASS\x64               # exercise the real BASS code
+```
+
+It builds on the host, stages each binary with its crate's `tests\` folder (so `egui_kittest` finds its snapshot baselines) and the BASS DLLs, then runs everything on the sandbox's own desktop. See [docs/sandbox-testing.md](docs/sandbox-testing.md) for the full options and the known limitations. Plain `cargo test` on the host is only acceptable in CI (already a disposable VM) or where the sandbox is unavailable; `fmt`, `check` and `clippy` don't open windows and stay on the host. **Only one sandbox can run at a time** — if the script reports one already running, it belongs to another agent: wait or report it, never kill it.
+
 ## UI changes: use `emusic-shot`
 
 `crates/app` has a headless screenshot tool (see #32) for looking at the shell without a display:
