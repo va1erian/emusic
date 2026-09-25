@@ -1,10 +1,8 @@
 #![forbid(unsafe_code)]
 
 /// One rendered frame's worth of visual state. Deliberately small and
-/// toolkit-agnostic: cheap enough to paint with a plain 2D painter (as
-/// [`crate::PlaceholderEngine`] does) while still being roughly what a
-/// GPU-backed engine would need to expose (a colour, an intensity, a phase)
-/// if a future implementation exposed a texture instead.
+/// toolkit-agnostic: a colour, an intensity and a phase, cheap enough to
+/// paint with a plain 2D painter.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame {
     /// Hue, cycling 0.0..1.0.
@@ -18,9 +16,8 @@ pub struct Frame {
 /// A frame-driven visualization engine: fed PCM audio, advanced by `dt`,
 /// and read back as a [`Frame`] each tick.
 ///
-/// This is the seam a real MilkDrop/projectM binding would implement
-/// alongside the [`crate::PlaceholderEngine`] shipped in this crate (see
-/// the crate docs).
+/// Implemented by [`crate::PlaceholderEngine`], the fallback drawn when
+/// projectM is unavailable (see the crate docs).
 pub trait MilkdropEngine {
     /// Feed one block of interleaved PCM samples.
     fn feed_pcm(&mut self, samples: &[f32]);

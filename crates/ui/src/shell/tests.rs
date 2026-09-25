@@ -5,6 +5,7 @@ use emusic_player::{ExplicitQueueSnapshot, QueueSnapshot};
 
 use super::*;
 use crate::mock::{MockLibrary, MockPlayer};
+use crate::state::VizCommand;
 
 fn shell() -> Shell {
     Shell::new(
@@ -177,4 +178,42 @@ fn session_and_ui_state_round_trip_through_the_config_file() {
     assert_eq!(second.player.position(), Duration::from_secs(9));
 
     std::fs::remove_dir_all(&dir).expect("clean up scratch dir");
+}
+
+#[test]
+fn shown_projectm_wakes_at_frame_rate_even_when_stopped() {
+    let mut shell = shell();
+    assert_eq!(shell.tick(Instant::now()).next_wake, None);
+
+    shell.dispatch(Command::Viz(VizCommand::SetVisible(true)));
+    let tick = shell.tick(Instant::now());
+    assert_eq!(tick.next_wake, Some(FRAME_INTERVAL));
+    assert!(tick.changes.contains(Changes::VISUALIZATION));
+
+    shell.dispatch(Command::Viz(VizCommand::SetVisible(false)));
+    let tick = shell.tick(Instant::now());
+    assert_eq!(tick.next_wake, None, "hidden means no frame-rate wakes");
+    assert!(tick.changes.contains(Changes::VISUALIZATION));
+}
+
+#[test]
+fn moving_projectm_reports_a_visualization_change() {
+    let mut shell = shell();
+    shell.dispatch(Command::Viz(VizCommand::SetVisible(true)));
+    shell.tick(Instant::now());
+
+    shell.dispatch(Command::Viz(VizCommand::SetFullscreen(true)));
+    assert!(
+        shell
+            .tick(Instant::now())
+            .changes
+            .contains(Changes::VISUALIZATION)
+    );
+    assert!(
+        !shell
+            .tick(Instant::now())
+            .changes
+            .contains(Changes::VISUALIZATION),
+        "no change, no flag"
+    );
 }

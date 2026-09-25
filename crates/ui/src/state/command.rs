@@ -7,7 +7,7 @@ use emusic_player::tracker::TrackerSettings;
 
 use crate::library_api::{EditRequest, TrackQuery};
 
-use super::{Accent, PanelKind, View};
+use super::{Accent, PanelKind, View, VizCommand};
 
 /// One-shot request emitted by a panel/view during `ui()`, applied by the
 /// shell after layout so widgets never need `&mut AppState` themselves.
@@ -19,6 +19,8 @@ pub enum Command {
     /// Cycle the visualizer strip's mode (spectrum → oscilloscope → off),
     /// emitted by clicking the strip (#25).
     CycleVisualizer,
+    /// Show, hide, move or drive the projectM visualization (#300).
+    Viz(VizCommand),
     TogglePanel(PanelKind),
     /// Show/hide the Music view's column browser (#16).
     ToggleColumnBrowser,

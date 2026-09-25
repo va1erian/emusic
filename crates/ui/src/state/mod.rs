@@ -1,12 +1,14 @@
 //! Shared UI state (#94, #97): the toolkit-agnostic [`AppState`] shell plus
 //! the smaller state types it is built from — appearance ([`Accent`],
 //! [`Theme`], [`Palette`]), [`Command`] messages, [`View`] routing, panel
-//! visibility, search popup, settings tabs and visualizer mode.
+//! visibility, search popup, settings tabs, visualizer mode and the projectM
+//! visualization.
 
 mod appearance;
 mod command;
 mod palette;
 mod panels;
+pub mod projectm;
 mod search;
 mod settings;
 mod view;
@@ -17,6 +19,7 @@ pub use appearance::{Accent, DEFAULT_ACCENT, Rgb, Theme};
 pub use command::Command;
 pub use palette::{Palette, Rgba};
 pub use panels::{PanelKind, PanelVisibility};
+pub use projectm::{ProjectMState, VizCommand};
 pub use search::{SearchPopupItem, SearchPopupState};
 pub use settings::SettingsTab;
 pub use view::View;
@@ -95,6 +98,9 @@ pub struct AppState {
     pub visualizer: VisualizerMode,
     /// Transient visualizer rendering state (peak-hold caps), not persisted.
     pub visualizer_state: crate::panels::visualizer::VisualizerState,
+    /// The projectM visualization (#295): placement, settings and the
+    /// frontend-reported engine status.
+    pub projectm: ProjectMState,
     /// The Music view (#99): its column browser and track table, composed.
     pub music: MusicView,
     /// The Albums view's grid, sort and thumbnail cache (#17).
@@ -167,6 +173,7 @@ impl Default for AppState {
             visualizer_enabled: false,
             visualizer: VisualizerMode::default(),
             visualizer_state: crate::panels::visualizer::VisualizerState::default(),
+            projectm: ProjectMState::default(),
             music: MusicView::default(),
             album_grid: AlbumGrid::default(),
             folders: FoldersView::default(),
@@ -202,6 +209,7 @@ impl AppState {
             Command::ToggleTheme => self.theme = self.theme.toggled(),
             Command::SetAccent(accent) => self.accent = *accent,
             Command::CycleVisualizer => self.visualizer = self.visualizer.next(),
+            Command::Viz(cmd) => self.projectm.apply(cmd),
             Command::TogglePanel(kind) => match kind {
                 PanelKind::Navigator => self.panels.navigator = !self.panels.navigator,
                 PanelKind::RightPanel => self.panels.right_panel = !self.panels.right_panel,

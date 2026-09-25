@@ -62,7 +62,7 @@ fn appearance(ui: &mut egui::Ui, state: &mut AppState) {
 fn visualizer(ui: &mut egui::Ui, state: &mut AppState) {
     ui.checkbox(&mut state.visualizer_enabled, "Visualizer")
         .on_hover_text(
-            "Animated spectrum/oscilloscope/milkdrop strip in the status bar. \
+            "Animated spectrum/oscilloscope strip in the status bar. \
              Kept off by default because it repaints continuously while playing.",
         );
     if state.visualizer_enabled {
