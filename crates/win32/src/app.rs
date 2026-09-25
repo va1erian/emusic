@@ -308,7 +308,6 @@ impl Win32App {
             View::History => self.history.layout().fill(1),
             View::NowPlaying => self.now_playing_central.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
-            _ => self.central.fill(1),
         };
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
