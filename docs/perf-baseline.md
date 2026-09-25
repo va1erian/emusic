@@ -172,5 +172,5 @@ frontends accept it.
 - Not all egui views exist in Win32 yet (epic #91); treat the Win32 numbers as
   a floor.
 - The WIC integration adds `win32ui::imaging` (github.com/va1erian/win32ui,
-  branch `feat/wic-imaging`); the Win32 manifest points at that branch until it
-  merges, after which it should track `main`.
+  `main` since the `feat/wic-imaging` work merged); the Win32 manifest tracks
+  `main`.
