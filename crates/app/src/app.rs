@@ -12,9 +12,10 @@ use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
 use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
-use emusic_ui::player_api::PlayerApi;
+use emusic_ui::panels::visualizer::FRAME_INTERVAL;
+use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::projectm::{VizDock, VizSurface};
+use emusic_ui::state::projectm::{ProjectMAvailability, VizDock, VizSurface};
 use emusic_ui::state::{
     AppState, Appearance, Command, View, VisualizerMode, VizCommand, WindowGeometry,
 };
@@ -46,7 +47,9 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
-use crate::views::projectm::{GraceTimer, PresetRoots, PresetScanner, ProjectMEvent};
+use crate::views::projectm::{
+    GraceTimer, PresetFiles, PresetRoots, PresetScanner, ProjectMEvent, VizWindow,
+};
 use crate::views::settings::{SettingsMsg, SettingsView};
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
@@ -136,6 +139,8 @@ pub enum Msg {
     CycleVisualizer,
     /// A projectM surface gesture (hover button, double-click) as a command.
     Viz(VizCommand),
+    /// The visualization window reported its engine status (#303).
+    VizAvailability(ProjectMAvailability),
     /// Open the projectM surface's right-click menu (#306).
     VizMenu,
     /// Close the window and exit.
@@ -176,11 +181,27 @@ pub struct Win32App {
     /// Whether the projectM surface is actually rendering this tick: shown,
     /// not collapsed and the window not minimised (#305).
     viz_active: bool,
+    /// Whether the *panel* surface is the one running (so the frame-rate wake
+    /// can fall back while the independent window keeps running, #303).
+    viz_panel_active: bool,
+    /// Whether the independent visualization window should be shown and fed
+    /// (#303).
+    viz_window_active: bool,
+    /// The independent visualization window, while it is open (#303). It is
+    /// kept open (hidden) while the surface is elsewhere, so its instance and
+    /// placement survive a toggle.
+    viz_window: Option<VizWindow>,
+    /// Set once opening the visualization window failed, so it is not retried
+    /// every frame.
+    viz_window_failed: bool,
     /// Keeps a stopped projectM instance alive briefly so a quick toggle
     /// resumes without rebuilding it (#305).
     viz_grace: GraceTimer,
     /// The background preset scan, while one is running (#305).
     preset_scanner: Option<PresetScanner>,
+    /// The scanned preset files, cached so a surface opened after the scan
+    /// (the independent window, #303) still receives them.
+    preset_files: Option<PresetFiles>,
     /// The preset configuration (disabled packs, user folder) the current scan
     /// was started for, so a settings change restarts it (#305).
     preset_config: Option<(Vec<String>, Option<PathBuf>)>,
@@ -341,8 +362,13 @@ impl Win32App {
             applied_panels,
             applied_viz_visible: false,
             viz_active: false,
+            viz_panel_active: false,
+            viz_window_active: false,
+            viz_window: None,
+            viz_window_failed: false,
             viz_grace: GraceTimer::default(),
             preset_scanner: None,
+            preset_files: None,
             preset_config: None,
             applied_look,
             applied_appearance,
@@ -455,8 +481,10 @@ impl Win32App {
     fn tick(&mut self, ui: &mut Ui<Msg>) {
         self.last_full_sync = Instant::now();
         // Remember the live window geometry for the next launch (#214), before
-        // the shell's persistence pass captures the state.
+        // the shell's persistence pass captures the state. The independent
+        // visualization window records its own (#303).
         record_window_geometry(ui, &mut self.shell.state);
+        self.record_viz_geometry();
         // Mirror the current track to the OS media overlay and fold the
         // overlay's transport events into this tick's queued commands (#320),
         // then mirror the player's transport state onto the taskbar thumbnail
@@ -472,15 +500,12 @@ impl Win32App {
         if let Some(thumbbar) = self.thumbbar.as_mut() {
             thumbbar.sync(self.shell.player.as_ref(), &mut self.shell.state);
         }
-        // The visualization "runs" only while its panel surface is shown and the
-        // window is not minimised; while it does not, the shell's frame-rate
-        // wake falls back to its idle cadence (#305).
-        let minimized = ui.placement().show == ShowState::Minimized;
-        self.viz_active = self.shell.state.projectm.surface() == Some(VizSurface::Panel)
-            && self.shell.state.panels.right_panel
-            && !minimized;
-        self.shell.state.projectm.running = self.viz_active;
         let tick = self.shell.tick(Instant::now());
+        // Only now are this frame's queued commands applied, so decide here
+        // whether a visualization surface runs. The shell computed its wake
+        // from the previous `running`, so a surface that just became active is
+        // given the frame-rate wake back below (#303, #305).
+        let viz_wake = self.update_viz_active(ui, tick.next_wake);
         // Keep the modal tag editor posted on its save (the shell delivers
         // outcomes into `state.tag_editor`; the dialog polls the bridge).
         if let (Some(bridge), Some(editor)) = (&self.tag_editor, &self.shell.state.tag_editor) {
@@ -492,7 +517,27 @@ impl Win32App {
         if let Some(preview) = self.taskbar_preview.as_mut() {
             preview.sync(self.shell.player.as_ref(), &self.shell.state.now_playing);
         }
-        self.schedule(ui, tick.next_wake);
+        self.schedule(ui, viz_wake);
+    }
+
+    /// Decides which visualization surface runs this frame — its panel surface
+    /// while shown and not minimised, or its independent window (#303), which
+    /// stays up even when the main window is minimised — records it on the
+    /// shell, and returns the wake to schedule. A surface that just became
+    /// active gets the frame-rate wake the shell did not yet know about (#305).
+    fn update_viz_active(&mut self, ui: &Ui<Msg>, next_wake: Option<Duration>) -> Option<Duration> {
+        let minimized = ui.placement().show == ShowState::Minimized;
+        let surface = self.shell.state.projectm.surface();
+        self.viz_panel_active =
+            surface == Some(VizSurface::Panel) && self.shell.state.panels.right_panel && !minimized;
+        self.viz_window_active = surface == Some(VizSurface::Window) && !self.viz_window_failed;
+        self.viz_active = self.viz_panel_active || self.viz_window_active;
+        self.shell.state.projectm.running = self.viz_active;
+        if self.viz_active {
+            Some(next_wake.map_or(FRAME_INTERVAL, |wait| wait.min(FRAME_INTERVAL)))
+        } else {
+            next_wake
+        }
     }
 
     /// Opens the tag editor modal for the track the shell just resolved (via
@@ -721,16 +766,22 @@ impl Win32App {
             self.install_layout(ui, view);
         }
         // The row can stay shown while the app is minimised; only the animation
-        // stops then, so a restore resumes without a relayout (#305).
-        self.right_panel.viz().set_running(self.viz_active);
-        self.sync_projectm(self.viz_active);
+        // stops then, so a restore resumes without a relayout (#305). The
+        // independent window is driven separately and keeps running (#303).
+        self.right_panel.viz().set_running(self.viz_panel_active);
+        self.sync_viz_window(ui);
+        self.sync_projectm();
         self.sync_viz_lifecycle();
 
         // The dark/light toggle and the accent picker change the shell.s look;
         // mirror them onto the window.
         let look = (self.shell.state.theme, self.shell.state.accent);
         if look != self.applied_look {
-            ui.set_theme(win32_theme(look.0, look.1));
+            let theme = win32_theme(look.0, look.1);
+            ui.set_theme(theme);
+            if let Some(window) = &self.viz_window {
+                window.set_theme(theme);
+            }
             self.applied_look = look;
         }
 
@@ -776,42 +827,111 @@ impl Win32App {
         }
     }
 
-    /// Keeps the panel's projectM surface in step with the shell: settings,
-    /// audio, preset requests and its events. While inactive the surface is not
-    /// fed and its stale requests/events are dropped, so showing it later does
-    /// not replay them (#302, #305).
-    fn sync_projectm(&mut self, active: bool) {
-        if !active {
-            let _ = self.right_panel.viz().take_events();
-            self.shell.state.projectm.take_requests();
-            return;
+    /// Keeps whichever projectM surface is active in step with the shell:
+    /// settings, audio, preset requests and its events. The panel reads the
+    /// player directly; the independent window (#303) is fed PCM and preset
+    /// files the main app owns. While a surface is inactive it is neither fed
+    /// nor has its stale requests replayed (#302, #305).
+    fn sync_projectm(&mut self) {
+        let panel_active = self.viz_panel_active;
+
+        if panel_active {
+            self.right_panel
+                .viz()
+                .set_settings(&self.shell.state.projectm.settings);
+            self.right_panel
+                .viz()
+                .set_last_preset(self.shell.state.projectm.settings.last_preset.as_deref());
+            self.right_panel.viz().feed(self.shell.player.as_ref());
         }
 
-        self.right_panel
-            .viz()
-            .set_settings(&self.shell.state.projectm.settings);
-        self.right_panel
-            .viz()
-            .set_last_preset(self.shell.state.projectm.settings.last_preset.as_deref());
-        self.right_panel.viz().feed(self.shell.player.as_ref());
-
-        for request in self.shell.state.projectm.take_requests() {
-            self.right_panel.viz().request_preset(request);
-        }
-        for event in self.right_panel.viz().take_events() {
-            match event {
-                ProjectMEvent::PresetShown(path) => {
-                    self.shell.state.projectm.settings.last_preset = Some(path);
-                }
-                ProjectMEvent::AvailabilityChanged(availability) => {
-                    self.shell.state.projectm.availability = availability;
-                }
+        if self.viz_window_active
+            && let Some(window) = &self.viz_window
+        {
+            window.set_settings(&self.shell.state.projectm.settings);
+            window.set_last_preset(self.shell.state.projectm.settings.last_preset.as_deref());
+            if let Some(files) = &self.preset_files {
+                window.set_presets(files.clone());
+            }
+            let player = self.shell.player.as_ref();
+            if player.status() == PlaybackStatus::Playing {
+                window.feed_samples(&player.samples());
+            } else {
+                window.push_silence();
             }
         }
 
-        let availability = self.right_panel.viz().availability();
-        if self.shell.state.projectm.availability != availability {
-            self.shell.state.projectm.availability = availability;
+        for request in self.shell.state.projectm.take_requests() {
+            if panel_active {
+                self.right_panel.viz().request_preset(request);
+            } else if self.viz_window_active
+                && let Some(window) = &self.viz_window
+            {
+                window.request_preset(request);
+            }
+        }
+
+        // Events and the reported availability belong to the panel; the
+        // independent window forwards both to the main queue itself (#303).
+        if panel_active {
+            for event in self.right_panel.viz().take_events() {
+                match event {
+                    ProjectMEvent::PresetShown(path) => {
+                        self.shell.state.projectm.settings.last_preset = Some(path);
+                    }
+                    ProjectMEvent::AvailabilityChanged(availability) => {
+                        self.shell.state.projectm.availability = availability;
+                    }
+                }
+            }
+            let availability = self.right_panel.viz().availability();
+            if self.shell.state.projectm.availability != availability {
+                self.shell.state.projectm.availability = availability;
+            }
+        } else {
+            let _ = self.right_panel.viz().take_events();
+        }
+    }
+
+    /// Opens the independent visualization window (#303) when the shell points
+    /// the surface at it, shows it again after a hide, and hides it (keeping
+    /// its state) when the surface moves elsewhere.
+    fn sync_viz_window(&mut self, ui: &Ui<Msg>) {
+        if let Some(window) = &self.viz_window
+            && !window.is_alive()
+        {
+            self.viz_window = None;
+        }
+        if self.viz_window_active {
+            if self.viz_window.is_none() && !self.viz_window_failed {
+                match VizWindow::open(ui, self.shell.state.viz_window) {
+                    Ok(window) => {
+                        tracing::info!("opened the projectM visualization window");
+                        self.viz_window = Some(window);
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, "could not open the visualization window");
+                        self.viz_window_failed = true;
+                    }
+                }
+            }
+            if let Some(window) = &self.viz_window
+                && !window.is_visible()
+            {
+                window.show();
+            }
+        } else if let Some(window) = &self.viz_window
+            && window.is_visible()
+        {
+            window.hide();
+        }
+    }
+
+    /// Records the visualization window's live geometry for the next launch
+    /// (#303), so it reopens where the user left it.
+    fn record_viz_geometry(&mut self) {
+        if let Some(window) = &self.viz_window {
+            self.shell.state.viz_window = window.geometry();
         }
     }
 
@@ -843,7 +963,12 @@ impl Win32App {
             self.viz_grace.arm(now);
             if self.viz_grace.take_due(now) {
                 tracing::debug!("projectM idle grace expired; freeing the instance");
+                // Either surface may hold the instance (both are hidden while
+                // inactive); both frees are no-ops when it is not there (#303).
                 self.right_panel.viz().suspend();
+                if let Some(window) = &self.viz_window {
+                    window.suspend();
+                }
             }
         }
         self.poll_preset_scan();
@@ -879,7 +1004,11 @@ impl Win32App {
                 textures = files.textures.len(),
                 "projectM preset scan ready"
             );
-            self.right_panel.viz().set_presets(files);
+            self.right_panel.viz().set_presets(files.clone());
+            if let Some(window) = &self.viz_window {
+                window.set_presets(files.clone());
+            }
+            self.preset_files = Some(files);
             self.preset_scanner = None;
         }
     }
@@ -1368,6 +1497,9 @@ impl App for Win32App {
             Msg::Viz(command) => {
                 self.shell.dispatch(Command::Viz(command));
                 self.tick(ui);
+            }
+            Msg::VizAvailability(availability) => {
+                self.shell.state.projectm.availability = availability;
             }
             Msg::VizMenu => {
                 let menu = menu::viz_context(&self.shell.state);

@@ -101,6 +101,18 @@ impl ProjectMWidget {
         self.feed.borrow_mut().feed(player);
     }
 
+    /// Buffers raw interleaved stereo samples, for a surface the frontend feeds
+    /// itself (the independent window, which has no player of its own).
+    pub(super) fn feed_samples(&self, samples: &[f32]) {
+        self.feed.borrow_mut().push(samples);
+    }
+
+    /// Buffers a block of silence, keeping the visualization moving while the
+    /// player is paused or stopped.
+    pub(super) fn push_silence(&self) {
+        self.feed.borrow_mut().push_silence();
+    }
+
     /// Replaces the engine and preset settings.
     pub(super) fn set_settings(&self, settings: &ProjectMSettings) {
         let sanitized = settings.sanitized();

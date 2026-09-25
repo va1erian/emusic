@@ -300,6 +300,58 @@ fn albums_view_builds_its_model_and_quits() {
     assert!(constructed.get(), "the app was never constructed");
 }
 
+/// Exercises the independent visualization window (#303): with the layout
+/// pointing at the window surface, the app must open it, hide it on
+/// `SetVisible(false)` (without quitting), and re-show it after `SetDock`
+/// without panicking. Skips if the session cannot create windows.
+#[test]
+fn visualization_window_opens_hides_and_reopens() {
+    use emusic_ui::state::VizCommand;
+    use emusic_ui::state::projectm::{VizDock, VizLayout};
+
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic.viz-window").theme(Theme::dark()),
+        move |ui| {
+            let config = Config {
+                projectm_layout: VizLayout {
+                    visible: true,
+                    dock: VizDock::Window,
+                    ..VizLayout::default()
+                },
+                ..Config::default()
+            };
+            let app = Win32App::new(
+                ui,
+                Box::new(MockLibrary::new()),
+                Box::new(MockPlayer::default()),
+                config,
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            // Closing the window hides the visualization, it does not quit.
+            ui.emit(Msg::Viz(VizCommand::SetVisible(false)));
+            ui.emit(Msg::Timer);
+            // Docking back to the window shows the same (still open) window.
+            ui.emit(Msg::Viz(VizCommand::SetDock(VizDock::Window)));
+            ui.emit(Msg::Timer);
+            ui.emit(Msg::Quit);
+            constructed_for_make.set(true);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}
+
 /// Exercises live appearance changes (#309): building with a non-default saved
 /// font size, density and zebra flag, then changing all three through the
 /// Appearance page messages, must relayout every list without panicking.

@@ -25,9 +25,11 @@ mod grace;
 mod overlay;
 mod presets;
 mod widget;
+mod window;
 
 pub(crate) use grace::GraceTimer;
 pub(crate) use presets::{PresetFiles, PresetRoots, PresetScanner};
+pub(crate) use window::VizWindow;
 
 use std::path::{Path, PathBuf};
 
@@ -66,24 +68,28 @@ pub enum ProjectMGesture {
 
 /// The projectM surface: a GL custom widget plus its feed, settings and preset
 /// requests. Host it like any other control and drive it from the shell tick.
-pub struct ProjectMView {
-    custom: Custom<ProjectMWidget, Msg>,
+///
+/// Generic over the host window's message type `M` so the panel can use the
+/// app's [`Msg`] and the independent window (#303) can use its own, forwarding
+/// gestures back through a [`Proxy`](win32ui::Proxy).
+pub struct ProjectMView<M = Msg> {
+    custom: Custom<ProjectMWidget, M>,
 }
 
-impl ProjectMView {
+impl<M: 'static> ProjectMView<M> {
     /// Creates the surface. Its widget paints a placeholder until projectM can
     /// start, so construction never needs the DLLs or a GL context.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<M>) -> win32ui::Result<Self> {
         let widget = ProjectMWidget::new(ui.dpi());
         Ok(Self {
             custom: Custom::new(ui, widget)?,
         })
     }
 
-    /// Maps the surface's hover/double-click [`ProjectMGesture`]s to an app
+    /// Maps the surface's hover/double-click [`ProjectMGesture`]s to a host
     /// message. Without it the gestures are dropped.
     #[must_use]
-    pub fn with_gestures(self, map: impl Fn(ProjectMGesture) -> Option<Msg> + 'static) -> Self {
+    pub fn with_gestures(self, map: impl Fn(ProjectMGesture) -> Option<M> + 'static) -> Self {
         Self {
             custom: self.custom.on_event(map),
         }
@@ -125,6 +131,18 @@ impl ProjectMView {
         self.custom.widget().borrow().feed(player);
     }
 
+    /// Buffers raw interleaved stereo samples. Used by the independent window
+    /// (#303), which the main app feeds without handing it a player.
+    pub fn feed_samples(&self, samples: &[f32]) {
+        self.custom.widget().borrow().feed_samples(samples);
+    }
+
+    /// Buffers a block of silence, so the visualization keeps moving while the
+    /// player is paused or stopped.
+    pub fn push_silence(&self) {
+        self.custom.widget().borrow().push_silence();
+    }
+
     /// Replaces the engine and preset settings, applied to a running instance.
     pub fn set_settings(&self, settings: &ProjectMSettings) {
         self.custom.widget().borrow().set_settings(settings);
@@ -153,7 +171,7 @@ impl ProjectMView {
     }
 }
 
-impl AsControl for ProjectMView {
+impl<M> AsControl for ProjectMView<M> {
     fn control(&self) -> &Control {
         self.custom.control()
     }

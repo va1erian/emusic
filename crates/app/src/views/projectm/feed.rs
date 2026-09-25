@@ -38,7 +38,7 @@ impl Feed {
         }
     }
 
-    fn push(&mut self, samples: &[f32]) {
+    pub(crate) fn push(&mut self, samples: &[f32]) {
         if samples.is_empty() {
             return;
         }
@@ -49,7 +49,7 @@ impl Feed {
         }
     }
 
-    fn push_silence(&mut self) {
+    pub(crate) fn push_silence(&mut self) {
         self.pending
             .extend(std::iter::repeat_n(0.0, SILENCE_FRAMES));
     }
