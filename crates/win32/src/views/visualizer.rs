@@ -12,10 +12,11 @@ use std::time::Instant;
 
 use emusic_ui::panels::visualizer::VisualizerState;
 use emusic_ui::panels::visualizer::analysis::{
-    BAR_COUNT, MAX_POINTS, bars_from_fft, decay_peaks, decimate, resize_peaks,
+    BAR_COUNT, bars_from_fft, decay_peaks, decimate, resize_peaks,
 };
 use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::state::VisualizerMode;
+use win32ui::d2d::{PointF, Stroke};
 use win32ui::gdi::Canvas;
 use win32ui::prelude::*;
 use win32ui::{Custom, CustomWidget, Input, MouseButton, Point, Rect, Size, Theme, WidgetCx};
@@ -26,6 +27,8 @@ use crate::app::Msg;
 pub const WIDTH: f32 = 150.0;
 /// The strip's height, in design units.
 pub const HEIGHT: f32 = 22.0;
+/// Points in the oscilloscope trace: about one per two pixels of the strip.
+const TRACE_POINTS: usize = 96;
 /// Fraction of each bar's slot the bar fills (the rest is a gap).
 const BAR_FILL: f32 = 0.72;
 
@@ -118,9 +121,21 @@ fn paint_trace(canvas: &Canvas, bounds: Rect, trace: &[f32], theme: &Theme) {
         let y = mid - trace[index].clamp(-1.0, 1.0) * half;
         Point::new(x, y as i32)
     };
+    // One Direct2D canvas for the whole trace: `Canvas::line` builds a fresh
+    // render target per call, which made a 256-segment scope crawl.
+    let Some(mut d2d) = canvas.d2d() else {
+        return;
+    };
     for index in 1..trace.len() {
-        canvas.line(point(index - 1), point(index), theme.accent, 1);
+        let (from, to) = (point(index - 1), point(index));
+        d2d.draw_line(
+            PointF::new(from.x as f32 + 0.5, from.y as f32 + 0.5),
+            PointF::new(to.x as f32 + 0.5, to.y as f32 + 0.5),
+            theme.accent,
+            Stroke::solid(1.0),
+        );
     }
+    let _ = d2d.end_draw();
 }
 
 /// The strip and its per-frame feed.
@@ -172,7 +187,7 @@ impl VisualizerView {
             .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
         frame.mode = mode;
         if mode == VisualizerMode::Oscilloscope {
-            frame.trace = decimate(&player.samples(), MAX_POINTS);
+            frame.trace = decimate(&player.samples(), TRACE_POINTS);
         } else {
             frame.bars = bars_from_fft(&player.fft(), BAR_COUNT);
             resize_peaks(&mut frame.peaks, BAR_COUNT);
