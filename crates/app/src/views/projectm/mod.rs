@@ -60,6 +60,8 @@ pub enum ProjectMGesture {
     Fullscreen,
     /// The hide overlay button.
     Hide,
+    /// The surface was right-clicked; show its context menu (#306).
+    ContextMenu,
 }
 
 /// The projectM surface: a GL custom widget plus its feed, settings and preset

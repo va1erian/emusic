@@ -279,6 +279,10 @@ impl CustomWidget for ProjectMWidget {
                 ..
             } => cx.emit(ProjectMGesture::DoubleClick),
             Input::MouseDown {
+                button: MouseButton::Right,
+                ..
+            } => cx.emit(ProjectMGesture::ContextMenu),
+            Input::MouseDown {
                 x,
                 y,
                 button: MouseButton::Left,

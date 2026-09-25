@@ -1,8 +1,8 @@
 //! Win32 Settings view (#115).
 //!
 //! A view struct per the #106 pattern: a native tab strip (`win32ui`'s
-//! [`Tabs`](win32ui::Tabs) control) over five pages — Library folders,
-//! Appearance, File associations, Playback
+//! [`Tabs`](win32ui::Tabs) control) over six pages — Library folders,
+//! Appearance, Visualization, File associations, Playback
 //! and About. Each page owns standard win32ui controls and only reads and
 //! writes the shared `emusic-ui` state, emitting [`Command`]s for the shell to
 //! apply; it never duplicates sorting, filtering or formatting.
@@ -23,6 +23,7 @@ mod associations;
 mod library;
 mod playback;
 mod scroll_form;
+mod visualization;
 
 use scroll_form::{FormRow, ScrollPanel};
 
@@ -68,6 +69,22 @@ pub enum SettingsMsg {
     ToggleVisualizer(bool),
     /// The Appearance page picked a visualizer mode.
     SetVisualizerMode(VisualizerMode),
+    /// The Visualization page changed a projectM settings field (#306).
+    Viz(visualization::VisualizationEdit),
+    /// The Visualization page toggled a preset pack's checkbox (#306).
+    VizPack(String, bool),
+    /// The Visualization page asked to launch the preset-setup helper (#306).
+    VizGetPresets,
+    /// Open the native folder picker for a user preset folder (#306).
+    VizBrowse,
+    /// The user preset folder picker returned (#306).
+    VizPicked(Option<PathBuf>),
+    /// Commit the user preset path typed into the text field (#306).
+    VizCommitUserDir,
+    /// Clear the user preset folder (#306).
+    VizClearUserDir,
+    /// The background preset-pack count finished (#306).
+    VizPackCounts(Vec<(String, usize)>),
     /// The Appearance page picked a UI font size (#309).
     SetFontSize(FontSize),
     /// The Appearance page picked a list density (#309).
@@ -114,11 +131,12 @@ pub enum SettingsMsg {
     SidFallback(u32),
 }
 
-/// The Settings central area: the five pages (the tab strip is built fresh by
+/// The Settings central area: the six pages (the tab strip is built fresh by
 /// [`SettingsView::tabs`] whenever the window layout is installed).
 pub struct SettingsView {
     library: library::LibraryPage,
     appearance: appearance::AppearancePage,
+    visualization: visualization::VisualizationPage,
     associations: associations::AssociationsPage,
     playback: playback::PlaybackPage,
     about: about::AboutPage,
@@ -137,6 +155,7 @@ impl SettingsView {
         let proxy = ui.proxy();
         let library = library::LibraryPage::new(ui, proxy.clone())?;
         let appearance = appearance::AppearancePage::new(ui, visualizer_enabled)?;
+        let visualization = visualization::VisualizationPage::new(ui)?;
         let associations = associations::AssociationsPage::new(ui)?;
         let playback = playback::PlaybackPage::new(ui, proxy)?;
         let about = about::AboutPage::new(ui)?;
@@ -144,6 +163,7 @@ impl SettingsView {
         let view = Self {
             library,
             appearance,
+            visualization,
             associations,
             playback,
             about,
@@ -164,6 +184,10 @@ impl SettingsView {
         Tabs::new()
             .page(SettingsTab::Library.label(), self.library.page())
             .page(SettingsTab::Appearance.label(), self.appearance.page())
+            .page(
+                SettingsTab::Visualization.label(),
+                self.visualization.page(),
+            )
             .page(SettingsTab::Associations.label(), self.associations.page())
             .page(SettingsTab::Playback.label(), self.playback.page())
             .page(SettingsTab::About.label(), self.about.page())
@@ -192,7 +216,7 @@ impl SettingsView {
         self.library.apply_appearance();
     }
 
-    /// Mirrors the active tab onto the five pages, leaving only the selected
+    /// Mirrors the active tab onto the six pages, leaving only the selected
     /// one visible (when the view itself is shown).
     fn refresh_tab_visibility(&self) {
         let shown = self.visible.get();
@@ -201,6 +225,8 @@ impl SettingsView {
             .set_visible(shown && tab == SettingsTab::Library);
         self.appearance
             .set_visible(shown && tab == SettingsTab::Appearance);
+        self.visualization
+            .set_visible(shown && tab == SettingsTab::Visualization);
         self.associations
             .set_visible(shown && tab == SettingsTab::Associations);
         self.playback
@@ -226,6 +252,7 @@ impl SettingsView {
         }
         self.library.sync(state, library);
         self.appearance.sync(ui, state);
+        self.visualization.sync(ui, state);
         self.associations.sync();
         self.playback.sync(state);
         tab_changed
@@ -250,6 +277,9 @@ impl SettingsView {
             return;
         }
         if self.appearance.update(&msg, ui, state, out) {
+            return;
+        }
+        if self.visualization.update(&msg, ui, state, out) {
             return;
         }
         if self.associations.update(&msg) {

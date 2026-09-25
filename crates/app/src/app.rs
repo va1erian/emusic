@@ -14,7 +14,7 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::projectm::VizSurface;
+use emusic_ui::state::projectm::{VizDock, VizSurface};
 use emusic_ui::state::{
     AppState, Appearance, Command, View, VisualizerMode, VizCommand, WindowGeometry,
 };
@@ -136,6 +136,8 @@ pub enum Msg {
     CycleVisualizer,
     /// A projectM surface gesture (hover button, double-click) as a command.
     Viz(VizCommand),
+    /// Open the projectM surface's right-click menu (#306).
+    VizMenu,
     /// Close the window and exit.
     Quit,
 }
@@ -198,6 +200,9 @@ pub struct Win32App {
     /// apart from [`Self::applied_browser_visible`], which is the *effective*
     /// visibility (also false off the Music view).
     applied_browser_toggle: bool,
+    /// The Visualization menu ticks last applied: shown, locked, panel,
+    /// window, fullscreen (#306). Updated in place so the bar is not rebuilt.
+    applied_viz_menu: (bool, bool, bool, bool, bool),
     /// When the views were last fully synced, so visualizer frames in between
     /// can skip the (much costlier) full sync.
     last_full_sync: Instant,
@@ -313,6 +318,7 @@ impl Win32App {
         let applied_dpi = 0;
         let applied_view = shell.state.view;
         let applied_browser_toggle = shell.state.music.browser.visible;
+        let applied_viz_menu = viz_menu_ticks(&shell.state.projectm);
         let mut app = Self {
             shell,
             navigator,
@@ -344,6 +350,7 @@ impl Win32App {
             applied_view,
             applied_browser_visible: browser_visible,
             applied_browser_toggle,
+            applied_viz_menu,
             last_full_sync: Instant::now(),
             tag_editor: None,
             smtc: None,
@@ -699,6 +706,9 @@ impl Win32App {
             // (win32ui has no checked-setter).
             ui.set_menu_bar(menu::build(&self.shell.state));
         }
+        // The Visualization submenu's ticks change in place, so the bar is not
+        // rebuilt when only a preset or placement changed (#306).
+        self.sync_viz_menu(ui);
 
         // The panel's projectM row expands only while the shell shows its panel
         // surface; relayout when that changes. Otherwise it collapses to zero
@@ -803,6 +813,23 @@ impl Win32App {
         if self.shell.state.projectm.availability != availability {
             self.shell.state.projectm.availability = availability;
         }
+    }
+
+    /// Updates the View → Visualization menu ticks from the shell state, in
+    /// place, so the bar is only rebuilt when the panel/browser layout does
+    /// (#306).
+    fn sync_viz_menu(&mut self, ui: &Ui<Msg>) {
+        let ticks = viz_menu_ticks(&self.shell.state.projectm);
+        if ticks == self.applied_viz_menu {
+            return;
+        }
+        self.applied_viz_menu = ticks;
+        let (show, locked, panel, window, fullscreen) = ticks;
+        ui.set_menu_checked("viz-show", show);
+        ui.set_menu_checked("viz-lock", locked);
+        ui.set_menu_checked("viz-panel", panel);
+        ui.set_menu_checked("viz-window", window);
+        ui.set_menu_checked("viz-fullscreen", fullscreen);
     }
 
     /// Runs the visualization's stop/lifecycle policy: arm or cancel the grace
@@ -1342,6 +1369,10 @@ impl App for Win32App {
                 self.shell.dispatch(Command::Viz(command));
                 self.tick(ui);
             }
+            Msg::VizMenu => {
+                let menu = menu::viz_context(&self.shell.state);
+                ui.popup(&menu, ui.cursor_position());
+            }
             Msg::Quit => {
                 self.shell.save_on_exit();
                 ui.close();
@@ -1417,6 +1448,19 @@ fn open_file_location(path: &str) {
     let _ = std::process::Command::new("explorer")
         .arg(format!("/select,{}", path.replace('/', "\\")))
         .spawn();
+}
+
+/// The Visualization menu ticks for a projectM state: shown, locked, panel,
+/// window, fullscreen (#306).
+fn viz_menu_ticks(projectm: &emusic_ui::state::ProjectMState) -> (bool, bool, bool, bool, bool) {
+    let layout = &projectm.layout;
+    (
+        layout.visible,
+        projectm.settings.preset_locked,
+        !layout.fullscreen && layout.dock == VizDock::Panel,
+        !layout.fullscreen && layout.dock == VizDock::Window,
+        layout.fullscreen,
+    )
 }
 
 /// The library id of the player's current track, matched by path.
