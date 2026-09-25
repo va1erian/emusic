@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # usage: [WT=..] [BR=..] [RETRIES=3] [RESUME_FIRST=1] dispatch.sh <issue> <slug> <model> "<extra instructions>"
 # <model> is an opencode-go model name, or a full provider/model id (e.g. fireworks-ai/accounts/fireworks/models/deepseek-v4p1-flash).
+# For a Claude session or a plain shell only: from an OpenCode session, dispatch
+# work with the Task subagent tool instead. Running this from OpenCode just
+# shells out to `opencode run` and recursively starts the same model.
 # Runs OpenCode on an issue in its own worktree; if a run ends without a PR
 # for the branch, retries in the same worktree with a "finish the job" prompt.
 set -uo pipefail

@@ -28,6 +28,10 @@ emusic is a Windows music player & library in Rust with a native Win32 UI, audio
 - After rebasing, re-run all checks below, then push with `--force-with-lease`.
 - PRs are integrated into `main` with **rebase merge** only, keeping history linear.
 
+## Dispatching other agents
+- **In an OpenCode session, dispatch work with your own subagent tool (Task).** Do **not** run `scripts/dispatch.sh`: it shells out to `opencode run`, recursively starting the same model in a slower, harder-to-observe process. `scripts/dispatch.sh` is for a Claude session or a plain shell.
+- One worktree per issue, based on the latest `origin/main`; the dispatched agent implements, runs the checks, pushes and opens a PR, and never merges. See [docs/agent-workflow.md](docs/agent-workflow.md) for the full loop and how to land.
+
 ## Before submitting (mandatory)
 All of these must pass locally — the same checks CI runs:
 

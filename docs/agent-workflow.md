@@ -5,7 +5,7 @@ Almost all of emusic is written by AI agents working from GitHub issues, one iss
 ## The loop
 
 1. **An issue is the unit of work.** Each is self-contained: what to build, where the code goes, how to verify it, and a pointer to [AGENTS.md](../AGENTS.md). If an issue needs a product decision, it says so and waits rather than guessing. The overall plan lives in issue #1.
-2. **Dispatch** one issue to an agent with `scripts/dispatch.sh` (OpenCode) or to a Claude subagent for cross-cutting work.
+2. **Dispatch** one issue to an agent. An **OpenCode** session dispatches with its own subagent tool (Task) — do **not** run `scripts/dispatch.sh` from inside OpenCode; that script shells out to `opencode run`, which starts the same model recursively in a slower, harder-to-observe process. A **Claude** session or a plain shell uses `scripts/dispatch.sh`.
 3. **The agent** implements it, runs every check, commits, rebases on `main`, pushes and opens a PR. It never merges.
 4. **Review** the diff: scope, file sizes, `unsafe`, `unwrap()` outside tests, and — for UI work — the rendered screenshots. Agents are unreliable judges of their own UI output; look at the PNG yourself.
 5. **Land** with `scripts/land.sh <pr>`: rebase, run the checks locally, push, wait for CI, rebase-merge, remove the worktree.
@@ -15,13 +15,16 @@ Almost all of emusic is written by AI agents working from GitHub issues, one iss
 - **One worktree per issue**, so agents never share a checkout. Each worktree gets its **own** `target/` (concurrent builds sharing one `CARGO_TARGET_DIR` collide on cargo fingerprints and give phantom errors); the scripts also set `CARGO_INCREMENTAL=0` and use `sccache` when installed. A `target/` is 5–11 GB, so delete a worktree once its PR merges (`land.sh` does). Set `CARGO_TARGET_DIR` yourself to override.
 - **Rebase only, never merge.** `main` requires linear history, a green `ci` check and an up-to-date branch, for admins too. `land.sh` resolves `Cargo.lock` conflicts automatically (take `main`'s, regenerate) and stops for anything else.
 - **Tell each agent which files another agent is touching.** Most conflicts came from two agents editing the app crate at once.
+- **OpenCode dispatches with subagents; `scripts/dispatch.sh` is for Claude/shell.** From an OpenCode session, spawn work with the Task subagent tool. `dispatch.sh` exists to launch *OpenCode* workers from **outside** OpenCode (a Claude session or a plain shell); running it from inside OpenCode just recursively starts the same model and has already cost a wasted run.
 - **At most two concurrent OpenCode runs.** More just gets throttled by the provider, and runs sit idle in API calls.
 - **One Windows Sandbox at a time.** `scripts/sandbox/run.ps1` refuses to start while another sandbox is running. That one belongs to another agent: wait for it or report it, never kill it.
 - **`land.sh` never force-pushes over a branch that moved.** It skips instead, because an agent may have pushed a newer version while the landing was in flight.
 
 ## The scripts
 
-### `scripts/dispatch.sh` — run an agent on an issue
+### `scripts/dispatch.sh` — run an OpenCode agent from outside OpenCode (Claude/shell)
+
+> **Do not run this from inside an OpenCode session.** Use the Task subagent tool instead. `dispatch.sh` exists so a Claude session or a plain shell can launch OpenCode workers; calling it from OpenCode recursively launches the same model in a background process that is easy to orphan and hard to watch.
 
 ```bash
 scripts/dispatch.sh <issue> <slug> <model> "<extra instructions>"
@@ -47,11 +50,11 @@ Runs the whole workspace (or one test binary, or the real app) inside Windows Sa
 
 ## Choosing a model
 
-| Work | Use |
+| Work | Dispatch with |
 |---|---|
-| Self-contained crate or view, bug fix with a clear diagnosis | OpenCode `deepseek-v4.1-flash` — one-shot on most issues here |
-| Fallback when deepseek struggles | OpenCode `kimi-k2.7-code` |
-| Cross-cutting wiring, anything needing the real app run and observed, conflict-heavy rebases | A Claude subagent |
+| Self-contained crate or view, bug fix with a clear diagnosis | OpenCode Task subagent (`deepseek-v4.1-flash`) |
+| Fallback when the subagent struggles | OpenCode Task subagent (`kimi-k2.7-code`) |
+| Cross-cutting wiring, anything needing the real app run and observed, conflict-heavy rebases | OpenCode Task subagent; Claude session: Claude subagent |
 
 Avoid `glm-5.3`: it repeatedly ended runs after only reading files.
 
