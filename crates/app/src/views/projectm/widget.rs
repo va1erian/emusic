@@ -12,7 +12,7 @@
 //! draws the [`fallback`](super::fallback) plasma instead.
 
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use emusic_milkdrop::{Frame, MilkdropEngine, PlaceholderEngine};
@@ -20,17 +20,21 @@ use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
 use win32ui::gdi::{Canvas, Font};
 use win32ui::glow;
-use win32ui::{CustomWidget, Input, Rect, Renderer, Size, Theme, WidgetCx, dip};
+use win32ui::{CustomWidget, Input, MouseButton, Rect, Renderer, Size, Theme, WidgetCx, dip};
 
 use super::ProjectMEvent;
+use super::ProjectMGesture;
 use super::engine::EngineSlot;
 use super::fallback;
 use super::feed::{Feed, FramePacer};
+use super::overlay;
 
 /// The owner-drawn projectM surface.
 pub(super) struct ProjectMWidget {
     /// Whether the surface is shown; a hidden surface does no work (#305).
     visible: Cell<bool>,
+    /// Whether the pointer rests on the surface, so its overlay shows.
+    hovered: Cell<bool>,
     /// The persisted settings pushed by the frontend.
     settings: RefCell<ProjectMSettings>,
     /// The preset to restore when the instance is created.
@@ -63,6 +67,7 @@ impl ProjectMWidget {
         engine.load();
         Self {
             visible: Cell::new(true),
+            hovered: Cell::new(false),
             settings: RefCell::new(ProjectMSettings::default()),
             last_preset: RefCell::new(None),
             requests: RefCell::new(Vec::new()),
@@ -85,6 +90,9 @@ impl ProjectMWidget {
     /// Shows or hides the surface.
     pub(super) fn set_visible(&self, visible: bool) {
         self.visible.set(visible);
+        if !visible {
+            self.hovered.set(false);
+        }
     }
 
     /// Reads the player for this frame, buffering its samples (or silence).
@@ -103,8 +111,11 @@ impl ProjectMWidget {
     }
 
     /// Sets the preset to restore the next time an instance is created.
-    pub(super) fn set_last_preset(&self, path: Option<PathBuf>) {
-        *self.last_preset.borrow_mut() = path;
+    pub(super) fn set_last_preset(&self, path: Option<&Path>) {
+        if self.last_preset.borrow().as_deref() == path {
+            return;
+        }
+        *self.last_preset.borrow_mut() = path.map(Path::to_path_buf);
     }
 
     /// Queues a preset navigation request for the next paint.
@@ -157,10 +168,21 @@ impl ProjectMWidget {
             self.events.borrow_mut().push(event);
         }
     }
+
+    /// Tracks the pointer entering or leaving the surface, repainting the GDI
+    /// fallback so its overlay appears or disappears.
+    fn set_hovered(&self, cx: &mut WidgetCx<ProjectMGesture>, hovered: bool) {
+        if self.hovered.replace(hovered) == hovered {
+            return;
+        }
+        if self.engine.is_fallback() {
+            cx.invalidate();
+        }
+    }
 }
 
 impl CustomWidget for ProjectMWidget {
-    type Event = ();
+    type Event = ProjectMGesture;
 
     fn preferred_size(&self, dpi: u32) -> Option<Size> {
         self.dpi.set(dpi);
@@ -188,6 +210,10 @@ impl CustomWidget for ProjectMWidget {
             self.font.as_ref(),
             hint,
         );
+        if self.hovered.get() {
+            let buttons = overlay::buttons(bounds, self.dpi.get());
+            overlay::draw(canvas, &buttons, theme, self.font.as_ref(), self.dpi.get());
+        }
     }
 
     fn paint_gl(&self, _gl: &glow::Context, bounds: Rect, _theme: &Theme) {
@@ -209,7 +235,7 @@ impl CustomWidget for ProjectMWidget {
         self.engine.teardown();
     }
 
-    fn input(&self, input: Input, cx: &mut WidgetCx<()>) {
+    fn input(&self, input: Input, cx: &mut WidgetCx<ProjectMGesture>) {
         match input {
             Input::Frame => {
                 let visible = self.visible.get();
@@ -232,6 +258,29 @@ impl CustomWidget for ProjectMWidget {
                 self.advance();
                 if self.pacer.borrow_mut().due(Instant::now()) {
                     cx.invalidate();
+                }
+            }
+            Input::MouseMove { .. } => self.set_hovered(cx, true),
+            Input::MouseLeave => self.set_hovered(cx, false),
+            Input::MouseDoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => cx.emit(ProjectMGesture::DoubleClick),
+            Input::MouseDown {
+                x,
+                y,
+                button: MouseButton::Left,
+                ..
+            } if self.engine.is_fallback() && self.hovered.get() => {
+                // The buttons are only drawn on the GDI fallback; an invisible
+                // GL overlay must not swallow clicks (see `overlay`).
+                let buttons = overlay::buttons(cx.bounds(), cx.dpi());
+                if let Some(action) = overlay::hit(&buttons, x, y) {
+                    cx.emit(match action {
+                        overlay::Action::PopOut => ProjectMGesture::PopOut,
+                        overlay::Action::Fullscreen => ProjectMGesture::Fullscreen,
+                        overlay::Action::Hide => ProjectMGesture::Hide,
+                    });
                 }
             }
             _ => {}

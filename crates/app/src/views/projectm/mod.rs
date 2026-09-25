@@ -21,9 +21,10 @@
 mod engine;
 mod fallback;
 mod feed;
+mod overlay;
 mod widget;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
@@ -43,6 +44,19 @@ pub enum ProjectMEvent {
     AvailabilityChanged(ProjectMAvailability),
 }
 
+/// An input gesture on a projectM surface the frontend turns into a command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectMGesture {
+    /// The surface was double-clicked.
+    DoubleClick,
+    /// The "pop out" overlay button.
+    PopOut,
+    /// The fullscreen overlay button (or a double-click).
+    Fullscreen,
+    /// The hide overlay button.
+    Hide,
+}
+
 /// The projectM surface: a GL custom widget plus its feed, settings and preset
 /// requests. Host it like any other control and drive it from the shell tick.
 pub struct ProjectMView {
@@ -57,6 +71,15 @@ impl ProjectMView {
         Ok(Self {
             custom: Custom::new(ui, widget)?,
         })
+    }
+
+    /// Maps the surface's hover/double-click [`ProjectMGesture`]s to an app
+    /// message. Without it the gestures are dropped.
+    #[must_use]
+    pub fn with_gestures(self, map: impl Fn(ProjectMGesture) -> Option<Msg> + 'static) -> Self {
+        Self {
+            custom: self.custom.on_event(map),
+        }
     }
 
     /// Shows or hides the surface. While hidden it stops: no repaints, no
@@ -79,7 +102,7 @@ impl ProjectMView {
     }
 
     /// Sets the preset to restore the next time an instance is created.
-    pub fn set_last_preset(&self, path: Option<PathBuf>) {
+    pub fn set_last_preset(&self, path: Option<&Path>) {
         self.custom.widget().borrow().set_last_preset(path);
     }
 

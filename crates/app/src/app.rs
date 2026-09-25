@@ -13,7 +13,10 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::{AppState, Appearance, Command, View, VisualizerMode, WindowGeometry};
+use emusic_ui::state::projectm::VizSurface;
+use emusic_ui::state::{
+    AppState, Appearance, Command, View, VisualizerMode, VizCommand, WindowGeometry,
+};
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::column_browser::Pane;
@@ -41,6 +44,7 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
+use crate::views::projectm::ProjectMEvent;
 use crate::views::settings::{SettingsMsg, SettingsView};
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
@@ -128,6 +132,8 @@ pub enum Msg {
     CentralQueueRemove,
     /// The top-bar visualizer strip was clicked: cycle its mode.
     CycleVisualizer,
+    /// A projectM surface gesture (hover button, double-click) as a command.
+    Viz(VizCommand),
     /// Close the window and exit.
     Quit,
 }
@@ -160,6 +166,9 @@ pub struct Win32App {
     timer: Option<(TimerId, u32)>,
     /// Panel visibility last applied, so a change triggers a relayout.
     applied_panels: emusic_ui::state::PanelVisibility,
+    /// Whether the projectM panel row was last expanded, so a change triggers
+    /// a relayout (#302).
+    applied_viz_visible: bool,
     /// Theme and accent last applied to the window, so a change re-themes it.
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// Font size, density and zebra last applied, so a change relayouts once
@@ -307,6 +316,7 @@ impl Win32App {
             top_bar,
             timer: None,
             applied_panels,
+            applied_viz_visible: false,
             applied_look,
             applied_appearance,
             applied_dpi,
@@ -647,6 +657,18 @@ impl Win32App {
             ui.set_menu_bar(menu::build(&self.shell.state));
         }
 
+        // The panel's projectM row expands only while the shell shows its panel
+        // surface; relayout when that changes. Otherwise it collapses to zero
+        // height and the widget is hidden, which also stops it (#302, #305).
+        let viz_visible = self.shell.state.projectm.surface() == Some(VizSurface::Panel)
+            && self.shell.state.panels.right_panel;
+        if viz_visible != self.applied_viz_visible {
+            self.right_panel.set_viz_visible(viz_visible);
+            self.applied_viz_visible = viz_visible;
+            self.install_layout(ui, view);
+        }
+        self.sync_projectm(viz_visible);
+
         // The dark/light toggle and the accent picker change the shell.s look;
         // mirror them onto the window.
         let look = (self.shell.state.theme, self.shell.state.accent);
@@ -694,6 +716,45 @@ impl Win32App {
         self.shell.state.top_bar.update(message, &mut out);
         for command in out.into_vec() {
             self.shell.dispatch(command);
+        }
+    }
+
+    /// Keeps the panel's projectM surface in step with the shell: settings,
+    /// audio, preset requests and its events. While inactive the surface is not
+    /// fed and its stale requests/events are dropped, so showing it later does
+    /// not replay them (#302, #305).
+    fn sync_projectm(&mut self, active: bool) {
+        if !active {
+            let _ = self.right_panel.viz().take_events();
+            self.shell.state.projectm.take_requests();
+            return;
+        }
+
+        self.right_panel
+            .viz()
+            .set_settings(&self.shell.state.projectm.settings);
+        self.right_panel
+            .viz()
+            .set_last_preset(self.shell.state.projectm.settings.last_preset.as_deref());
+        self.right_panel.viz().feed(self.shell.player.as_ref());
+
+        for request in self.shell.state.projectm.take_requests() {
+            self.right_panel.viz().request_preset(request);
+        }
+        for event in self.right_panel.viz().take_events() {
+            match event {
+                ProjectMEvent::PresetShown(path) => {
+                    self.shell.state.projectm.settings.last_preset = Some(path);
+                }
+                ProjectMEvent::AvailabilityChanged(availability) => {
+                    self.shell.state.projectm.availability = availability;
+                }
+            }
+        }
+
+        let availability = self.right_panel.viz().availability();
+        if self.shell.state.projectm.availability != availability {
+            self.shell.state.projectm.availability = availability;
         }
     }
 
@@ -1170,6 +1231,10 @@ impl App for Win32App {
             }
             Msg::CycleVisualizer => {
                 self.shell.dispatch(Command::CycleVisualizer);
+                self.tick(ui);
+            }
+            Msg::Viz(command) => {
+                self.shell.dispatch(Command::Viz(command));
                 self.tick(ui);
             }
             Msg::Quit => {
