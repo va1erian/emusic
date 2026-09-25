@@ -1,5 +1,7 @@
 //! Unit tests for the log-spaced FFT bar mapping.
 
+use emusic_ui::panels::visualizer::analysis::{PEAK_DECAY_PER_SECOND, band_range};
+
 use super::*;
 
 #[test]

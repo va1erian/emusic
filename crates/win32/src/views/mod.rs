@@ -22,3 +22,4 @@ pub mod starred;
 pub mod status_bar;
 pub mod top_bar;
 pub mod track_table;
+pub mod visualizer;

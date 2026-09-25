@@ -35,7 +35,7 @@ use win32ui::prelude::*;
 
 use emusic_ui::backend;
 use emusic_ui::config::Config;
-use emusic_ui::state::{Accent, Theme, View};
+use emusic_ui::state::{Accent, Theme, View, VisualizerMode};
 use emusic_ui::waker::WakerSlot;
 
 use emusic_win32::app::{Msg, Win32App};
@@ -69,6 +69,10 @@ struct Cli {
     /// Accent colour: a preset name or `#rrggbb`.
     #[arg(long, value_parser = parse_accent, default_value = "orange")]
     accent: Accent,
+
+    /// Show the top-bar visualizer in this mode (`spectrum`, `oscilloscope`).
+    #[arg(long, value_parser = parse_visualizer)]
+    visualizer: Option<VisualizerMode>,
 
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
@@ -135,7 +139,15 @@ fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create output directory {}", parent.display()))?;
     }
-    render_one(view, cli.theme, cli.accent, width, height, &cli.out)
+    render_one(
+        view,
+        cli.theme,
+        cli.accent,
+        cli.visualizer,
+        width,
+        height,
+        &cli.out,
+    )
 }
 
 /// Renders every view by re-invoking this binary once per view, so each gets a
@@ -154,6 +166,11 @@ fn run_all(cli: &Cli) -> anyhow::Result<()> {
             .arg(cli.theme.slug())
             .arg("--accent")
             .arg(cli.accent.to_config_str())
+            .args(
+                cli.visualizer
+                    .iter()
+                    .flat_map(|mode| ["--visualizer", mode.slug()]),
+            )
             .arg("--size")
             .arg(&cli.size)
             .arg("--out")
@@ -187,6 +204,11 @@ fn parse_accent(s: &str) -> std::result::Result<Accent, String> {
         .ok_or_else(|| format!("invalid accent {s:?}: expected a preset name or #rrggbb"))
 }
 
+/// Parses `--visualizer`: a mode slug.
+fn parse_visualizer(s: &str) -> std::result::Result<VisualizerMode, String> {
+    VisualizerMode::from_slug(s).ok_or_else(|| format!("invalid visualizer {s:?}"))
+}
+
 /// Resolves a `--view` slug, listing the known ones on error.
 fn parse_view(slug: &str) -> anyhow::Result<View> {
     View::from_slug(slug).ok_or_else(|| {
@@ -203,6 +225,7 @@ fn render_one(
     view: View,
     theme: ThemeArg,
     accent: Accent,
+    visualizer: Option<VisualizerMode>,
     width: f32,
     height: f32,
     out: &Path,
@@ -212,6 +235,8 @@ fn render_one(
     let config = Config {
         theme: theme.shell(),
         accent,
+        visualizer_enabled: visualizer.is_some(),
+        visualizer: visualizer.unwrap_or_default(),
         last_view: view,
         ..Config::default()
     };

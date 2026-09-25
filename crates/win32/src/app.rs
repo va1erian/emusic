@@ -5,7 +5,7 @@
 //! [`Win32App::update`], which runs [`Shell::tick`] on wakes and timers, syncs
 //! the views, and schedules the next timer from [`Tick::next_wake`].
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
@@ -13,7 +13,7 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::{Command, View};
+use emusic_ui::state::{Command, View, VisualizerMode};
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::column_browser::Pane;
@@ -43,6 +43,9 @@ use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::{self, TopBarView};
 use crate::views::track_table::{self, ContextAction};
 use crate::waker::Win32Waker;
+
+/// How often the views are fully synced while the visualizer animates faster.
+const FULL_SYNC_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Everything the window can ask the app to do.
 pub enum Msg {
@@ -107,6 +110,8 @@ pub enum Msg {
     QueueContext(usize),
     /// Remove the queue entry the context menu was opened on.
     QueueRemove,
+    /// The top-bar visualizer strip was clicked: cycle its mode.
+    CycleVisualizer,
     /// Close the window and exit.
     Quit,
 }
@@ -145,6 +150,9 @@ pub struct Win32App {
     /// apart from [`Self::applied_browser_visible`], which is the *effective*
     /// visibility (also false off the Music view).
     applied_browser_toggle: bool,
+    /// When the views were last fully synced, so visualizer frames in between
+    /// can skip the (much costlier) full sync.
+    last_full_sync: Instant,
 }
 
 impl Win32App {
@@ -246,6 +254,7 @@ impl Win32App {
             applied_view,
             applied_browser_visible: browser_visible,
             applied_browser_toggle,
+            last_full_sync: Instant::now(),
         };
         app.install_layout(ui, view);
         app.refresh_folders();
@@ -305,8 +314,25 @@ impl Win32App {
         self.shell.set_backend_notice(notice);
     }
 
+    /// Handles the shell's repaint timer. While the visualizer animates the
+    /// timer fires at [`FRAME_INTERVAL`](emusic_ui::panels::visualizer::FRAME_INTERVAL);
+    /// most of those frames only need the strip fed, so the full sync (every
+    /// view, the model refreshes) runs at a lower rate.
+    fn on_timer(&mut self, ui: &mut Ui<Msg>) {
+        let animating = self.shell.state.visualizer_enabled
+            && self.shell.state.visualizer != VisualizerMode::Off;
+        if animating && self.last_full_sync.elapsed() < FULL_SYNC_INTERVAL {
+            if let Some(top_bar) = &self.top_bar {
+                top_bar.feed_visualizer(self.shell.state.visualizer, self.shell.player.as_ref());
+            }
+            return;
+        }
+        self.tick(ui);
+    }
+
     /// Runs the shell for this frame, syncs the views and schedules the timer.
     fn tick(&mut self, ui: &mut Ui<Msg>) {
+        self.last_full_sync = Instant::now();
         let tick = self.shell.tick(Instant::now());
         self.sync_views(ui, tick.changes);
         self.schedule(ui, tick.next_wake);
@@ -476,7 +502,15 @@ impl Win32App {
 
         self.shell.state.top_bar.sync(self.shell.player.as_ref());
         if let Some(top_bar) = &mut self.top_bar {
-            top_bar.sync(&self.shell.state.top_bar, &self.shell.state.search_query);
+            let state = &self.shell.state;
+            top_bar.sync(
+                &state.top_bar,
+                &state.search_query,
+                state.visualizer_enabled,
+            );
+            if state.visualizer_enabled {
+                top_bar.feed_visualizer(state.visualizer, self.shell.player.as_ref());
+            }
         }
 
         // Panel visibility is toggled through `Command::TogglePanel`; apply it
@@ -638,7 +672,8 @@ impl App for Win32App {
 
     fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
         match msg {
-            Msg::Wake | Msg::Timer => self.tick(ui),
+            Msg::Wake => self.tick(ui),
+            Msg::Timer => self.on_timer(ui),
             Msg::Dispatch(command) => {
                 self.shell.dispatch(command);
                 self.tick(ui);
@@ -914,6 +949,14 @@ impl App for Win32App {
                     self.shell.dispatch(Command::HistoryClear);
                     self.tick(ui);
                 }
+            }
+            Msg::CycleVisualizer => {
+                self.shell.dispatch(Command::CycleVisualizer);
+                // The native strip has no MilkDrop renderer; skip that mode.
+                if self.shell.state.visualizer == VisualizerMode::Milkdrop {
+                    self.shell.dispatch(Command::CycleVisualizer);
+                }
+                self.tick(ui);
             }
             Msg::Quit => ui.close(),
         }

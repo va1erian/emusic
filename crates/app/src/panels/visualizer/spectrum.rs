@@ -6,22 +6,14 @@ use eframe::egui;
 
 use crate::theme;
 
-use super::PEAK_DECAY_PER_SECOND;
+use emusic_ui::panels::visualizer::analysis::{
+    BAR_COUNT, bars_from_fft, decay_peaks, resize_peaks,
+};
 
-/// Number of bars across the strip. Kept low (24, the coarse end of the
-/// issue's 24–48 range) so the bars read as chunky blocks rather than a
-/// fine-grained comb.
-const BAR_COUNT: usize = 24;
 /// Fraction of each bar's slot filled by the bar (the rest is a gap).
 const BAR_FILL: f32 = 0.72;
 /// Peak cap thickness in points.
 const CAP_HEIGHT: f32 = 1.5;
-/// Perceptual scaling exponent: < 1 lifts quiet bins so most of the range
-/// doesn't sit flat at the bottom.
-const SCALE_EXPONENT: f32 = 0.4;
-/// Overall gain applied after the perceptual scaling, so bars react strongly
-/// to quiet passages instead of hugging the bottom of the strip.
-const GAIN: f32 = 1.8;
 
 /// Draws `bins` as log-spaced bars. `peaks` is the peak-hold state, resized
 /// and decayed in place; `dt` is the elapsed time since the last frame, in
@@ -35,10 +27,7 @@ pub fn draw(
     dt: f32,
 ) {
     resize_peaks(peaks, BAR_COUNT);
-    let decay = PEAK_DECAY_PER_SECOND * dt;
-    for peak in peaks.iter_mut() {
-        *peak = (*peak - decay).max(0.0);
-    }
+    decay_peaks(peaks, dt);
     if bins.is_empty() {
         return;
     }
@@ -92,50 +81,6 @@ fn draw_cap(
     let y = (rect.bottom() - rect.height() * peak.clamp(0.0, 1.0)).max(rect.top() + CAP_HEIGHT);
     let cap = egui::Rect::from_min_max(egui::pos2(x, y - CAP_HEIGHT), egui::pos2(x + width, y));
     painter.rect_filled(cap, 0.0, color);
-}
-
-/// Grows `peaks` to exactly `len`, keeping existing values. Called every
-/// frame so a config change (or the first frame) is handled cheaply.
-fn resize_peaks(peaks: &mut Vec<f32>, len: usize) {
-    peaks.resize(len, 0.0);
-}
-
-/// Averages `bins` into `bar_count` perceptually-scaled bar values
-/// (0.0..=1.0), using logarithmically-spaced frequency bands so low
-/// frequencies (where music's energy lives) get as much width as high ones.
-fn bars_from_fft(bins: &[f32], bar_count: usize) -> Vec<f32> {
-    if bins.is_empty() || bar_count == 0 {
-        return Vec::new();
-    }
-    (0..bar_count)
-        .map(|bar| {
-            let (start, end) = band_range(bar, bar_count, bins.len());
-            let slice = &bins[start..end];
-            if slice.is_empty() {
-                0.0
-            } else {
-                let mean = slice.iter().sum::<f32>() / slice.len() as f32;
-                (mean.max(0.0).powf(SCALE_EXPONENT) * GAIN).min(1.0)
-            }
-        })
-        .collect()
-}
-
-/// The `[start, end)` FFT bin range for log-spaced `bar` of `bar_count`,
-/// over `bin_count` bins. Bands use bins `1..bin_count` (bin 0 is DC).
-fn band_range(bar: usize, bar_count: usize, bin_count: usize) -> (usize, usize) {
-    if bin_count < 2 || bar_count == 0 {
-        return (0, bin_count);
-    }
-    // Exponentiate from just above DC (bin 1) to the Nyquist bin.
-    let low = 1.0_f32;
-    let high = bin_count as f32;
-    let ratio = high / low;
-    let start_f = low * ratio.powf(bar as f32 / bar_count as f32);
-    let end_f = low * ratio.powf((bar + 1) as f32 / bar_count as f32);
-    let start = (start_f.floor() as usize).clamp(1, bin_count - 1);
-    let end = (end_f.ceil() as usize).clamp(start + 1, bin_count);
-    (start, end)
 }
 
 #[cfg(test)]

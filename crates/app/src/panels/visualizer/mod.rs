@@ -31,13 +31,6 @@ pub use emusic_ui::panels::visualizer::{FRAME_INTERVAL, VisualizerState};
 /// Strip size in the status bar, in points.
 const STRIP_SIZE: egui::Vec2 = egui::vec2(150.0, 18.0);
 
-/// Decay rate of the spectrum's peak-hold caps, in units/second (a
-/// full-height cap drains in a little over a second). Applied scaled by the
-/// actual frame delta rather than a fixed per-frame amount, so the caps
-/// fall at the same visual speed regardless of [`FRAME_INTERVAL`] or any
-/// frame that arrives late.
-const PEAK_DECAY_PER_SECOND: f32 = 0.9;
-
 /// Draws the visualizer strip, cycling the mode when clicked.
 ///
 /// `state` supplies the persisted mode and the peak-hold caps; `player` is
