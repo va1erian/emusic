@@ -82,6 +82,8 @@ pub enum ContextAction {
     OpenFileLocation,
     /// Remove the row's playback-history entry (History view only).
     RemoveHistory,
+    /// Open the track's Properties dialog (#280).
+    Properties,
 }
 
 /// One row: the track plus its pre-formatted numeric cells. Shared with the
@@ -218,6 +220,10 @@ impl TrackView {
             })
             .item("Copy path", None, || {
                 Msg::ContextAction(ContextAction::CopyPath)
+            })
+            .separator()
+            .item("Properties…", None, || {
+                Msg::ContextAction(ContextAction::Properties)
             });
 
         Ok(Self {
@@ -274,6 +280,15 @@ impl TrackView {
             .get()
             .and_then(|index| self.rows.as_slice().get(index))?;
         run_context_action(action, &row.track, hwnd)
+    }
+
+    /// The track whose context menu is open, if any (for the Properties
+    /// dialog, which the app shows itself rather than as a [`Command`]).
+    pub fn context_track(&self) -> Option<TrackInfo> {
+        self.context_row
+            .get()
+            .and_then(|index| self.rows.as_slice().get(index))
+            .map(|row| row.track.clone())
     }
 
     pub fn set_context_row(&self, row: usize) {
@@ -393,5 +408,7 @@ pub fn run_context_action(
         // Only the History view's own context menu raises this; the track
         // table has no history entry to remove.
         ContextAction::RemoveHistory => None,
+        // Handled by the app, which shows the modal dialog itself.
+        ContextAction::Properties => None,
     }
 }

@@ -7,7 +7,7 @@
 use eframe::egui;
 
 pub use emusic_ui::views::track_table::columns::{
-    COLUMNS, ColumnId, ColumnSpec, TITLE_MIN_WIDTH, artist_text, format_duration, title_text,
+    COLUMNS, ColumnId, ColumnSpec, TITLE_MIN_WIDTH, format_duration,
 };
 
 use crate::library_api::TrackInfo;

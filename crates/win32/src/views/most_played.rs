@@ -111,6 +111,11 @@ impl MostPlayedView {
         self.table.set_context_row(row);
     }
 
+    /// The track whose context menu is open, if any.
+    pub fn context_track(&self) -> Option<TrackInfo> {
+        self.table.context_track()
+    }
+
     /// The track table's context menu.
     pub fn context_menu(&self) -> &Menu<Msg> {
         self.table.context_menu()

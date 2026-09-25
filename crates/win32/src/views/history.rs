@@ -182,6 +182,10 @@ impl HistoryView {
             .separator()
             .item("Remove from history", None, || {
                 Msg::ContextAction(ContextAction::RemoveHistory)
+            })
+            .separator()
+            .item("Properties…", None, || {
+                Msg::ContextAction(ContextAction::Properties)
             });
 
         Ok(Self {
@@ -246,7 +250,17 @@ impl HistoryView {
             ContextAction::ToggleStar => Some(Command::ToggleStarred(play.track_id)),
             ContextAction::RemoveHistory => Some(Command::HistoryRemove(play.entry_id)),
             ContextAction::CopyPath | ContextAction::OpenFileLocation => None,
+            // Handled by the app, which shows the modal dialog itself.
+            ContextAction::Properties => None,
         }
+    }
+
+    /// The library track id of the play whose context menu is open, if any.
+    pub fn context_track_id(&self) -> Option<u64> {
+        self.context_row
+            .get()
+            .and_then(|index| self.play_at(index))
+            .map(|play| play.track_id)
     }
 
     /// Whether `row` is a play (rather than a day header), so the app knows

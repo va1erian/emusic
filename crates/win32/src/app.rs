@@ -24,6 +24,7 @@ use win32ui::prelude::*;
 use win32ui::{column, dip, row};
 
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
+use crate::dialogs::properties;
 use crate::menu;
 use crate::theme::win32_theme;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
@@ -810,6 +811,28 @@ impl App for Win32App {
                 self.tick(ui);
             }
             Msg::ContextAction(action) => {
+                // Properties opens a modal dialog, not a playback command.
+                if action == ContextAction::Properties {
+                    let track = match self.shell.state.view {
+                        View::Music => self.music.context_track(),
+                        View::Folders => self.folders.context_track(),
+                        View::Starred => self.starred.context_track(),
+                        View::MostPlayed => self.most_played.context_track(),
+                        View::History => self.history.context_track_id().and_then(|id| {
+                            self.shell
+                                .library
+                                .tracks()
+                                .iter()
+                                .find(|track| track.id == id)
+                                .cloned()
+                        }),
+                        _ => None,
+                    };
+                    if let Some(track) = track {
+                        properties::show(ui, &track);
+                    }
+                    return;
+                }
                 let command = match self.shell.state.view {
                     View::Music => self.music.run_context(action, ui.hwnd()),
                     View::Folders => self.folders.run_context(action, ui.hwnd()),
@@ -926,6 +949,12 @@ impl App for Win32App {
             }
             Msg::NowPlaying(event) => {
                 self.handle_summary(event);
+                // The shared model parks the track in `properties`; the
+                // native dialog is modal, so show it right away and clear
+                // the slot (the egui frontend clears it on close instead).
+                if let Some(track) = self.shell.state.now_playing.properties.take() {
+                    properties::show(ui, &track);
+                }
                 self.tick(ui);
             }
             Msg::QueueJump(row) => {

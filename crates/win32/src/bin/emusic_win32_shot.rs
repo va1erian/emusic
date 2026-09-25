@@ -74,6 +74,11 @@ struct Cli {
     #[arg(long, value_parser = parse_visualizer)]
     visualizer: Option<VisualizerMode>,
 
+    /// Capture the track Properties dialog (opened for a mock track) instead
+    /// of the main window (#280). Ignored with `--all`.
+    #[arg(long)]
+    properties: bool,
+
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
@@ -144,6 +149,7 @@ fn main() -> anyhow::Result<()> {
         cli.theme,
         cli.accent,
         cli.visualizer,
+        cli.properties,
         width,
         height,
         &cli.out,
@@ -221,11 +227,13 @@ fn parse_view(slug: &str) -> anyhow::Result<View> {
 }
 
 /// Runs the app for one view and writes its capture to `out`.
+#[expect(clippy::too_many_arguments, reason = "one flag per CLI switch")]
 fn render_one(
     view: View,
     theme: ThemeArg,
     accent: Accent,
     visualizer: Option<VisualizerMode>,
+    properties: bool,
     width: f32,
     height: f32,
     out: &Path,
@@ -246,6 +254,15 @@ fn render_one(
     win32ui::run_app(spec, move |ui| {
         let waker = WakerSlot::new();
         let backends = backend::build(true, waker.handle());
+        // A track with rich tags/stats makes the dialog shot representative.
+        let showcase = properties.then(|| {
+            let tracks = backends.library.tracks();
+            tracks
+                .iter()
+                .find(|track| !track.comment.is_empty() && track.play_count > 0)
+                .or_else(|| tracks.first())
+                .cloned()
+        });
         let mut app = Win32App::new(
             ui,
             backends.library,
@@ -267,13 +284,18 @@ fn render_one(
             timer,
             deadline: Instant::now() + SETTLE,
             done: false,
+            properties: showcase.flatten(),
+            dialog: None,
+            dialog_deadline: None,
         }
     })
     .map_err(|error| anyhow!("{error}"))
 }
 
 /// Wraps the real app: after the settle period it captures the window, writes
-/// the PNG and closes, ending the run for this view.
+/// the PNG and closes, ending the run for this view. With `--properties` it
+/// first opens the Properties dialog (non-modal, so the tool's tick keeps
+/// running) and captures that window instead.
 struct ShotApp {
     app: Win32App,
     out: PathBuf,
@@ -281,6 +303,10 @@ struct ShotApp {
     timer: Option<TimerId>,
     deadline: Instant,
     done: bool,
+    /// The track to open the Properties dialog for, if `--properties`.
+    properties: Option<emusic_ui::library_api::TrackInfo>,
+    dialog: Option<win32ui::WindowHandle<emusic_win32::dialogs::properties::Msg>>,
+    dialog_deadline: Option<Instant>,
 }
 
 impl App for ShotApp {
@@ -291,11 +317,38 @@ impl App for ShotApp {
         if self.done || Instant::now() < self.deadline {
             return;
         }
+        if let Some(track) = self.properties.take()
+            && self.dialog.is_none()
+        {
+            match emusic_win32::dialogs::properties::open(ui, &track) {
+                Ok(handle) => {
+                    // Give the dialog a few ticks to paint before the
+                    // capture below.
+                    self.dialog_deadline = Some(Instant::now() + SETTLE);
+                    self.dialog = Some(handle);
+                }
+                Err(error) => {
+                    eprintln!("emusic-win32-shot: open properties dialog: {error:#}");
+                    self.done = true;
+                    ui.close();
+                }
+            }
+            return;
+        }
+        if let Some(deadline) = self.dialog_deadline
+            && Instant::now() < deadline
+        {
+            return;
+        }
         self.done = true;
         if let Some(id) = self.timer.take() {
             ui.kill_timer(id);
         }
-        match capture(ui) {
+        let image = match &self.dialog {
+            Some(dialog) => dialog.capture().map_err(|error| anyhow!("{error}")),
+            None => capture(ui),
+        };
+        match image {
             Ok(mut image) => match write_png(flatten(&mut image, self.backdrop), &self.out) {
                 Ok(()) => eprintln!("wrote {}", self.out.display()),
                 Err(error) => eprintln!(
