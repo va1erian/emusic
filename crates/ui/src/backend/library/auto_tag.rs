@@ -9,11 +9,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::Sender;
 
 use emusic_metadata::Provider;
 
-use super::Update;
+use super::{Update, Updates};
 use crate::library_api::{AutoTagError, AutoTagOutcome, AutoTagRequest, AutoTagStatus};
 
 /// A shared flag a running lookup polls for cancellation.
@@ -62,7 +61,7 @@ impl AutoTagState {
 
     /// Starts a lookup, cancelling any previous one (the dialog is
     /// single-track). `updates` receives the outcome when it finishes.
-    pub(crate) fn request(&mut self, request: AutoTagRequest, updates: Sender<Update>) {
+    pub(crate) fn request(&mut self, request: AutoTagRequest, updates: Updates) {
         if let Some((_, cancel)) = self.active.take() {
             cancel.cancel();
         }
@@ -128,7 +127,7 @@ impl AutoTagState {
 pub(crate) fn spawn(
     provider: Arc<dyn Provider>,
     request: AutoTagRequest,
-    updates: Sender<Update>,
+    updates: Updates,
     cancel: AutoTagCancel,
 ) {
     std::thread::spawn(move || {

@@ -19,7 +19,7 @@ fn tag_edit_updates_file_store_and_snapshot() {
     write_wav(&dir.join("track.wav"), 8_000, 1);
 
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store, None);
+    let mut backend = LibraryBackend::with_store(store, None, Default::default());
     backend.set_folders(std::slice::from_ref(&dir));
     let path = PathBuf::from(&wait_for_tracks(&mut backend)[0].path);
 
@@ -55,7 +55,7 @@ fn failed_tag_edit_reports_error_and_leaves_snapshot_unchanged() {
     write_wav(&dir.join("track.wav"), 8_000, 1);
 
     let store = Store::open_in_memory().unwrap();
-    let mut backend = LibraryBackend::with_store(store, None);
+    let mut backend = LibraryBackend::with_store(store, None, Default::default());
     backend.set_folders(std::slice::from_ref(&dir));
     let original_title = wait_for_tracks(&mut backend)[0].title.clone();
 

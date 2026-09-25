@@ -114,7 +114,7 @@ fn run_ui(
         options,
         Box::new(move |cc| {
             waker.bind(EguiWaker::new(cc.egui_ctx.clone()));
-            let backends = backend::build(cli.mock);
+            let backends = backend::build(cli.mock, waker.handle());
             let mut app = EguiApp::for_run(
                 cc,
                 backends.library,

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use emusic_metadata::{Candidate, MetadataError, Provider, TrackQuery};
 
-use super::super::Update;
+use super::super::{Update, Updates};
 use super::{AutoTagCancel, run, spawn};
 use crate::library_api::{AutoTagError, AutoTagRequest};
 
@@ -69,7 +69,12 @@ fn a_cancelled_lookup_never_calls_the_provider() {
 fn spawn_posts_the_outcome_through_the_channel() {
     let provider: Arc<dyn Provider> = Arc::new(StubProvider(vec![Candidate::default()]));
     let (tx, rx) = mpsc::channel();
-    spawn(provider, request(), tx, AutoTagCancel::new());
+    spawn(
+        provider,
+        request(),
+        Updates::new(tx, Default::default()),
+        AutoTagCancel::new(),
+    );
 
     match rx
         .recv_timeout(Duration::from_secs(5))

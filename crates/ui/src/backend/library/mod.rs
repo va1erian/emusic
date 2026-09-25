@@ -31,9 +31,35 @@ use crate::library_api::{
     AlbumInfo, ArtistInfo, AutoTagOutcome, AutoTagRequest, AutoTagStatus, DatabaseInfo,
     DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
 };
+use crate::waker::{Waker as _, WakerHandle};
 
 use scan::ScanHandle;
 use source::Snapshot;
+
+/// Sends an [`Update`] to the UI thread and wakes the frontend, so a message
+/// posted by a background worker is drained on the next tick instead of
+/// waiting for the user to interact with the window (#284).
+#[derive(Clone)]
+pub(crate) struct Updates {
+    tx: Sender<Update>,
+    waker: WakerHandle,
+}
+
+impl Updates {
+    /// Wraps `tx`, waking `waker` after each successful send.
+    fn new(tx: Sender<Update>, waker: WakerHandle) -> Self {
+        Self { tx, waker }
+    }
+
+    /// Sends `update` and wakes the UI. Mirrors [`Sender::send`].
+    fn send(&self, update: Update) -> Result<(), std::sync::mpsc::SendError<Update>> {
+        let result = self.tx.send(update);
+        if result.is_ok() {
+            self.waker.wake();
+        }
+        result
+    }
+}
 
 /// Messages sent from background threads to the UI-owning backend.
 pub(crate) enum Update {
@@ -63,7 +89,7 @@ pub struct LibraryBackend {
     /// a scan without rescanning the whole library on every settings tick.
     scanned_roots: Vec<PathBuf>,
     updates: Receiver<Update>,
-    update_tx: Sender<Update>,
+    update_tx: Updates,
     watch_events: Receiver<WatchEvent>,
     play_messages: Receiver<PlayMessage>,
     play_message_tx: Sender<PlayMessage>,
@@ -98,7 +124,7 @@ pub struct LibraryBackend {
 
 impl Default for LibraryBackend {
     fn default() -> Self {
-        Self::new(None)
+        Self::new(None, WakerHandle::default())
     }
 }
 
@@ -108,7 +134,8 @@ impl LibraryBackend {
     ///
     /// `bass` is the instance shared with the player, used to read tracker
     /// module tags during scans; pass `None` when BASS is unavailable.
-    pub fn new(bass: Option<Arc<bass::Bass>>) -> Self {
+    /// `waker` wakes the frontend when background work posts an update.
+    pub fn new(bass: Option<Arc<bass::Bass>>, waker: WakerHandle) -> Self {
         let store = match Store::open_default() {
             Ok(store) => {
                 info!("opened library store");
@@ -119,16 +146,17 @@ impl LibraryBackend {
                 Store::open_in_memory().expect("in-memory store always opens")
             }
         };
-        Self::with_store(store, bass)
+        Self::with_store(store, bass, waker)
     }
 
     /// Creates a backend around an existing store. Useful in tests.
-    pub fn with_store(store: Store, bass: Option<Arc<bass::Bass>>) -> Self {
+    pub fn with_store(store: Store, bass: Option<Arc<bass::Bass>>, waker: WakerHandle) -> Self {
         let db_path = store.path().map(Path::to_path_buf);
         let store = Arc::new(Mutex::new(store));
         let stats_recorder = StatsRecorder::spawn(store.clone());
 
         let (update_tx, updates) = std::sync::mpsc::channel();
+        let update_tx = Updates::new(update_tx, waker);
         let (watch_tx, watch_events) = std::sync::mpsc::channel();
         let (play_message_tx, play_messages) = std::sync::mpsc::channel();
 
