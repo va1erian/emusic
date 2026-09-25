@@ -12,6 +12,7 @@ use std::cell::{Cell, RefCell};
 
 use emusic_ui::panels::navigator::{Navigator, SECTIONS};
 use emusic_ui::state::View;
+use win32ui::accessibility::{AccessCx, Action, Node, Role};
 use win32ui::gdi::{Canvas, Font, FontWeight, TextFormat};
 use win32ui::prelude::*;
 use win32ui::{Custom, CustomWidget, Input, Rect, Size, Theme, WidgetCx};
@@ -233,6 +234,53 @@ impl CustomWidget for NavigatorWidget {
                 });
             }
         });
+    }
+
+    fn accessibility(&self, cx: &AccessCx) -> Option<Node> {
+        let selected = self.selected.get();
+        let mut rows = Vec::new();
+        for_each_row(self.dpi.get(), cx.bounds(), |row, rect| {
+            rows.push(match row {
+                Row::Heading(text) => Node::new(Role::Text, text).bounds(rect),
+                Row::View(view) => Node::new(Role::ListItem, view.label())
+                    .id(format!(
+                        "nav-{}",
+                        view.label().to_lowercase().replace(' ', "-")
+                    ))
+                    .selected(view == selected)
+                    .invokable()
+                    .bounds(rect),
+            });
+        });
+        Some(Node::new(Role::List, "Navigator").children(rows))
+    }
+
+    fn accessibility_action(
+        &self,
+        path: &[usize],
+        action: Action,
+        cx: &mut WidgetCx<NavigatorEvent>,
+    ) -> bool {
+        let ([index], Action::Select | Action::Invoke) = (path, action) else {
+            return false;
+        };
+        let mut found = None;
+        let mut row_index = 0;
+        for_each_row(self.dpi.get(), cx.bounds(), |row, _| {
+            if let Row::View(view) = row
+                && row_index == *index
+            {
+                found = Some(view);
+            }
+            row_index += 1;
+        });
+        match found {
+            Some(view) => {
+                cx.emit(NavigatorEvent::Select(view));
+                true
+            }
+            None => false,
+        }
     }
 
     fn input(&self, input: Input, cx: &mut WidgetCx<NavigatorEvent>) {
