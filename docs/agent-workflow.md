@@ -16,6 +16,7 @@ Almost all of emusic is written by AI agents working from GitHub issues, one iss
 - **Rebase only, never merge.** `main` requires linear history, a green `ci` check and an up-to-date branch, for admins too. `land.sh` resolves `Cargo.lock` conflicts automatically (take `main`'s, regenerate) and stops for anything else.
 - **Tell each agent which files another agent is touching.** Most conflicts came from two agents editing the app crate at once.
 - **At most two concurrent OpenCode runs.** More just gets throttled by the provider, and runs sit idle in API calls.
+- **One Windows Sandbox at a time.** `scripts/sandbox/run.ps1` refuses to start while another sandbox is running. That one belongs to another agent: wait for it or report it, never kill it.
 - **`land.sh` never force-pushes over a branch that moved.** It skips instead, because an agent may have pushed a newer version while the landing was in flight.
 
 ## The scripts
@@ -40,6 +41,10 @@ scripts/land.sh <pr> [<pr>...]
 
 Per PR: rebase on `origin/main`, auto-resolve `Cargo.lock` only, run `fmt`/`check`/`clippy`/`test` (including `--features emusic/shot`), push with lease, wait for CI to appear **and** finish, then rebase-merge and clean up. It refuses a PR whose local branch has unpushed commits (only the pushed branch would land). It prints `PR <n>: MERGED` or the reason it stopped.
 
+### `scripts/sandbox/run.ps1` — run the tests off the shared desktop
+
+Runs the whole workspace (or one test binary, or the real app) inside Windows Sandbox, staging each binary with its crate's `tests\` folder (the `egui_kittest` snapshots) and the BASS DLLs. Use it for `cargo test --workspace` on a shared desktop, and `-BassDir` to turn the silently-skipped BASS tests into real coverage. See [sandbox-testing.md](sandbox-testing.md).
+
 ## Choosing a model
 
 | Work | Use |
@@ -52,6 +57,7 @@ Avoid `glm-5.3`: it repeatedly ended runs after only reading files.
 
 ## Verification that actually caught bugs
 
+- **The sandbox suite** (`scripts\sandbox\run.ps1`, with `-BassDir`) runs the real windows, wgpu snapshots and Direct2D rendering on a throwaway desktop; the committed `egui_kittest` baselines are only compared there, because a plain binary run misses them.
 - **Real BASS DLLs** (`EMUSIC_BASS_DIR`) found a parallel-init failure and wrong codec names that a DLL-less sandbox could not.
 - **The official `bass.h`** caught two wrong tag constants that were written from memory.
 - **Headless screenshots** (`emusic-shot`) caught a centred-instead-of-left-aligned column browser and an off-centre play icon.
