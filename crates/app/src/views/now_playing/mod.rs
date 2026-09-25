@@ -69,14 +69,13 @@ impl NowPlayingView {
             |row| Some(Msg::QueueContext(row)),
             || Msg::QueueRemove,
         )?;
-        let viz = ProjectMView::new(ui)?.with_gestures(|gesture| {
-            Some(Msg::Viz(match gesture {
-                ProjectMGesture::PopOut => VizCommand::SetDock(VizDock::Window),
-                ProjectMGesture::Fullscreen | ProjectMGesture::DoubleClick => {
-                    VizCommand::SetFullscreen(true)
-                }
-                ProjectMGesture::Hide => VizCommand::SetVisible(false),
-            }))
+        let viz = ProjectMView::new(ui)?.with_gestures(|gesture| match gesture {
+            ProjectMGesture::PopOut => Some(Msg::Viz(VizCommand::SetDock(VizDock::Window))),
+            ProjectMGesture::Fullscreen | ProjectMGesture::DoubleClick => {
+                Some(Msg::Viz(VizCommand::SetFullscreen(true)))
+            }
+            ProjectMGesture::Hide => Some(Msg::Viz(VizCommand::SetVisible(false))),
+            ProjectMGesture::ContextMenu => Some(Msg::VizMenu),
         });
         viz.set_visible(false);
         Ok(Self {

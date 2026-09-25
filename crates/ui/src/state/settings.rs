@@ -12,6 +12,8 @@ pub enum SettingsTab {
     Library,
     /// Theme and accent colour (#40).
     Appearance,
+    /// projectM behaviour, preset packs and the engine status (#306).
+    Visualization,
     /// Which file types open with emusic (#11).
     Associations,
     /// Playback options: session resume (#190) and tracker module settings
@@ -22,9 +24,10 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Library,
         Self::Appearance,
+        Self::Visualization,
         Self::Associations,
         Self::Playback,
         Self::About,
@@ -35,6 +38,7 @@ impl SettingsTab {
         match self {
             Self::Library => "Library",
             Self::Appearance => "Appearance",
+            Self::Visualization => "Visualization",
             Self::Associations => "File associations",
             Self::Playback => "Playback",
             Self::About => "About",
@@ -46,6 +50,7 @@ impl SettingsTab {
         match self {
             Self::Library => "library",
             Self::Appearance => "appearance",
+            Self::Visualization => "visualization",
             Self::Associations => "associations",
             Self::Playback => "playback",
             Self::About => "about",
