@@ -101,6 +101,9 @@ pub struct AlbumGridView {
     theme: Rc<Cell<Theme>>,
     waker: WakerHandle,
     dpi: u32,
+    /// The decoded cover edge, so the cache can be rebuilt to the same size
+    /// after it is dropped when the view is hidden.
+    cover_px: Cell<i32>,
     /// The albums currently in the grid, for index-to-key mapping.
     tiles: Rc<Vec<AlbumTile>>,
     /// The album-list revision the model was last built from.
@@ -168,6 +171,7 @@ impl AlbumGridView {
             theme,
             waker,
             dpi,
+            cover_px: Cell::new(cover_px),
             tiles: Rc::new(Vec::new()),
             grid_revision: u64::MAX,
             applied_selection_revision: u64::MAX,
@@ -184,11 +188,31 @@ impl AlbumGridView {
 
     /// Shows or hides the whole view (central-area routing). The track list
     /// and close button stay governed by the selection.
+    ///
+    /// Hiding releases the grid's renderer and decoded covers: browsing a
+    /// gallery leaves a Direct2D target, uploaded cover bitmaps and decoded
+    /// RGBA resident, none of which is needed while another view is shown. The
+    /// on-disk thumbnail cache stays, so showing the view again re-decodes only
+    /// the tiles it actually paints.
     pub fn set_visible(&self, visible: bool) {
         if self.active.get() != visible {
             self.active.set(visible);
+            if !visible {
+                self.release_caches();
+            }
             self.apply_visibility();
         }
+    }
+
+    /// Drops the grid's renderer (Direct2D target and image caches) and the
+    /// decoded cover buffers. Clearing each tile's uploaded-image id is what
+    /// makes the next paint re-upload the covers the new surface.
+    fn release_caches(&self) {
+        self.grid.release_renderer();
+        for tile in self.tiles.iter() {
+            tile.clear_cover();
+        }
+        *self.thumbs.borrow_mut() = ThumbState::new(self.cover_px.get(), self.waker.clone());
     }
 
     /// Applies the current appearance metrics and zebra flag to the track list
@@ -372,6 +396,7 @@ impl AlbumGridView {
             }
             AlbumMsg::CommitTileSize(size) => {
                 let cover_px = dip(size).to_px(self.dpi).value();
+                self.cover_px.set(cover_px);
                 *self.thumbs.borrow_mut() = ThumbState::new(cover_px, self.waker.clone());
                 self.grid.set_tile_size(dip(size + tile::CAPTION_DIP));
             }

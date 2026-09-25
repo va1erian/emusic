@@ -59,6 +59,12 @@ impl AlbumTile {
             cover: Cell::new(None),
         }
     }
+
+    /// Forgets the cover's uploaded-image id, so the next paint re-uploads it
+    /// (used when the grid's renderer and its image cache are released).
+    pub(super) fn clear_cover(&self) {
+        self.cover.set(None);
+    }
 }
 
 /// An album's cover uploaded to the Direct2D surface: the RGBA buffer's
