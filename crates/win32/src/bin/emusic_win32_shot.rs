@@ -35,10 +35,11 @@ use win32ui::prelude::*;
 
 use emusic_ui::backend;
 use emusic_ui::config::Config;
-use emusic_ui::state::{Theme, View};
+use emusic_ui::state::{Accent, Theme, View};
 use emusic_ui::waker::WakerSlot;
 
 use emusic_win32::app::{Msg, Win32App};
+use emusic_win32::theme::win32_theme;
 use emusic_win32::window::window_spec;
 
 /// How long the window is left to settle (create its controls) before the
@@ -64,6 +65,10 @@ struct Cli {
 
     #[arg(long, value_enum, default_value = "dark")]
     theme: ThemeArg,
+
+    /// Accent colour: a preset name or `#rrggbb`.
+    #[arg(long, value_parser = parse_accent, default_value = "orange")]
+    accent: Accent,
 
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
@@ -98,11 +103,8 @@ impl ThemeArg {
         }
     }
 
-    fn win32(self) -> win32ui::Theme {
-        match self {
-            Self::Dark => win32ui::Theme::dark(),
-            Self::Light => win32ui::Theme::light(),
-        }
+    fn win32(self, accent: Accent) -> win32ui::Theme {
+        win32_theme(self.shell(), accent)
     }
 
     /// The `--theme` value to pass on to a child process.
@@ -133,7 +135,7 @@ fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create output directory {}", parent.display()))?;
     }
-    render_one(view, cli.theme, width, height, &cli.out)
+    render_one(view, cli.theme, cli.accent, width, height, &cli.out)
 }
 
 /// Renders every view by re-invoking this binary once per view, so each gets a
@@ -150,6 +152,8 @@ fn run_all(cli: &Cli) -> anyhow::Result<()> {
             .arg(view.slug())
             .arg("--theme")
             .arg(cli.theme.slug())
+            .arg("--accent")
+            .arg(cli.accent.to_config_str())
             .arg("--size")
             .arg(&cli.size)
             .arg("--out")
@@ -177,6 +181,12 @@ fn output_dir(out: &Path) -> PathBuf {
     }
 }
 
+/// Parses `--accent`: a preset name or `#rrggbb`.
+fn parse_accent(s: &str) -> std::result::Result<Accent, String> {
+    Accent::parse(s)
+        .ok_or_else(|| format!("invalid accent {s:?}: expected a preset name or #rrggbb"))
+}
+
 /// Resolves a `--view` slug, listing the known ones on error.
 fn parse_view(slug: &str) -> anyhow::Result<View> {
     View::from_slug(slug).ok_or_else(|| {
@@ -192,6 +202,7 @@ fn parse_view(slug: &str) -> anyhow::Result<View> {
 fn render_one(
     view: View,
     theme: ThemeArg,
+    accent: Accent,
     width: f32,
     height: f32,
     out: &Path,
@@ -200,11 +211,12 @@ fn render_one(
     // it adopts a user's saved settings.
     let config = Config {
         theme: theme.shell(),
+        accent,
         last_view: view,
         ..Config::default()
     };
     let out = out.to_path_buf();
-    let spec = window_spec(width, height, theme.win32());
+    let spec = window_spec(width, height, theme.win32(accent));
 
     win32ui::run_app(spec, move |ui| {
         let backends = backend::build(true);

@@ -25,6 +25,7 @@ use win32ui::{column, dip, row};
 
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
 use crate::menu;
+use crate::theme::win32_theme;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
 use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
@@ -134,8 +135,8 @@ pub struct Win32App {
     timer: Option<(TimerId, u32)>,
     /// Panel visibility last applied, so a change triggers a relayout.
     applied_panels: emusic_ui::state::PanelVisibility,
-    /// Theme last applied to the window, so a change re-themes it.
-    applied_theme: emusic_ui::state::Theme,
+    /// Theme and accent last applied to the window, so a change re-themes it.
+    applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// View last applied to the central area, so a change re-lays it out.
     applied_view: View,
     /// Whether the column browser was last shown, so a change re-lays it out.
@@ -219,7 +220,7 @@ impl Win32App {
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
-        let applied_theme = shell.state.theme;
+        let applied_look = (shell.state.theme, shell.state.accent);
         let applied_view = shell.state.view;
         let applied_browser_toggle = shell.state.music.browser.visible;
         let mut app = Self {
@@ -241,7 +242,7 @@ impl Win32App {
             top_bar,
             timer: None,
             applied_panels,
-            applied_theme,
+            applied_look,
             applied_view,
             applied_browser_visible: browser_visible,
             applied_browser_toggle,
@@ -492,12 +493,12 @@ impl Win32App {
             ui.set_menu_bar(menu::build(&self.shell.state));
         }
 
-        // The dark/light menu toggle changes the shell's theme; mirror it onto
-        // the window (the accent is a follow-up: win32ui's palette is richer).
-        let theme = self.shell.state.theme;
-        if theme != self.applied_theme {
-            ui.set_theme(win32_theme(theme));
-            self.applied_theme = theme;
+        // The dark/light toggle and the accent picker change the shell.s look;
+        // mirror them onto the window.
+        let look = (self.shell.state.theme, self.shell.state.accent);
+        if look != self.applied_look {
+            ui.set_theme(win32_theme(look.0, look.1));
+            self.applied_look = look;
         }
     }
 
@@ -932,12 +933,4 @@ fn playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option
     library
         .track_by_path(&now_playing.path)
         .map(|track| track.id)
-}
-
-/// Maps the shell's dark/light theme onto win32ui's palette.
-fn win32_theme(theme: emusic_ui::state::Theme) -> win32ui::Theme {
-    match theme {
-        emusic_ui::state::Theme::Dark => win32ui::Theme::dark(),
-        emusic_ui::state::Theme::Light => win32ui::Theme::light(),
-    }
 }
