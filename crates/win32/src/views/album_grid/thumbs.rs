@@ -7,14 +7,22 @@
 //! size is baked into the decode ([`cover_decoder`]) rather than the upload, so
 //! the UI thread only allocates the DIB. The cache is rebuilt when the cover
 //! size changes (see [`ThumbState::new`]).
+//!
+//! Decoding and scaling go through the Windows Imaging Component (WIC) via
+//! [`win32ui::imaging`], not the `image` crate, so the Win32 binary does not
+//! link a bundled decoder (#119).
 
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use emusic_ui::image_cache::{DecodeFn, ImageSink, Rgba8Image, ThumbCache, thumbnail_decoder};
+use emusic_ui::image_cache::{
+    DecodeFn, ImageSink, Rgba8Image, ThumbCache, embedded_artwork, folder_artwork_path,
+    thumbnail_cache_path,
+};
 use emusic_ui::waker::WakerHandle;
 use win32ui::gdi::Bitmap;
+use win32ui::imaging;
 
 /// Longest edge of a decoded thumbnail, in pixels (matches the egui frontend).
 const THUMB_SIZE: u32 = 200;
@@ -90,27 +98,104 @@ fn cover_decoder(edge: u32) -> DecodeFn {
     })
 }
 
-/// Resizes `image` to `width`-by-`height` with the `image` crate's bilinear
-/// filter. Aspect ratio is not preserved: like egui, covers are drawn stretched
-/// into the square tile.
+/// A WIC-backed replacement for the shared `image`-based thumbnail decoder:
+/// reads the on-disk cache, otherwise decodes the artwork and writes a resized
+/// JPEG back. The cache path and key match the egui frontend's, so both share
+/// one thumbnail directory.
+fn thumbnail_decoder(max_edge: u32) -> DecodeFn {
+    Arc::new(move |source, fallback_dir| {
+        if let Some(image) = read_cache(source) {
+            return Some(image);
+        }
+        let image = load_artwork(source, fallback_dir)?;
+        let thumbnail = thumbnail(&image, max_edge);
+        write_cache(source, &thumbnail);
+        Some(thumbnail)
+    })
+}
+
+/// Embedded picture first, then a `cover`/`folder`/`front` image next to the
+/// file (or in `fallback_dir`).
+fn load_artwork(path: &Path, fallback_dir: Option<&Path>) -> Option<Rgba8Image> {
+    if let Some(bytes) = embedded_artwork(path)
+        && let Some(image) = decode(&bytes)
+    {
+        return Some(image);
+    }
+    let file = folder_artwork_path(path, fallback_dir)?;
+    decode(&std::fs::read(file).ok()?)
+}
+
+/// Decodes `bytes` into the shared image type, or `None` if WIC cannot.
+fn decode(bytes: &[u8]) -> Option<Rgba8Image> {
+    let image = imaging::decode(bytes).ok()?;
+    Some(Rgba8Image {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels,
+    })
+}
+
+/// Scales `image` down so its longest edge is `max_edge`, preserving the aspect
+/// ratio; an image already within the bound is returned unchanged.
+fn thumbnail(image: &Rgba8Image, max_edge: u32) -> Rgba8Image {
+    if image.width <= max_edge && image.height <= max_edge {
+        return image.clone();
+    }
+    let scale = (max_edge as f64 / image.width as f64).min(max_edge as f64 / image.height as f64);
+    let width = ((image.width as f64 * scale).round() as u32).max(1);
+    let height = ((image.height as f64 * scale).round() as u32).max(1);
+    resize(image, width, height)
+}
+
+/// Reads the on-disk thumbnail for `source`, if it exists and decodes.
+fn read_cache(source: &Path) -> Option<Rgba8Image> {
+    let bytes = std::fs::read(thumbnail_cache_path(source)?).ok()?;
+    decode(&bytes)
+}
+
+/// Writes `image` to the shared thumbnail cache as a JPEG, best effort.
+fn write_cache(source: &Path, image: &Rgba8Image) {
+    let Some(path) = thumbnail_cache_path(source) else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    if let Ok(bytes) = imaging::encode_jpeg(&to_win32(image)) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+/// Borrows the shared image type as the `win32ui` RGBA buffer WIC takes.
+fn to_win32(image: &Rgba8Image) -> win32ui::RgbaImage {
+    win32ui::RgbaImage {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels.clone(),
+    }
+}
+
+/// Resizes `image` to `width`-by-`height` via WIC. Aspect ratio is not
+/// preserved: like egui, covers are drawn stretched into the square tile.
+/// Falls back to the source image if WIC rejects the buffer.
 fn resize(image: &Rgba8Image, width: u32, height: u32) -> Rgba8Image {
     if image.width == width && image.height == height {
         return image.clone();
     }
-    let Some(source) = image::RgbaImage::from_raw(image.width, image.height, image.pixels.clone())
-    else {
-        return image.clone();
-    };
-    let resized = image::imageops::resize(
-        &source,
-        width,
-        height,
-        image::imageops::FilterType::Triangle,
-    );
-    Rgba8Image {
-        width,
-        height,
-        pixels: resized.into_raw(),
+    match imaging::resize(&to_win32(image), width, height) {
+        Ok(resized) => Rgba8Image {
+            width: resized.width,
+            height: resized.height,
+            pixels: resized.pixels,
+        },
+        Err(error) => {
+            tracing::warn!(%error, "thumbnail resize");
+            image.clone()
+        }
     }
 }
 
@@ -153,5 +238,19 @@ mod tests {
                 .iter()
                 .all(|px| *px == [255, 0, 0, 255])
         );
+    }
+
+    #[test]
+    fn thumbnail_preserves_the_aspect_ratio_and_shrinks() {
+        let source = image(400, 200, [1, 2, 3, 255]);
+        let thumb = thumbnail(&source, 200);
+        assert_eq!((thumb.width, thumb.height), (200, 100));
+    }
+
+    #[test]
+    fn thumbnail_keeps_small_images() {
+        let source = image(50, 50, [1, 2, 3, 255]);
+        let thumb = thumbnail(&source, 200);
+        assert_eq!((thumb.width, thumb.height), (50, 50));
     }
 }
