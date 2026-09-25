@@ -10,7 +10,6 @@
 //! for the status bar. All file I/O stays off the UI thread.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 use emusic_library::scanner::{CancelToken, ScanEvent, scan};
@@ -18,7 +17,7 @@ use emusic_library::{Folder, Store};
 use tracing::{info, warn};
 
 use super::source::Snapshot;
-use super::{Update, private_store, scan_options};
+use super::{Update, Updates, private_store, scan_options};
 
 /// How many files to process between status-bar progress updates, so a fast
 /// local scan never floods the UI-thread channel.
@@ -39,7 +38,7 @@ pub(crate) fn spawn(
     store: Arc<Mutex<Store>>,
     folders: Vec<Folder>,
     roots: Vec<PathBuf>,
-    updates: Sender<Update>,
+    updates: Updates,
     handle: ScanHandle,
     purge: Vec<PathBuf>,
     bass: Option<Arc<bass::Bass>>,
@@ -58,7 +57,7 @@ pub(crate) fn run(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
     roots: &[PathBuf],
-    updates: &Sender<Update>,
+    updates: &Updates,
     handle: &ScanHandle,
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
@@ -76,7 +75,7 @@ fn run_inner(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
     roots: &[PathBuf],
-    updates: &Sender<Update>,
+    updates: &Updates,
     handle: &ScanHandle,
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
@@ -119,7 +118,7 @@ fn run_inner(
 fn scan_roots(
     store: &mut Store,
     roots: &[PathBuf],
-    updates: &Sender<Update>,
+    updates: &Updates,
     cancel: &CancelToken,
     bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {

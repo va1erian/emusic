@@ -72,7 +72,7 @@ fn run_ui(
     };
 
     win32ui::run_app(window_spec(1100.0, 720.0, window_theme), move |ui| {
-        let backends = backend::build(mock);
+        let backends = backend::build(mock, waker.handle());
         let emusic_ui::backend::Backends {
             library,
             player,

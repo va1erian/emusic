@@ -20,6 +20,7 @@ use crate::mock;
 use crate::player_api::{
     ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
 };
+use crate::waker::WakerHandle;
 use library::LibraryBackend;
 use player_adapter::PlayerAdapter;
 
@@ -47,7 +48,11 @@ pub struct Backends {
 /// library store + BASS-backed player. If BASS can't be loaded (missing DLLs,
 /// no output device, ...) the app still starts, with an inert player and a
 /// notice describing why, rather than crashing (#11).
-pub fn build(mock: bool) -> Backends {
+///
+/// `waker` lets the library's background threads wake the UI when they post an
+/// update (e.g. the startup snapshot), so views populate without user input
+/// (#284).
+pub fn build(mock: bool, waker: WakerHandle) -> Backends {
     if mock {
         let library = mock::MockLibrary::new();
         // A fixed, arbitrary index into the deterministically seeded mock
@@ -83,7 +88,7 @@ pub fn build(mock: bool) -> Backends {
         }
     };
 
-    let library = LibraryBackend::new(bass.clone());
+    let library = LibraryBackend::new(bass.clone(), waker);
     let play_message_tx = library.play_message_tx();
 
     let player: Box<dyn PlayerApi> = match bass {

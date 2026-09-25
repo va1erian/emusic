@@ -7,7 +7,6 @@
 //! edit. Outcomes and, when at least one edit succeeded, a refreshed snapshot
 //! go back through the backend's update channel.
 
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 use emusic_library::tags::{EditOutcome, EditRequest, edit_tags};
@@ -15,7 +14,7 @@ use emusic_library::{Folder, Store};
 use tracing::warn;
 
 use super::source::Snapshot;
-use super::{Update, private_store};
+use super::{Update, Updates, private_store};
 
 /// Spawns a worker that applies `requests` to their files and the store,
 /// reporting the outcomes and (when any edit succeeded) a fresh snapshot.
@@ -23,7 +22,7 @@ pub(crate) fn spawn(
     store: Arc<Mutex<Store>>,
     folders: Vec<Folder>,
     requests: Vec<EditRequest>,
-    updates: Sender<Update>,
+    updates: Updates,
 ) {
     std::thread::spawn(move || {
         let outcomes = run(&store, &folders, &requests, &updates);
@@ -40,7 +39,7 @@ fn run(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
     requests: &[EditRequest],
-    updates: &Sender<Update>,
+    updates: &Updates,
 ) -> Vec<EditOutcome> {
     let outcomes = match private_store(store) {
         Some(mut private) => edit_tags(&mut private, requests),
@@ -64,7 +63,7 @@ fn run(
 fn send_snapshot(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
-    updates: &Sender<Update>,
+    updates: &Updates,
 ) -> anyhow::Result<()> {
     let snapshot = {
         let store = store

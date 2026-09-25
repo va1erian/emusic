@@ -8,7 +8,6 @@
 //! scan via [`super::scan`]. Opening the private connection happens first,
 //! so the first snapshot also never contends with the UI's own reads (#69).
 
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -17,14 +16,14 @@ use tracing::{info, warn};
 
 use super::scan::{self, ScanHandle};
 use super::source::Snapshot;
-use super::{Update, enabled_roots};
+use super::{Update, Updates, enabled_roots};
 
 /// Starts the initial load on a background thread, then the startup scan if
 /// `scan` is given (there are enabled roots to scan).
 pub(crate) fn spawn(
     store: Arc<Mutex<Store>>,
     folders: Vec<Folder>,
-    updates: Sender<Update>,
+    updates: Updates,
     scan: Option<ScanHandle>,
     bass: Option<Arc<bass::Bass>>,
 ) {
@@ -51,7 +50,7 @@ fn run(
     store: &Arc<Mutex<Store>>,
     private: Option<Store>,
     folders: &[Folder],
-    updates: &Sender<Update>,
+    updates: &Updates,
     scan: Option<ScanHandle>,
     bass: Option<Arc<bass::Bass>>,
 ) -> anyhow::Result<()> {
@@ -73,7 +72,7 @@ fn run(
 fn send_initial_snapshot(
     store: &Store,
     folders: &[Folder],
-    updates: &Sender<Update>,
+    updates: &Updates,
 ) -> anyhow::Result<()> {
     let snapshot = Snapshot::from_store(store, folders)?;
     let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
@@ -83,7 +82,7 @@ fn send_initial_snapshot(
 fn send_shared_snapshot(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
-    updates: &Sender<Update>,
+    updates: &Updates,
 ) -> anyhow::Result<()> {
     let store = store
         .lock()
