@@ -21,8 +21,13 @@
 mod engine;
 mod fallback;
 mod feed;
+mod grace;
 mod overlay;
+mod presets;
 mod widget;
+
+pub(crate) use grace::GraceTimer;
+pub(crate) use presets::{PresetFiles, PresetRoots, PresetScanner};
 
 use std::path::{Path, PathBuf};
 
@@ -88,6 +93,28 @@ impl ProjectMView {
         self.custom.set_visible(visible);
         self.custom.widget().borrow().set_visible(visible);
         self.custom.invalidate();
+    }
+
+    /// Starts or stops the surface's animation ticks without hiding its
+    /// window, so a minimised app stops burning frames but keeps its place
+    /// (#305).
+    pub fn set_running(&self, running: bool) {
+        self.custom.widget().borrow().set_visible(running);
+        if running {
+            self.custom.invalidate();
+        }
+    }
+
+    /// Frees the projectM instance through the GL hook, with its context
+    /// current, so video memory is released without waiting for a paint (#305).
+    pub fn suspend(&self) {
+        let widget = self.custom.widget();
+        let _ = self.custom.with_gl(|_| widget.borrow().suspend());
+    }
+
+    /// Replaces the scanned preset file list and texture folders.
+    pub(crate) fn set_presets(&self, files: PresetFiles) {
+        self.custom.widget().borrow().set_presets(files);
     }
 
     /// Reads the player for this frame, feeding samples while it plays and

@@ -118,6 +118,16 @@ impl Instance {
         self.raw().add_path(&self.libs, utf8(dir)?, recurse)
     }
 
+    /// Adds `files` to the playlist, skipping ones already present; returns how
+    /// many were added. No GL, so it may run before the first paint.
+    pub fn add_preset_files(&self, files: &[PathBuf]) -> Result<usize, ProjectMError> {
+        let paths = files
+            .iter()
+            .map(|path| utf8(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.raw().add_preset_files(&self.libs, &paths)
+    }
+
     /// Removes every preset from the playlist.
     pub fn clear_presets(&self) {
         self.raw().clear(&self.libs);

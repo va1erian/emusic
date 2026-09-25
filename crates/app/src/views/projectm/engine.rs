@@ -9,13 +9,14 @@
 //! [`ProjectMAvailability`], so the widget can stay a thin paint/input shell.
 
 use std::cell::{Cell, RefCell};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use emusic_projectm::{Event as ProjectMFMTEvent, Instance, ProjectM, ProjectMError};
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
 
 use super::ProjectMEvent;
 use super::feed::parameters_from;
+use super::presets::PresetFiles;
 
 /// How the engine currently runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +50,10 @@ pub(super) struct EngineSlot {
     version: RefCell<Option<String>>,
     /// The settings last pushed into the instance.
     settings: RefCell<ProjectMSettings>,
+    /// The scanned preset files and texture folders (#305).
+    presets: RefCell<PresetFiles>,
+    /// Whether [`Self::presets`] still needs applying to a live instance.
+    presets_dirty: Cell<bool>,
     /// Set once a paint reached the GL path, so a frame that never did can be
     /// reported as [`Status::NoOpenGl`].
     gl_painted: Cell<bool>,
@@ -62,8 +67,20 @@ impl EngineSlot {
             status: Cell::new(Status::Unknown),
             version: RefCell::new(None),
             settings: RefCell::new(ProjectMSettings::default()),
+            presets: RefCell::new(PresetFiles::default()),
+            presets_dirty: Cell::new(false),
             gl_painted: Cell::new(false),
         }
+    }
+
+    /// Replaces the scanned preset files; a running instance rebuilds its
+    /// playlist on the next paint.
+    pub(super) fn set_presets(&self, files: PresetFiles) {
+        if *self.presets.borrow() == files {
+            return;
+        }
+        *self.presets.borrow_mut() = files;
+        self.presets_dirty.set(true);
     }
 
     /// Loads the projectM libraries. Called once when the widget is built, so
@@ -156,11 +173,21 @@ impl EngineSlot {
         *self.version.borrow_mut() = Some(projectm.version());
         instance.set_parameters(&parameters_from(settings));
         *self.settings.borrow_mut() = settings.clone();
-        if let Some(path) = last_preset
-            && path.is_file()
-            && let Err(err) = instance.load_preset(path, false)
-        {
-            tracing::warn!(%err, path = %path.display(), "could not restore the last preset");
+        apply_presets(&instance, &self.presets.borrow());
+        self.presets_dirty.set(false);
+        // Restore the last preset with no transition, or start at the first.
+        match last_preset.filter(|path| path.is_file()) {
+            Some(path) => {
+                if let Err(err) = instance.load_preset(path, false) {
+                    tracing::warn!(%err, path = %path.display(), "could not restore the last preset");
+                }
+            }
+            None if instance.preset_count() > 0 => {
+                if let Err(err) = instance.play_index(0, false) {
+                    tracing::warn!(%err, "could not start the first projectM preset");
+                }
+            }
+            None => {}
         }
 
         *self.engine.borrow_mut() = Some(Engine {
@@ -186,6 +213,16 @@ impl EngineSlot {
         if *self.settings.borrow() != *settings {
             engine.instance.set_parameters(&parameters_from(settings));
             *self.settings.borrow_mut() = settings.clone();
+        }
+
+        if self.presets_dirty.replace(false) {
+            engine.instance.clear_presets();
+            apply_presets(&engine.instance, &self.presets.borrow());
+            if engine.instance.preset_count() > 0
+                && let Err(err) = engine.instance.play_index(0, false)
+            {
+                tracing::warn!(%err, "could not restart the projectM playlist");
+            }
         }
 
         let hard_cut = settings.hard_cuts;
@@ -239,6 +276,23 @@ impl EngineSlot {
         }
         self.status.set(status);
         Some(ProjectMEvent::AvailabilityChanged(self.availability()))
+    }
+}
+
+/// Adds the scanned files to a live instance and points its texture search at
+/// the scanned folders. Must run with the GL context current.
+fn apply_presets(instance: &Instance, files: &PresetFiles) {
+    if !files.presets.is_empty() {
+        match instance.add_preset_files(&files.presets) {
+            Ok(count) => tracing::info!(count, "projectM playlist loaded"),
+            Err(err) => tracing::warn!(%err, "could not add projectM presets"),
+        }
+    }
+    if !files.textures.is_empty() {
+        let paths: Vec<&Path> = files.textures.iter().map(PathBuf::as_path).collect();
+        if let Err(err) = instance.set_texture_paths(&paths) {
+            tracing::warn!(%err, "could not set projectM texture paths");
+        }
     }
 }
 

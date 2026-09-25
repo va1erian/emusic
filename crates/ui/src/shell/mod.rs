@@ -299,7 +299,7 @@ impl Shell {
     /// otherwise only while a tag edit is in flight. `None` means the
     /// frontend may stay idle until woken by a [`Waker`](crate::waker::Waker).
     fn next_wake(&self) -> Option<Duration> {
-        if self.state.projectm.surface().is_some() {
+        if self.state.projectm.surface().is_some() && self.state.projectm.running {
             return Some(FRAME_INTERVAL);
         }
         if self.player.status() == PlaybackStatus::Playing {

@@ -5,6 +5,7 @@
 //! [`Win32App::update`], which runs [`Shell::tick`] on wakes and timers, syncs
 //! the views, and schedules the next timer from [`Tick::next_wake`].
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use emusic_ui::backend::ipc::IpcBridge;
@@ -45,7 +46,7 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{self, CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
-use crate::views::projectm::ProjectMEvent;
+use crate::views::projectm::{GraceTimer, PresetRoots, PresetScanner, ProjectMEvent};
 use crate::views::settings::{SettingsMsg, SettingsView};
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
@@ -170,6 +171,17 @@ pub struct Win32App {
     /// Whether the projectM panel row was last expanded, so a change triggers
     /// a relayout (#302).
     applied_viz_visible: bool,
+    /// Whether the projectM surface is actually rendering this tick: shown,
+    /// not collapsed and the window not minimised (#305).
+    viz_active: bool,
+    /// Keeps a stopped projectM instance alive briefly so a quick toggle
+    /// resumes without rebuilding it (#305).
+    viz_grace: GraceTimer,
+    /// The background preset scan, while one is running (#305).
+    preset_scanner: Option<PresetScanner>,
+    /// The preset configuration (disabled packs, user folder) the current scan
+    /// was started for, so a settings change restarts it (#305).
+    preset_config: Option<(Vec<String>, Option<PathBuf>)>,
     /// Theme and accent last applied to the window, so a change re-themes it.
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// Font size, density and zebra last applied, so a change relayouts once
@@ -322,6 +334,10 @@ impl Win32App {
             timer: None,
             applied_panels,
             applied_viz_visible: false,
+            viz_active: false,
+            viz_grace: GraceTimer::default(),
+            preset_scanner: None,
+            preset_config: None,
             applied_look,
             applied_appearance,
             applied_dpi,
@@ -449,6 +465,14 @@ impl Win32App {
         if let Some(thumbbar) = self.thumbbar.as_mut() {
             thumbbar.sync(self.shell.player.as_ref(), &mut self.shell.state);
         }
+        // The visualization "runs" only while its panel surface is shown and the
+        // window is not minimised; while it does not, the shell's frame-rate
+        // wake falls back to its idle cadence (#305).
+        let minimized = ui.placement().show == ShowState::Minimized;
+        self.viz_active = self.shell.state.projectm.surface() == Some(VizSurface::Panel)
+            && self.shell.state.panels.right_panel
+            && !minimized;
+        self.shell.state.projectm.running = self.viz_active;
         let tick = self.shell.tick(Instant::now());
         // Keep the modal tag editor posted on its save (the shell delivers
         // outcomes into `state.tag_editor`; the dialog polls the bridge).
@@ -685,7 +709,11 @@ impl Win32App {
             self.applied_viz_visible = viz_visible;
             self.install_layout(ui, view);
         }
-        self.sync_projectm(viz_visible);
+        // The row can stay shown while the app is minimised; only the animation
+        // stops then, so a restore resumes without a relayout (#305).
+        self.right_panel.viz().set_running(self.viz_active);
+        self.sync_projectm(self.viz_active);
+        self.sync_viz_lifecycle();
 
         // The dark/light toggle and the accent picker change the shell.s look;
         // mirror them onto the window.
@@ -773,6 +801,58 @@ impl Win32App {
         let availability = self.right_panel.viz().availability();
         if self.shell.state.projectm.availability != availability {
             self.shell.state.projectm.availability = availability;
+        }
+    }
+
+    /// Runs the visualization's stop/lifecycle policy: arm or cancel the grace
+    /// period, free the instance once it expires, and keep the background
+    /// preset scan in step (#305).
+    fn sync_viz_lifecycle(&mut self) {
+        let now = Instant::now();
+        if self.viz_active {
+            self.viz_grace.disarm();
+        } else {
+            self.viz_grace.arm(now);
+            if self.viz_grace.take_due(now) {
+                tracing::debug!("projectM idle grace expired; freeing the instance");
+                self.right_panel.viz().suspend();
+            }
+        }
+        self.poll_preset_scan();
+    }
+
+    /// Starts a background preset scan when the preset configuration changed,
+    /// and hands a finished scan to the surface (#305).
+    fn poll_preset_scan(&mut self) {
+        let config = {
+            let settings = &self.shell.state.projectm.settings;
+            (
+                settings.disabled_packs.clone(),
+                settings.user_preset_dir.clone(),
+            )
+        };
+        if self.preset_config.as_ref() != Some(&config) {
+            self.preset_config = Some(config);
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(PathBuf::from))
+                .unwrap_or_default();
+            let roots = PresetRoots::resolve(&exe_dir, &self.shell.state.projectm.settings);
+            tracing::debug!(?roots, "scanning projectM presets");
+            self.preset_scanner = Some(PresetScanner::spawn(roots));
+        }
+        if let Some(files) = self
+            .preset_scanner
+            .as_ref()
+            .and_then(PresetScanner::try_take)
+        {
+            tracing::info!(
+                presets = files.presets.len(),
+                textures = files.textures.len(),
+                "projectM preset scan ready"
+            );
+            self.right_panel.viz().set_presets(files);
+            self.preset_scanner = None;
         }
     }
 
@@ -880,9 +960,15 @@ impl Win32App {
         self.shell.state.music.refresh(&tracks, &self.shell.search);
     }
 
-    /// Keeps a single repeating timer in step with the shell's `next_wake`.
+    /// Keeps a single repeating timer in step with the shell's `next_wake` and
+    /// the projectM stop grace period, so a stopped instance is freed even
+    /// while the shell is otherwise idle (#305).
     fn schedule(&mut self, ui: &mut Ui<Msg>, next_wake: Option<std::time::Duration>) {
-        let wanted = next_wake.map(|wait| wait.as_millis().min(u128::from(u32::MAX)) as u32);
+        let mut wanted = next_wake;
+        if let Some(grace) = self.viz_grace.wait(Instant::now()) {
+            wanted = Some(wanted.map_or(grace, |current| current.min(grace)));
+        }
+        let wanted = wanted.map(|wait| wait.as_millis().min(u128::from(u32::MAX)) as u32);
         match wanted {
             Some(ms) if self.timer.is_none_or(|(_, current)| current != ms) => {
                 if let Some((id, _)) = self.timer.take() {
