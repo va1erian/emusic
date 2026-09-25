@@ -621,6 +621,7 @@ impl Win32App {
                 self.shell.library.as_ref(),
                 playing_id,
                 theme,
+                changes,
             ) {
                 ui.relayout();
             }

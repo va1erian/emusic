@@ -69,8 +69,19 @@ pub struct AlbumGrid {
     albums: Vec<AlbumInfo>,
     /// The selected album's track ids, in disc/track order.
     selected_track_ids: Vec<u64>,
-    /// Bumped whenever what the view displays changes.
-    revision: u64,
+    /// The library revision the album list was built from; `None` when the
+    /// backend provides no cheap signal or the list is stale.
+    source_revision: Option<u64>,
+    /// The sort the album list was last ordered by.
+    source_sort: AlbumSort,
+    /// The selection the selected-track ids were resolved for.
+    source_selected: Option<AlbumKey>,
+    /// Bumped when the album list (its content or order) changes, so a
+    /// retained-mode frontend rebuilds only its tiles.
+    list_revision: u64,
+    /// Bumped when the selected album's tracks change, so a frontend rebuilds
+    /// only the track list without re-uploading the grid's covers.
+    selection_revision: u64,
 }
 
 impl Default for AlbumGrid {
@@ -82,7 +93,11 @@ impl Default for AlbumGrid {
             table: TrackTable::default(),
             albums: Vec::new(),
             selected_track_ids: Vec::new(),
-            revision: 0,
+            source_revision: None,
+            source_sort: AlbumSort::default(),
+            source_selected: None,
+            list_revision: 0,
+            selection_revision: 0,
         }
     }
 }
@@ -92,7 +107,6 @@ impl AlbumGrid {
     /// tile would, so the view shows its tracks. Used when jumping here from
     /// an album name elsewhere (e.g. the now-playing panel).
     pub fn select_album(&mut self, name: impl Into<String>, artist: impl Into<String>) {
-        self.revision += 1;
         self.selected = Some(AlbumKey {
             name: name.into(),
             artist: artist.into(),
@@ -101,33 +115,53 @@ impl AlbumGrid {
 
     /// Rebuilds the album list (sorted per [`AlbumGrid::sort`]) and the
     /// selected album's tracks from the library snapshot in `cx`.
+    ///
+    /// Cheap to call every frame: the library-derived album list is rebuilt
+    /// only when the library's [`LibraryDataSource::revision`] or the sort
+    /// changed, and the selected tracks only when the library or selection
+    /// changed. An unchanged snapshot costs a couple of counter comparisons.
     pub fn refresh(&mut self, cx: &Ctx) {
         let Some(library) = cx.library else {
             return;
         };
-        let meta = catalog::album_meta(library);
-        let mut albums: Vec<AlbumInfo> = library.albums().to_vec();
-        albums.sort_by(|a, b| catalog::compare(a, b, self.sort, &meta));
-        if albums != self.albums {
-            self.albums = albums;
-            self.revision += 1;
+        let revision = library.revision();
+        let library_changed = match revision {
+            Some(revision) => self.source_revision != Some(revision),
+            None => true,
+        };
+        let sort_changed = self.source_sort != self.sort;
+        let selection_changed = self.source_selected != self.selected;
+
+        if library_changed || sort_changed {
+            self.source_revision = revision;
+            self.source_sort = self.sort;
+            let meta = catalog::album_meta(library);
+            let mut albums: Vec<AlbumInfo> = library.albums().to_vec();
+            albums.sort_by(|a, b| catalog::compare(a, b, self.sort, &meta));
+            if albums != self.albums {
+                self.albums = albums;
+                self.list_revision += 1;
+            }
         }
 
         // The selected album's tracks, in disc/track order, so the (shared)
         // track table can be built from them and played as a whole.
-        let selected_ids = self
-            .selected_key()
-            .and_then(|key| self.albums.iter().find(|album| AlbumKey::of(album) == *key))
-            .map(|album| {
-                catalog::album_tracks(library, album)
-                    .into_iter()
-                    .map(|track| track.id)
-                    .collect::<Vec<u64>>()
-            })
-            .unwrap_or_default();
-        if selected_ids != self.selected_track_ids {
-            self.selected_track_ids = selected_ids;
-            self.revision += 1;
+        if library_changed || selection_changed {
+            self.source_selected = self.selected.clone();
+            let selected_ids = self
+                .selected_key()
+                .and_then(|key| self.albums.iter().find(|album| AlbumKey::of(album) == *key))
+                .map(|album| {
+                    catalog::album_tracks(library, album)
+                        .into_iter()
+                        .map(|track| track.id)
+                        .collect::<Vec<u64>>()
+                })
+                .unwrap_or_default();
+            if selected_ids != self.selected_track_ids {
+                self.selected_track_ids = selected_ids;
+                self.selection_revision += 1;
+            }
         }
     }
 
@@ -183,9 +217,16 @@ impl AlbumGrid {
         (index < self.albums.len()).then_some(index)
     }
 
-    /// The revision counter, bumped whenever the displayed state changes.
-    pub fn revision(&self) -> u64 {
-        self.revision
+    /// The revision counter for the album list, bumped when its content or
+    /// order changes (a sort change, or a new library snapshot).
+    pub fn list_revision(&self) -> u64 {
+        self.list_revision
+    }
+
+    /// The revision counter for the selected album's tracks, bumped when the
+    /// selection or the library changes.
+    pub fn selection_revision(&self) -> u64 {
+        self.selection_revision
     }
 
     /// Applies one user intent, queueing any resulting commands. `cx` must
@@ -195,7 +236,6 @@ impl AlbumGrid {
             AlbumGridMsg::TileClicked(key) => {
                 if self.selected.as_ref() != Some(&key) {
                     self.selected = Some(key);
-                    self.revision += 1;
                 }
             }
             AlbumGridMsg::TileActivated(key) => {
@@ -208,20 +248,16 @@ impl AlbumGrid {
             AlbumGridMsg::SetSort(sort) => {
                 if self.sort != sort {
                     self.sort = sort;
-                    self.revision += 1;
                 }
             }
             AlbumGridMsg::SetTileSize(size) => {
                 let size = size.clamp(MIN_TILE_SIZE, MAX_TILE_SIZE);
                 if (self.tile_size - size).abs() > f32::EPSILON {
                     self.tile_size = size;
-                    self.revision += 1;
                 }
             }
             AlbumGridMsg::CloseAlbum => {
-                if self.selected.take().is_some() {
-                    self.revision += 1;
-                }
+                self.selected.take();
             }
             AlbumGridMsg::Shuffle(key) => {
                 let ids = self.album_ids(&key, cx);
@@ -259,113 +295,4 @@ impl AlbumGrid {
 pub use catalog::{album_meta, album_tracks};
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mock::MockLibrary;
-
-    fn grid_with_library(library: &dyn crate::library_api::LibraryDataSource) -> AlbumGrid {
-        let mut grid = AlbumGrid::default();
-        grid.refresh(&Ctx::with_library(&[], None, library));
-        grid
-    }
-
-    #[test]
-    fn refresh_populates_albums_and_sorts() {
-        let library = MockLibrary::new();
-        let source: &dyn crate::library_api::LibraryDataSource = &library;
-        let grid = grid_with_library(source);
-        assert_eq!(grid.len(), source.albums().len());
-        // Default sort is by artist, case-insensitively.
-        let artists: Vec<&str> = grid
-            .albums()
-            .iter()
-            .map(|album| album.artist.as_str())
-            .collect();
-        let mut expected = artists.clone();
-        expected.sort_by_key(|a| a.to_lowercase());
-        assert_eq!(artists, expected);
-    }
-
-    #[test]
-    fn columns_for_matches_the_grid_layout_math() {
-        let library = MockLibrary::new();
-        let mut grid = grid_with_library(&library);
-        grid.tile_size = 100.0;
-        // (width + spacing) / (tile + spacing), floored.
-        assert_eq!(grid.columns_for(430.0, 10.0), 4);
-        assert_eq!(grid.columns_for(0.0, 10.0), 1, "always at least one column");
-    }
-
-    #[test]
-    fn tile_index_is_row_major_and_bounded() {
-        let library = MockLibrary::new();
-        let grid = grid_with_library(&library);
-        let columns = 3;
-        assert_eq!(grid.tile_index(0, 0, columns), Some(0));
-        assert_eq!(grid.tile_index(0, 1, columns), Some(1));
-        assert_eq!(grid.tile_index(1, 0, columns), Some(3));
-        assert_eq!(grid.tile_index(usize::MAX, 0, columns), None);
-    }
-
-    #[test]
-    fn tile_clicked_selects_and_close_clears() {
-        let library = MockLibrary::new();
-        let mut grid = grid_with_library(&library);
-        let key = AlbumKey::of(&grid.albums()[0]);
-        let mut out = Commands::new();
-        grid.update(
-            AlbumGridMsg::TileClicked(key.clone()),
-            &Ctx::with_library(&[], None, &library),
-            &mut out,
-        );
-        assert_eq!(grid.selected_key(), Some(&key));
-        assert!(grid.tile(0).is_some_and(|view| view.selected));
-
-        grid.update(
-            AlbumGridMsg::CloseAlbum,
-            &Ctx::with_library(&[], None, &library),
-            &mut out,
-        );
-        assert!(grid.selected_key().is_none());
-    }
-
-    #[test]
-    fn tile_activated_plays_the_albums_tracks() {
-        let library = MockLibrary::new();
-        let mut grid = grid_with_library(&library);
-        let album = grid.albums()[0].clone();
-        let expected: Vec<u64> = album_tracks(&library, &album)
-            .into_iter()
-            .map(|track| track.id)
-            .collect();
-
-        let mut out = Commands::new();
-        grid.update(
-            AlbumGridMsg::TileActivated(AlbumKey::of(&album)),
-            &Ctx::with_library(&[], None, &library),
-            &mut out,
-        );
-        assert_eq!(out.into_vec(), vec![Command::PlayAlbum(expected)]);
-    }
-
-    #[test]
-    fn revision_bumps_on_sort_and_tile_size_changes() {
-        let library = MockLibrary::new();
-        let mut grid = grid_with_library(&library);
-        let cx = Ctx::with_library(&[], None, &library);
-        let before = grid.revision();
-        grid.update(
-            AlbumGridMsg::SetSort(AlbumSort::Year),
-            &cx,
-            &mut Commands::new(),
-        );
-        assert!(grid.revision() > before);
-        let after_sort = grid.revision();
-        grid.update(
-            AlbumGridMsg::SetTileSize(grid.tile_size),
-            &cx,
-            &mut Commands::new(),
-        );
-        assert_eq!(grid.revision(), after_sort, "same size doesn't bump");
-    }
-}
+mod tests;

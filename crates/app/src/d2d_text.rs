@@ -7,7 +7,10 @@
 //! the shared layout modules produce into the device-independent [`RectF`]s
 //! Direct2D draws in.
 
-use win32ui::d2d::{D2dCanvas, Font, PointF, RectF};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use win32ui::d2d::{D2dCanvas, Font, Layout, PointF, RectF};
 use win32ui::{Color, Rect};
 
 /// Horizontal alignment of one line within its rectangle.
@@ -17,6 +20,24 @@ pub(crate) enum Align {
     Left,
     /// Centre the line horizontally in the rectangle.
     Center,
+}
+
+/// Colour and horizontal alignment of one line, grouped so the cached draw
+/// path stays within clippy's argument limit.
+#[derive(Clone, Copy)]
+pub(crate) struct LineStyle {
+    pub color: Color,
+    pub align: Align,
+}
+
+impl LineStyle {
+    /// A line drawn in `color`, starting at the rectangle's left edge.
+    pub(crate) fn left(color: Color) -> Self {
+        Self {
+            color,
+            align: Align::Left,
+        }
+    }
 }
 
 /// `text` shortened with a trailing ellipsis so it measures at most
@@ -66,15 +87,65 @@ pub(crate) fn draw_line(
     let Ok(layout) = font.layout(&text, f32::INFINITY) else {
         return;
     };
+    paint_layout(canvas, &layout, rect, LineStyle { color, align });
+}
+
+/// Paints an already-laid-out line, centred vertically in `rect`.
+fn paint_layout(canvas: &mut D2dCanvas<'_>, layout: &Layout, rect: RectF, style: LineStyle) {
     let (width, height) = layout.size();
-    let x = match align {
+    let x = match style.align {
         Align::Left => rect.left,
         Align::Center => rect.left + (rect.width() - width) / 2.0,
     };
     let y = rect.top + (rect.height() - height) / 2.0;
     canvas.push_clip(rect);
-    canvas.draw_text(&layout, PointF::new(x, y), color);
+    canvas.draw_text(layout, PointF::new(x, y), style.color);
     let _ = canvas.pop_clip();
+}
+
+/// How many laid-out lines one [`LineCache`] remembers before it is reset.
+const LINE_CACHE_ENTRIES: usize = 2048;
+
+/// A bounded cache of single-line [`Layout`]s, shared by a painter's fonts, so
+/// a repaint of an unchanged caption reuses its DirectWrite layout instead of
+/// creating a new one.
+///
+/// Keyed by a caller-assigned font role (so distinct fonts never collide), the
+/// elided string and the available width. Reset by dropping it, which a
+/// painter does when it rebuilds its fonts on an appearance change.
+#[derive(Default)]
+pub(crate) struct LineCache {
+    entries: RefCell<HashMap<(u8, String, u32), Layout>>,
+}
+
+impl LineCache {
+    /// Draws `text` exactly like [`draw_line`], reusing the layout when the
+    /// same (font `role`, string, width) is drawn again.
+    pub(crate) fn draw(
+        &self,
+        canvas: &mut D2dCanvas<'_>,
+        role: u8,
+        font: &Font,
+        rect: RectF,
+        text: &str,
+        style: LineStyle,
+    ) {
+        let text = elide(font, text, rect.width());
+        let key = (role, text, rect.width().to_bits());
+        let mut entries = self.entries.borrow_mut();
+        let layout = if let Some(layout) = entries.get(&key) {
+            layout
+        } else {
+            let Ok(layout) = font.layout(&key.1, f32::INFINITY) else {
+                return;
+            };
+            if entries.len() >= LINE_CACHE_ENTRIES {
+                entries.clear();
+            }
+            entries.entry(key).or_insert(layout)
+        };
+        paint_layout(canvas, layout, rect, style);
+    }
 }
 
 /// Converts a device-pixel rectangle to the device-independent rectangle

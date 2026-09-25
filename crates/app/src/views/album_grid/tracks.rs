@@ -129,6 +129,17 @@ impl TrackList {
         self.show_sort_indicator(table.sort);
     }
 
+    /// Updates only the playing-row highlight, without touching the model.
+    /// Used when neither the selection nor the track table changed, so the
+    /// (library-sized) track lookup can be skipped.
+    pub(super) fn sync_playing(&self, playing_id: Option<u64>) {
+        if self.playing.get() != playing_id {
+            self.playing.set(playing_id);
+            let len = self.rows.len();
+            self.list.rows_changed(0..len);
+        }
+    }
+
     /// The command to play `row` in the context of the whole album.
     pub(super) fn activate(&self, row: usize) -> Option<Command> {
         let track = self.rows.as_slice().get(row)?;

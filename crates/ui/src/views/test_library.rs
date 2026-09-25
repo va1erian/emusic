@@ -21,8 +21,14 @@ pub(crate) struct RiggedLibrary {
     pub genres: Vec<GenreInfo>,
     /// Tracks returned by [`LibraryDataSource::tracks`].
     pub tracks: Vec<TrackInfo>,
+    /// Albums returned by [`LibraryDataSource::albums`].
+    pub albums: Vec<AlbumInfo>,
     /// The change signal returned by [`LibraryDataSource::revision`].
     pub revision: Option<u64>,
+    /// How many times `tracks` has been read.
+    pub track_reads: Cell<usize>,
+    /// How many times `albums` has been read.
+    pub album_reads: Cell<usize>,
     /// How many times `artists` has been read.
     pub artist_reads: Cell<usize>,
     /// How many times `genres` has been read.
@@ -58,11 +64,13 @@ impl RiggedLibrary {
 
 impl LibraryDataSource for RiggedLibrary {
     fn tracks(&self) -> &[TrackInfo] {
+        self.track_reads.set(self.track_reads.get() + 1);
         &self.tracks
     }
 
     fn albums(&self) -> &[AlbumInfo] {
-        &[]
+        self.album_reads.set(self.album_reads.get() + 1);
+        &self.albums
     }
 
     fn artists(&self) -> &[ArtistInfo] {

@@ -13,6 +13,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::shell::Changes;
 use emusic_ui::state::AppState;
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
 use emusic_ui::views::album_grid::{
@@ -102,8 +103,12 @@ pub struct AlbumGridView {
     dpi: u32,
     /// The albums currently in the grid, for index-to-key mapping.
     tiles: Rc<Vec<AlbumTile>>,
-    /// The album-grid revision the model was last built from.
+    /// The album-list revision the model was last built from.
     grid_revision: u64,
+    /// The selection revision the track list was last built from.
+    applied_selection_revision: u64,
+    /// The track-table revision the track list was last built from.
+    applied_table_revision: u64,
     /// The model tile size last applied to the grid.
     applied_tile_size: f32,
     /// The grid viewport width last resynced, so a window resize recomputes the
@@ -165,6 +170,8 @@ impl AlbumGridView {
             dpi,
             tiles: Rc::new(Vec::new()),
             grid_revision: u64::MAX,
+            applied_selection_revision: u64::MAX,
+            applied_table_revision: u64::MAX,
             applied_tile_size: DEFAULT_TILE_SIZE,
             applied_width: 0,
             active: Cell::new(true),
@@ -230,21 +237,27 @@ impl AlbumGridView {
 
     /// Pushes the shared model into the controls. Returns whether the layout
     /// must be recomputed (the track list was shown or hidden).
+    ///
+    /// `changes` lets the expensive library-derived work be skipped on a
+    /// thumbnail wake: the model's `refresh` is a no-op when the library
+    /// snapshot is unchanged, and the selected album's tracks are only
+    /// re-resolved when the selection, the track table or the library changed.
     pub fn sync(
         &mut self,
         state: &mut AppState,
         library: &dyn LibraryDataSource,
         playing_id: Option<u64>,
         theme: Theme,
+        changes: Changes,
     ) -> bool {
         self.theme.set(theme);
         self.thumbs.borrow_mut().drain();
 
-        let grid_revision = {
+        {
             let cx = Ctx::with_library(&[], playing_id, library);
             state.album_grid.refresh(&cx);
-            state.album_grid.revision()
-        };
+        }
+        let list_revision = state.album_grid.list_revision();
 
         self.count
             .set_text(&format!("{} albums", state.album_grid.len()));
@@ -259,9 +272,9 @@ impl AlbumGridView {
         self.shuffle.set_enabled(selected);
         let selection_changed = self.selected.replace(selected) != selected;
 
-        if grid_revision != self.grid_revision {
+        if list_revision != self.grid_revision {
             self.rebuild_grid(&state.album_grid, library);
-            self.grid_revision = grid_revision;
+            self.grid_revision = list_revision;
         }
         if (self.applied_tile_size - state.album_grid.tile_size).abs() > f32::EPSILON {
             self.grid
@@ -286,20 +299,35 @@ impl AlbumGridView {
             self.grid.set_selected(selected_index);
         }
 
-        let selected_tracks = self.selected_tracks(&state.album_grid, library);
-        {
-            let cx = Ctx::new(&selected_tracks, playing_id);
-            state.album_grid.table.refresh(&cx);
-        }
-        self.tracks
-            .sync(&state.album_grid.table, &selected_tracks, playing_id);
+        let selection_revision = state.album_grid.selection_revision();
+        let table_revision = state.album_grid.table.revision();
+        let track_list_stale = changes.intersects(Changes::LIBRARY)
+            || selection_revision != self.applied_selection_revision
+            || table_revision != self.applied_table_revision;
+        if track_list_stale {
+            let selected_tracks = self.selected_tracks(&state.album_grid, library);
+            {
+                let cx = Ctx::new(&selected_tracks, playing_id);
+                state.album_grid.table.refresh(&cx);
+            }
+            self.tracks
+                .sync(&state.album_grid.table, &selected_tracks, playing_id);
+            self.applied_selection_revision = selection_revision;
+            self.applied_table_revision = state.album_grid.table.revision();
 
-        let visible = !selected_tracks.is_empty();
-        let tracks_changed = self.tracks_visible.replace(visible) != visible;
-        if selection_changed || tracks_changed {
+            let visible = !selected_tracks.is_empty();
+            let tracks_changed = self.tracks_visible.replace(visible) != visible;
+            if selection_changed || tracks_changed {
+                self.apply_visibility();
+            }
+            return selection_changed || tracks_changed;
+        }
+
+        self.tracks.sync_playing(playing_id);
+        if selection_changed {
             self.apply_visibility();
         }
-        selection_changed || tracks_changed
+        selection_changed
     }
 
     /// Applies one control event, queueing any resulting commands. `ui` is

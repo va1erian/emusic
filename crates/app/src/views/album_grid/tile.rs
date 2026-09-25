@@ -15,12 +15,18 @@ use emusic_ui::views::album_grid::models::AlbumKey;
 use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
 use win32ui::prelude::*;
 
-use crate::d2d_text::{self, Align};
+use crate::d2d_text::{self, Align, LineStyle};
 
 use super::thumbs::ThumbState;
 
 /// Caption height reserved under the cover, in design units.
 pub(super) const CAPTION_DIP: f32 = 42.0;
+
+/// Font roles for [`TileFonts::draw`]'s layout cache, one per caption font.
+const ROLE_BOLD: u8 = 0;
+const ROLE_BODY: u8 = 1;
+const ROLE_SMALL: u8 = 2;
+const ROLE_GLYPH: u8 = 3;
 
 /// One album tile: the identity used for messages plus the caption fields and
 /// the source path its cover is read from.
@@ -88,6 +94,9 @@ struct TileFonts {
     bold: Option<Font>,
     small: Option<Font>,
     glyph: Option<Font>,
+    /// Laid-out single-line captions, so a repaint that only changes the
+    /// selection (or scrolls) reuses them.
+    captions: d2d_text::LineCache,
 }
 
 impl TileFonts {
@@ -106,6 +115,22 @@ impl TileFonts {
             bold: font(crate::appearance::UI_FAMILY, metrics.body, 700),
             small: font(crate::appearance::UI_FAMILY, metrics.small, 400),
             glyph: font("Segoe UI Symbol", glyph_dip, 400),
+            captions: d2d_text::LineCache::default(),
+        }
+    }
+
+    /// Draws one caption line on `rect`, reusing its cached layout.
+    fn draw(
+        &self,
+        canvas: &mut D2dCanvas<'_>,
+        role: u8,
+        font: Option<&Font>,
+        rect: RectF,
+        text: &str,
+        style: LineStyle,
+    ) {
+        if let Some(font) = font {
+            self.captions.draw(canvas, role, font, rect, text, style);
         }
     }
 }
@@ -156,16 +181,17 @@ pub(super) fn content(
             None => {
                 tile.cover.set(None);
                 canvas.fill_rect(cover, placeholder_color(&tile.name));
-                if let Some(font) = glyph {
-                    d2d_text::draw_line(
-                        canvas,
-                        font,
-                        cover,
-                        "\u{266A}",
-                        Color::rgb(255, 255, 255),
-                        Align::Center,
-                    );
-                }
+                fonts.draw(
+                    canvas,
+                    ROLE_GLYPH,
+                    glyph.as_ref(),
+                    cover,
+                    "\u{266A}",
+                    LineStyle {
+                        color: Color::rgb(255, 255, 255),
+                        align: Align::Center,
+                    },
+                );
             }
         }
         if state.selected {
@@ -186,27 +212,30 @@ pub(super) fn content(
             artist.right,
             artist.bottom + line,
         );
-        if let Some(font) = bold {
-            d2d_text::draw_line(canvas, font, name, &tile.name, theme.text, Align::Left);
-        }
-        if let Some(font) = body {
-            d2d_text::draw_line(
+        fonts.draw(
+            canvas,
+            ROLE_BOLD,
+            bold.as_ref(),
+            name,
+            &tile.name,
+            LineStyle::left(theme.text),
+        );
+        fonts.draw(
+            canvas,
+            ROLE_BODY,
+            body.as_ref(),
+            artist,
+            &tile.artist,
+            LineStyle::left(theme.text_secondary),
+        );
+        if let Some(year_value) = tile.year {
+            fonts.draw(
                 canvas,
-                font,
-                artist,
-                &tile.artist,
-                theme.text_secondary,
-                Align::Left,
-            );
-        }
-        if let (Some(year_value), Some(font)) = (tile.year, small) {
-            d2d_text::draw_line(
-                canvas,
-                font,
+                ROLE_SMALL,
+                small.as_ref(),
                 year,
                 &year_value.to_string(),
-                theme.text_secondary,
-                Align::Left,
+                LineStyle::left(theme.text_secondary),
             );
         }
     }
