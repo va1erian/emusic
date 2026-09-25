@@ -233,7 +233,8 @@ impl Win32App {
         let genres = GenresView::new(ui).expect("create genres view");
         let most_played = MostPlayedView::new(ui).expect("create most played view");
         let history = HistoryView::new(ui).expect("create history view");
-        let settings = SettingsView::new(ui).expect("create settings view");
+        let settings =
+            SettingsView::new(ui, config.visualizer_enabled).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
