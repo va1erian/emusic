@@ -36,7 +36,7 @@ use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
-use crate::views::now_playing::{self, NowPlayingView, SummaryEvent};
+use crate::views::now_playing::{self, CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
 use crate::views::settings::{SettingsMsg, SettingsView};
 use crate::views::starred::StarredView;
@@ -105,12 +105,22 @@ pub enum Msg {
     TopBarSearch(String),
     /// A now-playing summary action (star, link, Properties, ...).
     NowPlaying(SummaryEvent),
-    /// Jump to a queue preview row (double-click / Enter).
+    /// Jump to a right-panel queue preview row (double-click / Enter).
     QueueJump(usize),
-    /// Open the queue's context menu for a preview row.
+    /// Open the right panel's queue context menu for a preview row.
     QueueContext(usize),
-    /// Remove the queue entry the context menu was opened on.
+    /// Remove the queue entry the right panel's context menu was opened on.
     QueueRemove,
+    /// Jump to a central Now Playing view queue preview row (#247;
+    /// double-click / Enter). Distinct from [`Msg::QueueJump`] so the two
+    /// queue lists, both visible at once, route independently.
+    CentralQueueJump(usize),
+    /// Open the central Now Playing view queue's context menu for a preview
+    /// row (#247).
+    CentralQueueContext(usize),
+    /// Remove the queue entry the central view's context menu was opened on
+    /// (#247).
+    CentralQueueRemove,
     /// The top-bar visualizer strip was clicked: cycle its mode.
     CycleVisualizer,
     /// Close the window and exit.
@@ -133,6 +143,10 @@ pub struct Win32App {
     settings: SettingsView,
     starred: StarredView,
     right_panel: NowPlayingView,
+    /// The `View::NowPlaying` central view (#247): the same summary and
+    /// queue widgets as `right_panel`, laid out full width. The right panel
+    /// keeps showing while this is active — see `install_layout`.
+    now_playing_central: CentralNowPlayingView,
     status: StatusBarView,
     /// The top transport bar band, when the window is extended and DirectWrite
     /// is available.
@@ -189,8 +203,11 @@ impl Win32App {
         let top_bar = TopBarView::new(ui).ok();
 
         waker.bind(Win32Waker::new(ui.proxy()));
-        // The panel's artwork cache decodes off-thread and wakes through `waker`.
+        // Each surface's artwork cache decodes off-thread and wakes through
+        // its own handle to the same `waker`.
         let right_panel = NowPlayingView::new(ui, waker.handle()).expect("create now playing view");
+        let now_playing_central = CentralNowPlayingView::new(ui, waker.handle())
+            .expect("create now playing central view");
         let mut shell = Shell::new(library, player, config, config_path, waker);
         if let Some(ipc) = ipc {
             shell.attach_ipc(ipc);
@@ -215,6 +232,7 @@ impl Win32App {
                 | View::Settings
                 | View::Starred
                 | View::History
+                | View::NowPlaying
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
@@ -226,6 +244,7 @@ impl Win32App {
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
         history.set_visible(view == View::History);
+        now_playing_central.set_visible(view == View::NowPlaying);
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -247,6 +266,7 @@ impl Win32App {
             settings,
             starred,
             right_panel,
+            now_playing_central,
             status,
             top_bar,
             timer: None,
@@ -286,6 +306,7 @@ impl Win32App {
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
             View::History => self.history.layout().fill(1),
+            View::NowPlaying => self.now_playing_central.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
             _ => self.central.fill(1),
         };
@@ -355,6 +376,7 @@ impl Win32App {
                     | View::MostPlayed
                     | View::Settings
                     | View::Starred
+                    | View::NowPlaying
             ));
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
@@ -365,6 +387,8 @@ impl Win32App {
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
             self.history.set_visible(view == View::History);
+            self.now_playing_central
+                .set_visible(view == View::NowPlaying);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
             self.browser.set_visible(browser_visible);
             self.applied_browser_visible = browser_visible;
@@ -556,6 +580,11 @@ impl Win32App {
             .now_playing
             .refresh(shell.player.as_ref(), shell.library.as_ref());
         self.right_panel.sync(&shell.state.now_playing, dpi);
+        // The central view is only shown for `View::NowPlaying`, but it is
+        // always synced: it is cheap (`sync` itself skips work the model's
+        // revision didn't change) and keeps it ready the instant the view
+        // becomes visible.
+        self.now_playing_central.sync(&shell.state.now_playing, dpi);
     }
 
     /// Applies a now-playing intent through the shared model and dispatches any
@@ -969,6 +998,25 @@ impl App for Win32App {
             }
             Msg::QueueRemove => {
                 if let Some(index) = self.right_panel.context_index() {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick(ui);
+                }
+            }
+            Msg::CentralQueueJump(row) => {
+                if let Some(index) = self.now_playing_central.queue_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick(ui);
+                }
+            }
+            Msg::CentralQueueContext(row) => {
+                self.now_playing_central.set_context_row(row);
+                ui.popup(
+                    self.now_playing_central.context_menu(),
+                    ui.cursor_position(),
+                );
+            }
+            Msg::CentralQueueRemove => {
+                if let Some(index) = self.now_playing_central.context_index() {
                     self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
                     self.tick(ui);
                 }

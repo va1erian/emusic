@@ -2,11 +2,11 @@
 //! Now Playing view's display data and intents.
 //!
 //! The model turns the player/library snapshot into toolkit-agnostic display
-//! data: metadata label/value rows, tracker-module info, the queue preview,
-//! the progress bar fraction and the artwork request. User intents (queue
-//! jump/remove, star, edit tags, properties, artist/album navigation) arrive
-//! as [`NowPlayingMsg`]; `update` applies them and queues [`Command`]s. The
-//! artwork cache itself is frontend-owned (it holds GPU/OS handles, #96).
+//! data: metadata label/value rows, tracker-module info, the queue preview
+//! and the artwork request. User intents (queue jump/remove, star, edit tags,
+//! properties, artist/album navigation) arrive as [`NowPlayingMsg`]; `update`
+//! applies them and queues [`Command`]s. The artwork cache itself is
+//! frontend-owned (it holds GPU/OS handles, #96).
 
 use std::time::Duration;
 
@@ -174,9 +174,6 @@ pub struct NowPlayingView {
     queue_len: usize,
     /// The artwork request for the frontend's cache.
     artwork: ArtworkRequest,
-    /// Progress bar state: the label and fraction, or `None` for an
-    /// indeterminate bar.
-    progress: Progress,
     /// The revision counter, bumped whenever the displayed state changes.
     revision: u64,
 }
@@ -189,23 +186,6 @@ struct Current {
     /// Release year of the track's album, looked up from the album list.
     album_year: Option<u32>,
     module: Option<ModuleInfo>,
-}
-
-/// Progress bar display data.
-#[derive(Debug, Clone, PartialEq)]
-enum Progress {
-    /// A known `position / duration`, shown as a filling bar.
-    Known { fraction: f32, text: String },
-    /// Elapsed time only, shown as an animated indeterminate bar.
-    Indeterminate { text: String },
-}
-
-impl Default for Progress {
-    fn default() -> Self {
-        Progress::Indeterminate {
-            text: "0:00".to_string(),
-        }
-    }
 }
 
 impl NowPlayingView {
@@ -232,8 +212,6 @@ impl NowPlayingView {
         let queue_len = player.queue().len();
         let queue = queue_rows(player.queue());
 
-        let progress = progress(player, np.as_ref());
-
         let current = np.map(|np| Current {
             np,
             track,
@@ -258,14 +236,12 @@ impl NowPlayingView {
             || playing != self.playing
             || queue != self.queue
             || queue_len != self.queue_len
-            || artwork != self.artwork
-            || progress != self.progress;
+            || artwork != self.artwork;
         self.current = current;
         self.playing = playing;
         self.queue = queue;
         self.queue_len = queue_len;
         self.artwork = artwork;
-        self.progress = progress;
         if changed {
             self.revision += 1;
         }
@@ -349,21 +325,6 @@ impl NowPlayingView {
         &self.artwork
     }
 
-    /// The progress bar's text, e.g. `1:16 / 5:15` or `1:16`.
-    pub fn progress_text(&self) -> &str {
-        match &self.progress {
-            Progress::Known { text, .. } | Progress::Indeterminate { text } => text,
-        }
-    }
-
-    /// The progress fraction, when the total duration is known.
-    pub fn progress_fraction(&self) -> Option<f32> {
-        match &self.progress {
-            Progress::Known { fraction, .. } => Some(*fraction),
-            Progress::Indeterminate { .. } => None,
-        }
-    }
-
     /// The revision counter, bumped whenever the displayed state changes.
     pub fn revision(&self) -> u64 {
         self.revision
@@ -398,29 +359,6 @@ fn queue_rows(queue: &[QueueEntry]) -> Vec<QueueRow> {
             artist: entry.artist.clone(),
         })
         .collect()
-}
-
-fn progress(player: &dyn PlayerApi, np: Option<&NowPlayingInfo>) -> Progress {
-    let position = player.position();
-    match player.duration() {
-        Some(duration) if duration.as_secs_f32() > 0.0 => {
-            let fraction = (position.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0);
-            Progress::Known {
-                fraction,
-                text: format!(
-                    "{} / {}",
-                    format_duration(position),
-                    format_duration(duration)
-                ),
-            }
-        }
-        _ => {
-            let _ = np;
-            Progress::Indeterminate {
-                text: format_duration(position),
-            }
-        }
-    }
 }
 
 /// Release year for `track`'s album, looked up from the album list so it can
@@ -519,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn refresh_builds_queue_preview_and_progress_from_the_player() {
+    fn refresh_builds_queue_preview_from_the_player() {
         let library = MockLibrary::new();
         let mut player = MockPlayer::default();
         player.replace_and_play(&[std::path::PathBuf::from("song.mp3")], 0);
@@ -531,7 +469,6 @@ mod tests {
         let source: &dyn LibraryDataSource = &library;
         let _ = source;
         assert_eq!(view.queue_len(), player.queue().len());
-        assert!(view.progress_text().contains('/') || !view.progress_text().is_empty());
     }
 
     #[test]
