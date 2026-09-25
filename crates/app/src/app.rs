@@ -17,16 +17,19 @@ use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::projectm::{ProjectMAvailability, VizDock, VizSurface};
 use emusic_ui::state::{
-    AppState, Appearance, Command, View, VisualizerMode, VizCommand, WindowGeometry,
+    AppState, Appearance, Command, MAX_NAVIGATOR_WIDTH, MAX_RIGHT_PANEL_WIDTH, MIN_NAVIGATOR_WIDTH,
+    MIN_RIGHT_PANEL_WIDTH, View, VisualizerMode, VizCommand, WindowGeometry,
 };
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
-use emusic_ui::views::column_browser::Pane;
+use emusic_ui::views::column_browser::{
+    MAX_HEIGHT as BROWSER_MAX_HEIGHT, MIN_HEIGHT as BROWSER_MIN_HEIGHT, Pane,
+};
 use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
-use win32ui::{column, dip, row};
+use win32ui::{column, dip, split_col, split_row};
 
 use crate::backend::smtc::Smtc;
 use crate::backend::taskbar::TaskbarPreview;
@@ -45,7 +48,7 @@ use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
-use crate::views::now_playing::{self, CentralNowPlayingView, NowPlayingView, SummaryEvent};
+use crate::views::now_playing::{CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
 use crate::views::projectm::{
     GraceTimer, PresetFiles, PresetRoots, PresetScanner, ProjectMEvent, VizWindow,
@@ -59,6 +62,13 @@ use crate::waker::Win32Waker;
 
 /// How often the views are fully synced while the visualizer animates faster.
 const FULL_SYNC_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Minimum height of the Music view's table under the column-browser splitter,
+/// in DIP (#342).
+const TABLE_MIN_HEIGHT: f32 = 160.0;
+/// Minimum width of the central area between the navigator and right panel, in
+/// DIP (#342).
+const MIDDLE_MIN_WIDTH: f32 = 320.0;
 
 /// Everything the window can ask the app to do.
 pub enum Msg {
@@ -99,6 +109,12 @@ pub enum Msg {
     NameCountShuffle,
     /// A column-browser pane's selection changed (the rows now selected).
     BrowserRow { pane: Pane, rows: Vec<usize> },
+    /// The Music view's column-browser splitter moved (#342).
+    BrowserSplit(Dip),
+    /// The navigator's splitter moved (#342).
+    NavigatorSplit(Dip),
+    /// The now-playing panel's splitter moved (#342).
+    RightPanelSplit(Dip),
     /// An intent from the Settings view (folders, appearance, ...).
     Settings(SettingsMsg),
     /// Switch the central view (navigator row click).
@@ -396,15 +412,18 @@ impl Win32App {
     /// Rebuilt on a view change so the Settings tab control only exists while
     /// Settings is shown (a tab node is always visible when installed).
     fn install_layout(&self, ui: &Ui<Msg>, view: View) {
+        let state = &self.shell.state;
         let central: LayoutItem = match view {
-            View::Music => column![
-                self.browser
-                    .layout()
-                    .height(dip(self.shell.state.music.browser.height)),
-                self.music.header(),
-                self.music.fill(1),
-            ]
-            .fill(1),
+            View::Music => {
+                // The column-browser strip sits above the table, separated by a
+                // draggable splitter (#342) seeded from the saved height.
+                let rest = column![self.music.header(), self.music.fill(1)];
+                split_col![self.browser.layout(), rest]
+                    .position(dip(state.music.browser.height))
+                    .min(dip(BROWSER_MIN_HEIGHT), dip(TABLE_MIN_HEIGHT))
+                    .on_moved(|position| Some(Msg::BrowserSplit(position)))
+                    .into_layout_item()
+            }
             View::Albums => self.albums.layout().fill(1),
             View::Artists => self.artists.layout().fill(1),
             View::Genres => self.genres.layout().fill(1),
@@ -418,14 +437,18 @@ impl Win32App {
         // An extended title bar reserves its strip, menu row and the top bar
         // band; content starts below `title_bar_height()`.
         let title_bar = ui.title_bar_height();
-        let body = row![
-            self.navigator.width(dip(220.0)),
-            central,
-            self.right_panel
-                .layout()
-                .width(dip(now_playing::PANEL_WIDTH)),
-        ]
-        .fill(1);
+        // The navigator and the now-playing panel are draggable splitters
+        // (#342). The panel is anchored from the end (`position_b`), so it
+        // keeps its saved width while the central area grows with the window.
+        let middle = split_row![central, self.right_panel.layout()]
+            .position_b(dip(state.right_panel_width))
+            .min(dip(MIDDLE_MIN_WIDTH), dip(MIN_RIGHT_PANEL_WIDTH))
+            .on_moved(|position| Some(Msg::RightPanelSplit(position)));
+        let body = split_row![self.navigator, middle]
+            .position(dip(state.navigator_width))
+            .min(dip(MIN_NAVIGATOR_WIDTH), dip(MIDDLE_MIN_WIDTH))
+            .on_moved(|position| Some(Msg::NavigatorSplit(position)))
+            .into_layout_item();
         // The material status bar is not a child: it reserves its band with a
         // bottom margin instead of taking a row.
         let bottom = self.status.bottom_margin(ui);
@@ -1371,6 +1394,23 @@ impl App for Win32App {
                     self.refresh_music();
                     self.tick(ui);
                 }
+            }
+            // The splitter already moved itself live; only the persisted width
+            // is recorded here (#342). The next layout install seeds from it.
+            Msg::BrowserSplit(position) => {
+                self.shell.state.music.browser.height = position
+                    .value()
+                    .clamp(BROWSER_MIN_HEIGHT, BROWSER_MAX_HEIGHT);
+            }
+            Msg::NavigatorSplit(position) => {
+                self.shell.state.navigator_width = position
+                    .value()
+                    .clamp(MIN_NAVIGATOR_WIDTH, MAX_NAVIGATOR_WIDTH);
+            }
+            Msg::RightPanelSplit(position) => {
+                self.shell.state.right_panel_width = position
+                    .value()
+                    .clamp(MIN_RIGHT_PANEL_WIDTH, MAX_RIGHT_PANEL_WIDTH);
             }
             Msg::Settings(msg) => {
                 let mut commands = Commands::new();

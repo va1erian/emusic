@@ -78,6 +78,8 @@ fn non_default_config() -> Config {
         },
         column_browser_visible: false,
         column_browser_height: 222.0,
+        navigator_width: 198.0,
+        right_panel_width: 321.0,
         last_view: View::MostPlayed,
         resume_playback: false,
         autoplay_on_restore: true,
@@ -156,6 +158,8 @@ fn apply_to_state_restores_column_browser() {
     let config = Config {
         column_browser_visible: false,
         column_browser_height: 222.0,
+        navigator_width: 198.0,
+        right_panel_width: 321.0,
         ..Config::default()
     };
     let mut state = AppState::default();
@@ -163,6 +167,8 @@ fn apply_to_state_restores_column_browser() {
 
     assert!(!state.music.browser.visible);
     assert_eq!(state.music.browser.height, 222.0);
+    assert_eq!(state.navigator_width, 198.0);
+    assert_eq!(state.right_panel_width, 321.0);
 }
 
 #[test]
