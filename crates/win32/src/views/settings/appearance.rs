@@ -32,8 +32,6 @@ pub(super) struct AppearancePage {
     visualizer: CheckBox<Msg>,
     mode_label: Label,
     mode: RadioGroup<VisualizerMode, Msg>,
-    /// Whether the page itself is currently shown.
-    page_visible: Cell<bool>,
     /// Whether the visualizer is on (the mode strip only shows then).
     visualizer_on: Cell<bool>,
 }
@@ -84,7 +82,6 @@ impl AppearancePage {
             visualizer,
             mode_label: Label::new(&mut panel, Rect::default(), "Visualizer mode")?,
             mode,
-            page_visible: Cell::new(false),
             visualizer_on: Cell::new(false),
         };
         page.refresh_mode_visibility();
@@ -141,15 +138,16 @@ impl AppearancePage {
 
     /// Shows or hides the whole page.
     pub(super) fn set_visible(&self, visible: bool) {
-        self.page_visible.set(visible);
         self.form.set_visible(visible);
-        self.refresh_mode_visibility();
     }
 
-    /// The visualizer mode strip only shows when both the page and the
-    /// visualizer are on.
+    /// The visualizer mode strip only shows while the visualizer is on. It is
+    /// deliberately independent of the page's own visibility (a hidden page
+    /// hides its children anyway): the layout skips hidden widgets, so
+    /// hiding the options with the page left them unpositioned until the next
+    /// resize.
     fn refresh_mode_visibility(&self) {
-        let visible = self.page_visible.get() && self.visualizer_on.get();
+        let visible = self.visualizer_on.get();
         self.mode_label.set_visible(visible);
         for option in self.mode.options() {
             option.set_visible(visible);
