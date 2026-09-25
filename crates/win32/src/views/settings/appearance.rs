@@ -1,5 +1,5 @@
 //! Settings → Appearance page (#40, #115): the dark/light colour scheme, the
-//! accent presets and custom colour, and the optional status-bar visualizer.
+//! accent preset swatches and custom colour, and the optional status-bar visualizer.
 //!
 //! The theme and accent are applied through [`Command`]s so the shell stays the
 //! single writer of the shared state; the visualizer flags are plain persisted
@@ -13,6 +13,7 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
+use super::accent_swatches::{self, AccentSwatches, STRIP_WIDTH};
 use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg, labelled, radio_row};
 
 /// Width of the custom-colour swatch button, in design units.
@@ -25,7 +26,7 @@ pub(super) struct AppearancePage {
     theme_label: Label,
     theme: RadioGroup<UiTheme, Msg>,
     accent_label: Label,
-    accent: RadioGroup<Accent, Msg>,
+    accent: Custom<AccentSwatches, Msg>,
     custom_label: Label,
     custom: ColorPicker<Msg>,
     visualizer: CheckBox<Msg>,
@@ -49,13 +50,9 @@ impl AppearancePage {
         .selected(UiTheme::Dark)
         .on_select(|theme| Some(Msg::Settings(SettingsMsg::SetTheme(*theme))));
 
-        let accent = RadioGroup::new(
-            &mut panel,
-            Accent::PRESETS
-                .into_iter()
-                .map(|accent| (accent.label(), accent)),
-        )?
-        .on_select(|accent| Some(Msg::Settings(SettingsMsg::SetAccent(*accent))));
+        let accent = accent_swatches::create(&mut panel, |accent| {
+            Some(Msg::Settings(SettingsMsg::SetAccent(accent)))
+        })?;
 
         let mode = RadioGroup::new(
             &mut panel,
@@ -112,10 +109,7 @@ impl AppearancePage {
                 ROW_HEIGHT,
             ),
             (
-                labelled(
-                    &self.accent_label,
-                    radio_row(&self.accent).height(dip(ROW_HEIGHT)),
-                ),
+                labelled(&self.accent_label, self.accent.width(dip(STRIP_WIDTH))),
                 ROW_HEIGHT,
             ),
             (
@@ -164,7 +158,9 @@ impl AppearancePage {
     /// Pushes the shared state onto the controls.
     pub(super) fn sync(&mut self, ui: &Ui<Msg>, state: &AppState) {
         self.theme.set_selected(&state.theme);
-        self.accent.set_selected(&state.accent);
+        if self.accent.widget().borrow().select(state.accent) {
+            self.accent.invalidate();
+        }
         let [r, g, b] = state.accent.rgb().to_array();
         self.custom.set_color(Color::rgb(r, g, b));
         self.visualizer.set_checked(state.visualizer_enabled);

@@ -11,8 +11,10 @@ use win32ui::{WindowSpec, dip, row};
 const LABEL_WIDTH: f32 = 120.0;
 /// Height of one field row, in design units.
 const ROW_HEIGHT: f32 = 24.0;
-/// The dialog's client size, in design units (height grows with the rows).
-const WIDTH: f32 = 560.0;
+/// The dialog's client size is fitted to its content, in design units.
+const MARGIN: f32 = 16.0;
+/// Approximate width of one value character, in design units.
+const CHAR_WIDTH: f32 = 7.0;
 const BASE_HEIGHT: f32 = 90.0;
 
 /// What the user chose in the dialog.
@@ -41,7 +43,7 @@ impl DatabaseInfoDialog {
         let mut labels = Vec::new();
         let mut layout = Layout::column()
             .spacing(dip(4.0))
-            .margins(Insets::all(dip(16.0)));
+            .margins(Insets::all(dip(MARGIN)));
         for (name, value) in fields {
             let name = Label::new(ui, Rect::default(), name).expect("create field name label");
             let value = Label::new(ui, Rect::default(), value).expect("create field value label");
@@ -94,9 +96,15 @@ impl App for DatabaseInfoDialog {
 pub fn show<M: 'static>(ui: &Ui<M>, library: &dyn LibraryDataSource) -> Option<DatabaseInfoChoice> {
     let fields = fields(library);
     let scanning = library.is_scanning();
+    let longest = fields
+        .iter()
+        .map(|(_, value)| value.chars().count())
+        .max()
+        .unwrap_or(0);
+    let width = 2.0 * MARGIN + LABEL_WIDTH + longest as f32 * CHAR_WIDTH;
     let height = BASE_HEIGHT + ROW_HEIGHT * fields.len() as f32;
     ui.open_modal(
-        WindowSpec::new("Database info").size(dip(WIDTH), dip(height)),
+        WindowSpec::new("Database info").size(dip(width), dip(height)),
         move |ui| DatabaseInfoDialog::new(ui, &fields, scanning),
     )
 }

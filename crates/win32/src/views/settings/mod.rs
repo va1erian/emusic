@@ -17,6 +17,7 @@
 //! cut off.
 
 mod about;
+mod accent_swatches;
 mod appearance;
 mod associations;
 mod library;
