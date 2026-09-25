@@ -79,6 +79,11 @@ struct Cli {
     #[arg(long)]
     properties: bool,
 
+    /// Capture the tag editor dialog (opened for a mock track) instead of the
+    /// main window (#278). Ignored with `--all`.
+    #[arg(long)]
+    tag_editor: bool,
+
     /// `<width>x<height>`, e.g. `1280x800`.
     #[arg(long, default_value = "1280x800")]
     size: String,
@@ -150,6 +155,7 @@ fn main() -> anyhow::Result<()> {
         cli.accent,
         cli.visualizer,
         cli.properties,
+        cli.tag_editor,
         width,
         height,
         &cli.out,
@@ -234,6 +240,7 @@ fn render_one(
     accent: Accent,
     visualizer: Option<VisualizerMode>,
     properties: bool,
+    tag_editor: bool,
     width: f32,
     height: f32,
     out: &Path,
@@ -255,7 +262,7 @@ fn render_one(
         let waker = WakerSlot::new();
         let backends = backend::build(true, waker.handle());
         // A track with rich tags/stats makes the dialog shot representative.
-        let showcase = properties.then(|| {
+        let showcase = (properties || tag_editor).then(|| {
             let tracks = backends.library.tracks();
             tracks
                 .iter()
@@ -263,6 +270,14 @@ fn render_one(
                 .or_else(|| tracks.first())
                 .cloned()
         });
+        let showcase = showcase.flatten();
+        let tag_editor = if tag_editor {
+            showcase
+                .as_ref()
+                .map(emusic_ui::tag_editor::TagEditorState::new)
+        } else {
+            None
+        };
         let mut app = Win32App::new(
             ui,
             backends.library,
@@ -284,7 +299,8 @@ fn render_one(
             timer,
             deadline: Instant::now() + SETTLE,
             done: false,
-            properties: showcase.flatten(),
+            properties: if properties { showcase.clone() } else { None },
+            tag_editor,
             dialog: None,
             dialog_deadline: None,
         }
@@ -293,9 +309,9 @@ fn render_one(
 }
 
 /// Wraps the real app: after the settle period it captures the window, writes
-/// the PNG and closes, ending the run for this view. With `--properties` it
-/// first opens the Properties dialog (non-modal, so the tool's tick keeps
-/// running) and captures that window instead.
+/// the PNG and closes, ending the run for this view. With `--properties` or
+/// `--tag-editor` it first opens that dialog (non-modal, so the tool's tick
+/// keeps running) and captures the dialog's window instead.
 struct ShotApp {
     app: Win32App,
     out: PathBuf,
@@ -305,8 +321,25 @@ struct ShotApp {
     done: bool,
     /// The track to open the Properties dialog for, if `--properties`.
     properties: Option<emusic_ui::library_api::TrackInfo>,
-    dialog: Option<win32ui::WindowHandle<emusic_win32::dialogs::properties::Msg>>,
+    /// The state to open the tag editor with, if `--tag-editor`.
+    tag_editor: Option<emusic_ui::tag_editor::TagEditorState>,
+    dialog: Option<ShotDialog>,
     dialog_deadline: Option<Instant>,
+}
+
+/// One of the capturable dialogs, opened non-modal for the shot.
+enum ShotDialog {
+    Properties(win32ui::WindowHandle<emusic_win32::dialogs::properties::Msg>),
+    TagEditor(win32ui::WindowHandle<emusic_win32::dialogs::tag_editor::Msg>),
+}
+
+impl ShotDialog {
+    fn capture(&self) -> win32ui::Result<RgbaImage> {
+        match self {
+            Self::Properties(handle) => handle.capture(),
+            Self::TagEditor(handle) => handle.capture(),
+        }
+    }
 }
 
 impl App for ShotApp {
@@ -317,23 +350,40 @@ impl App for ShotApp {
         if self.done || Instant::now() < self.deadline {
             return;
         }
-        if let Some(track) = self.properties.take()
-            && self.dialog.is_none()
-        {
-            match emusic_win32::dialogs::properties::open(ui, &track) {
-                Ok(handle) => {
-                    // Give the dialog a few ticks to paint before the
-                    // capture below.
-                    self.dialog_deadline = Some(Instant::now() + SETTLE);
-                    self.dialog = Some(handle);
+        if self.dialog.is_none() {
+            let opened = if let Some(track) = self.properties.take() {
+                Some(
+                    emusic_win32::dialogs::properties::open(ui, &track).map(ShotDialog::Properties),
+                )
+            } else if let Some(state) = self.tag_editor.take() {
+                let bridge = std::rc::Rc::new(std::cell::RefCell::new(
+                    emusic_win32::dialogs::tag_editor::Bridge::new(
+                        emusic_ui::tag_editor::Status::Editing,
+                    ),
+                ));
+                Some(
+                    emusic_win32::dialogs::tag_editor::open(ui, &state, bridge, ui.proxy())
+                        .map(ShotDialog::TagEditor),
+                )
+            } else {
+                None
+            };
+            if let Some(opened) = opened {
+                match opened {
+                    Ok(handle) => {
+                        // Give the dialog a few ticks to paint before the
+                        // capture below.
+                        self.dialog_deadline = Some(Instant::now() + SETTLE);
+                        self.dialog = Some(handle);
+                    }
+                    Err(error) => {
+                        eprintln!("emusic-win32-shot: open dialog: {error:#}");
+                        self.done = true;
+                        ui.close();
+                    }
                 }
-                Err(error) => {
-                    eprintln!("emusic-win32-shot: open properties dialog: {error:#}");
-                    self.done = true;
-                    ui.close();
-                }
+                return;
             }
-            return;
         }
         if let Some(deadline) = self.dialog_deadline
             && Instant::now() < deadline

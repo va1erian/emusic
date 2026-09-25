@@ -25,6 +25,7 @@ use win32ui::{column, dip, row};
 
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
 use crate::dialogs::properties;
+use crate::dialogs::tag_editor;
 use crate::menu;
 use crate::theme::win32_theme;
 use crate::views::album_grid::{AlbumGridView, AlbumMsg};
@@ -105,6 +106,8 @@ pub enum Msg {
     TopBarSearch(String),
     /// A now-playing summary action (star, link, Properties, ...).
     NowPlaying(SummaryEvent),
+    /// The tag editor dialog left a save request in its bridge (#278).
+    TagEditorApply,
     /// Jump to a right-panel queue preview row (double-click / Enter).
     QueueJump(usize),
     /// Open the right panel's queue context menu for a preview row.
@@ -168,6 +171,8 @@ pub struct Win32App {
     /// When the views were last fully synced, so visualizer frames in between
     /// can skip the (much costlier) full sync.
     last_full_sync: Instant,
+    /// The open tag editor's bridge, while its modal dialog is up (#278).
+    tag_editor: Option<std::rc::Rc<std::cell::RefCell<tag_editor::Bridge>>>,
 }
 
 impl Win32App {
@@ -276,6 +281,7 @@ impl Win32App {
             applied_browser_visible: browser_visible,
             applied_browser_toggle,
             last_full_sync: Instant::now(),
+            tag_editor: None,
         };
         app.install_layout(ui, view);
         app.refresh_folders();
@@ -355,8 +361,32 @@ impl Win32App {
     fn tick(&mut self, ui: &mut Ui<Msg>) {
         self.last_full_sync = Instant::now();
         let tick = self.shell.tick(Instant::now());
+        // Keep the modal tag editor posted on its save (the shell delivers
+        // outcomes into `state.tag_editor`; the dialog polls the bridge).
+        if let (Some(bridge), Some(editor)) = (&self.tag_editor, &self.shell.state.tag_editor) {
+            bridge.borrow_mut().status = editor.status.clone();
+        }
         self.sync_views(ui, tick.changes);
         self.schedule(ui, tick.next_wake);
+    }
+
+    /// Opens the tag editor modal for the track the shell just resolved (via
+    /// [`Command::OpenTagEditor`]), if none is open yet. Blocks until the
+    /// dialog closes, then ends the session.
+    fn open_tag_editor(&mut self, ui: &Ui<Msg>) {
+        if self.tag_editor.is_some() {
+            return;
+        }
+        let Some(state) = &self.shell.state.tag_editor else {
+            return;
+        };
+        let bridge = std::rc::Rc::new(std::cell::RefCell::new(tag_editor::Bridge::new(
+            state.status.clone(),
+        )));
+        self.tag_editor = Some(std::rc::Rc::clone(&bridge));
+        tag_editor::show(ui, state, bridge, ui.proxy());
+        self.shell.state.tag_editor = None;
+        self.tag_editor = None;
     }
 
     /// Pushes the current shell state into the views.
@@ -873,6 +903,7 @@ impl App for Win32App {
                     self.shell.dispatch(command);
                     self.tick(ui);
                 }
+                self.open_tag_editor(ui);
             }
             Msg::MostPlayed(window) => {
                 self.shell.state.most_played.window = window;
@@ -984,6 +1015,20 @@ impl App for Win32App {
                     properties::show(ui, &track);
                 }
                 self.tick(ui);
+                self.open_tag_editor(ui);
+            }
+            Msg::TagEditorApply => {
+                let request = self
+                    .tag_editor
+                    .as_ref()
+                    .and_then(|bridge| bridge.borrow_mut().apply.take());
+                if let Some(request) = request {
+                    if let Some(editor) = self.shell.state.tag_editor.as_mut() {
+                        editor.status = emusic_ui::tag_editor::Status::Pending;
+                    }
+                    self.shell.dispatch(Command::RequestTagEdits(vec![request]));
+                    self.tick(ui);
+                }
             }
             Msg::QueueJump(row) => {
                 if let Some(index) = self.right_panel.queue_index(row) {

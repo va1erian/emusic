@@ -50,7 +50,7 @@ pub enum AutoTagState {
 }
 
 /// Where the dialog is in the edit/submit/result cycle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Status {
     /// Editing, nothing submitted this session.
     Editing,
@@ -64,7 +64,7 @@ pub enum Status {
 
 /// One file's write error, kept as plain text so it can outlive the
 /// [`EditOutcome`] it came from.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Failure {
     pub path: String,
     pub message: String,

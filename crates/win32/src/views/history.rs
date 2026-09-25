@@ -184,6 +184,9 @@ impl HistoryView {
                 Msg::ContextAction(ContextAction::RemoveHistory)
             })
             .separator()
+            .item("Edit tags…", None, || {
+                Msg::ContextAction(ContextAction::EditTags)
+            })
             .item("Properties…", None, || {
                 Msg::ContextAction(ContextAction::Properties)
             });
@@ -252,6 +255,7 @@ impl HistoryView {
             ContextAction::CopyPath | ContextAction::OpenFileLocation => None,
             // Handled by the app, which shows the modal dialog itself.
             ContextAction::Properties => None,
+            ContextAction::EditTags => Some(Command::OpenTagEditor(play.track_id)),
         }
     }
 
