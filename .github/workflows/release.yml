@@ -17,7 +17,14 @@ permissions:
   contents: write
 
 jobs:
+  # libprojectM/GLEW runtime DLLs (#298): built and cached by the reusable
+  # workflow, then staged next to the exe where the installer's default
+  # ProjectMDir (`<BuildDir>\projectm`) looks for them.
+  projectm:
+    uses: ./.github/workflows/projectm.yml
+
   release:
+    needs: projectm
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +32,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      # After rust-cache, so its target-dir cleanup cannot touch the DLLs.
+      - name: Download projectM DLLs
+        uses: actions/download-artifact@v4
+        with:
+          name: projectm-dlls
+          path: target/release/projectm
 
       # The tag is the source of truth for the version (#188): stamp it into
       # the crate manifest (shown in About) and the installer script (#240).
@@ -68,17 +82,20 @@ jobs:
           $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -ErrorAction Stop | Select-Object -First 1
           & $iscc.FullName installer\emusic.iss
 
-      # Portable zip with the same bass/icons payload.
+      # Portable zip with the same bass/icons/projectm payload.
       - name: Package portable zip
         shell: bash
         run: |
           set -eu
           version="${GITHUB_REF_NAME#v}"
           stage="emusic-portable"
-          mkdir -p "$stage/bass" "$stage/icons"
+          mkdir -p "$stage/bass" "$stage/icons" "$stage/projectm"
           cp target/release/emusic.exe "$stage/"
           cp target/release/bass/*.dll "$stage/bass/"
           cp assets/ico/*.ico "$stage/icons/"
+          # libprojectM + GLEW runtime and their LGPL-2.1 text (#298).
+          cp target/release/projectm/*.dll "$stage/projectm/"
+          cp COPYING-LGPL-2.1.txt "$stage/projectm/"
           7z a "emusic-$version-portable.zip" "$stage"
 
       - name: Create GitHub Release
