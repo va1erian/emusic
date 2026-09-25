@@ -92,22 +92,20 @@ struct TileFonts {
 
 impl TileFonts {
     fn build(system: Option<&TextSystem>, metrics: Metrics) -> Self {
-        let font = |family: &str, points: f32, weight: u16| {
-            system.and_then(|system| {
-                system
-                    .font(
-                        &FontSpec::new(family, crate::appearance::d2d_size(points)).weight(weight),
-                    )
-                    .ok()
-            })
+        // `FontSpec` takes an em size in DIPs, which is exactly what `Metrics`
+        // carries.
+        let font = |family: &str, dip: f32, weight: u16| {
+            system.and_then(|system| system.font(&FontSpec::new(family, dip).weight(weight)).ok())
         };
-        let scale = metrics.body / crate::appearance::BASE_BODY_POINTS;
+        let scale = metrics.body / crate::appearance::BASE_BODY_DIP;
+        // 22 pt was the placeholder glyph's size; keep it at the default scale.
+        let glyph_dip = 22.0 * 96.0 / 72.0 * scale;
         Self {
             metrics,
             body: font(crate::appearance::UI_FAMILY, metrics.body, 400),
             bold: font(crate::appearance::UI_FAMILY, metrics.body, 700),
             small: font(crate::appearance::UI_FAMILY, metrics.small, 400),
-            glyph: font("Segoe UI Symbol", 22.0 * scale, 400),
+            glyph: font("Segoe UI Symbol", glyph_dip, 400),
         }
     }
 }

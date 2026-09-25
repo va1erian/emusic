@@ -10,14 +10,25 @@ use std::cell::Cell;
 
 use emusic_ui::state::{Appearance, Metrics};
 
-/// The Win32 frontend's base body point size (Segoe UI 9.75 pt), the size
-/// [`FontSize`] scales.
+/// The base body size in device-independent pixels, the size [`FontSize`]
+/// scales. It matches egui's `TextStyle::Body` (13 logical px) so both
+/// frontends derive the same relative type scale; [`points`] converts a metric
+/// DIP to the point size GDI's `Font::new` expects.
 ///
 /// [`FontSize`]: emusic_ui::state::FontSize
-pub const BASE_BODY_POINTS: f32 = 9.75;
+pub const BASE_BODY_DIP: f32 = 13.0;
 
 /// The face the frontend draws UI text with, matching the system UI font.
 pub const UI_FAMILY: &str = "Segoe UI";
+
+/// Points per device-independent pixel at 96 DPI.
+const POINTS_PER_DIP: f32 = 72.0 / 96.0;
+
+/// Converts a layout value in device-independent pixels (what [`Metrics`]
+/// carries) to the point size GDI's `Font::new` takes.
+pub fn points(dip: f32) -> f32 {
+    dip * POINTS_PER_DIP
+}
 
 #[derive(Clone, Copy)]
 struct Runtime {
@@ -45,7 +56,7 @@ pub fn install(appearance: Appearance, dpi: u32) -> Metrics {
     let metrics = Metrics::compute(
         appearance.font_size,
         appearance.density,
-        BASE_BODY_POINTS,
+        BASE_BODY_DIP,
         dpi as f32 / 96.0,
     );
     CURRENT.with(|cell| {
@@ -71,7 +82,7 @@ pub fn zebra() -> bool {
 /// emusic_ui::state::FontSize::Default)), for icons and other fixed sizes that
 /// should scale with the text but are not part of [`Metrics`].
 pub fn font_scale() -> f32 {
-    metrics().body / BASE_BODY_POINTS
+    metrics().body / BASE_BODY_DIP
 }
 
 /// Applies the current metrics and zebra flag to an owner-drawn list view:
@@ -79,15 +90,9 @@ pub fn font_scale() -> f32 {
 /// This is the one place lists read their appearance from.
 pub fn apply_list<T: 'static, M: 'static>(list: &win32ui::ListView<T, M>) {
     let metrics = metrics();
-    list.set_row_font(UI_FAMILY, metrics.body);
+    list.set_row_font(UI_FAMILY, points(metrics.body));
     list.set_row_height(win32ui::Dip::new(metrics.row_height));
     list.set_zebra(zebra());
-}
-
-/// DirectWrite font sizes (in DIPs, as `FontSpec` takes them) for a metric
-/// value in points.
-pub fn d2d_size(points: f32) -> f32 {
-    points * 96.0 / 72.0
 }
 
 #[cfg(test)]
@@ -98,8 +103,10 @@ mod tests {
     #[test]
     fn default_metrics_match_the_frontend_base() {
         let metrics = install(Appearance::default(), 96);
-        assert_eq!(metrics.body, BASE_BODY_POINTS);
+        assert_eq!(metrics.body, BASE_BODY_DIP);
         assert_eq!(font_scale(), 1.0);
+        // 13 DIP is the 9.75 pt Segoe UI body both frontends have always used.
+        assert_eq!(points(metrics.body), 9.75);
     }
 
     #[test]
@@ -111,6 +118,6 @@ mod tests {
         };
         let metrics = install(chosen, 120);
         assert!(!zebra());
-        assert_eq!(metrics.body, BASE_BODY_POINTS * FontSize::Larger.scale());
+        assert_eq!(metrics.body, BASE_BODY_DIP * FontSize::Larger.scale());
     }
 }
