@@ -130,11 +130,13 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
-    /// Builds every page's controls.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    /// Builds every page's controls. `visualizer_enabled` seeds the
+    /// Appearance page's mode row so no reinstall is needed on the first
+    /// sync (see `AppearancePage::new`, #327).
+    pub fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> win32ui::Result<Self> {
         let proxy = ui.proxy();
         let library = library::LibraryPage::new(ui, proxy.clone())?;
-        let appearance = appearance::AppearancePage::new(ui)?;
+        let appearance = appearance::AppearancePage::new(ui, visualizer_enabled)?;
         let associations = associations::AssociationsPage::new(ui)?;
         let playback = playback::PlaybackPage::new(ui, proxy)?;
         let about = about::AboutPage::new(ui)?;

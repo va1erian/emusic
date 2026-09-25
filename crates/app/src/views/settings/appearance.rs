@@ -45,7 +45,13 @@ pub(super) struct AppearancePage {
 
 impl AppearancePage {
     /// Builds the page's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    ///
+    /// `visualizer_enabled` is the saved flag: the mode row must be part of
+    /// the very first form. Reinstalling the form later (from `sync`, while
+    /// the page is still hidden) measures win32ui's `Auto` natural sizes
+    /// from the not-yet-laid-out bounds and collapses the Theme/Font/Density
+    /// radios and the custom picker to zero width (#327).
+    pub(super) fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> win32ui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let theme = RadioGroup::new(
@@ -86,6 +92,7 @@ impl AppearancePage {
         });
 
         let visualizer = CheckBox::new(&mut panel, "Visualizer")?
+            .checked(visualizer_enabled)
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
 
         let page = Self {
@@ -105,7 +112,7 @@ impl AppearancePage {
             visualizer,
             mode_label: Label::new(&mut panel, Rect::default(), "Visualizer mode")?,
             mode,
-            visualizer_on: Cell::new(false),
+            visualizer_on: Cell::new(visualizer_enabled),
         };
         page.refresh_mode_visibility();
         page.apply(ui);
