@@ -106,14 +106,15 @@ fn run_ui(
     .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
 }
 
-/// Binds the OS integrations to this window (#320, #321) and installs the
-/// taskbar message hook they need.
+/// Binds the OS integrations to this window (#320, #321, #322) and installs
+/// the taskbar message hook they need.
 ///
-/// The hook forwards the raw message to [`winshell::thumbbar::msg_hook`] and
-/// wakes the app when it claims one, so an otherwise-idle app still drains the
-/// press. It has to be installed after [`Win32App::new`] bound the waker but
-/// before the window is first shown (the shell announces the taskbar button
-/// only after that).
+/// The hook forwards the raw message to the winshell taskbar hooks
+/// ([`winshell::thumbbar::msg_hook`] and [`winshell::taskbar::msg_hook`]) and
+/// wakes the app when either claims one, so an otherwise-idle app still drains
+/// the press or renders the requested thumbnail. It has to be installed after
+/// [`Win32App::new`] bound the waker but before the window is first shown (the
+/// shell announces the taskbar button only after that).
 fn attach_shell_integrations(
     ui: &mut win32ui::Ui<Msg>,
     app: &mut Win32App,
@@ -126,8 +127,16 @@ fn attach_shell_integrations(
     app.attach_thumbbar(emusic::backend::thumbbar::ThumbBar::new(Some(
         hwnd as isize,
     )));
+    app.attach_taskbar_preview(emusic::backend::taskbar::TaskbarPreview::new(
+        Some(hwnd as isize),
+        hook_waker.clone(),
+    ));
     ui.on_raw_message(move |msg| {
-        let claimed = winshell::thumbbar::msg_hook(msg);
+        // `|` (not `||`): both hooks must see every message, and either may
+        // claim it. The thumbnail-toolbar hook owns `WM_COMMAND`/
+        // `TaskbarButtonCreated`; the taskbar hook owns the DWM thumbnail
+        // request.
+        let claimed = winshell::thumbbar::msg_hook(msg) | winshell::taskbar::msg_hook(msg);
         if claimed {
             hook_waker.wake();
         }

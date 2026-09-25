@@ -18,14 +18,10 @@
 mod icons;
 
 use std::ffi::c_void;
-use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use windows::Win32::Foundation::{HWND, RPC_E_CHANGED_MODE};
-use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::{
     ITaskbarList3, THB_FLAGS, THB_ICON, THB_TOOLTIP, THBF_ENABLED, THBN_CLICKED, THUMBBUTTON,
 };
@@ -34,14 +30,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_COMMAND,
 };
 
-use crate::{Result, WinshellError};
+use crate::Result;
+use crate::taskbar_list::{self, to_io};
 
 use icons::Glyph;
-
-/// `CLSID_TaskbarList`, the shell's taskbar-list coclass. The `windows` crate
-/// exposes the interface IIDs but not the class id, so it is spelled out here.
-const CLSID_TASKBAR_LIST: windows::core::GUID =
-    windows::core::GUID::from_u128(0x56FDF344_FD6D_11D0_958A_006097C9A090);
 
 /// Control id of the previous-track button. The ids are high enough that they
 /// cannot clash with the app's own menu/control ids.
@@ -189,26 +181,7 @@ impl ThumbBar {
     /// is not running — so the caller can log it and carry on without the
     /// buttons rather than crash.
     pub fn new(hwnd: isize) -> Result<Self> {
-        // SAFETY: `CoInitializeEx` only initialises the calling thread's COM
-        // apartment and dereferences no pointer (we pass `None`). This lives
-        // as long as the UI thread and is deliberately never balanced with
-        // `CoUninitialize`, so we never tear down an apartment winit set up.
-        let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-        if hr.is_err() && hr != RPC_E_CHANGED_MODE {
-            return Err(to_io(windows::core::Error::from(hr)));
-        }
-
-        // SAFETY: `CLSID_TaskbarList` is registered by the shell; an in-proc
-        // server with no outer unknown is the documented way to create it.
-        // The returned interface is fully owned by us.
-        let taskbar: ITaskbarList3 =
-            unsafe { CoCreateInstance(&CLSID_TASKBAR_LIST, None, CLSCTX_INPROC_SERVER) }
-                .map_err(to_io)?;
-        // SAFETY: `HrInit` is required before any other `ITaskbarList` call
-        // and touches no Rust memory.
-        unsafe { taskbar.HrInit() }.map_err(to_io)?;
-
-        let hwnd = HWND(hwnd as *mut c_void);
+        let (taskbar, hwnd) = taskbar_list::create(hwnd)?;
         let icons = Icons::load()?;
 
         Ok(Self {
@@ -342,11 +315,6 @@ fn create_icon(glyph: Glyph) -> Result<HICON> {
     // returned handle is owned by the caller.
     unsafe { CreateIconFromResourceEx(&data, true, 0x0003_0000, 0, 0, LR_DEFAULTCOLOR) }
         .map_err(to_io)
-}
-
-/// Wraps a Win32 error as the crate's I/O error, as `crate::sys` does.
-fn to_io(err: windows::core::Error) -> WinshellError {
-    WinshellError::Io(io::Error::from_raw_os_error(err.code().0))
 }
 
 #[cfg(test)]

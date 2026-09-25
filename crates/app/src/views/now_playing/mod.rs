@@ -16,7 +16,7 @@
 //! No progress bar: the top-bar transport (#110's `top_bar`) already shows
 //! elapsed/total time with a seek slider, so neither surface repeats it.
 
-mod artwork;
+pub(crate) mod artwork;
 mod central;
 mod pair;
 mod queue;
