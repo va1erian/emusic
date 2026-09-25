@@ -6,16 +6,21 @@
 //! RGBA image into a DIB-section [`Bitmap`] (the `HBITMAP` from issue #110),
 //! and the cache configured with the full-size artwork decoder (embedded
 //! picture, then a folder image next to the playing file).
+//!
+//! Artwork is decoded and scaled by the Windows Imaging Component (WIC) through
+//! [`win32ui::imaging`], so the Win32 binary does not link the `image` crate
+//! (#119).
 
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use emusic_ui::image_cache::{ImageSink, Rgba8Image, ThumbCache, load_artwork};
+use emusic_ui::image_cache::{
+    ImageSink, Rgba8Image, ThumbCache, embedded_artwork, folder_artwork_path,
+};
 use emusic_ui::waker::WakerHandle;
-use image::RgbaImage;
-use image::imageops::FilterType;
 use win32ui::gdi::Bitmap;
+use win32ui::imaging;
 
 /// Decoded bytes the artwork LRU may hold before evicting older covers.
 const BYTE_BUDGET: usize = 16 * 1024 * 1024;
@@ -46,11 +51,7 @@ impl ImageSink for Win32ImageSink {
 
     fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Self::Handle {
         let square = to_square(image, self.edge);
-        match Bitmap::from_rgba(
-            square.width() as i32,
-            square.height() as i32,
-            square.as_raw(),
-        ) {
+        match Bitmap::from_rgba(square.width as i32, square.height as i32, &square.pixels) {
             Ok(bitmap) => Some(Rc::new(bitmap)),
             Err(error) => {
                 tracing::warn!(%error, "now-playing artwork bitmap");
@@ -62,22 +63,62 @@ impl ImageSink for Win32ImageSink {
 
 /// Stretches `image` to an `edge`×`edge` square, or a blank square if the
 /// source dimensions are unusable.
-fn to_square(image: &Rgba8Image, edge: u32) -> RgbaImage {
-    let Some(source) = RgbaImage::from_raw(image.width, image.height, image.pixels.clone()) else {
-        return RgbaImage::new(edge, edge);
+fn to_square(image: &Rgba8Image, edge: u32) -> Rgba8Image {
+    let blank = || Rgba8Image {
+        width: edge,
+        height: edge,
+        pixels: vec![0; (edge * edge * 4) as usize],
     };
-    image::imageops::resize(&source, edge, edge, FilterType::Lanczos3)
+    if image.width == 0 || image.height == 0 {
+        return blank();
+    }
+    if image.width == edge && image.height == edge {
+        return image.clone();
+    }
+    let source = win32ui::RgbaImage {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels.clone(),
+    };
+    match imaging::resize(&source, edge, edge) {
+        Ok(resized) => Rgba8Image {
+            width: resized.width,
+            height: resized.height,
+            pixels: resized.pixels,
+        },
+        Err(_) => blank(),
+    }
 }
 
-/// Builds the artwork cache with the full-size decoder and `waker`.
+/// Builds the artwork cache with the WIC artwork decoder and `waker`.
 #[must_use]
 pub fn new_cache(waker: WakerHandle) -> ArtworkCache {
-    let decode = |path: &Path, fallback_dir: Option<&Path>| {
-        load_artwork(path).or_else(|| fallback_dir.and_then(load_artwork))
-    };
+    let decode = |path: &Path, fallback_dir: Option<&Path>| load_artwork(path, fallback_dir);
     let mut cache = ThumbCache::new(BYTE_BUDGET, Arc::new(decode));
     cache.set_waker(waker);
     cache
+}
+
+/// Embedded picture first, then a `cover`/`folder`/`front` image next to the
+/// file (or in `fallback_dir`).
+fn load_artwork(path: &Path, fallback_dir: Option<&Path>) -> Option<Rgba8Image> {
+    if let Some(bytes) = embedded_artwork(path)
+        && let Ok(image) = imaging::decode(&bytes)
+    {
+        return Some(Rgba8Image {
+            width: image.width,
+            height: image.height,
+            pixels: image.pixels,
+        });
+    }
+    let file = folder_artwork_path(path, fallback_dir)?;
+    let bytes = std::fs::read(file).ok()?;
+    let image = imaging::decode(&bytes).ok()?;
+    Some(Rgba8Image {
+        width: image.width,
+        height: image.height,
+        pixels: image.pixels,
+    })
 }
 
 #[cfg(test)]
@@ -92,7 +133,7 @@ mod tests {
             pixels: vec![255; 4 * 2 * 4],
         };
         let square = to_square(&image, 8);
-        assert_eq!(square.dimensions(), (8, 8));
+        assert_eq!((square.width, square.height), (8, 8));
     }
 
     #[test]
@@ -103,6 +144,6 @@ mod tests {
             pixels: vec![0; 3],
         };
         let square = to_square(&image, 5);
-        assert_eq!(square.dimensions(), (5, 5));
+        assert_eq!((square.width, square.height), (5, 5));
     }
 }

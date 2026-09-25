@@ -22,7 +22,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::waker::{Waker as _, WakerHandle};
 
-pub use decode::{load_artwork, thumbnail_decoder};
+pub use decode::{
+    embedded_artwork, folder_artwork_path, load_artwork, thumbnail_cache_path, thumbnail_decoder,
+};
 
 /// A decoded 8-bit RGBA image, row-major with unmultiplied alpha.
 #[derive(Clone, PartialEq, Eq)]

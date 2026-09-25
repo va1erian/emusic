@@ -68,6 +68,40 @@ fn folder_image(dir: Option<&Path>) -> Option<DynamicImage> {
     None
 }
 
+/// The bytes of the embedded cover picture in `path`'s primary tag, if any.
+///
+/// Frontends that decode with their own backend (e.g. WIC on Windows) use this
+/// to read the artwork without going through the `image` crate.
+#[must_use]
+pub fn embedded_artwork(path: &Path) -> Option<Vec<u8>> {
+    let tagged = lofty::read_from_path(path).ok()?;
+    let picture = tagged.primary_tag()?.pictures().first()?;
+    Some(picture.data().to_vec())
+}
+
+/// A `cover`/`folder`/`front` image file next to `path`, or in `fallback_dir`.
+///
+/// The non-decoding counterpart of [`load_artwork_dynamic`]'s folder search:
+/// it returns the path so a frontend can decode the file itself.
+#[must_use]
+pub fn folder_artwork_path(path: &Path, fallback_dir: Option<&Path>) -> Option<PathBuf> {
+    folder_image_path(path.parent()).or_else(|| folder_image_path(fallback_dir))
+}
+
+/// A `cover`/`folder`/`front` image in `dir`, if one exists.
+fn folder_image_path(dir: Option<&Path>) -> Option<PathBuf> {
+    let dir = dir?;
+    for name in ["cover", "folder", "front"] {
+        for ext in ["jpg", "jpeg", "png"] {
+            let candidate = dir.join(format!("{name}.{ext}"));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 impl Rgba8Image {
     pub(super) fn from_dynamic(image: DynamicImage) -> Self {
         let rgba = image.to_rgba8();
@@ -81,19 +115,23 @@ impl Rgba8Image {
 
 /// `%LOCALAPPDATA%\emusic\thumbs\<hash>.jpg`, or `None` if there is no local
 /// data directory (thumbnails are then decoded on every request).
-fn cache_path(source: &Path) -> Option<PathBuf> {
+///
+/// Public so every frontend names the on-disk thumbnail for a source path the
+/// same way and shares one cache.
+#[must_use]
+pub fn thumbnail_cache_path(source: &Path) -> Option<PathBuf> {
     let dir = dirs::data_local_dir()?.join("emusic").join("thumbs");
     Some(dir.join(format!("{:016x}.jpg", hash(&source.to_string_lossy()))))
 }
 
 fn read_cache(source: &Path) -> Option<Rgba8Image> {
-    image::open(cache_path(source)?)
+    image::open(thumbnail_cache_path(source)?)
         .ok()
         .map(Rgba8Image::from_dynamic)
 }
 
 fn write_cache(source: &Path, image: &DynamicImage) {
-    let Some(path) = cache_path(source) else {
+    let Some(path) = thumbnail_cache_path(source) else {
         return;
     };
     let Some(parent) = path.parent() else {

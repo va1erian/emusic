@@ -10,6 +10,21 @@ license = "MIT"
 lto = "thin"
 codegen-units = 1
 
+# Size-first release profile for the shipped installer (#119). Inherits
+# `release`, trades build time and a little runtime speed for the smallest
+# binary: size-optimised codegen, fat LTO, one codegen unit and stripped
+# symbols. `panic = "abort"` removes the unwinding tables; the app has no code
+# that needs to recover from a panic (worker panics already abort the process
+# in practice), so the trade is safe. See docs/perf-baseline.md for the
+# measured deltas.
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
 # CI test binaries are linked on every run; the line-tables-only debug info
 # keeps useful panic backtraces while cutting link time and artifact size
 # noticeably (#90).
