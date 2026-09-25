@@ -10,6 +10,7 @@
 pub mod app;
 pub mod dialogs;
 pub mod menu;
+pub mod theme;
 pub mod views;
 pub mod waker;
 pub mod window;

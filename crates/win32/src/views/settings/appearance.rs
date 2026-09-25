@@ -1,5 +1,5 @@
 //! Settings → Appearance page (#40, #115): the dark/light colour scheme, the
-//! accent presets and the optional status-bar visualizer.
+//! accent presets and custom colour, and the optional status-bar visualizer.
 //!
 //! The theme and accent are applied through [`Command`]s so the shell stays the
 //! single writer of the shared state; the visualizer flags are plain persisted
@@ -7,13 +7,16 @@
 
 use std::cell::Cell;
 
-use emusic_ui::state::{Accent, AppState, Theme as UiTheme, VisualizerMode};
+use emusic_ui::state::{Accent, AppState, Rgb, Theme as UiTheme, VisualizerMode};
 use emusic_ui::views::Commands;
 use win32ui::prelude::*;
 
 use crate::app::Msg;
 
 use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg, labelled, radio_row};
+
+/// Width of the custom-colour swatch button, in design units.
+const CUSTOM_WIDTH: f32 = 72.0;
 
 /// The Appearance page's controls.
 pub(super) struct AppearancePage {
@@ -23,7 +26,8 @@ pub(super) struct AppearancePage {
     theme: RadioGroup<UiTheme, Msg>,
     accent_label: Label,
     accent: RadioGroup<Accent, Msg>,
-    custom_note: Label,
+    custom_label: Label,
+    custom: ColorPicker<Msg>,
     visualizer: CheckBox<Msg>,
     mode_label: Label,
     mode: RadioGroup<VisualizerMode, Msg>,
@@ -61,6 +65,12 @@ impl AppearancePage {
         )?
         .on_select(|mode| Some(Msg::Settings(SettingsMsg::SetVisualizerMode(*mode))));
 
+        let [r, g, b] = Accent::default().rgb().to_array();
+        let custom = ColorPicker::new(&mut panel, Color::rgb(r, g, b))?.on_change(|color| {
+            let rgb = Rgb::from_rgb(color.r, color.g, color.b);
+            Some(Msg::Settings(SettingsMsg::SetAccent(Accent::Custom(rgb))))
+        });
+
         let visualizer = CheckBox::new(&mut panel, "Visualizer")?
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
 
@@ -71,11 +81,8 @@ impl AppearancePage {
             theme,
             accent_label: Label::new(&mut panel, Rect::default(), "Accent colour")?,
             accent,
-            custom_note: Label::new(
-                &mut panel,
-                Rect::default(),
-                "Custom colours are not editable in the native frontend yet.",
-            )?,
+            custom_label: Label::new(&mut panel, Rect::default(), "Custom colour")?,
+            custom,
             visualizer,
             mode_label: Label::new(&mut panel, Rect::default(), "Visualizer mode")?,
             mode,
@@ -111,7 +118,13 @@ impl AppearancePage {
                 ),
                 ROW_HEIGHT,
             ),
-            (self.custom_note.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (
+                labelled(
+                    &self.custom_label,
+                    Layout::row().item(&self.custom).width(dip(CUSTOM_WIDTH)),
+                ),
+                ROW_HEIGHT,
+            ),
             (self.visualizer.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
         ];
         if self.visualizer_on.get() {
@@ -152,6 +165,8 @@ impl AppearancePage {
     pub(super) fn sync(&mut self, ui: &Ui<Msg>, state: &AppState) {
         self.theme.set_selected(&state.theme);
         self.accent.set_selected(&state.accent);
+        let [r, g, b] = state.accent.rgb().to_array();
+        self.custom.set_color(Color::rgb(r, g, b));
         self.visualizer.set_checked(state.visualizer_enabled);
         self.mode.set_selected(&state.visualizer);
         if self.visualizer_on.get() != state.visualizer_enabled {
