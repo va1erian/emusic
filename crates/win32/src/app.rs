@@ -13,7 +13,7 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::{Command, View, VisualizerMode};
+use emusic_ui::state::{AppState, Command, View, VisualizerMode, WindowGeometry};
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::column_browser::Pane;
@@ -221,6 +221,12 @@ impl Win32App {
             shell.handle_ipc_message(message);
         }
 
+        // Restore the window geometry saved on the previous exit (#214); the
+        // placement is applied before the window is first shown, overriding the
+        // default centring `win32ui` chose. Route the close button through
+        // `Msg::Quit` so the config (with the final geometry) is saved on exit.
+        apply_saved_geometry(ui, shell.state.window);
+        ui.on_close(|| Some(Msg::Quit));
         ui.set_menu_bar(menu::build(&shell.state));
         // Only the active central view is placed by the layout (installed
         // below); the others are hidden so they keep no stale bounds.
@@ -360,6 +366,9 @@ impl Win32App {
     /// Runs the shell for this frame, syncs the views and schedules the timer.
     fn tick(&mut self, ui: &mut Ui<Msg>) {
         self.last_full_sync = Instant::now();
+        // Remember the live window geometry for the next launch (#214), before
+        // the shell's persistence pass captures the state.
+        record_window_geometry(ui, &mut self.shell.state);
         let tick = self.shell.tick(Instant::now());
         // Keep the modal tag editor posted on its save (the shell delivers
         // outcomes into `state.tag_editor`; the dialog polls the bridge).
@@ -1079,9 +1088,74 @@ impl App for Win32App {
                 }
                 self.tick(ui);
             }
-            Msg::Quit => ui.close(),
+            Msg::Quit => {
+                self.shell.save_on_exit();
+                ui.close();
+            }
         }
     }
+}
+
+/// Applies the saved window geometry to the freshly created window, before it
+/// is first shown (#214), overriding the default centring. The saved values are
+/// logical points; the window's placement is in device pixels.
+fn apply_saved_geometry(ui: &Ui<Msg>, saved: WindowGeometry) {
+    if saved.size.is_none() && saved.position.is_none() && !saved.maximized {
+        return;
+    }
+    let scale = dpi_scale(ui.dpi());
+    let current = ui.window_rect();
+    // The saved size is the client area (the egui frontend records the inner
+    // rect); a placement's normal bounds are the outer rectangle, so add the
+    // frame the window was just created with.
+    let outer = current.size();
+    let client = ui.client_rect().size();
+    let frame_w = (outer.width - client.width).max(0);
+    let frame_h = (outer.height - client.height).max(0);
+    let width = saved
+        .size
+        .map_or(current.width(), |[w, _]| to_px(w, scale) + frame_w);
+    let height = saved
+        .size
+        .map_or(current.height(), |[_, h]| to_px(h, scale) + frame_h);
+    let left = saved
+        .position
+        .map_or(current.left, |[x, _]| to_px(x, scale));
+    let top = saved.position.map_or(current.top, |[_, y]| to_px(y, scale));
+    let normal = Rect::new(left, top, left + width, top + height);
+    let show = if saved.maximized {
+        ShowState::Maximized
+    } else {
+        ShowState::Normal
+    };
+    let placement = Placement { normal, show }.clamp_to_work_areas();
+    let _ = ui.set_placement(&placement);
+}
+
+/// Records the live window geometry into the shared state, so the config
+/// written on exit restores it next launch (#214), mirroring the egui frontend.
+/// A maximized window records only the flag, keeping the last normal geometry.
+fn record_window_geometry(ui: &Ui<Msg>, state: &mut AppState) {
+    let placement = ui.placement();
+    state.window.maximized = placement.show == ShowState::Maximized;
+    if state.window.maximized {
+        return;
+    }
+    let scale = 1.0 / dpi_scale(ui.dpi());
+    let normal = placement.normal;
+    let client = ui.client_rect().size();
+    state.window.size = Some([client.width as f32 * scale, client.height as f32 * scale]);
+    state.window.position = Some([normal.left as f32 * scale, normal.top as f32 * scale]);
+}
+
+/// Device pixels per logical point at `dpi` (96 DPI is 1:1).
+fn dpi_scale(dpi: u32) -> f32 {
+    dpi as f32 / 96.0
+}
+
+/// A logical-point value converted to device pixels.
+fn to_px(value: f32, scale: f32) -> i32 {
+    (value * scale).round() as i32
 }
 
 /// Reveals `path` in Explorer.
