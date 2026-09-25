@@ -122,7 +122,6 @@ impl AlbumGridView {
     /// workers repaint the grid when a decode finishes.
     pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> Result<Self> {
         let dpi = ui.dpi();
-        let caption_px = dip(tile::CAPTION_DIP).to_px(dpi).value();
         let cover_px = dip(DEFAULT_TILE_SIZE).to_px(dpi).value();
         let thumbs = Rc::new(RefCell::new(ThumbState::new(cover_px, waker.clone())));
         let theme = Rc::new(Cell::new(ui.theme()));
@@ -131,12 +130,7 @@ impl AlbumGridView {
             .tile_size(
                 dip(MIN_TILE_SIZE + tile::CAPTION_DIP)..dip(MAX_TILE_SIZE + tile::CAPTION_DIP),
             )
-            .content(tile::content(
-                Rc::clone(&thumbs),
-                Rc::clone(&theme),
-                dpi,
-                caption_px,
-            ))
+            .content_d2d(tile::content(Rc::clone(&thumbs), Rc::clone(&theme)))
             .on_select(|index| Some(Msg::Album(AlbumMsg::Select(index))))
             .on_activate(|index| Some(Msg::Album(AlbumMsg::Activate(index))));
         grid.set_tile_size(dip(DEFAULT_TILE_SIZE + tile::CAPTION_DIP));
@@ -405,13 +399,13 @@ impl AlbumGridView {
                     .get(&key)
                     .map(|meta| meta.art_path.clone())
                     .unwrap_or_default();
-                AlbumTile {
+                AlbumTile::new(
                     key,
-                    name: album.name.clone(),
-                    artist: album.artist.clone(),
-                    year: album.year,
+                    album.name.clone(),
+                    album.artist.clone(),
+                    album.year,
                     art_path,
-                }
+                )
             })
             .collect();
         self.tiles = Rc::new(tiles);

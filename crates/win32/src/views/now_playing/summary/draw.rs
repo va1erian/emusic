@@ -1,44 +1,78 @@
-//! Painting the now-playing summary (#110) with GDI from semantic theme
+//! Painting the now-playing summary (#110) with Direct2D from semantic theme
 //! tokens. Reads the display snapshot and the layout; records the clickable
 //! regions into the widget's hit table as it draws them.
+//!
+//! The shared [`SummaryLayout`] works in device pixels (and hit-testing reads
+//! it unchanged); the Direct2D canvas draws in device-independent pixels, so
+//! every rectangle is converted with [`rect_to_dip`] first. Text is drawn
+//! single-line, vertically centred and elided by [`crate::d2d_text`], matching
+//! the GDI path's `DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS`.
 
-use emusic_ui::views::now_playing::ModuleView;
-use win32ui::gdi::{Canvas, Font, TextFormat};
+use win32ui::d2d::{D2dCanvas, Font, Interpolation, RectF};
 use win32ui::{Color, Rect, Theme};
+
+use crate::d2d_text::{self, Align};
 
 use super::input::Hit;
 use super::layout::SummaryLayout;
 use super::{Fonts, SummaryWidget};
 
 /// Paints the whole widget: background, artwork and the metadata/module block.
-pub(super) fn paint(widget: &SummaryWidget, canvas: &Canvas, bounds: Rect, theme: &Theme) {
-    canvas.fill_rect(bounds, theme.background);
+pub(super) fn paint(
+    widget: &SummaryWidget,
+    canvas: &mut D2dCanvas<'_>,
+    bounds: RectF,
+    theme: &Theme,
+) {
+    if let Some(id) = widget.forget.take() {
+        canvas.forget_image(id);
+    }
+    let scale = canvas.scale();
+    let dpi = (scale * 96.0).round().max(1.0) as u32;
     let has_module = widget.data.borrow().module.is_some();
-    let layout = SummaryLayout::compute(bounds, widget.dpi.get(), has_module);
+    let layout = SummaryLayout::compute(d2d_text::rect_to_px(bounds, scale), dpi, has_module);
 
-    canvas.fill_rect(layout.artwork, theme.input_background);
+    let artwork_rect = d2d_text::rect_to_dip(layout.artwork, scale);
+    canvas.fill_rect(artwork_rect, theme.input_background);
     let artwork = widget.artwork.borrow();
     match artwork.as_ref() {
-        Some(bitmap) => canvas.draw_bitmap(bitmap, layout.artwork),
-        None => draw_text(
-            canvas,
-            widget.fonts.borrow().title.as_ref(),
-            layout.artwork,
-            "\u{266A}",
-            theme.text_secondary,
-            TextFormat::left()
-                .center()
-                .vcenter()
-                .single_line()
-                .no_prefix(),
-        ),
+        Some(art) => {
+            let id = match art.id.get() {
+                Some(id) => id,
+                None => {
+                    let id = canvas.image(&art.image);
+                    art.id.set(Some(id));
+                    id
+                }
+            };
+            canvas.draw_image(id, artwork_rect, None, 1.0, Interpolation::Linear);
+        }
+        None => {
+            let fonts = widget.fonts.borrow();
+            if let Some(font) = &fonts.title {
+                d2d_text::draw_line(
+                    canvas,
+                    font,
+                    artwork_rect,
+                    "\u{266A}",
+                    theme.text_secondary,
+                    Align::Center,
+                );
+            }
+        }
     }
     drop(artwork);
 
-    paint_summary(widget, canvas, &layout, theme);
+    paint_summary(widget, canvas, &layout, scale, theme);
 }
 
-fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout, theme: &Theme) {
+fn paint_summary(
+    widget: &SummaryWidget,
+    canvas: &mut D2dCanvas<'_>,
+    layout: &SummaryLayout,
+    scale: f32,
+    theme: &Theme,
+) {
     let data = widget.data.borrow();
     let fonts = widget.fonts.borrow();
     let mut hits = widget.hits.borrow_mut();
@@ -49,9 +83,9 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             canvas,
             fonts.body.as_ref(),
             layout.artist,
+            scale,
             "Nothing playing",
             theme.text_secondary,
-            TextFormat::left().vcenter().single_line().no_prefix(),
         );
         return;
     }
@@ -68,15 +102,16 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             canvas,
             fonts.body.as_ref(),
             layout.star,
+            scale,
             glyph,
             color,
-            TextFormat::left().vcenter().single_line().no_prefix(),
         );
         fill_hot(
             canvas,
             layout.star,
             widget.hot.get() == Some(Hit::Star),
             theme,
+            scale,
         );
         hits.push((layout.star, Hit::Star));
     }
@@ -86,13 +121,9 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
         canvas,
         fonts.title.as_ref(),
         layout.title,
+        scale,
         &data.title,
         theme.text,
-        TextFormat::left()
-            .vcenter()
-            .single_line()
-            .end_ellipsis()
-            .no_prefix(),
     );
 
     // Artist link.
@@ -102,18 +133,15 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             layout.artist,
             widget.hot.get() == Some(Hit::Artist),
             theme,
+            scale,
         );
         draw_text(
             canvas,
             fonts.body.as_ref(),
             layout.artist,
+            scale,
             &data.artist,
             theme.accent,
-            TextFormat::left()
-                .vcenter()
-                .single_line()
-                .end_ellipsis()
-                .no_prefix(),
         );
         hits.push((layout.artist, Hit::Artist));
     }
@@ -128,6 +156,7 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
                 layout.album,
                 widget.hot.get() == Some(Hit::Album),
                 theme,
+                scale,
             );
             hits.push((layout.album, Hit::Album));
             theme.accent
@@ -136,13 +165,9 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             canvas,
             fonts.body.as_ref(),
             layout.album,
+            scale,
             &data.album_line,
             color,
-            TextFormat::left()
-                .vcenter()
-                .single_line()
-                .end_ellipsis()
-                .no_prefix(),
         );
     }
 
@@ -152,13 +177,9 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             canvas,
             fonts.small.as_ref(),
             layout.details,
+            scale,
             details,
             theme.text_secondary,
-            TextFormat::left()
-                .vcenter()
-                .single_line()
-                .end_ellipsis()
-                .no_prefix(),
         );
     }
 
@@ -169,19 +190,16 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             layout.path,
             widget.hot.get() == Some(Hit::Path),
             theme,
+            scale,
         );
         let text = emusic_ui::views::now_playing::truncate_path(&data.path);
         draw_text(
             canvas,
             fonts.small.as_ref(),
             layout.path,
+            scale,
             &text,
             theme.accent,
-            TextFormat::left()
-                .vcenter()
-                .single_line()
-                .end_ellipsis()
-                .no_prefix(),
         );
         hits.push((layout.path, Hit::Path));
     }
@@ -193,16 +211,16 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
             ("Properties\u{2026}", Hit::Properties),
             ("Edit tags\u{2026}", Hit::EditTags),
         ] {
-            let width = measure_text(canvas, fonts.small.as_ref(), text);
+            let width = measure_text(fonts.small.as_ref(), text, scale);
             let rect = Rect::new(x, layout.links.top, x + width, layout.links.bottom);
-            fill_hot(canvas, rect, widget.hot.get() == Some(hit), theme);
+            fill_hot(canvas, rect, widget.hot.get() == Some(hit), theme, scale);
             draw_text(
                 canvas,
                 fonts.small.as_ref(),
                 rect,
+                scale,
                 text,
                 theme.accent,
-                TextFormat::left().vcenter().single_line().no_prefix(),
             );
             hits.push((rect, hit));
             x += width + layout.link_gap;
@@ -210,48 +228,45 @@ fn paint_summary(widget: &SummaryWidget, canvas: &Canvas, layout: &SummaryLayout
     }
 
     if let Some(module) = &data.module {
-        paint_module(canvas, layout, module, theme, &fonts);
+        paint_module(canvas, layout, module, theme, &fonts, scale);
     }
 }
 
 fn paint_module(
-    canvas: &Canvas,
+    canvas: &mut D2dCanvas<'_>,
     layout: &SummaryLayout,
-    module: &ModuleView,
+    module: &emusic_ui::views::now_playing::ModuleView,
     theme: &Theme,
     fonts: &Fonts,
+    scale: f32,
 ) {
     let Some(rects) = &layout.module else {
         return;
     };
-    canvas.fill_rect(rects.separator, theme.border);
+    canvas.fill_rect(d2d_text::rect_to_dip(rects.separator, scale), theme.border);
     draw_text(
         canvas,
         fonts.small.as_ref(),
         rects.header,
+        scale,
         "MODULE",
         theme.text_secondary,
-        TextFormat::left().vcenter().single_line().no_prefix(),
     );
     draw_text(
         canvas,
         fonts.body.as_ref(),
         rects.summary,
+        scale,
         &module.summary_text(),
         theme.text,
-        TextFormat::left()
-            .vcenter()
-            .single_line()
-            .end_ellipsis()
-            .no_prefix(),
     );
     draw_text(
         canvas,
         fonts.body.as_ref(),
         rects.order_row,
+        scale,
         &module.order_row_text(),
         theme.text_secondary,
-        TextFormat::left().vcenter().single_line().no_prefix(),
     );
     let message = if module.message.is_empty() {
         module.details_label()
@@ -262,50 +277,50 @@ fn paint_module(
         canvas,
         fonts.small.as_ref(),
         rects.message,
+        scale,
         &message,
         theme.text_secondary,
-        TextFormat::left()
-            .vcenter()
-            .single_line()
-            .end_ellipsis()
-            .no_prefix(),
     );
     draw_text(
         canvas,
         fonts.small.as_ref(),
         rects.details,
+        scale,
         &module.format,
         theme.text_secondary,
-        TextFormat::left().vcenter().single_line().no_prefix(),
     );
 }
 
-/// Draws `text` with `font` if it exists.
+/// Draws `text` on one line with `font`, vertically centred and elided.
 fn draw_text(
-    canvas: &Canvas,
+    canvas: &mut D2dCanvas<'_>,
     font: Option<&Font>,
     rect: Rect,
+    scale: f32,
     text: &str,
     color: Color,
-    format: TextFormat,
 ) {
     if let Some(font) = font {
-        canvas.with_font(font, |canvas| {
-            canvas.draw_text(rect, text, color, format);
-        });
+        d2d_text::draw_line(
+            canvas,
+            font,
+            d2d_text::rect_to_dip(rect, scale),
+            text,
+            color,
+            Align::Left,
+        );
     }
 }
 
-/// Measures `text` with `font`, or zero when the font is missing.
-fn measure_text(canvas: &Canvas, font: Option<&Font>, text: &str) -> i32 {
-    font.map_or(0, |font| {
-        canvas.with_font(font, |c| c.text_size(text).width)
-    })
+/// Measures `text` with `font` in device pixels, or zero when the font is
+/// missing.
+fn measure_text(font: Option<&Font>, text: &str, scale: f32) -> i32 {
+    font.map_or(0, |font| (font.width(text) * scale).round() as i32)
 }
 
 /// Fills `rect` with the hover colour when `hot`.
-fn fill_hot(canvas: &Canvas, rect: Rect, hot: bool, theme: &Theme) {
+fn fill_hot(canvas: &mut D2dCanvas<'_>, rect: Rect, hot: bool, theme: &Theme, scale: f32) {
     if hot {
-        canvas.fill_rect(rect, theme.hover);
+        canvas.fill_rect(d2d_text::rect_to_dip(rect, scale), theme.hover);
     }
 }

@@ -1,12 +1,12 @@
-//! The Win32 frontend's [`ImageSink`] (#96): uploads decoded images as
-//! DIB-section bitmaps the GDI [`Canvas`](win32ui::gdi::Canvas) can blit.
+//! The Win32 frontend's [`ImageSink`] (#96): keeps decoded cover art as RGBA
+//! buffers the Direct2D canvas uploads into its own bitmap cache.
 //!
 //! The shared [`ThumbCache`] decodes, resizes and caches artwork off the UI
 //! thread and keeps a bounded LRU of uploaded handles; here the handle is a
-//! top-down 32-bpp [`Bitmap`] already at the grid's current cover size. That
-//! size is baked into the decode ([`cover_decoder`]) rather than the upload, so
-//! the UI thread only allocates the DIB. The cache is rebuilt when the cover
-//! size changes (see [`ThumbState::new`]).
+//! [`RgbaImage`] already at the grid's current cover size. That size is baked
+//! into the decode ([`cover_decoder`]) rather than the upload, so the UI thread
+//! only clones the buffer. The cache is rebuilt when the cover size changes
+//! (see [`ThumbState::new`]).
 //!
 //! Decoding and scaling go through the Windows Imaging Component (WIC) via
 //! [`win32ui::imaging`], not the `image` crate, so the Win32 binary does not
@@ -21,7 +21,7 @@ use emusic_ui::image_cache::{
     thumbnail_cache_path,
 };
 use emusic_ui::waker::WakerHandle;
-use win32ui::gdi::Bitmap;
+use win32ui::RgbaImage;
 use win32ui::imaging;
 
 /// Longest edge of a decoded thumbnail, in pixels (matches the egui frontend).
@@ -31,22 +31,20 @@ const THUMB_SIZE: u32 = 200;
 /// recently used covers.
 const BYTE_BUDGET: usize = 32 * 1024 * 1024;
 
-/// The album grid's thumbnail cache over Win32 bitmaps.
-pub(super) type BitmapCache = ThumbCache<BitmapSink>;
+/// The album grid's thumbnail cache over decoded RGBA buffers.
+pub(super) type CoverCache = ThumbCache<RgbaSink>;
 
-/// Uploads decoded images as top-down 32-bpp bitmaps. The image is already the
-/// cover size (see [`cover_decoder`]), so this only allocates the DIB.
-pub(super) struct BitmapSink;
+/// Keeps decoded images as RGBA buffers for the Direct2D canvas. The image is
+/// already the cover size (see [`cover_decoder`]), so this only clones it.
+pub(super) struct RgbaSink;
 
-impl ImageSink for BitmapSink {
-    /// `None` when GDI could not allocate the DIB; the grid then draws its
+impl ImageSink for RgbaSink {
+    /// `None` only if the buffer is unusable; the grid then draws its
     /// placeholder, exactly as it does while a decode is still in flight.
-    type Handle = Option<Rc<Bitmap>>;
+    type Handle = Option<Rc<RgbaImage>>;
 
-    fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Option<Rc<Bitmap>> {
-        Bitmap::from_rgba(image.width as i32, image.height as i32, &image.pixels)
-            .ok()
-            .map(Rc::new)
+    fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Option<Rc<RgbaImage>> {
+        Some(Rc::new(to_win32(image)))
     }
 }
 
@@ -54,8 +52,8 @@ impl ImageSink for BitmapSink {
 /// through. Kept behind one `Rc<RefCell<..>>` because the `content` painter
 /// (a `Fn`) requests covers while the grid paints.
 pub(super) struct ThumbState {
-    pub(super) cache: BitmapCache,
-    pub(super) sink: BitmapSink,
+    pub(super) cache: CoverCache,
+    pub(super) sink: RgbaSink,
 }
 
 impl ThumbState {
@@ -66,13 +64,13 @@ impl ThumbState {
         cache.set_waker(waker);
         Self {
             cache,
-            sink: BitmapSink,
+            sink: RgbaSink,
         }
     }
 
     /// Returns the cached cover for `source`, requesting a decode on a miss.
-    /// A clone of the handle outlives the borrow so the painter can blit it.
-    pub(super) fn cover(&mut self, source: &str) -> Option<Rc<Bitmap>> {
+    /// A clone of the handle outlives the borrow so the painter can upload it.
+    pub(super) fn cover(&mut self, source: &str) -> Option<Rc<RgbaImage>> {
         let Self { cache, sink } = self;
         cache.get(sink, source).and_then(|handle| handle.clone())
     }
@@ -89,7 +87,7 @@ impl ThumbState {
 
 /// The worker-side decoder: the shared disk-cached 200 px thumbnail decoder,
 /// resized to the grid's `edge`-by-`edge` cover. Resizing here keeps it off the
-/// UI thread, so [`BitmapSink::upload`] only creates the DIB.
+/// UI thread, so [`RgbaSink::upload`] only clones the buffer.
 fn cover_decoder(edge: u32) -> DecodeFn {
     let base = thumbnail_decoder(THUMB_SIZE);
     Arc::new(move |source: &Path, fallback_dir: Option<&Path>| {

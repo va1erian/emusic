@@ -549,7 +549,7 @@ impl Win32App {
             ui.relayout();
         }
 
-        self.refresh_now_playing(ui.dpi());
+        self.refresh_now_playing();
 
         self.shell.state.navigator.sync(self.shell.state.view);
         self.navigator.sync(&self.shell.state.navigator);
@@ -611,18 +611,18 @@ impl Win32App {
 
     /// Refreshes the now-playing model from the player/library, then pushes it
     /// into the panel (artwork included).
-    fn refresh_now_playing(&mut self, dpi: u32) {
+    fn refresh_now_playing(&mut self) {
         let shell = &mut self.shell;
         shell
             .state
             .now_playing
             .refresh(shell.player.as_ref(), shell.library.as_ref());
-        self.right_panel.sync(&shell.state.now_playing, dpi);
+        self.right_panel.sync(&shell.state.now_playing);
         // The central view is only shown for `View::NowPlaying`, but it is
         // always synced: it is cheap (`sync` itself skips work the model's
         // revision didn't change) and keeps it ready the instant the view
         // becomes visible.
-        self.now_playing_central.sync(&shell.state.now_playing, dpi);
+        self.now_playing_central.sync(&shell.state.now_playing);
     }
 
     /// Applies a now-playing intent through the shared model and dispatches any
