@@ -13,14 +13,15 @@ use emusic_ui::library_api::TrackInfo;
 use emusic_ui::state::Command;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::track_table::TrackTable;
-use emusic_ui::views::track_table::columns::{self, ColumnId};
+use emusic_ui::views::track_table::columns::{self};
 use win32ui::prelude::*;
 use win32ui::{ColumnWidth, Fill, ListView, Menu, SortDirection, dip};
 
 use crate::app::Msg;
 use crate::views::album_grid::AlbumMsg;
 use crate::views::track_table::{
-    ContextAction, MusicModel, STAR_COLUMN, TrackRow, cell_text, run_context_action, star_column,
+    ContextAction, MusicModel, STAR_COLUMN, TrackRow, cell_text, column_index, play_column,
+    run_context_action, star_column,
 };
 
 /// The selected album's tracks, in the shared table's display order.
@@ -51,6 +52,7 @@ impl TrackList {
                 }
             })
             .add_column(star_column())
+            .add_column(play_column(Rc::clone(&playing)))
             .column("Title", Fill, |row: &TrackRow| row.text(0))
             .on_cell_click(|row, column, _point| {
                 (column == STAR_COLUMN).then_some(Msg::Album(AlbumMsg::TableToggleStar(row)))
@@ -188,16 +190,4 @@ impl AsControl for TrackList {
     fn control(&self) -> &Control {
         self.list.control()
     }
-}
-
-/// The list column index for a [`ColumnId`] (0 = star, 1 = Title, then
-/// `COLUMNS`).
-fn column_index(id: ColumnId) -> Option<usize> {
-    if id == ColumnId::Title {
-        return Some(1);
-    }
-    columns::COLUMNS
-        .iter()
-        .position(|column| column.id == id)
-        .map(|index| index + 2)
 }
