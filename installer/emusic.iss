@@ -119,6 +119,10 @@ Source: "{#AssetsDir}\ico\*.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
   #pragma warning "Icon files not found in the assets folder; building an installer without file-association icons. Pass /DAssetsDir=<path> if they live elsewhere."
 #endif
 
+; libprojectM visualization DLLs (#298), optional. Kept in its own include file
+; so the preset packaging (#299) can add its own with a single #include too.
+#include "projectm-dlls.iss"
+
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Comment: "emusic music player"
 

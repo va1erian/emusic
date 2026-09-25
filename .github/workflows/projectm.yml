@@ -1,0 +1,52 @@
+name: projectM DLLs
+
+# Builds libprojectM + GLEW from the pinned sources in
+# scripts/build-projectm.ps1 and exposes the runtime DLLs (#298). They are
+# never committed (same rule as BASS), so this job is the only place they are
+# produced; the release job calls this workflow and downloads its artifact
+# before packaging. A cache keyed by the script's contents keeps repeated
+# runs — and repeat releases — from rebuilding projectM from source.
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/build-projectm.ps1
+      - .github/workflows/projectm.yml
+  pull_request:
+    paths:
+      - scripts/build-projectm.ps1
+      - .github/workflows/projectm.yml
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The key holds the pinned version and the script hash, so editing the
+      # pinned tag/commit in the script invalidates the cache automatically.
+      - name: Cache projectM DLLs
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: target/release/projectm
+          key: projectm-dlls-v4.1.7-${{ runner.os }}-${{ hashFiles('scripts/build-projectm.ps1') }}
+
+      - name: Build projectM DLLs
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: scripts/build-projectm.ps1 -Profile release
+
+      # Every run (cache hit or not) uploads the staged folder, so the release
+      # job always gets the DLLs without trusting the cache alone.
+      - name: Upload projectM DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectm-dlls
+          path: target/release/projectm/*.dll
+          if-no-files-found: error
