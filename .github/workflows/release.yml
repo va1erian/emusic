@@ -47,10 +47,17 @@ jobs:
         run: |
           set -eu
           version="${GITHUB_REF_NAME#v}"
-          sed -i "0,/^version = \".*\"/s//version = \"$version\"/" crates/app/Cargo.toml
+          # Cargo only accepts a semver version, so a test tag like `v9.9.9.9`
+          # must not be written into Cargo.toml or the whole release fails to
+          # build. The installer's version is free-form, so it is always stamped.
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$ ]]; then
+            sed -i "0,/^version = \".*\"/s//version = \"$version\"/" crates/app/Cargo.toml
+            cargo update -p emusic --offline || true
+          else
+            echo "::warning title=Non-semver tag::tag $GITHUB_REF_NAME is not semver; leaving the crate version unchanged"
+          fi
           sed -i "s/^#define AppVersion \".*\"/#define AppVersion \"$version\"/" installer/emusic.iss
           sed -i "s/^VersionInfoVersion=.*/VersionInfoVersion=${version%%[-+]*}.0/" installer/emusic.iss
-          cargo update -p emusic --offline || true
 
       - run: cargo build --release --workspace
 
@@ -111,7 +118,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # The projectM/GLEW runtime as standalone downloads (#298), so the DLLs
+          # the app loads can be inspected or replaced without the installer;
+          # the LGPL-2.1 text ships alongside them.
           files: |
             installer/Output/emusic-*-setup.exe
             emusic-*-portable.zip
+            target/release/projectm/*.dll
+            COPYING-LGPL-2.1.txt
           generate_release_notes: true
