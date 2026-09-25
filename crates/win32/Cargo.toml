@@ -24,7 +24,7 @@ rfd = { version = "0.15", default-features = false }
 png = { version = "0.18", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-win32ui = { git = "https://github.com/va1erian/win32ui", branch = "feat/wic-imaging" }
+win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
 winshell = { path = "../winshell" }
 
 [features]
