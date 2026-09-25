@@ -76,6 +76,16 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe" -OutFile innosetup.exe
           Start-Process -FilePath .\innosetup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
 
+      # Bundled visualization presets and the stand-alone "get more presets"
+      # helper (#299): the base set is fetched (never committed) and the helper
+      # must exist before emusic.iss so it can bundle it into {app}.
+      - name: Prepare visualization presets
+        shell: pwsh
+        run: |
+          ./scripts/fetch-presets.ps1 -Pack milkdrop-original,textures -NoArchive -NoUpdate
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -ErrorAction Stop | Select-Object -First 1
+          & $iscc.FullName installer\emusic-presets.iss
+
       - name: Build installer
         shell: pwsh
         run: |
