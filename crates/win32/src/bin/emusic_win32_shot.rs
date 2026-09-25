@@ -244,7 +244,8 @@ fn render_one(
     let spec = window_spec(width, height, theme.win32(accent));
 
     win32ui::run_app(spec, move |ui| {
-        let backends = backend::build(true);
+        let waker = WakerSlot::new();
+        let backends = backend::build(true, waker.handle());
         let mut app = Win32App::new(
             ui,
             backends.library,
@@ -253,7 +254,7 @@ fn render_one(
             None,
             None,
             None,
-            WakerSlot::new(),
+            waker,
         );
         if let Some(notice) = backends.notice {
             app.set_backend_notice(notice);
