@@ -3,9 +3,9 @@
 //! The panel is drawn into a top-down 32bpp DIB section, the form
 //! [`DwmSetIconicThumbnail`](windows::Win32::Graphics::Dwm::DwmSetIconicThumbnail)
 //! requires: background and cover art are composed in the pixel buffer, then
-//! GDI rasterises the text over them. GDI leaves the alpha byte of a 32bpp DIB
-//! alone, which is why the buffer is filled opaque first — the glyph pixels
-//! only replace colour, keeping the card opaque for DWM.
+//! GDI rasterises the text over them. GDI clears the alpha byte of the glyph
+//! pixels (it treats the DIB as `X8R8G8B8`), so the alpha channel is forced
+//! back to opaque afterwards — DWM reads it and would otherwise drop the text.
 //!
 //! This is one of the crate's raw Win32 surfaces: every `unsafe` block carries
 //! a `// SAFETY:` comment.
@@ -106,6 +106,7 @@ pub(crate) fn render(size: ThumbnailSize, panel: &Panel<'_>) -> Result<HBITMAP> 
     // object, restored below so both can be destroyed cleanly.
     let old = unsafe { SelectObject(dc, bitmap) };
     draw_panel(dc, &layout, panel);
+    force_opaque(pixels);
     // SAFETY: `old` came from selecting `bitmap` into `dc`; restoring it lets
     // the DC and the bitmap be released without a dangling selection.
     unsafe {
@@ -123,11 +124,24 @@ fn fill_background(pixels: &mut [u8], color: u32) {
     }
 }
 
+/// Forces the alpha byte of every pixel back to `255`.
+///
+/// GDI's text output treats the 32bpp DIB as `X8R8G8B8` and clears the alpha
+/// byte of the glyph pixels to `0`. DWM reads the alpha channel of the iconic
+/// thumbnail, so those pixels would otherwise composite as transparent and the
+/// text would disappear into the card. The card is fully opaque, so every
+/// pixel is restored after drawing.
+fn force_opaque(pixels: &mut [u8]) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel[3] = 0xFF;
+    }
+}
+
 /// Draws the cover and the text lines over the already-filled buffer.
 fn draw_panel(dc: HDC, layout: &PanelLayout, panel: &Panel<'_>) {
     draw_cover(dc, layout, panel.cover.as_ref());
-    let title = scaled_font(layout.title.height(), 600);
-    let body = scaled_font(layout.artist.height(), 400);
+    let title = text_font(layout.title_px, 600);
+    let body = text_font(layout.body_px, 400);
     draw_line(dc, title, layout.title, panel.title, TITLE_COLOR);
     draw_line(dc, body, layout.artist, panel.artist, MUTED_COLOR);
     draw_line(dc, body, layout.album, panel.album, MUTED_COLOR);
@@ -223,10 +237,11 @@ fn draw_line(dc: HDC, font: HFONT, rect: layout::Rect, text: &str, color: COLORR
     }
 }
 
-/// Creates a `Segoe UI` font roughly `rect_height` pixels tall, or a null
-/// handle if GDI is out of resources (the caller then skips the text).
-fn scaled_font(rect_height: i32, weight: i32) -> HFONT {
-    let pixels = (rect_height * 8 / 10).clamp(6, 256);
+/// Creates a `Segoe UI` font `pixels` tall (the layout's `title_px` /
+/// `body_px`), or a null handle if GDI is out of resources (the caller then
+/// skips the text).
+fn text_font(pixels: i32, weight: i32) -> HFONT {
+    let pixels = pixels.clamp(6, 256);
     // SAFETY: the face name is a static, NUL-terminated UTF-16 literal that
     // Windows only reads for the call. The returned handle is owned by the
     // caller.
@@ -254,6 +269,7 @@ fn scaled_font(rect_height: i32, weight: i32) -> HFONT {
 mod tests {
     use super::*;
     use crate::taskbar::layout::{Cover, Panel};
+    use windows::Win32::Graphics::Gdi::GetDIBits;
 
     fn panel(cover: Option<&[u8]>) -> Panel<'_> {
         Panel {
@@ -292,6 +308,55 @@ mod tests {
             unsafe {
                 let _ = DeleteObject(bitmap);
             }
+        }
+    }
+
+    #[test]
+    fn render_keeps_every_pixel_opaque_for_dwm() {
+        let rgba = cover_rgba();
+        let panel = panel(Some(&rgba));
+        let size = ThumbnailSize {
+            width: 160,
+            height: 90,
+        };
+        let bitmap = render(size, &panel).expect("render the panel");
+        // SAFETY: a null source DC is the documented way to create a memory DC;
+        // the returned DC is owned by this test and destroyed below.
+        let dc = unsafe { CreateCompatibleDC(None) };
+        let mut info = BITMAPINFO::default();
+        info.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+        info.bmiHeader.biWidth = size.width as i32;
+        info.bmiHeader.biHeight = -(size.height as i32);
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB.0;
+        let mut pixels = vec![0u8; size.width as usize * size.height as usize * 4];
+        // SAFETY: `dc` and `bitmap` are live; `info` and `pixels` are valid for
+        // the call and outlive it.
+        let lines = unsafe {
+            GetDIBits(
+                dc,
+                bitmap,
+                0,
+                size.height,
+                Some(pixels.as_mut_ptr().cast()),
+                &mut info,
+                DIB_RGB_COLORS,
+            )
+        };
+        assert_eq!(lines, size.height as i32, "all scan lines were copied");
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[3] == 0xFF),
+            "GDI clears the glyph alpha; render must restore it or DWM drops the text"
+        );
+        // SAFETY: both handles came from this test and are not used again.
+        unsafe {
+            let _ = DeleteDC(dc);
+            let _ = DeleteObject(bitmap);
         }
     }
 
