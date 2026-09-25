@@ -299,3 +299,55 @@ fn albums_view_builds_its_model_and_quits() {
     }
     assert!(constructed.get(), "the app was never constructed");
 }
+
+/// Exercises live appearance changes (#309): building with a non-default saved
+/// font size, density and zebra flag, then changing all three through the
+/// Appearance page messages, must relayout every list without panicking.
+#[test]
+fn appearance_changes_apply_live_and_quit() {
+    use emusic_ui::state::{Appearance, Density, FontSize};
+    use emusic_win32::views::settings::SettingsMsg;
+
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic-win32.appearance").theme(Theme::dark()),
+        move |ui| {
+            let config = Config {
+                appearance: Appearance {
+                    font_size: FontSize::Large,
+                    density: Density::Spacious,
+                    zebra: false,
+                },
+                ..Config::default()
+            };
+            let app = Win32App::new(
+                ui,
+                Box::new(MockLibrary::new()),
+                Box::new(MockPlayer::default()),
+                config,
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            ui.emit(Msg::Navigate(emusic_ui::state::View::Settings));
+            // Each of these ticks the app, applying the new metrics live.
+            ui.emit(Msg::Settings(SettingsMsg::SetFontSize(FontSize::Small)));
+            ui.emit(Msg::Settings(SettingsMsg::SetDensity(Density::Compact)));
+            ui.emit(Msg::Settings(SettingsMsg::ToggleZebra(true)));
+            ui.emit(Msg::Settings(SettingsMsg::SetFontSize(FontSize::Larger)));
+            ui.emit(Msg::Settings(SettingsMsg::SetDensity(Density::Spacious)));
+            ui.emit(Msg::Quit);
+            constructed_for_make.set(true);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}

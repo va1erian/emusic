@@ -15,6 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::TrackInfo;
+use emusic_ui::state::Metrics;
 use emusic_ui::views::now_playing::{ModuleView, NowPlayingView as Model};
 use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, RectF, TextSystem};
 use win32ui::gdi::Canvas;
@@ -139,7 +140,10 @@ impl Fonts {
             .ok()
     }
 
-    fn new() -> Self {
+    /// Builds the summary's fonts from the appearance metrics (#309): the
+    /// title is the metric title size, the body and caption the metric body
+    /// and small sizes.
+    fn from_metrics(metrics: Metrics) -> Self {
         let Ok(system) = TextSystem::new() else {
             return Self {
                 title: None,
@@ -148,9 +152,9 @@ impl Fonts {
             };
         };
         Self {
-            title: Self::dip_font(&system, 12.0, 700),
-            body: Self::dip_font(&system, 9.75, 400),
-            small: Self::dip_font(&system, 8.5, 400),
+            title: Self::dip_font(&system, metrics.title, 700),
+            body: Self::dip_font(&system, metrics.body, 400),
+            small: Self::dip_font(&system, metrics.small, 400),
         }
     }
 }
@@ -184,8 +188,14 @@ impl SummaryWidget {
             hits: RefCell::new(Vec::new()),
             hot: Cell::new(None),
             pressed: Cell::new(None),
-            fonts: RefCell::new(Fonts::new()),
+            fonts: RefCell::new(Fonts::from_metrics(crate::appearance::metrics())),
         }
+    }
+
+    /// Rebuilds the summary's fonts from new appearance metrics (#309). New
+    /// fonts are created before the old handles are dropped.
+    pub(super) fn set_metrics(&mut self, metrics: Metrics) {
+        *self.fonts.borrow_mut() = Fonts::from_metrics(metrics);
     }
 
     /// Rebuilds the metadata snapshot from the shared model.

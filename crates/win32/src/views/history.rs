@@ -203,6 +203,11 @@ impl HistoryView {
         })
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.list);
+    }
+
     /// Refreshes the list from the library. `rebuild` is set when the library
     /// (and so the history) changed; the list is also rebuilt on the first
     /// sync and whenever the playing track changes, because a play's status

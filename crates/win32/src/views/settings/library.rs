@@ -125,6 +125,11 @@ impl LibraryPage {
         self.form.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub(super) fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.list);
+    }
+
     /// Rebuilds the folder list when the configured set changed, and mirrors
     /// the scan state onto the buttons.
     pub(super) fn sync(&mut self, state: &AppState, library: &dyn LibraryDataSource) {

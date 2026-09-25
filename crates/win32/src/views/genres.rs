@@ -94,6 +94,11 @@ impl GenresView {
         self.rows.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.rows.apply_appearance();
+    }
+
     /// The "N genres" label above the virtual list.
     pub fn layout(&self) -> Layout {
         column![self.label.height(dip(LABEL_HEIGHT)), self.rows.fill(1)]

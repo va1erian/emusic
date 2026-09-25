@@ -95,6 +95,11 @@ impl TrackList {
         })
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub(super) fn apply_appearance(&self) {
+        crate::appearance::apply_list(&self.list);
+    }
+
     /// Rebuilds the rows from the shared table when its display order changed,
     /// and refreshes the playing highlight and sort arrow.
     pub(super) fn sync(

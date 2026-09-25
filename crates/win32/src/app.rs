@@ -13,7 +13,7 @@ use emusic_ui::library_api::{LibraryDataSource, StatsWindow};
 use emusic_ui::panels::top_bar::TopBarMsg;
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::{AppState, Command, View, VisualizerMode, WindowGeometry};
+use emusic_ui::state::{AppState, Appearance, Command, View, VisualizerMode, WindowGeometry};
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::column_browser::Pane;
@@ -160,6 +160,12 @@ pub struct Win32App {
     applied_panels: emusic_ui::state::PanelVisibility,
     /// Theme and accent last applied to the window, so a change re-themes it.
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
+    /// Font size, density and zebra last applied, so a change relayouts once
+    /// (#309).
+    applied_appearance: Appearance,
+    /// The DPI last applied to the views, so a monitor move rebuilds fonts
+    /// (#309).
+    applied_dpi: u32,
     /// View last applied to the central area, so a change re-lays it out.
     applied_view: View,
     /// Whether the column browser was last shown, so a change re-lays it out.
@@ -190,6 +196,12 @@ impl Win32App {
         startup: Option<winshell::IpcMessage>,
         waker: WakerSlot,
     ) -> Self {
+        // Install the appearance metrics before any view is created, so the
+        // controls and the custom widgets are built with the saved font size,
+        // density and zebra flag (#309).
+        let appearance = config.appearance;
+        let dpi = ui.dpi();
+        crate::appearance::install(appearance, dpi);
         let navigator = NavigatorView::new(ui).expect("create navigator view");
         let central = Placeholder::new(ui, "Music").expect("create central placeholder");
         let browser = ColumnBrowserView::new(ui).expect("create column browser view");
@@ -260,6 +272,11 @@ impl Win32App {
 
         let applied_panels = shell.state.panels;
         let applied_look = (shell.state.theme, shell.state.accent);
+        let applied_appearance = shell.state.appearance;
+        // `0` can never equal a real DPI, so the first sync applies the
+        // appearance to the lists (whose controls were created with the
+        // system font before this).
+        let applied_dpi = 0;
         let applied_view = shell.state.view;
         let applied_browser_toggle = shell.state.music.browser.visible;
         let mut app = Self {
@@ -283,6 +300,8 @@ impl Win32App {
             timer: None,
             applied_panels,
             applied_look,
+            applied_appearance,
+            applied_dpi,
             applied_view,
             applied_browser_visible: browser_visible,
             applied_browser_toggle,
@@ -597,6 +616,37 @@ impl Win32App {
             ui.set_theme(win32_theme(look.0, look.1));
             self.applied_look = look;
         }
+
+        // Font size, density and DPI (#309): recompute the metrics once and
+        // push them into every list and custom widget. Row heights are whole
+        // device pixels, so the lists never draw fractional rows mid-change.
+        let appearance = self.shell.state.appearance;
+        let dpi = ui.dpi();
+        if appearance != self.applied_appearance || dpi != self.applied_dpi {
+            crate::appearance::install(appearance, dpi);
+            self.apply_appearance(ui);
+            self.applied_appearance = appearance;
+            self.applied_dpi = dpi;
+        }
+    }
+
+    /// Pushes the current appearance metrics and zebra flag into every view:
+    /// the lists (row font, row height, striping) and the custom widgets
+    /// (navigator, summary, album tiles) (#309).
+    fn apply_appearance(&mut self, ui: &Ui<Msg>) {
+        self.navigator.apply_appearance(ui);
+        self.music.apply_appearance();
+        self.albums.apply_appearance();
+        self.folders.apply_appearance();
+        self.artists.apply_appearance();
+        self.genres.apply_appearance();
+        self.most_played.apply_appearance();
+        self.history.apply_appearance();
+        self.starred.apply_appearance();
+        self.browser.apply_appearance();
+        self.right_panel.apply_appearance();
+        self.now_playing_central.apply_appearance();
+        self.settings.apply_appearance();
     }
 
     /// Applies a top-bar intent through the shared model and dispatches the

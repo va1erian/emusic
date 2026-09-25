@@ -30,7 +30,9 @@ use std::cell::Cell;
 use std::path::PathBuf;
 
 use emusic_ui::library_api::LibraryDataSource;
-use emusic_ui::state::{Accent, AppState, SettingsTab, Theme as UiTheme, VisualizerMode};
+use emusic_ui::state::{
+    Accent, AppState, Density, FontSize, SettingsTab, Theme as UiTheme, VisualizerMode,
+};
 use emusic_ui::views::Commands;
 use win32ui::prelude::*;
 use win32ui::{Layout, dip};
@@ -66,6 +68,12 @@ pub enum SettingsMsg {
     ToggleVisualizer(bool),
     /// The Appearance page picked a visualizer mode.
     SetVisualizerMode(VisualizerMode),
+    /// The Appearance page picked a UI font size (#309).
+    SetFontSize(FontSize),
+    /// The Appearance page picked a list density (#309).
+    SetDensity(Density),
+    /// The Appearance page toggled zebra striping (#309).
+    ToggleZebra(bool),
     /// The File associations page toggled one extension's checkbox.
     AssocToggle(usize, bool),
     /// The File associations page selected or cleared every checkbox.
@@ -174,6 +182,12 @@ impl SettingsView {
     pub fn set_visible(&self, visible: bool) {
         self.visible.set(visible);
         self.refresh_tab_visibility();
+    }
+
+    /// Applies the current appearance metrics and zebra flag to the pages that
+    /// own list views (#309).
+    pub fn apply_appearance(&self) {
+        self.library.apply_appearance();
     }
 
     /// Mirrors the active tab onto the five pages, leaving only the selected

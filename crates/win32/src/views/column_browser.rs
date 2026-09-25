@@ -78,6 +78,14 @@ impl ColumnBrowserView {
         })
     }
 
+    /// Applies the current appearance metrics and zebra flag to all three
+    /// panes (#309).
+    pub fn apply_appearance(&self) {
+        for list in [&self.genre, &self.artist, &self.album] {
+            crate::appearance::apply_list(list);
+        }
+    }
+
     /// Mirrors the model's facets and selection into the lists, but only when
     /// the model revision changed.
     pub fn sync(&self, browser: &ColumnBrowser) {

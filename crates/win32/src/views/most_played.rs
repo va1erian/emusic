@@ -127,6 +127,11 @@ impl MostPlayedView {
         self.table.set_visible(visible);
     }
 
+    /// Applies the current appearance metrics and zebra flag (#309).
+    pub fn apply_appearance(&self) {
+        self.table.apply_appearance();
+    }
+
     /// The window-tab band and count label above the track table.
     pub fn layout(&self) -> Layout {
         column![

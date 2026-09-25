@@ -35,11 +35,14 @@ use win32ui::prelude::*;
 
 use emusic_ui::backend;
 use emusic_ui::config::Config;
-use emusic_ui::state::{Accent, Theme, View, VisualizerMode};
+use emusic_ui::state::{
+    Accent, Appearance, Density, FontSize, SettingsTab, Theme, View, VisualizerMode,
+};
 use emusic_ui::waker::WakerSlot;
 
 use emusic_win32::app::{Msg, Win32App};
 use emusic_win32::theme::win32_theme;
+use emusic_win32::views::settings::SettingsMsg;
 use emusic_win32::window::window_spec;
 
 /// How long the window is left to settle (create its controls) before the
@@ -69,6 +72,24 @@ struct Cli {
     /// Accent colour: a preset name or `#rrggbb`.
     #[arg(long, value_parser = parse_accent, default_value = "orange")]
     accent: Accent,
+
+    /// UI font-size scale (#309): `small`, `default`, `large`, `larger`.
+    #[arg(long, value_parser = parse_font_size, default_value = "default")]
+    font_size: FontSize,
+
+    /// List density (#309): `compact`, `comfortable`, `spacious`.
+    #[arg(long, value_parser = parse_density, default_value = "comfortable")]
+    density: Density,
+
+    /// Turn zebra striping off for the capture (#309). Striping is on by
+    /// default.
+    #[arg(long)]
+    no_zebra: bool,
+
+    /// Settings tab to show: `library`, `appearance`, `associations`,
+    /// `playback`, `about`. Only meaningful for the Settings view.
+    #[arg(long, value_parser = parse_settings_tab)]
+    settings_tab: Option<SettingsTab>,
 
     /// Show the top-bar visualizer in this mode (`spectrum`, `oscilloscope`).
     #[arg(long, value_parser = parse_visualizer)]
@@ -153,9 +174,15 @@ fn main() -> anyhow::Result<()> {
         view,
         cli.theme,
         cli.accent,
+        Appearance {
+            font_size: cli.font_size,
+            density: cli.density,
+            zebra: !cli.no_zebra,
+        },
         cli.visualizer,
         cli.properties,
         cli.tag_editor,
+        cli.settings_tab,
         width,
         height,
         &cli.out,
@@ -178,6 +205,20 @@ fn run_all(cli: &Cli) -> anyhow::Result<()> {
             .arg(cli.theme.slug())
             .arg("--accent")
             .arg(cli.accent.to_config_str())
+            .arg("--font-size")
+            .arg(font_size_slug(cli.font_size))
+            .arg("--density")
+            .arg(density_slug(cli.density))
+            .args(if cli.no_zebra {
+                vec!["--no-zebra"]
+            } else {
+                vec![]
+            })
+            .args(
+                cli.settings_tab
+                    .iter()
+                    .flat_map(|tab| ["--settings-tab", tab.slug()]),
+            )
             .args(
                 cli.visualizer
                     .iter()
@@ -221,6 +262,58 @@ fn parse_visualizer(s: &str) -> std::result::Result<VisualizerMode, String> {
     VisualizerMode::from_slug(s).ok_or_else(|| format!("invalid visualizer {s:?}"))
 }
 
+/// Parses `--font-size`: one of the [`FontSize`] labels, case-insensitively.
+fn parse_font_size(s: &str) -> std::result::Result<FontSize, String> {
+    FontSize::ALL
+        .into_iter()
+        .find(|size| size.label().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = FontSize::ALL.iter().map(|size| size.label()).collect();
+            format!(
+                "invalid font size {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// Parses `--density`: one of the [`Density`] labels, case-insensitively.
+fn parse_density(s: &str) -> std::result::Result<Density, String> {
+    Density::ALL
+        .into_iter()
+        .find(|density| density.label().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = Density::ALL.iter().map(|density| density.label()).collect();
+            format!(
+                "invalid density {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// Parses `--settings-tab`: one of the [`SettingsTab`] slugs.
+fn parse_settings_tab(s: &str) -> std::result::Result<SettingsTab, String> {
+    SettingsTab::ALL
+        .into_iter()
+        .find(|tab| tab.slug().eq_ignore_ascii_case(s))
+        .ok_or_else(|| {
+            let known: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.slug()).collect();
+            format!(
+                "invalid settings tab {s:?}; expected one of: {}",
+                known.join(", ")
+            )
+        })
+}
+
+/// The `--font-size` value to pass on to a child process.
+fn font_size_slug(size: FontSize) -> &'static str {
+    size.label()
+}
+
+/// The `--density` value to pass on to a child process.
+fn density_slug(density: Density) -> &'static str {
+    density.label()
+}
+
 /// Resolves a `--view` slug, listing the known ones on error.
 fn parse_view(slug: &str) -> anyhow::Result<View> {
     View::from_slug(slug).ok_or_else(|| {
@@ -238,18 +331,21 @@ fn render_one(
     view: View,
     theme: ThemeArg,
     accent: Accent,
+    appearance: Appearance,
     visualizer: Option<VisualizerMode>,
     properties: bool,
     tag_editor: bool,
+    settings_tab: Option<SettingsTab>,
     width: f32,
     height: f32,
     out: &Path,
 ) -> anyhow::Result<()> {
-    // Theme and view go through the config so the shell adopts them exactly as
-    // it adopts a user's saved settings.
+    // Theme, view and appearance go through the config so the shell adopts
+    // them exactly as it adopts a user's saved settings.
     let config = Config {
         theme: theme.shell(),
         accent,
+        appearance,
         visualizer_enabled: visualizer.is_some(),
         visualizer: visualizer.unwrap_or_default(),
         last_view: view,
@@ -290,6 +386,11 @@ fn render_one(
         );
         if let Some(notice) = backends.notice {
             app.set_backend_notice(notice);
+        }
+        // Show the requested Settings tab (the tab strip is built from the
+        // shell state when the layout is next installed).
+        if let (View::Settings, Some(tab)) = (view, settings_tab) {
+            ui.emit(Msg::Settings(SettingsMsg::SelectTab(tab)));
         }
         let timer = ui.set_timer(TICK_MS).ok();
         ShotApp {

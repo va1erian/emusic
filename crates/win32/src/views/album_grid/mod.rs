@@ -184,6 +184,13 @@ impl AlbumGridView {
         }
     }
 
+    /// Applies the current appearance metrics and zebra flag to the track list
+    /// and repaints the tiles, whose captions follow the live metrics (#309).
+    pub fn apply_appearance(&self) {
+        self.tracks.apply_appearance();
+        self.grid.invalidate();
+    }
+
     /// Pushes each control's visibility from the active/selection state, so a
     /// hidden view never shows a stray control.
     fn apply_visibility(&self) {

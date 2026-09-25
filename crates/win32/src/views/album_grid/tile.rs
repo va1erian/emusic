@@ -10,8 +10,9 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use emusic_ui::state::Metrics;
 use emusic_ui::views::album_grid::models::AlbumKey;
-use win32ui::d2d::{D2dCanvas, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
+use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
 use win32ui::prelude::*;
 
 use crate::d2d_text::{self, Align};
@@ -79,27 +80,62 @@ impl GridModel for TileModel {
     }
 }
 
+/// The DirectWrite fonts the tile caption is drawn with, keyed by the metrics
+/// they were built from so an appearance change rebuilds them once.
+struct TileFonts {
+    metrics: Metrics,
+    body: Option<Font>,
+    bold: Option<Font>,
+    small: Option<Font>,
+    glyph: Option<Font>,
+}
+
+impl TileFonts {
+    fn build(system: Option<&TextSystem>, metrics: Metrics) -> Self {
+        let font = |family: &str, points: f32, weight: u16| {
+            system.and_then(|system| {
+                system
+                    .font(
+                        &FontSpec::new(family, crate::appearance::d2d_size(points)).weight(weight),
+                    )
+                    .ok()
+            })
+        };
+        let scale = metrics.body / crate::appearance::BASE_BODY_POINTS;
+        Self {
+            metrics,
+            body: font(crate::appearance::UI_FAMILY, metrics.body, 400),
+            bold: font(crate::appearance::UI_FAMILY, metrics.body, 700),
+            small: font(crate::appearance::UI_FAMILY, metrics.small, 400),
+            glyph: font("Segoe UI Symbol", 22.0 * scale, 400),
+        }
+    }
+}
+
 /// Builds the `content` painter, capturing the shared thumbnail state, the
-/// current theme and the fonts it draws with.
+/// current theme and the fonts it draws with. The fonts follow the live
+/// appearance metrics, rebuilt when they change (#309).
 pub(super) fn content(
     thumbs: Rc<RefCell<ThumbState>>,
     theme: Rc<Cell<Theme>>,
 ) -> impl Fn(&AlbumTile, &mut D2dCanvas<'_>, RectF, TileState) + 'static {
     let system = TextSystem::new().ok();
-    let font = move |family: &str, points: f32, weight: u16| {
-        system.as_ref().and_then(|system| {
-            system
-                .font(&FontSpec::new(family, points * 96.0 / 72.0).weight(weight))
-                .ok()
-        })
-    };
-    let body = font("Segoe UI", 9.75, 400);
-    let bold = font("Segoe UI", 9.75, 700);
-    let small = font("Segoe UI", 8.25, 400);
-    let glyph = font("Segoe UI Symbol", 22.0, 400);
+    let fonts = RefCell::new(TileFonts::build(
+        system.as_ref(),
+        crate::appearance::metrics(),
+    ));
 
     move |tile, canvas, rect, state| {
         let theme = theme.get();
+        {
+            let metrics = crate::appearance::metrics();
+            let mut fonts = fonts.borrow_mut();
+            if fonts.metrics != metrics {
+                *fonts = TileFonts::build(system.as_ref(), metrics);
+            }
+        }
+        let fonts = fonts.borrow();
+        let (body, bold, small, glyph) = (&fonts.body, &fonts.bold, &fonts.small, &fonts.glyph);
         let edge = (rect.width() - CAPTION_DIP).max(1.0);
         let cover = RectF::new(rect.left, rect.top, rect.left + edge, rect.top + edge);
 
@@ -122,7 +158,7 @@ pub(super) fn content(
             None => {
                 tile.cover.set(None);
                 canvas.fill_rect(cover, placeholder_color(&tile.name));
-                if let Some(font) = &glyph {
+                if let Some(font) = glyph {
                     d2d_text::draw_line(
                         canvas,
                         font,
@@ -152,10 +188,10 @@ pub(super) fn content(
             artist.right,
             artist.bottom + line,
         );
-        if let Some(font) = &bold {
+        if let Some(font) = bold {
             d2d_text::draw_line(canvas, font, name, &tile.name, theme.text, Align::Left);
         }
-        if let Some(font) = &body {
+        if let Some(font) = body {
             d2d_text::draw_line(
                 canvas,
                 font,
@@ -165,7 +201,7 @@ pub(super) fn content(
                 Align::Left,
             );
         }
-        if let (Some(year_value), Some(font)) = (tile.year, &small) {
+        if let (Some(year_value), Some(font)) = (tile.year, small) {
             d2d_text::draw_line(
                 canvas,
                 font,
