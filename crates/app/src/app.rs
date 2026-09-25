@@ -27,6 +27,7 @@ use win32ui::prelude::*;
 use win32ui::{column, dip, row};
 
 use crate::backend::smtc::Smtc;
+use crate::backend::taskbar::TaskbarPreview;
 use crate::backend::thumbbar::ThumbBar;
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
 use crate::dialogs::properties;
@@ -196,6 +197,9 @@ pub struct Win32App {
     /// Windows taskbar thumbnail-toolbar transport buttons (#321). `None` in
     /// `emusic-shot` and tests, so headless runs never touch the shell.
     thumbbar: Option<ThumbBar>,
+    /// DWM iconic taskbar preview + taskbar progress bar (#322). `None` in
+    /// `emusic-shot` and tests, so headless runs never touch DWM or the shell.
+    taskbar_preview: Option<TaskbarPreview>,
 }
 
 impl Win32App {
@@ -327,6 +331,7 @@ impl Win32App {
             tag_editor: None,
             smtc: None,
             thumbbar: None,
+            taskbar_preview: None,
         };
         app.install_layout(ui, view);
         app.refresh_folders();
@@ -399,6 +404,13 @@ impl Win32App {
         self.thumbbar = Some(thumbbar);
     }
 
+    /// Registers the DWM iconic taskbar preview and progress bar (#322). Only
+    /// the real binary calls this; shot/tests leave it unset so they never
+    /// touch DWM or the shell.
+    pub fn attach_taskbar_preview(&mut self, preview: TaskbarPreview) {
+        self.taskbar_preview = Some(preview);
+    }
+
     /// Handles the shell's repaint timer. While the visualizer animates the
     /// timer fires at [`FRAME_INTERVAL`](emusic_ui::panels::visualizer::FRAME_INTERVAL);
     /// most of those frames only need the strip fed, so the full sync (every
@@ -443,6 +455,11 @@ impl Win32App {
             bridge.borrow_mut().status = editor.status.clone();
         }
         self.sync_views(ui, tick.changes);
+        // The taskbar preview reads the now-playing model that `sync_views`
+        // just refreshed, so it runs after it (#322).
+        if let Some(preview) = self.taskbar_preview.as_mut() {
+            preview.sync(self.shell.player.as_ref(), &self.shell.state.now_playing);
+        }
         self.schedule(ui, tick.next_wake);
     }
 
