@@ -85,10 +85,13 @@ pub fn msg_hook(msg: *const c_void) -> bool {
     if msg.message != WM_DWMSENDICONICTHUMBNAIL {
         return false;
     }
+    // Per the message contract the HIWORD is the maximum width (x) and the
+    // LOWORD the maximum height (y); DWM rejects a thumbnail larger than
+    // either, so getting them the wrong way round fails every request.
     let packed = msg.lParam.0 as usize;
     let size = ThumbnailSize {
-        width: (packed & 0xffff) as u32,
-        height: ((packed >> 16) & 0xffff) as u32,
+        width: ((packed >> 16) & 0xffff) as u32,
+        height: (packed & 0xffff) as u32,
     };
     *THUMBNAIL_REQUEST
         .lock()
@@ -262,8 +265,9 @@ mod tests {
     fn thumbnail_message(width: u32, height: u32) -> MSG {
         MSG {
             message: WM_DWMSENDICONICTHUMBNAIL,
+            // HIWORD carries the width, LOWORD the height.
             lParam: windows::Win32::Foundation::LPARAM(
-                (((height as usize) << 16) | (width as usize & 0xffff)) as isize,
+                (((width as usize) << 16) | (height as usize & 0xffff)) as isize,
             ),
             ..MSG::default()
         }

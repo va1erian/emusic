@@ -79,7 +79,7 @@ impl Rect {
     }
 }
 
-/// The rectangles one panel draws into.
+/// The rectangles one panel draws into, plus the font sizes to draw with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PanelLayout {
     /// Cover art; empty when the thumbnail is too small for one.
@@ -89,6 +89,10 @@ pub struct PanelLayout {
     pub album: Rect,
     /// The `elapsed / total` line.
     pub time: Rect,
+    /// Title font height in pixels.
+    pub title_px: i32,
+    /// Artist / album / time font height in pixels.
+    pub body_px: i32,
 }
 
 /// The narrowest text column worth drawing into.
@@ -96,18 +100,26 @@ const MIN_TEXT_WIDTH: i32 = 28;
 
 /// Lays the panel out for `size`: cover art on the left, the text stack on
 /// the right. A thumbnail too small for one of them leaves that part empty.
+///
+/// The fonts are sized from the card, not from the line rectangles: a line
+/// rectangle a third of the card tall would give a title font far too large to
+/// fit more than a few characters. `title_px` / `body_px` are kept apart so
+/// the renderer draws exactly the size the layout reserved room for.
 #[must_use]
 pub fn layout(size: ThumbnailSize) -> PanelLayout {
     let width = size.width as i32;
     let height = size.height as i32;
+    let empty = PanelLayout {
+        cover: Rect::EMPTY,
+        title: Rect::EMPTY,
+        artist: Rect::EMPTY,
+        album: Rect::EMPTY,
+        time: Rect::EMPTY,
+        title_px: 0,
+        body_px: 0,
+    };
     if width <= 0 || height <= 0 {
-        return PanelLayout {
-            cover: Rect::EMPTY,
-            title: Rect::EMPTY,
-            artist: Rect::EMPTY,
-            album: Rect::EMPTY,
-            time: Rect::EMPTY,
-        };
+        return empty;
     }
 
     // Padding (and the text's leading) scales with the card but stays legible.
@@ -127,21 +139,16 @@ pub fn layout(size: ThumbnailSize) -> PanelLayout {
     let text_right = width - pad;
     let text_width = text_right - text_left;
     if text_width < MIN_TEXT_WIDTH || inner_height < 4 * pad {
-        return PanelLayout {
-            cover,
-            title: Rect::EMPTY,
-            artist: Rect::EMPTY,
-            album: Rect::EMPTY,
-            time: Rect::EMPTY,
-        };
+        return PanelLayout { cover, ..empty };
     }
 
-    // Title gets the most room; artist and album share the rest; the time line
-    // is pinned to the bottom so it aligns with the cover.
-    let title_height = (inner_height * 30 / 100).max(pad);
-    let artist_height = (inner_height * 22 / 100).max(pad);
-    let album_height = (inner_height * 22 / 100).max(pad);
-    let time_height = (inner_height - title_height - artist_height - album_height).max(pad);
+    // Modest, card-proportional sizes: roughly a sixth of the height for the
+    // title and a tenth for the body, so a normal title reads in full.
+    let title_px = (height * 12 / 100).clamp(9, 22);
+    let body_px = (height * 9 / 100).clamp(7, 16);
+    // A line rectangle gives the font a little leading to sit in.
+    let title_height = title_px * 3 / 2;
+    let body_height = body_px * 3 / 2;
 
     let line = |top: i32, line_height: i32| Rect {
         left: text_left,
@@ -152,11 +159,11 @@ pub fn layout(size: ThumbnailSize) -> PanelLayout {
     let mut top = pad;
     let title = line(top, title_height);
     top += title_height;
-    let artist = line(top, artist_height);
-    top += artist_height;
-    let album = line(top, album_height);
+    let artist = line(top, body_height);
+    top += body_height;
+    let album = line(top, body_height);
     // The time line is bottom-aligned, leaving any slack between album and it.
-    let time = line(cover.bottom - time_height, time_height);
+    let time = line(cover.bottom - body_height, body_height);
 
     PanelLayout {
         cover,
@@ -164,6 +171,8 @@ pub fn layout(size: ThumbnailSize) -> PanelLayout {
         artist,
         album,
         time,
+        title_px,
+        body_px,
     }
 }
 
@@ -253,6 +262,25 @@ mod tests {
         assert!(!narrow.cover.is_empty(), "the cover still fits");
         let wide = layout(size(320, 200));
         assert!(wide.title.left >= wide.cover.right);
+    }
+
+    #[test]
+    fn font_sizes_stay_small_enough_for_the_title_to_read() {
+        // DWM asks for roughly 250x137 on a normal taskbar; the old
+        // layout-sized fonts came out around 29px and ellipsised the title to
+        // a few characters.
+        let layout = layout(size(250, 137));
+        assert_eq!(layout.title_px, 16);
+        assert_eq!(layout.body_px, 12);
+        assert!(
+            layout.title_px <= layout.body_px * 2,
+            "the title should not dwarf the body text"
+        );
+        assert!(
+            layout.title_px < layout.title.height(),
+            "the line rectangle leaves leading for the font"
+        );
+        assert!(layout.time.bottom <= 137, "the time line stays on the card");
     }
 
     #[test]
