@@ -224,6 +224,11 @@ impl FoldersView {
         self.table.set_context_row(row);
     }
 
+    /// The track whose context menu is open, if any.
+    pub fn context_track(&self) -> Option<emusic_ui::library_api::TrackInfo> {
+        self.table.context_track()
+    }
+
     pub fn context_menu(&self) -> &Menu<Msg> {
         self.table.context_menu()
     }
