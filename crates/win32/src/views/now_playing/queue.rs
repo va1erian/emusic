@@ -1,8 +1,10 @@
-//! The now-playing panel's upcoming queue (#110): a virtual (owner-data)
-//! `ListView` over the shared [`QueueRow`] preview.
+//! The now-playing surfaces' upcoming queue (#110, #247): a virtual
+//! (owner-data) `ListView` over the shared [`QueueRow`] preview.
 //!
 //! Rows and their indices come from the [`NowPlayingView`] model; this module
-//! only owns the native list and maps its events to [`Msg`]s. Double-click or
+//! only owns the native list. The right panel and the central view each pass
+//! their own message constructors to [`build`] and [`context_menu`], so the
+//! two lists route independently even while both are visible. Double-click or
 //! Enter jumps to a queue entry, right-click opens a "Remove" context menu.
 
 use emusic_ui::views::now_playing::{NowPlayingView as Model, QueueRow};
@@ -56,8 +58,14 @@ impl ListModel for QueueModel {
 }
 
 /// Builds the queue list: number, title and artist columns, with double-click
-/// activation and a right-click context menu.
-pub(super) fn build(ui: &mut Ui<Msg>) -> win32ui::Result<ListView<QueueItem, Msg>> {
+/// activation and a right-click context menu. `on_activate` and `on_context`
+/// turn a row index into the caller's own jump/context message, so the panel
+/// and the central view's lists can be told apart.
+pub(super) fn build(
+    ui: &mut Ui<Msg>,
+    on_activate: impl Fn(usize) -> Option<Msg> + 'static,
+    on_context: impl Fn(usize) -> Option<Msg> + 'static,
+) -> win32ui::Result<ListView<QueueItem, Msg>> {
     let list = ListView::new(ui)?
         .column("#", dip(NUMBER_WIDTH), |row: &QueueItem| {
             row.number_text.as_str()
@@ -68,15 +76,16 @@ pub(super) fn build(ui: &mut Ui<Msg>) -> win32ui::Result<ListView<QueueItem, Msg
             ColumnWidth::Fixed(dip(ARTIST_WIDTH)),
             |row: &QueueItem| row.artist.as_str(),
         )
-        .on_activate(|row| Some(Msg::QueueJump(row)))
-        .on_context(|row| Some(Msg::QueueContext(row)));
+        .on_activate(on_activate)
+        .on_context(on_context);
     Ok(list)
 }
 
-/// The queue's right-click menu.
+/// The queue's right-click menu. `on_remove` builds the caller's own remove
+/// message.
 #[must_use]
-pub(super) fn context_menu() -> Menu<Msg> {
-    Menu::new().item("Remove from queue", None, || Msg::QueueRemove)
+pub(super) fn context_menu(on_remove: impl Fn() -> Msg + 'static) -> Menu<Msg> {
+    Menu::new().item("Remove from queue", None, on_remove)
 }
 
 /// Builds the list model from the shared preview rows.
