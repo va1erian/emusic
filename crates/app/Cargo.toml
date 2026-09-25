@@ -18,7 +18,9 @@ required-features = ["shot"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+emusic-milkdrop = { path = "../milkdrop" }
 emusic-player = { path = "../player" }
+emusic-projectm = { path = "../projectm" }
 emusic-ui = { path = "../ui" }
 rfd = { version = "0.15", default-features = false }
 png = { version = "0.18", optional = true }
