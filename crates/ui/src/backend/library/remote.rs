@@ -46,9 +46,31 @@ impl RemoteState {
         self.servers = servers.to_vec();
     }
 
+    /// The current server list.
+    pub(crate) fn servers(&self) -> &[RemoteServer] {
+        &self.servers
+    }
+
     /// The last remote-sync status line, if any.
     pub(crate) fn status(&self) -> Option<String> {
         self.status.clone()
+    }
+
+    /// The remote cache root, or `None` when the cache could not be resolved.
+    pub(crate) fn cache_root(&self) -> Option<PathBuf> {
+        self.cache.as_ref().map(|cache| cache.root().to_path_buf())
+    }
+
+    /// Forgets servers that were removed: drops their stored credentials.
+    pub(crate) fn forget(&self, server_ids: &[String]) {
+        let Some(credentials) = &self.credentials else {
+            return;
+        };
+        for id in server_ids {
+            if let Err(error) = credentials.remove(id) {
+                warn!(server_id = %id, %error, "could not remove credentials");
+            }
+        }
     }
 
     /// Starts a sync on a background thread unless one is already running.
@@ -57,6 +79,7 @@ impl RemoteState {
         store: Arc<Mutex<Store>>,
         folders: Vec<Folder>,
         updates: Updates,
+        only_root: Option<PathBuf>,
     ) {
         if self.servers.is_empty() {
             return;
@@ -78,7 +101,15 @@ impl RemoteState {
         let running = Arc::clone(&self.running);
         std::thread::spawn(move || {
             let _ = updates.send(super::Update::Status("Syncing remote servers...".into()));
-            match run(&store, &folders, &servers, &cache, &credentials, &updates) {
+            match run(
+                &store,
+                &folders,
+                &servers,
+                &cache,
+                &credentials,
+                &updates,
+                only_root.as_deref(),
+            ) {
                 Ok(()) => info!("remote sync finished"),
                 Err(error) => {
                     warn!(%error, "remote sync failed");
@@ -100,6 +131,7 @@ fn run(
     cache: &TrackCache,
     credentials: &CredentialStore,
     updates: &Updates,
+    only_root: Option<&Path>,
 ) -> Result<()> {
     let mut total = 0usize;
     let mut failures = 0usize;
@@ -116,12 +148,12 @@ fn run(
 
     // Rebuild one snapshot so the remote rows appear in every view.
     let snapshot = match private_store(store) {
-        Some(store) => Snapshot::from_store(&store, folders)?,
+        Some(store) => Snapshot::from_store(&store, folders, only_root)?,
         None => {
             let guard = store
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            Snapshot::from_store(&guard, folders)?
+            Snapshot::from_store(&guard, folders, only_root)?
         }
     };
     let _ = updates.send(super::Update::Snapshot(Box::new(snapshot)));
@@ -193,13 +225,31 @@ fn apply_delta(
     }
     store.upsert_remote_tracks(&server.id, &mut records)?;
 
-    let removed: Vec<String> = existing
-        .into_iter()
-        .filter(|id| !seen.contains(id))
-        .collect();
+    // The server sends deletions as tombstones; apply exactly those. Only on a
+    // first (full) sync do we also drop rows the server no longer reports,
+    // because a delta does not contain the unchanged rows.
+    let removed = ids_to_delete(since, existing, &seen, &delta.deleted);
     store.delete_remote_tracks(&server.id, &removed)?;
     store.set_remote_since_version(&server.id, delta.version)?;
     Ok(delta.tracks.len())
+}
+
+/// The remote ids to delete after applying a delta.
+///
+/// Tombstones are always applied. Rows missing from the delta are only
+/// deletions on a **full** sync (`since == 0`); on an incremental sync they
+/// are simply unchanged and must be kept.
+fn ids_to_delete(
+    since: i64,
+    existing: std::collections::HashSet<String>,
+    seen: &std::collections::HashSet<String>,
+    tombstones: &[String],
+) -> Vec<String> {
+    let mut removed: std::collections::HashSet<String> = tombstones.iter().cloned().collect();
+    if since == 0 {
+        removed.extend(existing.into_iter().filter(|id| !seen.contains(id)));
+    }
+    removed.into_iter().collect()
 }
 
 /// Maps a server [`TrackView`] onto a local [`Track`] at `path`.
@@ -294,5 +344,31 @@ mod tests {
         assert_eq!(track.channels, Some(8));
         assert_eq!(track.size, 4096);
         assert_eq!(track.title.as_deref(), Some("Song"));
+    }
+
+    fn set(items: &[&str]) -> std::collections::HashSet<String> {
+        items.iter().map(|item| (*item).to_string()).collect()
+    }
+
+    #[test]
+    fn incremental_sync_keeps_unchanged_rows() {
+        // Existing {a, b}, delta contains only the changed a, no tombstones:
+        // b is unchanged and must be kept, not deleted.
+        let removed = ids_to_delete(5, set(&["a", "b"]), &set(&["a"]), &[]);
+        assert!(removed.is_empty(), "unchanged rows must survive a delta");
+    }
+
+    #[test]
+    fn incremental_sync_applies_tombstones() {
+        let removed = ids_to_delete(5, set(&["a", "b"]), &set(&["a"]), &["b".to_string()]);
+        assert_eq!(removed, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn full_sync_drops_absent_rows() {
+        let removed = ids_to_delete(0, set(&["a", "b", "c"]), &set(&["a"]), &[]);
+        let mut removed = removed;
+        removed.sort();
+        assert_eq!(removed, vec!["b".to_string(), "c".to_string()]);
     }
 }

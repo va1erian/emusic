@@ -277,6 +277,10 @@ pub trait LibraryDataSource {
     /// Requests an immediate sync of every configured remote server (#391).
     fn sync_remote(&mut self) {}
 
+    /// When set, snapshots show only remote tracks (the local library is
+    /// hidden, not deleted) (#391).
+    fn set_server_only(&mut self, _on: bool) {}
+
     /// A status line describing the remote sync, if any (#391).
     fn remote_status(&self) -> Option<String> {
         None

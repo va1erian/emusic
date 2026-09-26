@@ -42,9 +42,12 @@ pub(crate) fn spawn(
     handle: ScanHandle,
     purge: Vec<PathBuf>,
     bass: Option<Arc<bass::Bass>>,
+    only_root: Option<PathBuf>,
 ) {
     std::thread::spawn(move || {
-        if let Err(err) = run(&store, &folders, &roots, &updates, &handle, &purge, bass) {
+        if let Err(err) = run(
+            &store, &folders, &roots, &updates, &handle, &purge, bass, only_root,
+        ) {
             warn!(%err, "library scan failed");
         }
     });
@@ -61,8 +64,11 @@ pub(crate) fn run(
     handle: &ScanHandle,
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
+    only_root: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let result = run_inner(store, folders, roots, updates, handle, purge, bass);
+    let result = run_inner(
+        store, folders, roots, updates, handle, purge, bass, only_root,
+    );
     if result.is_err() {
         let _ = updates.send(Update::Status(String::new()));
     }
@@ -79,6 +85,7 @@ fn run_inner(
     handle: &ScanHandle,
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
+    only_root: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     // Real deployments scan through a private connection, so the shared lock
     // stays free for the UI. In-memory stores (unit tests) cannot be
@@ -106,7 +113,7 @@ fn run_inner(
         let store = store
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        Snapshot::from_store(&store, folders)?
+        Snapshot::from_store(&store, folders, only_root.as_deref())?
     };
     let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     let _ = updates.send(Update::Status(String::new()));
