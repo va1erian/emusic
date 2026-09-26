@@ -47,6 +47,7 @@ impl CentralNowPlayingView {
             |row| Some(Msg::CentralQueueJump(row)),
             |row| Some(Msg::CentralQueueContext(row)),
             || Msg::CentralQueueRemove,
+            || Msg::CentralQueueRemoveSelected,
         )?;
         Ok(Self { pair })
     }
@@ -91,6 +92,13 @@ impl CentralNowPlayingView {
     #[must_use]
     pub fn context_index(&self) -> Option<usize> {
         self.pair.context_index()
+    }
+
+    /// The queue entry index of the currently selected row, for
+    /// Delete-to-remove.
+    #[must_use]
+    pub fn selected_queue_index(&self) -> Option<usize> {
+        self.pair.selected_queue_index()
     }
 
     /// The queue's right-click menu.

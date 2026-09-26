@@ -47,6 +47,7 @@ impl WidgetPair {
         on_activate: impl Fn(usize) -> Option<Msg> + 'static,
         on_context: impl Fn(usize) -> Option<Msg> + 'static,
         on_remove: impl Fn() -> Msg + 'static,
+        on_delete: impl Fn() -> Msg + 'static,
     ) -> win32ui::Result<Self> {
         let summary =
             Custom::new(ui, SummaryWidget::new())?.on_event(|event| Some(Msg::NowPlaying(event)));
@@ -55,7 +56,7 @@ impl WidgetPair {
         } else {
             summary
         };
-        let queue = queue::build(ui, on_activate, on_context)?;
+        let queue = queue::build(ui, on_activate, on_context, on_delete)?;
         Ok(Self {
             summary,
             queue,
@@ -135,6 +136,13 @@ impl WidgetPair {
     #[must_use]
     pub(super) fn queue_index(&self, row: usize) -> Option<usize> {
         self.indices.as_slice().get(row).copied()
+    }
+
+    /// The queue entry index for the currently selected row, if a row is
+    /// selected. Drives Delete-to-remove.
+    #[must_use]
+    pub(super) fn selected_queue_index(&self) -> Option<usize> {
+        self.queue.selected().and_then(|row| self.queue_index(row))
     }
 
     /// Remembers the row a context menu was opened on.

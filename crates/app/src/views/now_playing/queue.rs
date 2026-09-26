@@ -58,13 +58,17 @@ impl ListModel for QueueModel {
 }
 
 /// Builds the queue list: number, title and artist columns, with double-click
-/// activation and a right-click context menu. `on_activate` and `on_context`
-/// turn a row index into the caller's own jump/context message, so the panel
-/// and the central view's lists can be told apart.
+/// activation, a right-click context menu and Delete-to-remove. `on_activate`
+/// and `on_context` turn a row index into the caller's own jump/context
+/// message, `on_delete` into the caller's own remove message, so the panel and
+/// the central view's lists can be told apart. Delete is handled here rather
+/// than as a global accelerator so it never steals the key from a focused text
+/// field.
 pub(super) fn build(
     ui: &mut Ui<Msg>,
     on_activate: impl Fn(usize) -> Option<Msg> + 'static,
     on_context: impl Fn(usize) -> Option<Msg> + 'static,
+    on_delete: impl Fn() -> Msg + 'static,
 ) -> win32ui::Result<ListView<QueueItem, Msg>> {
     let list = ListView::new(ui)?
         .column("#", dip(NUMBER_WIDTH), |row: &QueueItem| {
@@ -77,7 +81,14 @@ pub(super) fn build(
             |row: &QueueItem| row.artist.as_str(),
         )
         .on_activate(on_activate)
-        .on_context(on_context);
+        .on_context(on_context)
+        .on_key(move |key, _modifiers| {
+            if key == Key::DELETE {
+                Some(on_delete())
+            } else {
+                None
+            }
+        });
     Ok(list)
 }
 

@@ -12,7 +12,7 @@ use win32ui::prelude::*;
 
 use crate::app::Msg;
 
-/// Builds the File/View menu bar, ticking the View toggles that are on.
+/// Builds the File/View/Help menu bar, ticking the View toggles that are on.
 ///
 /// `win32ui` has no runtime checked-state setter, so the caller reinstalls the
 /// bar with a freshly built one whenever the visibility state changes.
@@ -50,7 +50,12 @@ pub fn build(state: &AppState) -> Menu<Msg> {
         .separator()
         .submenu("&Visualization", viz_menu(state));
 
-    Menu::new().submenu("&File", file).submenu("&View", view)
+    let help = Menu::new().item("Keyboard shortcuts…", None, || Msg::KeyboardShortcuts);
+
+    Menu::new()
+        .submenu("&File", file)
+        .submenu("&View", view)
+        .submenu("&Help", help)
 }
 
 /// The View → Visualization submenu: show/hide, preset navigation and lock,
