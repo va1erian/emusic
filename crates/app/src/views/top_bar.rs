@@ -144,6 +144,12 @@ impl TopBarView {
             self.search.set_text(search_query);
         }
     }
+
+    /// Focuses the search box and selects its text, for the Ctrl+F shortcut.
+    pub fn focus_search(&self) {
+        self.search.focus();
+        self.search.select_all();
+    }
 }
 
 /// Builds the item list for the current structural state.

@@ -1,8 +1,8 @@
 //! Shared UI state (#94, #97): the toolkit-agnostic [`AppState`] shell plus
 //! the smaller state types it is built from — appearance ([`Accent`],
 //! [`Theme`], [`Palette`]), [`Command`] messages, [`View`] routing, panel
-//! visibility, search popup, settings tabs, visualizer mode and the projectM
-//! visualization.
+//! visibility, search popup, settings tabs, visualizer mode, the central
+//! keyboard-shortcut table and the projectM visualization.
 
 mod appearance;
 mod command;
@@ -12,6 +12,7 @@ mod panels;
 pub mod projectm;
 mod search;
 mod settings;
+mod shortcuts;
 mod view;
 mod visualizer;
 mod window;
@@ -24,6 +25,9 @@ pub use panels::{PanelKind, PanelVisibility};
 pub use projectm::{ProjectMState, VizCommand};
 pub use search::{SearchPopupItem, SearchPopupState};
 pub use settings::SettingsTab;
+pub use shortcuts::{
+    SEEK_STEP_SECS, SHORTCUTS, Shortcut, ShortcutAction, ShortcutKey, VOLUME_STEP, shortcut_command,
+};
 pub use view::View;
 pub use visualizer::VisualizerMode;
 pub use window::WindowGeometry;

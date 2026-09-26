@@ -14,9 +14,11 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows::Win32::System::WindowsProgramming::DRIVE_REMOTE;
+use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
 use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, ShowWindow,
+    AllowSetForegroundWindow, GetClassNameW, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow,
+    ShowWindow,
 };
 
 /// Grants the process `pid` the right to call `SetForegroundWindow`, even
@@ -114,6 +116,30 @@ pub fn shell_open(target: &str) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// The window class name of the window that currently has keyboard focus, if
+/// any.
+///
+/// Returns `None` when no window has focus (e.g. the app is not foreground) or
+/// the class name cannot be read. The class name is the raw Win32 name — e.g.
+/// `"Edit"` for a text field — not a friendly label.
+pub fn focused_window_class() -> Option<String> {
+    // SAFETY: `GetFocus` takes no arguments and only reads the calling
+    // thread's focus window; a null result is its documented "no focus" case.
+    let hwnd = unsafe { GetFocus() };
+    if hwnd.0.is_null() {
+        return None;
+    }
+    let mut buffer = [0u16; 256];
+    // SAFETY: `buffer` is a valid, writable slice of `buffer.len()` UTF-16
+    // code units, and `hwnd` is a live window handle for the duration of the
+    // call; the returned length is at most `buffer.len()`.
+    let length = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if length <= 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..length as usize]))
 }
 
 /// Tells Explorer that file associations changed, so icons and "Open with"

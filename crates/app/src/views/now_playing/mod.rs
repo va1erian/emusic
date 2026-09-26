@@ -69,6 +69,7 @@ impl NowPlayingView {
             |row| Some(Msg::QueueJump(row)),
             |row| Some(Msg::QueueContext(row)),
             || Msg::QueueRemove,
+            || Msg::QueueRemoveSelected,
         )?;
         let viz = ProjectMView::new(ui)?.with_gestures(|gesture| match gesture {
             ProjectMGesture::PopOut => Some(Msg::Viz(VizCommand::SetDock(VizDock::Window))),
@@ -147,6 +148,13 @@ impl NowPlayingView {
     #[must_use]
     pub fn context_index(&self) -> Option<usize> {
         self.pair.context_index()
+    }
+
+    /// The queue entry index of the currently selected row, for
+    /// Delete-to-remove.
+    #[must_use]
+    pub fn selected_queue_index(&self) -> Option<usize> {
+        self.pair.selected_queue_index()
     }
 
     /// The queue's right-click menu.

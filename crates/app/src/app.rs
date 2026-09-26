@@ -18,7 +18,8 @@ use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::projectm::{ProjectMAvailability, VizDock, VizSurface};
 use emusic_ui::state::{
     AppState, Appearance, Command, MAX_NAVIGATOR_WIDTH, MAX_RIGHT_PANEL_WIDTH, MIN_NAVIGATOR_WIDTH,
-    MIN_RIGHT_PANEL_WIDTH, View, VisualizerMode, VizCommand, WindowGeometry,
+    MIN_RIGHT_PANEL_WIDTH, SHORTCUTS, ShortcutAction, ShortcutKey, View, VisualizerMode,
+    VizCommand, WindowGeometry, shortcut_command,
 };
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
@@ -29,7 +30,7 @@ use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
 use win32ui::prelude::*;
-use win32ui::{column, dip, split_col, split_row};
+use win32ui::{TaskDialog, TaskDialogIcon, column, dip, split_col, split_row};
 
 use crate::backend::smtc::Smtc;
 use crate::backend::taskbar::TaskbarPreview;
@@ -132,6 +133,10 @@ pub enum Msg {
     TopBar(TopBarEvent),
     /// The top-bar search box changed.
     TopBarSearch(String),
+    /// A keyboard shortcut from the central [`SHORTCUTS`] table fired.
+    Shortcut(ShortcutAction),
+    /// Show the Help -> Keyboard shortcuts dialog.
+    KeyboardShortcuts,
     /// A now-playing summary action (star, link, Properties, ...).
     NowPlaying(SummaryEvent),
     /// The tag editor dialog left a save request in its bridge (#278).
@@ -142,6 +147,9 @@ pub enum Msg {
     QueueContext(usize),
     /// Remove the queue entry the right panel's context menu was opened on.
     QueueRemove,
+    /// Remove the right panel queue entry with the row currently selected
+    /// (Delete on the queue list).
+    QueueRemoveSelected,
     /// Jump to a central Now Playing view queue preview row (#247;
     /// double-click / Enter). Distinct from [`Msg::QueueJump`] so the two
     /// queue lists, both visible at once, route independently.
@@ -152,6 +160,9 @@ pub enum Msg {
     /// Remove the queue entry the central view's context menu was opened on
     /// (#247).
     CentralQueueRemove,
+    /// Remove the central Now Playing queue entry with the row currently
+    /// selected (Delete on the queue list).
+    CentralQueueRemoveSelected,
     /// The top-bar visualizer strip was clicked: cycle its mode.
     CycleVisualizer,
     /// A projectM surface gesture (hover button, double-click) as a command.
@@ -328,6 +339,7 @@ impl Win32App {
         apply_saved_geometry(ui, shell.state.window);
         ui.on_close(|| Some(Msg::Quit));
         ui.set_menu_bar(menu::build(&shell.state));
+        install_shortcuts(ui);
         // Only the active central view is placed by the layout (installed
         // below); the others are hidden so they keep no stale bounds.
         let view = shell.state.view;
@@ -886,6 +898,24 @@ impl Win32App {
         self.shell.state.top_bar.update(message, &mut out);
         for command in out.into_vec() {
             self.shell.dispatch(command);
+        }
+    }
+
+    /// Runs one keyboard-shortcut action: [`shortcut_command`] turns the
+    /// action and the player snapshot into a shell command (Search yields none
+    /// and only focuses the top-bar box, which is frontend state).
+    fn handle_shortcut(&mut self, action: ShortcutAction) {
+        let player = self.shell.player.as_ref();
+        let command = shortcut_command(
+            action,
+            player.position(),
+            player.duration(),
+            player.volume(),
+        );
+        if let Some(command) = command {
+            self.shell.dispatch(command);
+        } else if let Some(top_bar) = &self.top_bar {
+            top_bar.focus_search();
         }
     }
 
@@ -1525,6 +1555,13 @@ impl App for Win32App {
                 self.apply_top_bar(TopBarMsg::SetSearchQuery(query));
                 self.tick(ui);
             }
+            Msg::Shortcut(action) => {
+                self.handle_shortcut(action);
+                self.tick(ui);
+            }
+            Msg::KeyboardShortcuts => {
+                show_keyboard_shortcuts(ui);
+            }
             Msg::NowPlaying(event) => {
                 self.handle_summary(event);
                 // The shared model parks the track in `properties`; the
@@ -1565,6 +1602,12 @@ impl App for Win32App {
                     self.tick(ui);
                 }
             }
+            Msg::QueueRemoveSelected => {
+                if let Some(index) = self.right_panel.selected_queue_index() {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick(ui);
+                }
+            }
             Msg::CentralQueueJump(row) => {
                 if let Some(index) = self.now_playing_central.queue_index(row) {
                     self.apply_now_playing(NowPlayingMsg::QueueJump(index));
@@ -1580,6 +1623,12 @@ impl App for Win32App {
             }
             Msg::CentralQueueRemove => {
                 if let Some(index) = self.now_playing_central.context_index() {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick(ui);
+                }
+            }
+            Msg::CentralQueueRemoveSelected => {
+                if let Some(index) = self.now_playing_central.selected_queue_index() {
                     self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
                     self.tick(ui);
                 }
@@ -1626,6 +1675,74 @@ impl App for Win32App {
                 ui.close();
             }
         }
+    }
+}
+
+/// Registers every entry in the central [`SHORTCUTS`] table as a window
+/// accelerator.
+///
+/// A bare-key binding yields while a text field or other key-consuming control
+/// has focus (see [`winshell::input`]), so Space, the arrows and Delete keep
+/// working in the search box and tab controls. Ctrl-bearing bindings and F5
+/// fire regardless, so Ctrl+F still focuses the search box while typing.
+fn install_shortcuts(ui: &Ui<Msg>) {
+    for shortcut in SHORTCUTS {
+        let action = shortcut.action;
+        // Only the bare-key bindings that would otherwise steal a keystroke
+        // from a focused control are guarded; Ctrl-bearing ones and F5 fire
+        // regardless, so Ctrl+F still works while typing.
+        let guarded = matches!(
+            action,
+            ShortcutAction::PlayPause | ShortcutAction::SeekBackward | ShortcutAction::SeekForward
+        );
+        ui.accelerator(win32_shortcut(shortcut), move || {
+            if guarded && winshell::input::focused_control_consumes_keys() {
+                return None;
+            }
+            Some(Msg::Shortcut(action))
+        });
+    }
+}
+
+/// Translates a central shortcut into a `win32ui` accelerator, mapping the
+/// toolkit-agnostic key and modifiers.
+fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> win32ui::Shortcut {
+    let key = match shortcut.key {
+        ShortcutKey::Space => Key::SPACE,
+        ShortcutKey::Left => Key::LEFT,
+        ShortcutKey::Right => Key::RIGHT,
+        ShortcutKey::Up => Key::UP,
+        ShortcutKey::Down => Key::DOWN,
+        ShortcutKey::F5 => Key::F5,
+        ShortcutKey::F => Key::F,
+    };
+    let mut accelerator = win32ui::Shortcut::key(key);
+    if shortcut.ctrl {
+        accelerator = accelerator.with_ctrl();
+    }
+    if shortcut.shift {
+        accelerator = accelerator.with_shift();
+    }
+    if shortcut.alt {
+        accelerator = accelerator.with_alt();
+    }
+    accelerator
+}
+
+/// Shows the Help -> Keyboard shortcuts dialog: one line per binding from the
+/// central [`SHORTCUTS`] table.
+fn show_keyboard_shortcuts(ui: &Ui<Msg>) {
+    let content = SHORTCUTS
+        .iter()
+        .map(|shortcut| format!("{} — {}", shortcut.display(), shortcut.description))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let dialog = TaskDialog::new("Keyboard shortcuts")
+        .content(content)
+        .buttons([("OK", ())])
+        .icon(TaskDialogIcon::Information);
+    if let Err(error) = dialog.show(ui) {
+        tracing::warn!(%error, "keyboard-shortcuts dialog unavailable");
     }
 }
 
