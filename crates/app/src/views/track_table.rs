@@ -21,7 +21,7 @@ use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
+use xui::xui_core::geometry::{Point, Rect};
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Column, Fill, ListModel, ListView, SortDirection};
 
@@ -143,6 +143,9 @@ pub struct TrackView {
     playing: Rc<Cell<Option<u64>>>,
     /// Column index and direction currently showing a sort arrow, if any.
     indicator: Cell<Option<(usize, bool)>>,
+    /// The list's last client rectangle, so a row context point (node-local)
+    /// can be translated to window-client coordinates for the popup.
+    bounds: Cell<Rect>,
 }
 
 impl TrackView {
@@ -162,7 +165,7 @@ impl TrackView {
         let list = list
             .on_activate(|row| Some(Msg::PlayRow(row)))
             .on_sort(|column| Some(Msg::SortColumn(column)))
-            .on_context(|row| Some(Msg::ContextRow(row)));
+            .on_context(|row, at| Some(Msg::ContextRow(row, at)));
 
         let rows = Rc::new(Vec::new());
         list.set_model(MusicModel {
@@ -175,7 +178,15 @@ impl TrackView {
             rows,
             playing,
             indicator: Cell::new(None),
+            bounds: Cell::new(Rect::default()),
         }
+    }
+
+    /// The list's client origin, to translate a node-local context point into
+    /// the window-client point the context menu is anchored at.
+    pub fn context_origin(&self) -> Point {
+        let bounds = self.bounds.get();
+        Point::new(bounds.left, bounds.top)
     }
 
     /// The list's node, for the layout.
@@ -185,6 +196,7 @@ impl TrackView {
 
     /// Moves/resizes the table.
     pub fn set_bounds(&self, rect: Rect) {
+        self.bounds.set(rect);
         self.ui.apply_moves(&[(self.list.id(), rect)]);
     }
 

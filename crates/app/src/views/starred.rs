@@ -62,6 +62,11 @@ impl StarredView {
     }
 
     /// Shows or hides the whole view (its header and table).
+    /// The track table's client origin, to anchor the row context menu.
+    pub fn context_origin(&self) -> xui::xui_core::geometry::Point {
+        self.table.context_origin()
+    }
+
     pub fn set_visible(&self, visible: bool) {
         self.ui.set_visible(self.header.id(), visible);
         self.table.set_visible(visible);
