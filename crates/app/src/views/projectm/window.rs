@@ -156,6 +156,13 @@ impl VizWindow {
                 .size(dip(640.0), dip(480.0))
                 .backdrop(Backdrop::Acrylic),
             move |child_ui| {
+                // A separately created top-level window starts with the generic
+                // system icon; install the app's embedded icon explicitly
+                // (`emusic.rc`, resource id 1) so the title bar and Alt-Tab show
+                // it like the main window does.
+                if let Ok(icon) = Icon::from_resource(1) {
+                    child_ui.set_icon(icon);
+                }
                 dpi_for_make.set(child_ui.dpi());
                 if let Some(placement) = saved_placement(&saved, child_ui.dpi()) {
                     let _ = child_ui.set_placement(&placement);
