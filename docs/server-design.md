@@ -21,21 +21,25 @@ This document presents the complete architecture and design for **`emusic-server
  |                          Homelab / Host Server                          |
  |                                                                         |
  |  +-------------------------------------------------------------------+  |
+ |  |            Cosmos Cloud / Reverse Proxy (Let's Encrypt TLS)       |  |
+ |  +------------------------------------+------------------------------+  |
+ |                                       | HTTP/2 (Internal Net)           |
+ |  +------------------------------------v------------------------------+  |
  |  |                          emusic-server                            |  |
  |  |                                                                   |  |
  |  |  +--------------------+  +--------------------+  +-------------+  |  |
- |  |  |  mTLS / Token Auth |  | Path Sanitizer &   |  | SQLite      |  |  |
- |  |  |  & TLS 1.3 Engine  |  | Jail (Chroot/Safe) |  | Meta Store  |  |  |
+ |  |  | Trusted Proxy Auth |  | Path Sanitizer &   |  | SQLite      |  |  |
+ |  |  | & Token Validation |  | Jail (Chroot/Safe) |  | Meta Store  |  |  |
  |  |  +---------+----------+  +---------+----------+  +------+------+  |  |
  |  |            |                       |                    |         |  |
  |  |  +---------v-----------------------v--------------------v------+  |  |
  |  |  |             Axum / Tokio HTTP/2 REST & WS API              |  |  |
  |  |  +---------------------------------+---------------------------+  |  |
  |  +------------------------------------|------------------------------+  |
- |                                       | HTTPS / mTLS                    |
+ |                                       | HTTPS (Port 443 / Let's Encrypt)|
  +---------------------------------------|---------------------------------+
                                          |
-                            (Tailscale / WireGuard / TLS)
+                            (Cosmos Cloud HTTPS Domain)
                                          |
  +---------------------------------------v---------------------------------+
  |                           Client Workstation                            |
@@ -70,12 +74,13 @@ Security is paramount. The server exposes media and metadata to remote clients, 
 - **Client Revocation**:
   - The server maintains a persistent list of paired `device_id` records in SQLite. Revoking a device immediately invalidates all associated tokens.
 
-### 3.2 Network Layer Protection
-- **TLS 1.3 Mandatory**: HTTP plain text is disallowed. Rustls is used as the cryptographic backend (avoiding OpenSSL vulnerabilities).
-- **Mutual TLS (mTLS) Support (Optional/Recommended)**:
-  - For high-security environments, the server can mandate client certificates generated during pairing.
-- **VPN / Overlay Network Compatibility**:
-  - Native integration guidelines for Tailscale, WireGuard, or Cloudflare Tunnels so the server doesn't need open WAN ports.
+### 3.2 Network Layer & Reverse Proxy Integration (Cosmos Cloud)
+- **Cosmos Cloud / Reverse Proxy Friendly**:
+  - In homelabs running **Cosmos Cloud** (or Traefik/Nginx/Caddy), Cosmos Cloud handles public exposure and manages **Let's Encrypt** SSL/TLS certificates automatically.
+  - `emusic-server` can run in plain HTTP mode internally within the Docker bridge network while Cosmos Cloud terminates TLS 1.3 at the perimeter.
+  - **Trusted Proxy Header Handling**: `emusic-server` inspects `X-Forwarded-For`, `X-Forwarded-Proto`, and `Host` headers provided by Cosmos Cloud when `trusted_proxies` is configured in `server.toml`.
+  - **WebSocket & Range Pass-Through**: Cosmos Cloud transparently forwards WebSocket connections (`/api/v1/ws`) and HTTP `206 Partial Content`Range requests without buffering or chunk truncation.
+- **Direct TLS Mode**: If run without a reverse proxy, `emusic-server` uses built-in `rustls` with user-supplied certificates.
 
 ### 3.3 Storage Access & Path Traversal Prevention
 - **Strict Path Canonicalization**:
@@ -87,7 +92,7 @@ Security is paramount. The server exposes media and metadata to remote clients, 
 
 ### 3.4 Rate Limiting & Audit Logging
 - **Adaptive Rate Limiting**:
-  - Brute-force protection on authentication and pairing endpoints (e.g., maximum 3 pairing attempts per minute per IP).
+  - Brute-force protection on authentication and pairing endpoints (e.g., maximum 3 pairing attempts per minute per IP), utilizing real client IPs extracted from proxy headers when behind Cosmos Cloud.
 - **Structured Audit Logs**:
   - Security events (failed auth, device paired, device revoked, path access violations) are written to structured audit logs (`tracing` + JSON file target).
 
@@ -235,7 +240,7 @@ To keep changes minimal and isolated in `emusic`:
 
 3. **Settings UI (`crates/app`)**:
    - Add a "Homelab Server" section in `emusic` settings:
-     - Server URL (e.g. `https://homelab.local:8443` or Tailscale IP).
+     - Server URL (e.g. `https://music.myhomelab.com` served via Cosmos Cloud or local URL).
      - "Pair New Server" button prompting for the 6-digit pairing code.
      - Sync status indicator.
 
@@ -246,13 +251,14 @@ To keep changes minimal and isolated in `emusic`:
 ```toml
 [server]
 host = "0.0.0.0"
-port = 8443
+port = 8080 # Run on internal port when behind Cosmos Cloud / proxy
 data_dir = "/var/lib/emusic-server"
+trusted_proxies = ["172.16.0.0/12", "127.0.0.1"] # Cosmos Cloud container subnet
 
 [security]
-tls_cert = "/etc/emusic-server/certs/cert.pem"
-tls_key = "/etc/emusic-server/certs/key.pem"
-require_mtls = false
+# Set tls_cert/tls_key if running standalone; leave blank when behind Cosmos Cloud
+tls_cert = ""
+tls_key = ""
 token_ttl_hours = 168 # 7 days
 max_pairing_attempts_per_min = 3
 
@@ -270,8 +276,8 @@ scan_interval_secs = 3600
 
 ## 9. Deployment Strategy
 
-### 9.1 Docker Deployment
-A lightweight Docker container based on Alpine Linux / Debian Slim:
+### 9.1 Cosmos Cloud / Docker Compose Deployment
+`emusic-server` integrates seamlessly into Cosmos Cloud as a managed container with automated Let's Encrypt SSL:
 
 ```yaml
 version: '3.8'
@@ -281,13 +287,19 @@ services:
     container_name: emusic-server
     restart: unless-stopped
     ports:
-      - "8443:8443"
+      - "8080:8080"
     volumes:
       - /path/to/music:/media/music:ro
       - /path/to/config:/etc/emusic-server
       - /path/to/data:/var/lib/emusic-server
     environment:
       - RUST_LOG=info,emusic_server=debug
+    # Cosmos Cloud automatically routes HTTPS traffic from your domain
+    # (e.g., https://music.homelab.net) to port 8080 and manages Let's Encrypt certificates.
+    labels:
+      - "cosmos-cloud.enabled=true"
+      - "cosmos-cloud.domain=music.homelab.net"
+      - "cosmos-cloud.target-port=8080"
 ```
 
 ### 9.2 Native systemd Service
@@ -316,7 +328,8 @@ WantedBy=multi-user.target
 
 | Requirement | Proposed Solution | Implementation Area |
 | :--- | :--- | :--- |
-| **Security** | TLS 1.3, PASETO v4 tokens, mTLS option, device pairing, strict path canonicalization. | `crates/server/src/auth`, `util/security.rs` |
+| **Security** | TLS 1.3 via Cosmos Cloud / Let's Encrypt, PASETO v4 tokens, device pairing, strict path canonicalization. | `crates/server/src/auth`, `util/security.rs` |
+| **Cosmos Cloud Integration** | Automatic Let's Encrypt TLS termination, trusted proxy headers (`X-Forwarded-For`), WebSocket & Range pass-through. | `crates/server/src/config.rs`, Cosmos Docker labels |
 | **Specialized Formats** | Direct raw binary file transfer for `.sid`, `.mod`, `.xm`, `.it`, `.mid`. | `crates/server/src/api/stream_routes.rs` |
 | **Minimal Client Changes** | Transferred files saved to local temp cache; existing `SidChannel` & `BassBackend` handles playback. | `crates/player`, `crates/library` |
-| **Homelab Deployment** | Single binary / Docker container with systemd/Docker integration. | `crates/server`, `installer/` |
+| **Homelab Deployment** | Cosmos Cloud Docker Compose template, single binary, systemd integration. | `crates/server`, `installer/` |
