@@ -19,6 +19,10 @@ use super::packs::{self, KNOWN_PACKS};
 const PACK_NAME_WIDTH: f32 = 220.0;
 /// Width of a pack's status label, in design units.
 const PACK_STATUS_WIDTH: f32 = 200.0;
+/// Tooltip for a pack's enable checkbox.
+const TIP_PACK: &str = "Include this pack's presets in the rotation.";
+/// Tooltip for the "Get more presets..." button.
+const TIP_GET_MORE: &str = "Download the optional preset packs listed here.";
 
 /// One preset pack's row: its enable checkbox and its status text.
 struct PackRow {
@@ -43,6 +47,7 @@ impl PacksSection {
             let checkbox = CheckBox::new(ui, pack)?.on_toggle(move |on| {
                 Some(Msg::Settings(SettingsMsg::VizPack(pack.to_owned(), on)))
             });
+            checkbox.set_tooltip(TIP_PACK);
             packs.push(PackRow {
                 pack,
                 checkbox,
@@ -51,6 +56,7 @@ impl PacksSection {
         }
         let get_more = Button::new(ui, "Get more presets...")?
             .on_click(|| Some(Msg::Settings(SettingsMsg::VizGetPresets)));
+        get_more.set_tooltip(TIP_GET_MORE);
         Ok(Self {
             heading: Label::new(ui, Rect::default(), "Preset packs")?,
             packs,
