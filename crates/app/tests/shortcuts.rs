@@ -25,7 +25,7 @@ use emusic_ui::player_api::{
 };
 use emusic_ui::state::ShortcutAction;
 use emusic_ui::waker::WakerSlot;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 /// `WM_KEYDOWN` (`winuser.h`).
 const WM_KEYDOWN: u32 = 0x0100;
@@ -247,7 +247,7 @@ fn watchdog(ui: &Ui<Msg>) {
     let watchdog = ui.set_timer(WATCHDOG_MS).ok();
     ui.on_timer(move |fired| {
         if Some(fired) == watchdog {
-            win32ui::quit(1);
+            xui::quit(1);
         }
         None
     });
@@ -264,7 +264,7 @@ impl WindowHandler for NullHandler {
 }
 
 /// Posts `WM_KEYDOWN` for `vk` into the app's message loop, the way a real key
-/// arrives. `win32ui` exposes no way to post to an arbitrary `Hwnd`, so this
+/// arrives. `xui` exposes no way to post to an arbitrary `Hwnd`, so this
 /// makes a tiny child of the app window and posts to that: the loop resolves
 /// the app window as its root ancestor and offers the key to the app's
 /// accelerator table. The window is leaked so it lives as long as the loop.
@@ -297,7 +297,7 @@ fn accelerator_table_installs_and_app_ticks() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.shortcuts.install").theme(Theme::dark()),
         move |ui| {
             let (app, _calls) = build_app(ui, MockPlayer::default());
@@ -325,7 +325,7 @@ fn posted_space_toggles_playback() {
     let calls_for_make = Rc::clone(&calls);
     let injected_for_make = Rc::clone(&injected);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.shortcuts.space").theme(Theme::dark()),
         move |ui| {
             let (app, calls) = build_app(ui, MockPlayer::default());
@@ -337,9 +337,9 @@ fn posted_space_toggles_playback() {
             let watchdog = ui.set_timer(WATCHDOG_MS).ok();
             ui.on_timer(move |fired| {
                 if Some(fired) == watchdog {
-                    win32ui::quit(1);
+                    xui::quit(1);
                 } else if Some(fired) == settle {
-                    win32ui::quit(0);
+                    xui::quit(0);
                 }
                 None
             });
@@ -378,7 +378,7 @@ fn shortcut_messages_dispatch_to_the_player() {
     let baseline_for_make = Rc::clone(&baseline);
     let calls_for_make = Rc::clone(&calls);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.shortcuts.dispatch").theme(Theme::dark()),
         move |ui| {
             let (app, calls) = build_app(ui, MockPlayer::default());

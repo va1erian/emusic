@@ -10,8 +10,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use emusic_ui::views::column_browser::{ColumnBrowser, FacetEntry, Pane, PaneSelection};
-use win32ui::prelude::*;
-use win32ui::{ColumnWidth, Fill, Layout, ListModel, ListView, dip, row};
+use xui::prelude::*;
+use xui::{ColumnWidth, Fill, Layout, ListModel, ListView, dip, row};
 
 use crate::app::Msg;
 

@@ -3,7 +3,7 @@
 //! The clickable regions are recorded by [`super::draw`] on each paint; input
 //! looks them up and raises the matching [`SummaryEvent`].
 
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use super::{SummaryEvent, SummaryWidget};
 

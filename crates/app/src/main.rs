@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! A thin shell around `emusic-ui`: `main` handles the CLI, file associations
-//! and the single-instance handshake, then opens a `win32ui` window whose app
+//! and the single-instance handshake, then opens a `xui` window whose app
 //! owns the shared [`Shell`](emusic_ui::shell::Shell).
 
 use std::env;
@@ -76,7 +76,7 @@ fn run_ui(
     #[cfg(target_os = "windows")]
     winshell::thumbbar::taskbar_button_created_message();
 
-    win32ui::run_app(
+    xui::run_app(
         window_spec(
             1100.0,
             720.0,
@@ -116,7 +116,7 @@ fn run_ui(
             app
         },
     )
-    .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
+    .map_err(|err| anyhow::anyhow!("xui: {err}"))
 }
 
 /// Binds the OS integrations to this window (#320, #321, #322) and installs
@@ -129,7 +129,7 @@ fn run_ui(
 /// [`Win32App::new`] bound the waker but before the window is first shown (the
 /// shell announces the taskbar button only after that).
 fn attach_shell_integrations(
-    ui: &mut win32ui::Ui<Msg>,
+    ui: &mut xui::Ui<Msg>,
     app: &mut Win32App,
     hook_waker: emusic_ui::waker::WakerHandle,
 ) {
@@ -157,6 +157,7 @@ fn attach_shell_integrations(
     });
 }
 
+#[cfg(windows)]
 fn register_associations() -> anyhow::Result<()> {
     let exe = env::current_exe()?;
     let manager = winshell::assoc::AssocManager::new("emusic");
@@ -165,9 +166,20 @@ fn register_associations() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
+fn register_associations() -> anyhow::Result<()> {
+    anyhow::bail!("registering file associations is a Windows feature")
+}
+
+#[cfg(windows)]
 fn unregister_associations() -> anyhow::Result<()> {
     let manager = winshell::assoc::AssocManager::new("emusic");
     manager.unregister()?;
     tracing::info!("removed emusic file associations");
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn unregister_associations() -> anyhow::Result<()> {
+    anyhow::bail!("file associations are a Windows feature")
 }

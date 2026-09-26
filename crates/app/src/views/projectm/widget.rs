@@ -18,9 +18,9 @@ use std::time::Instant;
 use emusic_milkdrop::{Frame, MilkdropEngine, PlaceholderEngine};
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
-use win32ui::gdi::{Canvas, Font};
-use win32ui::glow;
-use win32ui::{CustomWidget, Input, MouseButton, Rect, Renderer, Size, Theme, WidgetCx, dip};
+use xui::gdi::{Canvas, Font};
+use xui::glow;
+use xui::{CustomWidget, Input, MouseButton, Rect, Renderer, Size, Theme, WidgetCx, dip};
 
 use super::ProjectMEvent;
 use super::ProjectMGesture;

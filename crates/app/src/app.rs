@@ -1,7 +1,7 @@
 //! The application object (#106).
 //!
 //! [`Win32App`] owns the toolkit-agnostic [`Shell`] and the window's controls.
-//! `win32ui` drives it: every widget event is mapped to [`Msg`], delivered to
+//! `xui` drives it: every widget event is mapped to [`Msg`], delivered to
 //! [`Win32App::update`], which runs [`Shell::tick`] on wakes and timers, syncs
 //! the views, and schedules the next timer from [`Tick::next_wake`].
 
@@ -29,8 +29,10 @@ use emusic_ui::views::column_browser::{
 use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::now_playing::NowPlayingMsg;
 use emusic_ui::waker::WakerSlot;
-use win32ui::prelude::*;
-use win32ui::{TaskDialog, TaskDialogIcon, column, dip, split_col, split_row};
+use xui::prelude::*;
+use xui::{TaskDialog, TaskDialogIcon, column, dip, split_col, split_row};
+
+use crate::compat::UiAccentTint as _;
 
 use crate::backend::smtc::Smtc;
 use crate::backend::taskbar::TaskbarPreview;
@@ -335,7 +337,7 @@ impl Win32App {
 
         // Restore the window geometry saved on the previous exit (#214); the
         // placement is applied before the window is first shown, overriding the
-        // default centring `win32ui` chose. Route the close button through
+        // default centring `xui` chose. Route the close button through
         // `Msg::Quit` so the config (with the final geometry) is saved on exit.
         apply_saved_geometry(ui, shell.state.window);
         ui.on_close(|| Some(Msg::Quit));
@@ -818,7 +820,7 @@ impl Win32App {
             ui.relayout();
             self.applied_panels = panels;
             // Rebuild the View menu so its ticks match the new visibility
-            // (win32ui has no checked-setter).
+            // (xui has no checked-setter).
             ui.set_menu_bar(menu::build(&self.shell.state));
         }
         // The Visualization submenu's ticks change in place, so the bar is not
@@ -1721,9 +1723,9 @@ fn install_shortcuts(ui: &Ui<Msg>) {
     }
 }
 
-/// Translates a central shortcut into a `win32ui` accelerator, mapping the
+/// Translates a central shortcut into a `xui` accelerator, mapping the
 /// toolkit-agnostic key and modifiers.
-fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> win32ui::Shortcut {
+fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> xui::Shortcut {
     let key = match shortcut.key {
         ShortcutKey::Space => Key::SPACE,
         ShortcutKey::Left => Key::LEFT,
@@ -1735,7 +1737,7 @@ fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> win32ui::Shortcut {
         ShortcutKey::R => Key::R,
         ShortcutKey::L => Key::L,
     };
-    let mut accelerator = win32ui::Shortcut::key(key);
+    let mut accelerator = xui::Shortcut::key(key);
     if shortcut.ctrl {
         accelerator = accelerator.with_ctrl();
     }

@@ -14,8 +14,8 @@ use emusic_ui::state::Command;
 use emusic_ui::views::Ctx;
 use emusic_ui::views::track_table::TrackTable;
 use emusic_ui::views::track_table::columns::{self};
-use win32ui::prelude::*;
-use win32ui::{ColumnWidth, Fill, ListView, Menu, SortDirection, dip};
+use xui::prelude::*;
+use xui::{ColumnWidth, Fill, ListView, Menu, SortDirection, dip};
 
 use crate::app::Msg;
 use crate::views::album_grid::AlbumMsg;
@@ -167,11 +167,7 @@ impl TrackList {
     }
 
     /// Runs a context action on the row that opened the menu.
-    pub(super) fn run_context(
-        &self,
-        action: ContextAction,
-        hwnd: win32ui::Hwnd,
-    ) -> Option<Command> {
+    pub(super) fn run_context(&self, action: ContextAction, hwnd: xui::Hwnd) -> Option<Command> {
         let row = self
             .context_row
             .get()

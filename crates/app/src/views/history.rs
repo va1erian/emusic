@@ -5,7 +5,7 @@
 //! [`emusic_ui::views::history`](emusic_ui::views::history) module; this module
 //! only owns the native list, the row formatting and the "Clear history"
 //! confirmation, mapping the list's events to the shell's [`Command`]s.
-//! win32ui has no grouped `ListView`, so a flat list with header rows stands
+//! xui has no grouped `ListView`, so a flat list with header rows stands
 //! in — the same shape the track table uses.
 
 use std::cell::Cell;
@@ -16,8 +16,8 @@ use emusic_ui::library_api::{HistoryEntry, LibraryDataSource, format_minutes_ago
 use emusic_ui::state::Command;
 use emusic_ui::views::history::{self, Row};
 use emusic_ui::views::track_table::columns;
-use win32ui::prelude::*;
-use win32ui::{
+use xui::prelude::*;
+use xui::{
     Button, Control, Fill, Label, Layout, ListModel, ListView, Menu, RowStyle, TaskDialog,
     TaskDialogIcon, column, dip, row,
 };

@@ -11,9 +11,9 @@
 
 use std::cell::{Cell, RefCell};
 
-use win32ui::prelude::*;
-use win32ui::{Button, CheckBox, dip};
 use winshell::assoc::{AssocManager, EXTENSIONS, open_default_apps_settings};
+use xui::prelude::*;
+use xui::{Button, CheckBox, dip};
 
 use crate::app::Msg;
 
@@ -44,7 +44,7 @@ pub(super) struct AssociationsPage {
 
 impl AssociationsPage {
     /// Builds one checkbox per extension plus the action buttons.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let mut checks = Vec::with_capacity(EXTENSIONS.len());

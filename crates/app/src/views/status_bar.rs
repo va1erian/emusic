@@ -1,4 +1,4 @@
-//! Win32 status bar (#109): the shared part texts on win32ui's
+//! Win32 status bar (#109): the shared part texts on xui's
 //! `MaterialStatusBar` (drawn on the window's bottom backdrop band), falling
 //! back to a child `StatusBar` when the material bar is unavailable.
 //!
@@ -7,8 +7,8 @@
 //! the control's parts.
 
 use emusic_ui::panels::status_bar::StatusBar as StatusBarModel;
-use win32ui::prelude::*;
-use win32ui::{MaterialStatusBar, StatusBar, dip};
+use xui::prelude::*;
+use xui::{MaterialStatusBar, StatusBar, dip};
 
 use crate::app::Msg;
 
@@ -35,7 +35,7 @@ pub struct StatusBarView {
 impl StatusBarView {
     /// Creates the bar (the material one when the window supports it) and
     /// fixes its part edges.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let dpi = ui.dpi();
         let parts = [
             dip(FIRST_PART).to_px(dpi).value(),
@@ -85,7 +85,7 @@ impl StatusBarView {
 
     /// Shows or hides the bar; the caller relayouts afterwards.
     ///
-    /// The material bar can't be hidden yet (va1erian/win32ui#129), so it
+    /// The material bar can't be hidden yet (va1erian/xui#129), so it
     /// stays shown.
     pub fn set_visible(&self, visible: bool) {
         if let Bar::Child(bar) = &self.bar {

@@ -1,5 +1,5 @@
 //! The main window's menu bar (#106, #262): the app's top-level entries,
-//! mapped to [`Msg`] like every other win32ui widget. The View toggles are
+//! mapped to [`Msg`] like every other xui widget. The View toggles are
 //! checkable, so the menu shows a tick for the panels and the column browser
 //! that are currently on. The View → Visualization submenu (#306) shows the
 //! projectM preset actions and placement; [`viz_context`] is the surface's
@@ -7,14 +7,14 @@
 
 use emusic_ui::state::projectm::{PresetRequest, VizDock};
 use emusic_ui::state::{AppState, Command, PanelKind, View, VizCommand};
-use win32ui::Menu;
-use win32ui::prelude::*;
+use xui::Menu;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
 /// Builds the File/View/Help menu bar, ticking the View toggles that are on.
 ///
-/// `win32ui` has no runtime checked-state setter, so the caller reinstalls the
+/// `xui` has no runtime checked-state setter, so the caller reinstalls the
 /// bar with a freshly built one whenever the visibility state changes.
 #[must_use]
 pub fn build(state: &AppState) -> Menu<Msg> {
@@ -60,7 +60,7 @@ pub fn build(state: &AppState) -> Menu<Msg> {
 
 /// The View → Visualization submenu: show/hide, preset navigation and lock,
 /// and the placement radio group (#306). Its ticks are updated in place from
-/// the shell tick through [`Ui::set_menu_checked`](win32ui::Ui::set_menu_checked).
+/// the shell tick through [`Ui::set_menu_checked`](xui::Ui::set_menu_checked).
 fn viz_menu(state: &AppState) -> Menu<Msg> {
     let layout = &state.projectm.layout;
     let preset = Menu::new()

@@ -3,7 +3,7 @@ name = "emusic"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "emusic: Windows music player and library, native Win32 UI on win32ui"
+description = "emusic: Windows music player and library, native Win32 UI on xui"
 build = "build.rs"
 
 [[bin]]
@@ -28,14 +28,28 @@ png = { version = "0.18", optional = true }
 souvlaki = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
 winshell = { path = "../winshell" }
+
+[target.'cfg(windows)'.dependencies]
+# The umbrella crate; on Windows its default `win32` feature re-exports the
+# `xui-win32` backend as `xui::*`. Pinned to a rev for reproducible CI.
+xui = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", default-features = false, features = ["win32"] }
+# Declared directly (optional) only so the `shot` feature can turn on its
+# `wgc` (Windows.Graphics.Capture) feature; the app never names the backend.
+xui-win32 = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", optional = true }
+
+[target.'cfg(not(windows))'.dependencies]
+# The portable software backend, so the crate structure stays cross-platform.
+xui = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", default-features = false, features = ["canvas"] }
 
 [features]
 # The headless screenshot tool (`emusic-shot`, #118). Off by default so the
 # PNG encoder and the WinRT capture bindings never enter the real binary's
-# dependency tree.
-shot = ["dep:png", "win32ui/wgc"]
+# dependency tree. `xui` has no `wgc` feature (it lives on the `xui-win32`
+# backend), so enabling `shot` activates the direct `xui-win32` dependency and
+# its `wgc` feature; feature unification turns capture on for the backend `xui`
+# re-exports.
+shot = ["dep:png", "dep:xui-win32", "xui-win32/wgc"]
 
 [build-dependencies]
 embed-resource = "3.0"

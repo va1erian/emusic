@@ -12,8 +12,8 @@ use emusic::app::Msg;
 use emusic::views::projectm::ProjectMView;
 use emusic_ui::mock::MockPlayer;
 use emusic_ui::state::projectm::ProjectMAvailability;
-use win32ui::column;
-use win32ui::prelude::*;
+use xui::column;
+use xui::prelude::*;
 
 /// How many animation ticks the harness runs before quitting.
 const TICKS: u32 = 30;
@@ -50,7 +50,7 @@ fn projectm_surface_paints_and_ticks() {
     let seen = Rc::new(RefCell::new(None));
     let seen_for_make = Rc::clone(&seen);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.projectm").theme(Theme::dark()),
         move |ui| {
             let view = ProjectMView::new(ui).expect("create projectM view");

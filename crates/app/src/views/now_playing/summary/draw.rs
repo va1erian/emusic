@@ -8,8 +8,8 @@
 //! single-line, vertically centred and elided by [`crate::d2d_text`], matching
 //! the GDI path's `DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS`.
 
-use win32ui::d2d::{D2dCanvas, Font, Interpolation, RectF};
-use win32ui::{Color, Rect, Theme};
+use xui::d2d::{D2dCanvas, Font, Interpolation, RectF};
+use xui::{Color, Rect, Theme};
 
 use crate::d2d_text::{self, Align};
 

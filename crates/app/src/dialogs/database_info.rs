@@ -4,8 +4,8 @@
 
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::panels::database_info::fields;
-use win32ui::prelude::*;
-use win32ui::{WindowSpec, dip, row};
+use xui::prelude::*;
+use xui::{WindowSpec, dip, row};
 
 /// Width of the field-name column, in design units.
 const LABEL_WIDTH: f32 = 120.0;

@@ -13,8 +13,8 @@ use std::cell::Cell;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::state::AppState;
 use emusic_ui::views::Ctx;
-use win32ui::prelude::*;
-use win32ui::{Control, Label, Menu, column, dip};
+use xui::prelude::*;
+use xui::{Control, Label, Menu, column, dip};
 
 use crate::app::Msg;
 use crate::views::track_table::TrackView;
@@ -78,7 +78,7 @@ impl StarredView {
     pub fn run_context(
         &self,
         action: crate::views::track_table::ContextAction,
-        hwnd: win32ui::Hwnd,
+        hwnd: xui::Hwnd,
     ) -> Option<emusic_ui::state::Command> {
         self.table.run_context(action, hwnd)
     }

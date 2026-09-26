@@ -3,8 +3,8 @@
 //! playing. Persisted plain state, set directly.
 
 use emusic_ui::state::AppState;
-use win32ui::CheckBox;
-use win32ui::prelude::*;
+use xui::CheckBox;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -18,7 +18,7 @@ pub(super) struct SessionSection {
 
 impl SessionSection {
     /// Builds the two checkboxes.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         Ok(Self {
             resume: CheckBox::new(ui, "Resume playback on startup")?
                 .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ResumePlayback(on)))),

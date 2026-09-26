@@ -15,8 +15,8 @@ use emusic_ui::library_api::{TrackInfo, format_minutes_ago};
 use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
-use win32ui::prelude::*;
-use win32ui::{Column, ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
+use xui::prelude::*;
+use xui::{Column, ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
 
 use crate::app::Msg;
 
@@ -285,7 +285,7 @@ impl TrackView {
     }
 
     /// Runs a context action on the row that opened the menu.
-    pub fn run_context(&self, action: ContextAction, hwnd: win32ui::Hwnd) -> Option<Command> {
+    pub fn run_context(&self, action: ContextAction, hwnd: xui::Hwnd) -> Option<Command> {
         let row = self
             .context_row
             .get()
@@ -399,7 +399,7 @@ pub fn column_id(index: usize) -> Option<ColumnId> {
 pub fn run_context_action(
     action: ContextAction,
     track: &TrackInfo,
-    hwnd: win32ui::Hwnd,
+    hwnd: xui::Hwnd,
 ) -> Option<Command> {
     match action {
         ContextAction::Play => Some(Command::play_track(track.id, Vec::new())),
@@ -407,7 +407,7 @@ pub fn run_context_action(
         ContextAction::AddToQueue => Some(Command::QueueTrack(track.id)),
         ContextAction::ToggleStar => Some(Command::ToggleStarred(track.id)),
         ContextAction::CopyPath => {
-            let _ = win32ui::clipboard::set_text(hwnd, &track.path);
+            let _ = xui::clipboard::set_text(hwnd, &track.path);
             None
         }
         ContextAction::OpenFileLocation => {

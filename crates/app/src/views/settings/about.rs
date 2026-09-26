@@ -4,7 +4,7 @@
 //! clickable link. When DirectWrite is unavailable, a plain wrapping label
 //! carries the same information.
 
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -27,7 +27,7 @@ pub(super) struct AboutPage {
 
 impl AboutPage {
     /// Builds the flow line, or a plain label when DirectWrite is unavailable.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let (flow, fallback) = match build_flow(&mut panel) {
@@ -72,7 +72,7 @@ impl AboutPage {
 }
 
 /// Builds the flowing About line: name, version, repository link and credits.
-fn build_flow(ui: &mut Ui<Msg>) -> win32ui::Result<FlowText<Msg>> {
+fn build_flow(ui: &mut Ui<Msg>) -> xui::Result<FlowText<Msg>> {
     Ok(FlowText::new(ui)?
         .run(Run::normal("emusic").weight(600))
         .separator("   ")
@@ -89,7 +89,7 @@ fn build_flow(ui: &mut Ui<Msg>) -> win32ui::Result<FlowText<Msg>> {
         .line_break()
         .run(Run::weak("SID emulation: cRSID by Hermit"))
         .line_break()
-        .run(Run::weak("Interface: win32ui (native Win32)"))
+        .run(Run::weak("Interface: xui (native Win32)"))
         .line_break()
         .run(Run::weak("Licensed under the MIT license.")))
 }
@@ -108,5 +108,5 @@ const FALLBACK_TEXT: &str = "emusic\n\
     https://github.com/va1erian/emusic\n\
     Audio playback: BASS by Un4seen Developments\n\
     SID emulation: cRSID by Hermit\n\
-    Interface: win32ui (native Win32)\n\
+    Interface: xui (native Win32)\n\
     Licensed under the MIT license.";

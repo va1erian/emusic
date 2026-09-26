@@ -1,7 +1,9 @@
 //! The main window's spec, shared by the real binary and the screenshot tool
 //! so the captured chrome cannot drift from what users get.
 
-use win32ui::prelude::*;
+use xui::prelude::*;
+
+use crate::compat::WindowSpecAccentTint as _;
 
 /// Builds the main window spec: an extended title bar carrying the caption,
 /// the menu strip and the transport band (#108), with the Acrylic backdrop and
@@ -9,7 +11,7 @@ use win32ui::prelude::*;
 pub fn window_spec(
     width: f32,
     height: f32,
-    theme: win32ui::Theme,
+    theme: xui::Theme,
     accent_tint: bool,
     accent_tint_strength: u8,
 ) -> WindowSpec {

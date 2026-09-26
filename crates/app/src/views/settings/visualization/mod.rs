@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use emusic_ui::state::projectm::ProjectMAvailability;
 use emusic_ui::state::{AppState, Command, VizCommand};
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -34,7 +34,7 @@ pub(super) struct VisualizationPage {
     status: Label,
     timing: form::Form,
     packs: PacksSection,
-    proxy: win32ui::Proxy<Msg>,
+    proxy: xui::Proxy<Msg>,
     exe_dir: PathBuf,
     helper: PathBuf,
     /// The pack preset counts, once the background scan finished.
@@ -46,7 +46,7 @@ pub(super) struct VisualizationPage {
 impl VisualizationPage {
     /// Builds the page's controls. The preset-pack count starts only on the
     /// first [`Self::sync`], so launching the app never walks the packs.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(PathBuf::from))

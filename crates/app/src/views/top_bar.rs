@@ -1,5 +1,5 @@
 //! Win32 top transport bar (#108): the shared `TopBar` model rendered on
-//! win32ui's top band (`MaterialTopBar`), with a native `Edit` search box in a
+//! xui's top band (`MaterialTopBar`), with a native `Edit` search box in a
 //! `Native` slot.
 //!
 //! All state, formatting and transport intents come from
@@ -11,7 +11,7 @@ use std::time::Duration;
 use emusic_ui::panels::top_bar::{TopBar, TopBarMsg};
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::VisualizerMode;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 use crate::views::visualizer::{self, VisualizerView};
@@ -56,7 +56,7 @@ const SEARCH_CUE: &str = "Search library... (Ctrl+F)";
 /// The clear button's side: the search edit's height, so it lines up with it.
 const CLEAR_SIZE_DIP: f32 = SEARCH_HEIGHT_DIP;
 /// Segoe Fluent Icons `E894`: the clear ("x") glyph, shown in the search box's
-/// clear button (win32ui's `Fluent` doesn't define it).
+/// clear button (xui's `Fluent` doesn't define it).
 const CLEAR_GLYPH: char = '\u{E894}';
 
 /// What the item list depends on beyond the per-frame values; the list is only
@@ -86,7 +86,7 @@ impl TopBarView {
     ///
     /// Returns an error on a window without an extended title bar, or when
     /// DirectWrite is unavailable, so the app can run without the bar.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let bar = MaterialTopBar::new(ui)?;
         let visualizer = VisualizerView::new(ui)?;
         bar.set_height(dip(HEIGHT_DIP));

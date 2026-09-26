@@ -1,19 +1,19 @@
-//! Maps the shell's colour scheme and accent (#276) onto `win32ui`'s palette.
+//! Maps the shell's colour scheme and accent (#276) onto `xui`'s palette.
 
 use emusic_ui::state::{Accent, Theme};
-use win32ui::Color;
+use xui::Color;
 
 /// How far the selection tint moves from the background toward the accent.
 const DARK_SELECTION_MIX: f32 = 0.35;
 const LIGHT_SELECTION_MIX: f32 = 0.25;
 
-/// The `win32ui` palette for `theme`, with every accent-driven token
+/// The `xui` palette for `theme`, with every accent-driven token
 /// (highlights, focus border, selection, text on accent) taken from `accent`.
 #[must_use]
-pub fn win32_theme(theme: Theme, accent: Accent) -> win32ui::Theme {
+pub fn win32_theme(theme: Theme, accent: Accent) -> xui::Theme {
     let base = match theme {
-        Theme::Dark => win32ui::Theme::dark(),
-        Theme::Light => win32ui::Theme::light(),
+        Theme::Dark => xui::Theme::dark(),
+        Theme::Light => xui::Theme::light(),
     };
     let [r, g, b] = accent.rgb().to_array();
     let accent = Color::rgb(r, g, b);
@@ -21,7 +21,7 @@ pub fn win32_theme(theme: Theme, accent: Accent) -> win32ui::Theme {
         Theme::Dark => DARK_SELECTION_MIX,
         Theme::Light => LIGHT_SELECTION_MIX,
     };
-    win32ui::Theme {
+    xui::Theme {
         accent,
         border_focused: accent,
         selection: base.background.lerp(accent, mix),
@@ -52,7 +52,7 @@ mod tests {
         assert_eq!(theme.accent, Color::rgb(0xE8, 0x7A, 0x1E));
         assert_eq!(theme.border_focused, theme.accent);
         assert!(theme.is_dark);
-        assert_eq!(theme.background, win32ui::Theme::dark().background);
+        assert_eq!(theme.background, xui::Theme::dark().background);
     }
 
     #[test]

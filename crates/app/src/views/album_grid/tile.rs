@@ -2,7 +2,7 @@
 //! the `content` painter that draws a cover, its caption and the selection.
 //!
 //! The painter receives a [`D2dCanvas`] and the tile rectangle from the shared
-//! [`GridView`](win32ui::GridView); it uploads the cached cover into Direct2D's
+//! [`GridView`](xui::GridView); it uploads the cached cover into Direct2D's
 //! bitmap cache once per decode and draws it scaled, then the album/artist/year
 //! caption. Cover colour and caption formatting come from the shared
 //! `album_grid` model.
@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use emusic_ui::state::Metrics;
 use emusic_ui::views::album_grid::models::AlbumKey;
-use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
-use win32ui::prelude::*;
+use xui::d2d::{D2dCanvas, Font, FontSpec, ImageId, Interpolation, RectF, Stroke, TextSystem};
+use xui::prelude::*;
 
 use crate::d2d_text::{self, Align, LineStyle};
 

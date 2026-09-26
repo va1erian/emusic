@@ -10,8 +10,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use win32ui::d2d::{D2dCanvas, Font, Layout, PointF, RectF};
-use win32ui::{Color, Rect};
+use xui::d2d::{D2dCanvas, Font, Layout, PointF, RectF};
+use xui::{Color, Rect};
 
 /// Horizontal alignment of one line within its rectangle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

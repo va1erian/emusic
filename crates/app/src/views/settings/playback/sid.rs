@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use emusic_player::sid::resolve_database_path;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
-use win32ui::{Button, Edit};
+use xui::prelude::*;
+use xui::{Button, Edit};
 
 use crate::app::Msg;
 
@@ -34,14 +34,14 @@ pub(super) struct SidSection {
     fallback_label: Label,
     fallback: Slider<Msg>,
     hint: Label,
-    proxy: win32ui::Proxy<Msg>,
+    proxy: xui::Proxy<Msg>,
     /// The path last mirrored into the text field, so typing is not clobbered.
     applied_path: Option<PathBuf>,
 }
 
 impl SidSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>, proxy: win32ui::Proxy<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>, proxy: xui::Proxy<Msg>) -> xui::Result<Self> {
         let edit = Edit::single_line(ui)?
             .cue("Songlengths.md5, or an HVSC root folder")
             .on_submit(|| Some(Msg::Settings(SettingsMsg::SidCommit)))

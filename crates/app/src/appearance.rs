@@ -88,10 +88,10 @@ pub fn font_scale() -> f32 {
 /// Applies the current metrics and zebra flag to an owner-drawn list view:
 /// the row font, the explicit (device-pixel-aligned) row height and striping.
 /// This is the one place lists read their appearance from.
-pub fn apply_list<T: 'static, M: 'static>(list: &win32ui::ListView<T, M>) {
+pub fn apply_list<T: 'static, M: 'static>(list: &xui::ListView<T, M>) {
     let metrics = metrics();
     list.set_row_font(UI_FAMILY, points(metrics.body));
-    list.set_row_height(win32ui::Dip::new(metrics.row_height));
+    list.set_row_height(xui::Dip::new(metrics.row_height));
     list.set_zebra(zebra());
 }
 

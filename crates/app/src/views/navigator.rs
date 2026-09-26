@@ -12,10 +12,10 @@ use std::cell::{Cell, RefCell};
 
 use emusic_ui::panels::navigator::{Navigator, SECTIONS};
 use emusic_ui::state::{Metrics, View};
-use win32ui::accessibility::{AccessCx, Action, Node, Role};
-use win32ui::gdi::{Canvas, Font, FontWeight, TextFormat};
-use win32ui::prelude::*;
-use win32ui::{Custom, CustomWidget, Input, Rect, Size, Theme, WidgetCx};
+use xui::accessibility::{AccessCx, Action, Node, Role};
+use xui::gdi::{Canvas, Font, FontWeight, TextFormat};
+use xui::prelude::*;
+use xui::{Custom, CustomWidget, Input, Rect, Size, Theme, WidgetCx};
 
 use crate::app::Msg;
 
@@ -67,7 +67,7 @@ pub struct NavigatorView {
 
 impl NavigatorView {
     /// Creates the navigator and maps its clicks to [`Msg::Navigate`].
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let widget = NavigatorWidget::new(ui.dpi());
         let custom = Custom::new(ui, widget)?.on_event(|event| match event {
             NavigatorEvent::Select(view) => Some(Msg::Navigate(view)),

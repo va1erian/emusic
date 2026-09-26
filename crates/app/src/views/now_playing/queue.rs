@@ -8,8 +8,8 @@
 //! Enter jumps to a queue entry, right-click opens a "Remove" context menu.
 
 use emusic_ui::views::now_playing::{NowPlayingView as Model, QueueRow};
-use win32ui::prelude::*;
-use win32ui::{ColumnWidth, Fill, ListView, Menu, dip};
+use xui::prelude::*;
+use xui::{ColumnWidth, Fill, ListView, Menu, dip};
 
 use crate::app::Msg;
 
@@ -69,7 +69,7 @@ pub(super) fn build(
     on_activate: impl Fn(usize) -> Option<Msg> + 'static,
     on_context: impl Fn(usize) -> Option<Msg> + 'static,
     on_delete: impl Fn() -> Msg + 'static,
-) -> win32ui::Result<ListView<QueueItem, Msg>> {
+) -> xui::Result<ListView<QueueItem, Msg>> {
     let list = ListView::new(ui)?
         .column("#", dip(NUMBER_WIDTH), |row: &QueueItem| {
             row.number_text.as_str()
