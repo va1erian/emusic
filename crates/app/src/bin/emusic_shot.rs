@@ -258,6 +258,9 @@ impl App for ShotApp {
             None => eprintln!("emusic-shot: the window has no native handle to capture"),
         }
         ui.close();
+        // `ui.close()` only closes the window; the run loop still has to be
+        // told to stop, or the process hangs after the capture.
+        ui.quit();
     }
 }
 
