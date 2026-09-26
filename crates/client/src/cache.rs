@@ -168,14 +168,36 @@ fn unique_temp(destination: &Path) -> PathBuf {
     destination.with_file_name(format!("{name}.part.{}.{sequence}", std::process::id()))
 }
 
-/// Replaces `destination` with `source`, tolerating an existing file on
-/// Windows.
+/// Replaces `destination` with `source`, tolerating concurrent writers.
+///
+/// On Unix `rename` atomically replaces the destination. On Windows it fails
+/// when the destination exists, so we remove and retry, tolerating another
+/// writer having removed or created it in between.
 fn replace_file(source: &Path, destination: &Path) -> Result<()> {
-    if destination.exists() {
-        std::fs::remove_file(destination)?;
+    match std::fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            match std::fs::remove_file(destination) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            if std::fs::rename(source, destination).is_ok() {
+                return Ok(());
+            }
+            // A concurrent writer won the race; its complete file (written to
+            // a unique temp before being renamed) is already in place, so
+            // discard this writer's temp file.
+            let _ = std::fs::remove_file(source);
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
     }
-    std::fs::rename(source, destination)?;
-    Ok(())
 }
 
 /// Rejects a path that is not lexically inside `root`.
