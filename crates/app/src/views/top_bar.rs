@@ -180,12 +180,13 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
         .tooltip(REPEAT, "Repeat")
         .toggle(SHUFFLE, Glyph::Shuffle)
         .tooltip(SHUFFLE, "Shuffle")
-        .spacer()
         .label(ELAPSED, "0:00")
         .slider(SEEK, 0.0, 1.0)
+        // The seek slider absorbs the band's leftover width, so it stretches to
+        // fill the space between the transport and the volume/search controls.
+        .expand(SEEK)
         .tooltip(SEEK, "Seek")
         .label(TOTAL, "")
-        .spacer()
         .slider(VOLUME, 0.0, 1.0)
         .tooltip(VOLUME, "Volume")
         .icon(SEARCH, Glyph::Search)
