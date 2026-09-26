@@ -15,6 +15,7 @@ use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::{Msg, Win32App};
+use emusic::icon;
 use emusic::theme::win32_theme;
 use emusic::window::window_spec;
 
@@ -85,6 +86,7 @@ fn run_ui(
             config.accent_tint_strength,
         ),
         move |ui| {
+            icon::install(ui);
             let backends = backend::build(mock, waker.handle());
             let emusic_ui::backend::Backends {
                 library,
