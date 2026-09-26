@@ -41,6 +41,7 @@ use emusic_ui::state::{
 use emusic_ui::waker::WakerSlot;
 
 use emusic::app::{Msg, Win32App};
+use emusic::icon;
 use emusic::theme::win32_theme;
 use emusic::views::settings::SettingsMsg;
 use emusic::window::window_spec;
@@ -365,6 +366,7 @@ fn render_one(
     );
 
     win32ui::run_app(spec, move |ui| {
+        icon::install(ui);
         let waker = WakerSlot::new();
         let backends = backend::build(true, waker.handle());
         // A track with rich tags/stats makes the dialog shot representative.
