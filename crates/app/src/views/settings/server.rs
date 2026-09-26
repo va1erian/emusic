@@ -15,7 +15,7 @@ use win32ui::{Button, CheckBox, Edit, Fill, ListView, Proxy, dip};
 
 use crate::app::Msg;
 
-use super::{FormRow, HEADING_HEIGHT, ROW_HEIGHT, ScrollPanel, SettingsMsg, labelled};
+use super::{FormRow, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT, ScrollPanel, SettingsMsg};
 
 /// Height of the configured-server list, in design units.
 const LIST_HEIGHT: f32 = 120.0;
@@ -23,6 +23,9 @@ const LIST_HEIGHT: f32 = 120.0;
 const ACTION_WIDTH: f32 = 120.0;
 /// Width of the URL and name fields, in design units.
 const FIELD_WIDTH: f32 = 320.0;
+/// Height of a text field: one line of text (the default edit height is
+/// taller than a row, which stretched the fields).
+const FIELD_HEIGHT: f32 = 24.0;
 
 /// The list model: one display line per configured server.
 struct ServerModel {
@@ -127,12 +130,29 @@ impl ServerPage {
 
     /// The page's controls as form rows, in display order.
     fn rows(&self) -> Vec<FormRow> {
-        let mut url_row = Layout::row().spacing(dip(8.0));
-        url_row = url_row.item(self.url.width(dip(FIELD_WIDTH)));
-        let mut name_row = Layout::row().spacing(dip(8.0));
-        name_row = name_row.item(self.name.width(dip(FIELD_WIDTH)));
-        let mut code_row = Layout::row().spacing(dip(8.0));
-        code_row = code_row.item(self.code.width(dip(160.0))).item(&self.pair);
+        let field = |label: &Label, control: LayoutItem| -> FormRow {
+            (
+                row![
+                    label.width(dip(LABEL_WIDTH)),
+                    Layout::row()
+                        .spacing(dip(8.0))
+                        .item(control)
+                        .height(dip(FIELD_HEIGHT))
+                ]
+                .height(dip(FIELD_HEIGHT)),
+                FIELD_HEIGHT,
+            )
+        };
+        let url_row = field(&self.url_label, self.url.width(dip(FIELD_WIDTH)));
+        let name_row = field(&self.name_label, self.name.width(dip(FIELD_WIDTH)));
+        let code_row = field(
+            &self.code_label,
+            Layout::row()
+                .spacing(dip(8.0))
+                .item(self.code.width(dip(160.0)))
+                .item(&self.pair)
+                .into_layout_item(),
+        );
         let mut actions = Layout::row().spacing(dip(8.0));
         for button in [&self.sync, &self.unpair] {
             actions = actions.item(button.width(dip(ACTION_WIDTH)));
@@ -140,18 +160,9 @@ impl ServerPage {
         vec![
             (self.heading.height(dip(HEADING_HEIGHT)), HEADING_HEIGHT),
             (self.hint.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
-            (
-                labelled(&self.url_label, url_row.height(dip(ROW_HEIGHT))),
-                ROW_HEIGHT,
-            ),
-            (
-                labelled(&self.name_label, name_row.height(dip(ROW_HEIGHT))),
-                ROW_HEIGHT,
-            ),
-            (
-                labelled(&self.code_label, code_row.height(dip(ROW_HEIGHT))),
-                ROW_HEIGHT,
-            ),
+            url_row,
+            name_row,
+            code_row,
             (actions.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
             (self.only.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
             (self.list.height(dip(LIST_HEIGHT)), LIST_HEIGHT),
