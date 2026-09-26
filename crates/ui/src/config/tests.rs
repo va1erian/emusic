@@ -123,6 +123,11 @@ fn non_default_config() -> Config {
             ..ProjectMSettings::default()
         },
         library_folders: vec![PathBuf::from(r"C:\music"), PathBuf::from(r"Z:\music")],
+        remote_servers: vec![crate::remote::RemoteServer {
+            id: "0123456789abcdef".to_string(),
+            name: "Homelab".to_string(),
+            url: "https://music.example.com".to_string(),
+        }],
         tracker_settings: TrackerSettings {
             interpolation: Interpolation::Sinc,
             ramping: Ramping::Sensitive,

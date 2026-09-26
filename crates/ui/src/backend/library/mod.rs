@@ -10,6 +10,7 @@
 pub(crate) mod auto_tag;
 pub(crate) mod folders;
 pub(crate) mod loader;
+pub(crate) mod remote;
 pub(crate) mod scan;
 pub(crate) mod source;
 pub(crate) mod stats;
@@ -111,6 +112,11 @@ pub struct LibraryBackend {
     /// during scans. `None` when BASS failed to initialize, in which case
     /// modules are counted but skipped (see [`emusic_library::scanner`]).
     bass: Option<Arc<bass::Bass>>,
+    /// Remote-server sync state and worker (#391).
+    remote: remote::RemoteState,
+    /// Live server list shared with the playback backend so a remote cache
+    /// path can be resolved to its server URL (#391).
+    remote_registry: crate::remote::RemoteRegistry,
     /// The database file, cached at construction so the Database info dialog
     /// never needs the store lock.
     db_path: Option<PathBuf>,
@@ -187,6 +193,8 @@ impl LibraryBackend {
             tag_edit_results: Vec::new(),
             auto_tag: auto_tag::AutoTagState::new(Arc::new(MusicBrainzProvider::new())),
             bass,
+            remote: remote::RemoteState::new(),
+            remote_registry: crate::remote::RemoteRegistry::new(),
             db_path,
             last_scan: None,
             revision: 0,
@@ -202,6 +210,12 @@ impl LibraryBackend {
     /// Sender the player adapter uses to report track starts and finishes.
     pub(crate) fn play_message_tx(&self) -> Sender<PlayMessage> {
         self.play_message_tx.clone()
+    }
+
+    /// The live remote-server registry, shared with the playback backend so a
+    /// remote cache path can be resolved to its server URL (#391).
+    pub(crate) fn remote_registry(&self) -> crate::remote::RemoteRegistry {
+        self.remote_registry.clone()
     }
 
     /// Replaces the metadata provider, so tests can drive the worker without a
@@ -430,6 +444,28 @@ impl LibraryDataSource for LibraryBackend {
 
     fn set_folders(&mut self, folders: &[PathBuf]) {
         self.apply_folders(folders);
+    }
+
+    fn set_remote_servers(&mut self, servers: &[crate::remote::RemoteServer]) {
+        self.remote.set_servers(servers);
+        self.remote_registry.replace(servers);
+        self.remote.spawn_sync(
+            self.store.clone(),
+            self.folders.clone(),
+            self.update_tx.clone(),
+        );
+    }
+
+    fn sync_remote(&mut self) {
+        self.remote.spawn_sync(
+            self.store.clone(),
+            self.folders.clone(),
+            self.update_tx.clone(),
+        );
+    }
+
+    fn remote_status(&self) -> Option<String> {
+        self.remote.status()
     }
 
     fn rescan(&mut self) {

@@ -99,6 +99,11 @@ pub struct AppState {
     ///
     /// [`Config::capture`]: crate::config::Config::capture
     pub library_folders: Vec<PathBuf>,
+    /// Remote `emusic-server` servers mirrored from [`crate::config::Config`]
+    /// so the persisted list survives round-trips (#391).
+    ///
+    /// [`Config::capture`]: crate::config::Config::capture
+    pub remote_servers: Vec<crate::remote::RemoteServer>,
     /// Settings sub-page shown while [`View::Settings`] is active (#137).
     /// Transient UI state, not persisted.
     ///
@@ -203,6 +208,7 @@ impl Default for AppState {
             status_bar: StatusBarModel::default(),
             top_bar: TopBar::default(),
             library_folders: Vec::new(),
+            remote_servers: Vec::new(),
             settings_tab: SettingsTab::default(),
             resume_playback: true,
             autoplay_on_restore: false,
@@ -279,6 +285,14 @@ impl AppState {
             }
             Command::LibraryRemoveFolder(path) => {
                 self.library_folders.retain(|folder| folder != path);
+            }
+            Command::AddRemoteServer(server) => {
+                if !self.remote_servers.iter().any(|s| s.id == server.id) {
+                    self.remote_servers.push(server.clone());
+                }
+            }
+            Command::RemoveRemoteServer(id) => {
+                self.remote_servers.retain(|server| server.id != *id);
             }
             Command::SetTrackerSettings(settings) => self.tracker_settings = *settings,
             Command::SetMidiSoundfont(path) => {

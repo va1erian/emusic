@@ -20,6 +20,8 @@ pub(super) fn apply_library_commands(
     commands: &[Command],
 ) {
     let mut folders_changed = false;
+    let mut remote_changed = false;
+    let mut sync_remote = false;
     let mut rescan = false;
     let mut cancel = false;
     let mut remove_history = None;
@@ -36,6 +38,8 @@ pub(super) fn apply_library_commands(
             }
             Command::LibraryRescan => rescan = true,
             Command::LibraryCancelScan => cancel = true,
+            Command::AddRemoteServer(_) | Command::RemoveRemoteServer(_) => remote_changed = true,
+            Command::SyncRemote => sync_remote = true,
             Command::HistoryRemove(id) => remove_history = Some(*id),
             Command::HistoryClear => clear_history = true,
             Command::ToggleStarred(id) => toggle_starred.push(*id),
@@ -62,6 +66,12 @@ pub(super) fn apply_library_commands(
 
     if folders_changed {
         library.set_folders(&state.library_folders);
+    }
+    if remote_changed {
+        library.set_remote_servers(&state.remote_servers);
+    }
+    if sync_remote {
+        library.sync_remote();
     }
     if rescan {
         library.rescan();
