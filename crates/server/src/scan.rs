@@ -141,10 +141,12 @@ impl ScanCoordinator {
         }
         let coordinator = self.clone();
         tokio::spawn(async move {
+            // The guard resets the flag even if `run` panics, so a crashed
+            // scan cannot disable all future scans.
+            let _guard = RunningGuard(Arc::clone(&coordinator.running));
             if let Err(error) = coordinator.run(db).await {
                 tracing::error!(%error, "library scan failed");
             }
-            coordinator.running.store(false, Ordering::Release);
         });
         true
     }
@@ -188,7 +190,7 @@ impl ScanCoordinator {
         let events = self.events.clone();
         let status = Arc::clone(&self.status);
         let scan_db = db.clone();
-        let result = tokio::task::spawn_blocking(move || {
+        let scanned = tokio::task::spawn_blocking(move || {
             let mut on_update = |update: ScanUpdate| {
                 let _ = events.send(ServerEvent::ScanProgress {
                     root_index: update.root_index,
@@ -200,16 +202,19 @@ impl ScanCoordinator {
             };
             scanner.scan(&scan_db, DEFAULT_BATCH_SIZE, &mut on_update)
         })
-        .await
-        .map_err(|error| ServerError::Metadata(format!("scan task failed: {error}")))?;
+        .await;
 
-        // Reset the running flag on every path, including scan and version
-        // errors, so the status endpoint never gets stuck "running".
-        let report = match result {
-            Ok(report) => report,
-            Err(error) => {
+        // Reset the running status on every path, including a join error or a
+        // version read failure, so the status endpoint never gets stuck.
+        let report = match scanned {
+            Ok(Ok(report)) => report,
+            Ok(Err(error)) => {
                 self.finish_running().await;
                 return Err(error);
+            }
+            Err(error) => {
+                self.finish_running().await;
+                return Err(ServerError::Metadata(format!("scan task failed: {error}")));
             }
         };
         let version = match db.library_version() {
@@ -255,5 +260,14 @@ impl ScanCoordinator {
     async fn finish_running(&self) {
         let mut status = self.status.write().await;
         status.running = false;
+    }
+}
+
+/// Resets the single-scan flag when the scan task ends, including on panic.
+struct RunningGuard(Arc<AtomicBool>);
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }

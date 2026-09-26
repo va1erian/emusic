@@ -29,4 +29,7 @@ USER emusic
 EXPOSE 8080
 VOLUME ["/var/lib/emusic-server"]
 ENTRYPOINT ["/usr/local/bin/emusic-server"]
-CMD ["--config", "/etc/emusic-server/server.toml"]
+# No default `--config`: the server runs `serve` and reads
+# `EMUSIC_SERVER_CONFIG` or the `EMUSIC_SERVER_*` environment variables, so the
+# container is fully configurable from the environment. Pass
+# `--config /etc/emusic-server/server.toml` as a command to use a file.

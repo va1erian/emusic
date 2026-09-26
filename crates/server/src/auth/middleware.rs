@@ -13,27 +13,12 @@ use crate::security::client_ip;
 use crate::state::AppState;
 use crate::util::unix_now;
 
-/// The direct peer address, or loopback when unavailable (e.g. tests).
-#[derive(Debug, Clone, Copy)]
-pub struct PeerAddr(pub IpAddr);
-
-/// Minimum interval between persisted `last_seen` updates for a device.
-const TOUCH_INTERVAL_SECS: i64 = 60;
-
-impl<S> FromRequestParts<S> for PeerAddr
-where
-    S: Send + Sync,
-{
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(PeerAddr(peer_ip(parts)))
-    }
-}
-
 /// The real client address, honouring trusted proxy headers.
 #[derive(Debug, Clone, Copy)]
 pub struct ClientIp(pub IpAddr);
+
+/// Minimum interval between persisted `last_seen` updates for a device.
+const TOUCH_INTERVAL_SECS: i64 = 60;
 
 impl FromRequestParts<AppState> for ClientIp {
     type Rejection = std::convert::Infallible;

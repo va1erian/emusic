@@ -28,6 +28,9 @@ pub use songlengths::SongLengths;
 /// Default number of rows committed per database transaction.
 pub const DEFAULT_BATCH_SIZE: usize = 500;
 
+/// How long tombstones are retained so slow clients can still sync deletions.
+pub const TOMBSTONE_RETENTION_SECS: i64 = 30 * 24 * 3600;
+
 /// The scanner's immutable configuration.
 pub struct Scanner {
     roots: Vec<PathBuf>,
@@ -59,6 +62,7 @@ impl Scanner {
         let now = unix_now();
         let batch_size = batch_size.max(1);
         let mut report = ScanReport::default();
+        db.purge_tombstones_before(now - TOMBSTONE_RETENTION_SECS)?;
 
         for (root_index, root) in self.roots.iter().enumerate() {
             let walked = walk::walk_root(root);
@@ -76,7 +80,7 @@ impl Scanner {
             let mut art = index::ArtCache::new();
             let mut batch = Vec::with_capacity(batch_size);
             for file in &walked.files {
-                seen.insert(index::track_id(root_index as i64, &file.relative_path));
+                seen.insert(index::track_id(&file.path));
                 let (track, skipped) =
                     index::index_file(file, root_index as i64, &self.songlengths, &mut art, now);
                 if skipped {
@@ -99,19 +103,33 @@ impl Scanner {
 
             if walked.can_delete() {
                 let existing = db.track_ids_for_root(root_index as i64)?;
+                let empty_marker = format!("root_empty:{root_index}");
                 if existing.is_empty() {
-                    // Nothing indexed for this root yet.
+                    db.meta_set(&empty_marker, "0")?;
                 } else if seen.is_empty() {
-                    // A previously non-empty root now yields zero files: this
-                    // is far more likely an unmounted share than a user
-                    // deleting the whole library, so keep the rows and mark
-                    // the scan partial instead of wiping the index.
-                    tracing::warn!(
-                        root = %root.display(),
-                        "root yielded no files; keeping existing rows"
-                    );
-                    report.partial = true;
+                    // A previously non-empty root that yields no files is
+                    // usually an unmounted share. Keep the rows on the first
+                    // such scan; prune only if a second consecutive scan is
+                    // still empty, so a legitimate wipe eventually lands while
+                    // a transient unmount does not.
+                    if db.meta_get(&empty_marker)?.as_deref() == Some("1") {
+                        tracing::warn!(
+                            root = %root.display(),
+                            "root empty on two consecutive scans; pruning"
+                        );
+                        let removed: Vec<String> = existing.into_iter().collect();
+                        report.tracks_deleted += db.delete_tracks(&removed)? as u64;
+                        db.meta_set(&empty_marker, "0")?;
+                    } else {
+                        tracing::warn!(
+                            root = %root.display(),
+                            "root yielded no files; keeping existing rows"
+                        );
+                        db.meta_set(&empty_marker, "1")?;
+                        report.partial = true;
+                    }
                 } else {
+                    db.meta_set(&empty_marker, "0")?;
                     let removed: Vec<String> = existing
                         .into_iter()
                         .filter(|id| !seen.contains(id))

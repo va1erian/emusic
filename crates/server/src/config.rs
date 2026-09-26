@@ -179,6 +179,13 @@ impl Config {
             self.security.max_pairing_attempts_per_min =
                 parse_env(&value, "EMUSIC_SERVER_MAX_PAIRING_ATTEMPTS")?;
         }
+        if let Some(value) = get("EMUSIC_SERVER_PAIRING_CODE_TTL") {
+            self.security.pairing_code_ttl_secs =
+                parse_env(&value, "EMUSIC_SERVER_PAIRING_CODE_TTL")?;
+        }
+        if let Some(value) = get("EMUSIC_SERVER_MAX_BODY_BYTES") {
+            self.security.max_body_bytes = parse_env(&value, "EMUSIC_SERVER_MAX_BODY_BYTES")?;
+        }
         if let Some(value) = get("EMUSIC_SERVER_LIBRARY_PATHS") {
             self.library.paths = split_list(&value).into_iter().map(PathBuf::from).collect();
         }
@@ -307,6 +314,12 @@ pub fn default_data_dir() -> PathBuf {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join("emusic-server")
+    } else if cfg!(target_os = "macos") {
+        // A server on macOS is usually run by a user, not as a system
+        // service, so `/var/lib` is neither writable nor idiomatic there.
+        dirs::data_local_dir()
+            .map(|dir| dir.join("emusic-server"))
+            .unwrap_or_else(|| PathBuf::from("/usr/local/var/emusic-server"))
     } else {
         PathBuf::from("/var/lib/emusic-server")
     }

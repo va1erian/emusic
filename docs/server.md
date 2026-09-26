@@ -56,8 +56,8 @@ environment override, which makes container configuration file-free.
 | `security.tls_key` | `EMUSIC_SERVER_TLS_KEY` | empty | PEM key for direct TLS. |
 | `security.token_ttl_hours` | `EMUSIC_SERVER_TOKEN_TTL_HOURS` | `168` | Access-token lifetime. |
 | `security.max_pairing_attempts_per_min` | `EMUSIC_SERVER_MAX_PAIRING_ATTEMPTS` | `3` | Per client IP. |
-| `security.pairing_code_ttl_secs` | — | `600` | Code lifetime (max 1 hour). |
-| `security.max_body_bytes` | — | `65536` | Request body limit (max 1 MiB). |
+| `security.pairing_code_ttl_secs` | `EMUSIC_SERVER_PAIRING_CODE_TTL` | `600` | Code lifetime (max 1 hour). |
+| `security.max_body_bytes` | `EMUSIC_SERVER_MAX_BODY_BYTES` | `65536` | Request body limit (max 1 MiB). |
 | `library.paths` | `EMUSIC_SERVER_LIBRARY_PATHS` | required | Read-only roots. |
 | `library.hvsc_songlengths_path` | `EMUSIC_SERVER_HVSC_SONGLENGTHS` | none | HVSC `Songlengths.md5`. |
 | `library.scan_interval_secs` | `EMUSIC_SERVER_SCAN_INTERVAL` | `3600` | `0` disables periodic scans. |
@@ -133,9 +133,9 @@ rejected. Violations are audited and surfaced as `404` so no path is disclosed.
 
 ### Audit log
 
-Security events are written as JSON lines to a daily-rotated
-`<data_dir>/audit.log.<date>` file, in addition to the human-readable stdout
-log. Events include `auth_failed`,
+Security events raised while serving are written as JSON lines to a
+daily-rotated `<data_dir>/audit.log.<date>` file, in addition to the
+human-readable stdout log. Events include `auth_failed`,
 `pair_failed`, `device_paired`, `device_revoked`, `token_refreshed`,
 `path_violation`, `rate_limited` and `scan_finished`.
 
@@ -146,7 +146,7 @@ All routes are under `/api/v1` and require a bearer token except `health` and
 
 | Method & path | Description |
 | --- | --- |
-| `GET /health` | Unauthenticated liveness: `status` and `started_at` only. |
+| `GET /api/v1/health` | Unauthenticated liveness: `status` and `started_at` only. |
 | `POST /auth/pair` | Pair a device. Body: `pairing_code`, `device_name`, `public_key`. |
 | `POST /auth/refresh` | Extend a session. Body: `proof`. |
 | `GET /devices` | List paired devices (no public keys). |
@@ -155,7 +155,7 @@ All routes are under `/api/v1` and require a bearer token except `health` and
 | `GET /library/sync?since_version=N` | Delta sync: changed tracks and tombstones. |
 | `GET /tracks/{id}/meta` | Full metadata for one track. |
 | `GET /albums/{id}/art` | Cover art bytes. |
-| `GET /sid/songlengths` | HVSC song lengths by MD5. |
+| `GET /sid/songlengths` | HVSC `Songlengths.md5` text (parsed by the client's existing parser). |
 | `GET /tracks/{id}/stream` | Audio bytes, `Range` supported. |
 | `GET /ws` | WebSocket: scan progress and library-version events. |
 
@@ -172,10 +172,14 @@ supported; multi-range requests are rejected.
 
 SID (`.sid`/`.psid`/`.rsid`), tracker modules (`.mod`, `.xm`, `.it`, `.s3m`,
 `.mo3`, …) and MIDI are transferred **raw**, with their specialized content
-type (`audio/x-sid`, `audio/x-mod`, `audio/midi`). The client renders them with
-its native engines (cRSID, BASS, BASSMIDI), preserving channel inspection,
-subtune selection, soundfont choice and visualisation. SID subtune counts and
-song lengths are indexed server-side and exposed through the API.
+type (`audio/x-sid`, `audio/x-mod`, `audio/midi`). Every `TrackView` carries a
+`specialized` flag so a client knows to fetch the whole file and render it
+natively, rather than stream it for seeking. The client renders with its
+native engines (cRSID, BASS, BASSMIDI), preserving channel inspection, subtune
+selection, soundfont choice and visualisation. `subtunes` gives the count and
+`duration_secs` the tune's default (start) subtune; the full
+`Songlengths.md5` text is available from `GET /sid/songlengths` for
+per-subtune lengths.
 
 ## Deployment
 
@@ -222,8 +226,10 @@ If no reverse proxy is used, set both `security.tls_cert` and
 - **Revoking** a lost device: `emusic-server revoke <device_id>`; its tokens
   stop working on the next request.
 - **Back up** `<data_dir>/emusic-server.db` (library index and devices) and
-  `<data_dir>/server.key` (token signing key). Losing `server.key` invalidates
-  existing tokens but not device records.
+  `<data_dir>/server.key` (token signing key). The database runs in WAL mode,
+  so stop the server first or copy the `-wal`/`-shm` files too (or use
+  `sqlite3 .backup`). Losing `server.key` invalidates existing tokens but not
+  device records.
 
 ### Client integration
 

@@ -42,16 +42,6 @@ impl LibraryRoots {
         }
     }
 
-    /// Number of configured roots.
-    pub fn len(&self) -> usize {
-        self.roots.len()
-    }
-
-    /// Whether no roots are configured.
-    pub fn is_empty(&self) -> bool {
-        self.roots.is_empty()
-    }
-
     /// The configured root at `index`.
     pub fn get(&self, index: usize) -> Option<&LibraryRoot> {
         self.roots.get(index)

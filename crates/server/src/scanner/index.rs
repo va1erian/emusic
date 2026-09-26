@@ -56,7 +56,7 @@ pub fn index_file(
     art: &mut ArtCache,
     now: i64,
 ) -> (NewTrack, bool) {
-    let id = track_id(root_index, &file.relative_path);
+    let id = track_id(&file.path);
     let hash = fingerprint(file.size, file.mtime);
     let mut track = NewTrack {
         id,
@@ -151,7 +151,8 @@ fn apply_sid(track: &mut NewTrack, path: &Path, songlengths: &SongLengths) {
     let Some(data) = read_all_capped(path, SID_HASH_LIMIT) else {
         return;
     };
-    if let Some(header) = sid::parse(&data) {
+    let header = sid::parse(&data);
+    if let Some(header) = &header {
         track.subtunes = header.songs;
         track.title = header.name.clone();
         track.artist = header.author.clone();
@@ -159,8 +160,14 @@ fn apply_sid(track: &mut NewTrack, path: &Path, songlengths: &SongLengths) {
     }
     let md5 = md5_hex(&data);
     if let Some(durations) = songlengths.durations(&md5) {
-        if let Some(first) = durations.first() {
-            track.duration_secs = Some(*first);
+        // The advertised default duration is the tune's own start subtune,
+        // not always subtune 1.
+        let index = header
+            .as_ref()
+            .map(|header| header.start_song.saturating_sub(1) as usize)
+            .unwrap_or(0);
+        if let Some(duration) = durations.get(index).or_else(|| durations.first()) {
+            track.duration_secs = Some(*duration);
         }
         if durations.len() > track.subtunes as usize {
             track.subtunes = durations.len() as u32;
@@ -177,10 +184,14 @@ fn apply_module(track: &mut NewTrack, path: &Path) {
     track.channels = info.channels;
 }
 
-/// The track identifier: SHA-256 over the root index and the relative path.
-pub fn track_id(root_index: i64, relative_path: &str) -> String {
-    let material = format!("{root_index}\0{relative_path}");
-    sha256_hex(b"emusic-server/track/v1:", material.as_bytes())
+/// The track identifier: SHA-256 over the normalized absolute path.
+///
+/// Hashing the absolute path (rather than the root index plus relative path)
+/// keeps ids stable when the configured root order changes, so reordering
+/// `library.paths` does not look like an all-tracks delete/re-add.
+pub fn track_id(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    sha256_hex(b"emusic-server/track/v1:", normalized.as_bytes())
 }
 
 /// Cheap change fingerprint over size and mtime.
@@ -207,12 +218,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn track_id_is_stable_and_root_specific() {
-        let a = track_id(0, "album/song.flac");
-        assert_eq!(a, track_id(0, "album/song.flac"));
-        assert_ne!(a, track_id(1, "album/song.flac"));
-        assert_ne!(a, track_id(0, "album/other.flac"));
+    fn track_id_is_stable_and_path_specific() {
+        let a = track_id(Path::new("/music/album/song.flac"));
+        assert_eq!(a, track_id(Path::new("/music/album/song.flac")));
+        assert_ne!(a, track_id(Path::new("/music/album/other.flac")));
         assert_eq!(a.len(), 64);
+        // Windows and Unix spellings of the same path agree.
+        assert_eq!(a, track_id(Path::new(r"\music\album\song.flac")));
     }
 
     #[test]

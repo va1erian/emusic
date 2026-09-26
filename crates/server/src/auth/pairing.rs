@@ -58,12 +58,6 @@ pub fn pair(
         return Err(ServerError::InvalidPairingCode);
     }
     let parsed_key = parse_public_key(public_key)?;
-
-    let expected = pairing_code_hash(key, pairing_code);
-    if !db.consume_pairing_code(&expected, now)? {
-        return Err(ServerError::InvalidPairingCode);
-    }
-
     let canonical_key = crate::auth::paseto::public_key_paserk(&parsed_key)?;
     let device = Device {
         id: uuid::Uuid::new_v4().to_string(),
@@ -73,7 +67,14 @@ pub fn pair(
         last_seen: None,
         is_revoked: false,
     };
-    db.insert_device(&device)?;
+
+    // Consumption and device registration are one transaction, so a code
+    // cannot be burned without creating its device.
+    let expected = pairing_code_hash(key, pairing_code);
+    if !db.pair_device_with_code(&expected, now, &device)? {
+        return Err(ServerError::InvalidPairingCode);
+    }
+
     let token = issue_access_token(key, &device.id, token_ttl)?;
     Ok(PairOutcome { device, token })
 }

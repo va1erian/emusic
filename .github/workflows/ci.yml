@@ -60,6 +60,20 @@ jobs:
 
       - run: cargo test --workspace --features emusic/shot
 
+  # The server is deployed on Linux; the Windows job above only proves it
+  # cross-compiles. This runs the server crate's tests (including its
+  # `#[cfg(unix)]` paths) on the deployment target.
+  server-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo test -p emusic-server
+
   # Aggregator that preserves the branch-protection required check named
   # `ci`. It succeeds only if both `lint` and `test` succeeded, so the
   # required name does not change while the work itself runs in parallel.

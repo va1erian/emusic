@@ -6,7 +6,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
 
 use crate::api::error::ApiError;
 use crate::audit;
@@ -83,7 +82,9 @@ pub async fn album_art(
         )
             .into_response()),
         Ok(None) => Err(ApiError::not_found()),
-        Err(error @ (ServerError::PathRejected(_) | ServerError::PathEscape { .. })) => {
+        // Only a genuine escape is a security event; a missing/stale file is
+        // ordinary and must not pollute the audit log.
+        Err(error @ ServerError::PathEscape { .. }) => {
             audit::path_violation(&ip.to_string(), &device.id, &album_id);
             Err(error.into())
         }
@@ -91,11 +92,12 @@ pub async fn album_art(
     }
 }
 
-/// `GET /api/v1/sid/songlengths`
-pub async fn songlengths(State(state): State<AppState>, AuthDevice(_): AuthDevice) -> Json<Value> {
-    let mut map = Map::new();
-    for (md5, durations) in state.songlengths.iter() {
-        map.insert(md5.to_string(), json!(durations));
-    }
-    Json(Value::Object(map))
+/// `GET /api/v1/sid/songlengths` — served as HVSC `Songlengths.md5` text so
+/// the client's existing parser can consume it unchanged.
+pub async fn songlengths(State(state): State<AppState>, AuthDevice(_): AuthDevice) -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        state.songlengths.to_hvsc_text(),
+    )
+        .into_response()
 }
