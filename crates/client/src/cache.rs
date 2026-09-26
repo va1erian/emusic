@@ -28,11 +28,15 @@ pub struct TrackCache {
 }
 
 impl TrackCache {
-    /// The default cache root: `EMUSIC_REMOTE_CACHE`, else the user's cache
-    /// directory under `emusic/remote`.
+    /// The default cache root: `EMUSIC_REMOTE_CACHE`, else
+    /// `<EMUSIC_DATA_DIR>/remote`, else the user's cache directory under
+    /// `emusic/remote`.
     pub fn new() -> Result<Self> {
         if let Some(dir) = std::env::var_os(CACHE_ENV) {
             return Ok(Self::with_root(PathBuf::from(dir)));
+        }
+        if let Some(dir) = std::env::var_os("EMUSIC_DATA_DIR") {
+            return Ok(Self::with_root(PathBuf::from(dir).join("remote")));
         }
         let base = dirs::cache_dir()
             .or_else(dirs::data_local_dir)

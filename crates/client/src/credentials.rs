@@ -49,8 +49,14 @@ pub struct CredentialStore {
 }
 
 impl CredentialStore {
-    /// The default store: `<config>/emusic/servers`.
+    /// The default store: `<config>/emusic/servers`, or
+    /// `<EMUSIC_DATA_DIR>/servers` when that variable is set (#391).
     pub fn new() -> Result<Self> {
+        if let Some(dir) = std::env::var_os("EMUSIC_DATA_DIR") {
+            return Ok(Self {
+                dir: PathBuf::from(dir).join("servers"),
+            });
+        }
         let base = dirs::config_dir().ok_or_else(|| {
             ClientError::Store("no user configuration directory available".into())
         })?;
