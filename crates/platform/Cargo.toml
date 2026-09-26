@@ -1,0 +1,16 @@
+[package]
+name = "emusic-platform"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "OS shell integration for emusic: the portable ShellIntegration seam and its Windows implementation"
+
+[dependencies]
+# The portable xui core only: this crate never names a backend.
+xui = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", default-features = false }
+tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+# The Windows shell integrations live here and are compiled away elsewhere.
+souvlaki = "0.8"
+winshell = { path = "../winshell" }

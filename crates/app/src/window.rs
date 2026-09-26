@@ -1,27 +1,24 @@
-//! The main window's spec, shared by the real binary and the screenshot tool
-//! so the captured chrome cannot drift from what users get.
+//! The main window's portable spec, shared by the real binary and the
+//! screenshot tool so the captured chrome cannot drift from what users get.
 
-use xui::prelude::*;
+use xui::xui_core::backend::{Backdrop, Decorations, PlatformSpec};
+use xui::xui_core::dip;
 
-use crate::compat::WindowSpecAccentTint as _;
+/// The height of the custom caption band reserved at the top of the client
+/// area, in device-independent pixels.
+pub const CAPTION_HEIGHT: f32 = 36.0;
 
-/// Builds the main window spec: an extended title bar carrying the caption,
-/// the menu strip and the transport band (#108), with the Acrylic backdrop and
-/// the optional accent tint (#355). `width` and `height` are in DIPs.
-pub fn window_spec(
-    width: f32,
-    height: f32,
-    theme: xui::Theme,
-    accent_tint: bool,
-    accent_tint_strength: u8,
-) -> WindowSpec {
-    WindowSpec::new("emusic")
+/// Builds the main window spec: no system title bar (the shell reserves a
+/// caption band and drags from it), with the Acrylic backdrop. The theme is
+/// applied separately with `Ui::set_theme`, since the portable spec carries no
+/// accent tint or menu strip (see the migration notes).
+///
+/// `width` and `height` are in device-independent pixels.
+#[must_use]
+pub fn window_spec(width: f32, height: f32) -> PlatformSpec {
+    PlatformSpec::new("emusic")
         .size(dip(width), dip(height))
-        .theme(theme)
-        // The menu moves onto the strip so the top band sits below it.
-        .title_bar(TitleBar::Extended)
         .backdrop(Backdrop::Acrylic)
-        .accent_tint(accent_tint)
-        .accent_tint_strength(accent_tint_strength)
-        .menu_in_strip(true)
+        .decorations(Decorations::None)
+        .caption_inset(dip(CAPTION_HEIGHT))
 }

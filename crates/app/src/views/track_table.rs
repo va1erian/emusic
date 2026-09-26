@@ -1,74 +1,62 @@
-//! The shared Win32 track table (#107, #111): a virtual (owner-data)
-//! `ListView` over a pre-filtered, pre-sorted slice of tracks.
+//! The shared track table (#107, #111), ported to the portable [`ListView`].
 //!
-//! Both the Music and Folders views reuse it: the caller decides which tracks
-//! are visible (column browser + search, or the folder selection) and hands
-//! them here; this module owns the native list, the row formatting, the context
-//! menu and the sort indicator. Formatting and ordering come from `emusic-ui`
-//! (the shared column definitions and `sort::compare`), so nothing is
-//! duplicated per view.
+//! The caller decides which tracks are visible (column browser + search, or
+//! the folder selection) and hands them here; this module owns the list, the
+//! row formatting and the sort indicator. Formatting and ordering come from
+//! `emusic-ui` (the shared column definitions and `sort::compare`), so nothing
+//! is duplicated per view.
+//!
+//! The portable list paints its own cells from a [`ListModel`], so the two
+//! frontend-drawn columns (the star and the play marker) are model columns too:
+//! their glyphs are static strings chosen from the row's state, and the audio
+//! star/play behaviour is reached from the row context menu rather than a
+//! per-cell click (the portable `ListView` has no cell-click hook; tracked as a
+//! follow-up to add one).
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use emusic_ui::library_api::{TrackInfo, format_minutes_ago};
+use emusic_ui::library_api::TrackInfo;
 use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
-use xui::prelude::*;
-use xui::{Column, ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
+use xui::xui_core::app::Ui;
+use xui::xui_core::geometry::Rect;
+use xui::xui_core::units::dip;
+use xui::xui_core::widget::{Column, Fill, ListModel, ListView, SortDirection};
 
 use crate::app::Msg;
 
 /// The frontend-drawn star toggle column, first in the table (#243). The
-/// shared `emusic-ui` column list never mentions it: only the view knows
-/// how to draw and click it, so the data columns stay index-compatible with
+/// shared `emusic-ui` column list never mentions it: only the view knows how
+/// to draw it, so the data columns stay index-compatible with
 /// `columns::COLUMNS` at offset [`COLUMNS_OFFSET`].
 pub(crate) const STAR_COLUMN: usize = 0;
-/// The first data column (Title): the star and play-marker (#279) columns shift
-/// every shared column right by two.
+/// The first data column (Title): the star and play-marker (#279) columns
+/// shift every shared column right by two.
 const COLUMNS_OFFSET: usize = 2;
 /// The star column's width, in design units.
 const STAR_COLUMN_WIDTH: f32 = 24.0;
 /// The play marker column's width, in design units.
 const PLAY_COLUMN_WIDTH: f32 = 20.0;
 
-/// The star cell's glyph: a filled star when starred, an outline otherwise,
-/// matching the now-playing summary.
+/// The data columns in table order: Title first, then the shared `COLUMNS`.
+const DATA_COLUMNS: [ColumnId; 10] = [
+    ColumnId::Title,
+    ColumnId::Artist,
+    ColumnId::Album,
+    ColumnId::Year,
+    ColumnId::Genre,
+    ColumnId::Time,
+    ColumnId::Format,
+    ColumnId::Plays,
+    ColumnId::LastPlayed,
+    ColumnId::File,
+];
+
+/// The star cell's glyph: a filled star when starred, an outline otherwise.
 pub(crate) fn star_glyph(starred: bool) -> &'static str {
     if starred { "\u{2605}" } else { "\u{2606}" }
-}
-
-/// Builds the star toggle column: centred, not resizable, its glyph tinted
-/// with the theme accent when starred and dim otherwise.
-pub(crate) fn star_column() -> Column<TrackRow> {
-    Column::new("", dip(STAR_COLUMN_WIDTH), |row: &TrackRow| {
-        star_glyph(row.starred.get())
-    })
-    .centered()
-    .resizable(false)
-    .cell_color(|row, theme| {
-        Some(if row.starred.get() {
-            theme.accent
-        } else {
-            theme.text_secondary
-        })
-    })
-}
-
-/// Builds the play marker column: a play glyph in the accent colour on the row
-/// of the track `playing` holds, empty elsewhere.
-pub(crate) fn play_column(playing: Rc<Cell<Option<u64>>>) -> Column<TrackRow> {
-    Column::new("", dip(PLAY_COLUMN_WIDTH), move |row: &TrackRow| {
-        if playing.get() == Some(row.track.id) {
-            "\u{25B6}"
-        } else {
-            ""
-        }
-    })
-    .centered()
-    .resizable(false)
-    .cell_color(|_, theme| Some(theme.accent))
 }
 
 /// A context-menu action on a track row.
@@ -80,181 +68,140 @@ pub enum ContextAction {
     ToggleStar,
     CopyPath,
     OpenFileLocation,
-    /// Remove the row's playback-history entry (History view only).
-    RemoveHistory,
-    /// Open the track's Properties dialog (#280).
+    /// Open the track's Properties dialog (#280). Not ported yet.
     Properties,
-    /// Open the track's tag editor (#278).
+    /// Open the track's tag editor (#278). Not ported yet.
     EditTags,
 }
 
-/// One row: the track plus its pre-formatted numeric cells. Shared with the
-/// albums grid's track list.
+/// One row: the track plus its pre-formatted cell texts.
 pub(crate) struct TrackRow {
     pub(crate) track: TrackInfo,
-    /// The starred flag, mutable after build so a star-cell click repaints the
-    /// glyph without rebuilding the whole model.
+    /// The starred flag, mutable so a context-menu star can repaint the glyph
+    /// without rebuilding the whole model.
     starred: Cell<bool>,
-    year_text: String,
-    time_text: String,
-    plays_text: String,
-    last_played_text: String,
+    /// The data cell texts in [`DATA_COLUMNS`] order.
+    cells: [String; DATA_COLUMNS.len()],
 }
 
 impl TrackRow {
-    pub(crate) fn new(track: &TrackInfo) -> Self {
+    fn new(track: &TrackInfo) -> Self {
+        let mut cells = std::array::from_fn(|_| String::new());
+        for (slot, id) in cells.iter_mut().zip(DATA_COLUMNS) {
+            *slot = id.cell(track).into_owned();
+        }
         Self {
             track: track.clone(),
             starred: Cell::new(track.starred),
-            year_text: track.year.map(|year| year.to_string()).unwrap_or_default(),
-            time_text: columns::format_duration(track.duration),
-            plays_text: track.play_count.to_string(),
-            last_played_text: track
-                .last_played_minutes_ago
-                .map(format_minutes_ago)
-                .unwrap_or_default(),
+            cells,
         }
     }
 
-    /// Flips this row's star and returns the track id, so a cell click can
+    /// Flips this row's star and returns the track id, so a star action can
     /// update the glyph and queue [`Command::ToggleStarred`].
     pub(crate) fn flip_star(&self) -> u64 {
         self.starred.set(!self.starred.get());
         self.track.id
     }
-
-    /// The cell text for `column` (0 = Title, then `columns::COLUMNS`).
-    pub(crate) fn text(&self, column: usize) -> &str {
-        match column {
-            0 => columns::title_text(&self.track),
-            1 => columns::artist_text(&self.track),
-            2 => &self.track.album,
-            3 => &self.year_text,
-            4 => &self.track.genre,
-            5 => &self.time_text,
-            6 => &self.track.format,
-            7 => &self.plays_text,
-            8 => &self.last_played_text,
-            _ => &self.track.path,
-        }
-    }
 }
 
-/// The list's owner-data model: the rows in display order. Shared with the
-/// albums grid's track list.
-pub(crate) struct MusicModel {
-    pub(crate) rows: Rc<Vec<TrackRow>>,
+/// The list's model: the rows in display order plus the shared playing id.
+struct MusicModel {
+    rows: Rc<Vec<TrackRow>>,
+    playing: Rc<Cell<Option<u64>>>,
 }
 
 impl ListModel for MusicModel {
-    type Item = TrackRow;
-
-    fn len(&self) -> usize {
+    fn rows(&self) -> usize {
         self.rows.len()
     }
 
-    fn get(&self, index: usize) -> Option<&TrackRow> {
-        self.rows.as_slice().get(index)
+    fn cell(&self, row: usize, column: usize) -> Option<&str> {
+        let row = self.rows.get(row)?;
+        Some(match column {
+            STAR_COLUMN => star_glyph(row.starred.get()),
+            1 => {
+                if self.playing.get() == Some(row.track.id) {
+                    "\u{25B6}"
+                } else {
+                    ""
+                }
+            }
+            _ => row
+                .cells
+                .get(column - COLUMNS_OFFSET)
+                .map_or("", String::as_str),
+        })
     }
 }
 
-/// A virtual track table shared by the Music and Folders views.
+/// A virtual track table shared by the music-style views.
 pub struct TrackView {
-    list: ListView<TrackRow, Msg>,
+    list: ListView<Msg>,
+    ui: Ui<Msg>,
     rows: Rc<Vec<TrackRow>>,
-    /// The playing track id, shared with the `row_style` closure so the
-    /// highlight follows playback without rebuilding the model.
     playing: Rc<Cell<Option<u64>>>,
-    context: Menu<Msg>,
-    context_row: Cell<Option<usize>>,
     /// Column index and direction currently showing a sort arrow, if any.
     indicator: Cell<Option<(usize, bool)>>,
 }
 
 impl TrackView {
     /// Creates the table and its (empty) virtual list.
-    pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+    pub fn new(ui: &Ui<Msg>) -> TrackView {
         let playing = Rc::new(Cell::new(None));
-        let playing_for_style = Rc::clone(&playing);
-
-        let mut list = ListView::new(ui)?
-            .multi_select(true)
-            .row_style(move |row: &TrackRow| {
-                if Some(row.track.id) == playing_for_style.get() {
-                    RowStyle::new().bold(true)
-                } else {
-                    RowStyle::default()
-                }
-            })
-            .add_column(star_column())
-            .add_column(play_column(Rc::clone(&playing)))
-            .column("Title", Fill, |row: &TrackRow| row.text(0))
-            .on_cell_click(|row, column, _point| {
-                (column == STAR_COLUMN).then_some(Msg::ToggleStarRow(row))
-            })
+        let mut list = ListView::new(ui, Rect::default(), &[])
+            .expect("create track list")
+            .multi_select(true);
+        list = list
+            .add_column(Column::new("", dip(STAR_COLUMN_WIDTH)).centered())
+            .add_column(Column::new("", dip(PLAY_COLUMN_WIDTH)).centered())
+            .column("Title", Fill);
+        for spec in columns::COLUMNS {
+            list = list.column(spec.label, dip(spec.initial_width));
+        }
+        let list = list
             .on_activate(|row| Some(Msg::PlayRow(row)))
             .on_sort(|column| Some(Msg::SortColumn(column)))
             .on_context(|row| Some(Msg::ContextRow(row)));
-        for column in columns::COLUMNS {
-            let id = column.id;
-            list = list.column(
-                column.label,
-                ColumnWidth::Fixed(dip(column.initial_width)),
-                move |row: &TrackRow| cell_text(row, id),
-            );
-        }
 
-        let context = Menu::new()
-            .item("Play", None, || Msg::ContextAction(ContextAction::Play))
-            .item("Play next", None, || {
-                Msg::ContextAction(ContextAction::PlayNext)
-            })
-            .item("Add to queue", None, || {
-                Msg::ContextAction(ContextAction::AddToQueue)
-            })
-            .separator()
-            .item("Star / Unstar", None, || {
-                Msg::ContextAction(ContextAction::ToggleStar)
-            })
-            .separator()
-            .item("Open file location", None, || {
-                Msg::ContextAction(ContextAction::OpenFileLocation)
-            })
-            .item("Copy path", None, || {
-                Msg::ContextAction(ContextAction::CopyPath)
-            })
-            .separator()
-            .item("Edit tags…", None, || {
-                Msg::ContextAction(ContextAction::EditTags)
-            })
-            .item("Properties…", None, || {
-                Msg::ContextAction(ContextAction::Properties)
-            });
-
-        Ok(Self {
+        let rows = Rc::new(Vec::new());
+        list.set_model(MusicModel {
+            rows: Rc::clone(&rows),
+            playing: Rc::clone(&playing),
+        });
+        TrackView {
             list,
-            rows: Rc::new(Vec::new()),
+            ui: ui.clone(),
+            rows,
             playing,
-            context,
-            context_row: Cell::new(None),
             indicator: Cell::new(None),
-        })
+        }
     }
 
-    /// Applies the current appearance metrics and zebra flag: the row font,
-    /// row height and striping (#309).
-    pub fn apply_appearance(&self) {
-        crate::appearance::apply_list(&self.list);
+    /// The list's node, for the layout.
+    pub fn id(&self) -> xui::xui_core::backend::WidgetId {
+        self.list.id()
+    }
+
+    /// Moves/resizes the table.
+    pub fn set_bounds(&self, rect: Rect) {
+        self.ui.apply_moves(&[(self.list.id(), rect)]);
+    }
+
+    /// Shows or hides the table.
+    pub fn set_visible(&self, visible: bool) {
+        self.ui.set_visible(self.list.id(), visible);
     }
 
     /// Rebuilds the model from `tracks`, sorted by `sort_state`, and updates
     /// the sort indicator.
     pub fn set_rows(&mut self, tracks: &[&TrackInfo], sort_state: SortState) {
         let mut tracks: Vec<&TrackInfo> = tracks.to_vec();
-        self.apply_sort(&mut tracks, sort_state);
+        apply_sort(&mut tracks, sort_state);
         self.rows = Rc::new(tracks.iter().map(|track| TrackRow::new(track)).collect());
         self.list.set_model(MusicModel {
             rows: Rc::clone(&self.rows),
+            playing: Rc::clone(&self.playing),
         });
         self.show_sort_indicator(sort_state);
     }
@@ -263,69 +210,32 @@ impl TrackView {
     pub fn sync_playing(&self, playing_id: Option<u64>) {
         if self.playing.get() != playing_id {
             self.playing.set(playing_id);
-            let len = self.rows.len();
-            self.list.rows_changed(0..len);
+            self.ui.invalidate(self.list.id());
         }
     }
 
     /// The command to play `index` in the context of the whole visible list.
     pub fn activate(&self, index: usize) -> Option<Command> {
         let row = self.rows.as_slice().get(index)?;
-        Some(Command::play_track(row.track.id, self.context_ids()))
+        Some(Command::play_track(row.track.id, self.ids()))
     }
 
     /// Flips the star for `index`, repaints that row and returns the command
-    /// to persist it. The cell click that raised this never moved the
-    /// selection, so the row stays put.
+    /// to persist it.
     pub fn toggle_star(&self, index: usize) -> Option<Command> {
         let row = self.rows.as_slice().get(index)?;
         let id = row.flip_star();
-        self.list.rows_changed(index..index + 1);
+        self.ui.invalidate(self.list.id());
         Some(Command::ToggleStarred(id))
     }
 
-    /// Runs a context action on the row that opened the menu.
-    pub fn run_context(&self, action: ContextAction, hwnd: xui::Hwnd) -> Option<Command> {
-        let row = self
-            .context_row
-            .get()
-            .and_then(|index| self.rows.as_slice().get(index))?;
-        run_context_action(action, &row.track, hwnd)
+    /// The track at `index`, for a context action that needs its data.
+    pub fn track(&self, index: usize) -> Option<&TrackInfo> {
+        self.rows.get(index).map(|row| &row.track)
     }
 
-    /// The track whose context menu is open, if any (for the Properties
-    /// dialog, which the app shows itself rather than as a [`Command`]).
-    pub fn context_track(&self) -> Option<TrackInfo> {
-        self.context_row
-            .get()
-            .and_then(|index| self.rows.as_slice().get(index))
-            .map(|row| row.track.clone())
-    }
-
-    pub fn set_context_row(&self, row: usize) {
-        self.context_row.set(Some(row));
-    }
-
-    pub fn context_menu(&self) -> &Menu<Msg> {
-        &self.context
-    }
-
-    fn context_ids(&self) -> Vec<u64> {
+    fn ids(&self) -> Vec<u64> {
         self.rows.iter().map(|row| row.track.id).collect()
-    }
-
-    fn apply_sort(&self, tracks: &mut [&TrackInfo], sort_state: SortState) {
-        let Some(key) = sort_state.key else {
-            return;
-        };
-        tracks.sort_by(|a, b| {
-            let order = sort::compare(a, b, key);
-            if sort_state.ascending {
-                order
-            } else {
-                order.reverse()
-            }
-        });
     }
 
     fn show_sort_indicator(&self, sort_state: SortState) {
@@ -350,76 +260,55 @@ impl TrackView {
     }
 }
 
-impl AsControl for TrackView {
-    fn control(&self) -> &Control {
-        self.list.control()
-    }
-}
-
-/// The cell text for `id` within a row, using the shared column helpers.
-pub(crate) fn cell_text(row: &TrackRow, id: ColumnId) -> &str {
-    match id {
-        ColumnId::Title => row.text(0),
-        ColumnId::Artist => row.text(1),
-        ColumnId::Album => row.text(2),
-        ColumnId::Year => row.text(3),
-        ColumnId::Genre => row.text(4),
-        ColumnId::Time => row.text(5),
-        ColumnId::Format => row.text(6),
-        ColumnId::Plays => row.text(7),
-        ColumnId::LastPlayed => row.text(8),
-        ColumnId::File => row.text(9),
-    }
+/// Sorts `tracks` in place by the state's key, if any.
+fn apply_sort(tracks: &mut [&TrackInfo], sort_state: SortState) {
+    let Some(key) = sort_state.key else {
+        return;
+    };
+    tracks.sort_by(|a, b| {
+        let order = sort::compare(a, b, key);
+        if sort_state.ascending {
+            order
+        } else {
+            order.reverse()
+        }
+    });
 }
 
 /// The list column index for a [`ColumnId`] (0 = star, 1 = play marker,
 /// 2 = Title, then `COLUMNS`).
 pub(crate) fn column_index(id: ColumnId) -> Option<usize> {
-    if id == ColumnId::Title {
-        return Some(COLUMNS_OFFSET);
-    }
-    columns::COLUMNS
-        .iter()
-        .position(|column| column.id == id)
-        .map(|index| index + COLUMNS_OFFSET + 1)
+    let index = DATA_COLUMNS.iter().position(|candidate| *candidate == id)?;
+    Some(index + COLUMNS_OFFSET)
 }
 
-/// The [`ColumnId`] for a list column index, or `None` for the star column.
+/// The [`ColumnId`] for a list column index, or `None` for the star and play
+/// columns.
 pub fn column_id(index: usize) -> Option<ColumnId> {
-    if index == COLUMNS_OFFSET {
-        return Some(ColumnId::Title);
-    }
-    columns::COLUMNS
-        .get(index.checked_sub(COLUMNS_OFFSET + 1)?)
-        .map(|column| column.id)
+    DATA_COLUMNS
+        .get(index.checked_sub(COLUMNS_OFFSET)?)
+        .copied()
 }
 
-/// Runs a context action, returning the command to queue (or executing the
-/// clipboard/Explorer action directly).
-pub fn run_context_action(
-    action: ContextAction,
-    track: &TrackInfo,
-    hwnd: xui::Hwnd,
-) -> Option<Command> {
+/// Runs a context action, returning the command to queue.
+///
+/// The clipboard and Explorer actions are not ported yet (they need a portable
+/// clipboard/host seam; follow-up to #371/#376), so they return `None` after
+/// being logged.
+pub fn run_context_action(action: ContextAction, track: &TrackInfo) -> Option<Command> {
     match action {
         ContextAction::Play => Some(Command::play_track(track.id, Vec::new())),
         ContextAction::PlayNext => Some(Command::PlayTrackNext(track.id)),
         ContextAction::AddToQueue => Some(Command::QueueTrack(track.id)),
         ContextAction::ToggleStar => Some(Command::ToggleStarred(track.id)),
         ContextAction::CopyPath => {
-            let _ = xui::clipboard::set_text(hwnd, &track.path);
+            tracing::debug!(path = %track.path, "copy-path is not ported yet");
             None
         }
         ContextAction::OpenFileLocation => {
-            let _ = std::process::Command::new("explorer")
-                .arg(format!("/select,{}", track.path.replace('/', "\\")))
-                .spawn();
+            tracing::debug!(path = %track.path, "open-file-location is not ported yet");
             None
         }
-        // Only the History view's own context menu raises this; the track
-        // table has no history entry to remove.
-        ContextAction::RemoveHistory => None,
-        // Handled by the app, which shows the modal dialog itself.
         ContextAction::Properties => None,
         ContextAction::EditTags => Some(Command::OpenTagEditor(track.id)),
     }

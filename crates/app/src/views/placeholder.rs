@@ -1,34 +1,46 @@
-//! Placeholder views (#106).
+//! A documented placeholder for a view that is not ported yet.
 //!
-//! Until the real Win32 views land (#107–#115), each not-yet-implemented
-//! region draws a single label. The shape is the one every real view will
-//! follow: a struct owning its control(s), a `sync` that updates it from the
-//! shell's model, and an [`AsControl`] impl so the layout tree can place it.
+//! #370 establishes the portable shell and ports the Music view + track table
+//! as the reference; the other central views are owned by later issues
+//! (#371 custom-painted views, #373 navigator, #374 album grid, #375 top bar,
+//! #376 dialogs). Until then each draws a single label naming the view, so the
+//! shell stays green and every view has a stable place to grow into.
 
-use xui::prelude::*;
-use xui::{Control, Label};
+use xui::xui_core::app::Ui;
+use xui::xui_core::geometry::Rect;
+use xui::xui_core::widget::{HasText, Label};
 
-/// A not-yet-implemented view: one static label.
+use crate::app::Msg;
+
+/// A not-yet-ported view: one label announcing what belongs here.
 pub struct Placeholder {
-    label: Label,
+    ui: Ui<Msg>,
+    label: Label<Msg>,
 }
 
 impl Placeholder {
-    /// Creates a placeholder label for a region.
-    pub fn new<M: 'static>(ui: &mut Ui<M>, text: &str) -> Result<Self> {
-        Ok(Self {
-            label: Label::new(ui, Rect::default(), text)?,
-        })
+    /// Creates a placeholder for `view`, with a note pointing at its issue.
+    pub fn new(ui: &Ui<Msg>, view: &str, owner: &str) -> Placeholder {
+        let text = format!("{view}: not ported to xui_core yet ({owner})");
+        let label = Label::new(ui, Rect::default(), &text).expect("create placeholder label");
+        Placeholder {
+            ui: ui.clone(),
+            label,
+        }
     }
 
-    /// Updates the label's text.
+    /// Moves/resizes the placeholder.
+    pub fn set_bounds(&self, rect: Rect) {
+        self.ui.apply_moves(&[(self.label.id(), rect)]);
+    }
+
+    /// Shows or hides the placeholder.
+    pub fn set_visible(&self, visible: bool) {
+        self.ui.set_visible(self.label.id(), visible);
+    }
+
+    /// Replaces the placeholder text.
     pub fn sync(&self, text: &str) {
         self.label.set_text(text);
-    }
-}
-
-impl AsControl for Placeholder {
-    fn control(&self) -> &Control {
-        self.label.control()
     }
 }
