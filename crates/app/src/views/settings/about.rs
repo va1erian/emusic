@@ -12,8 +12,9 @@ use super::{FormRow, ScrollPanel};
 
 /// Short repository URL shown in the credits.
 const REPOSITORY: &str = "https://github.com/va1erian/emusic";
-/// Height reserved for the wrapped flow line, in design units.
-const FLOW_HEIGHT: f32 = 96.0;
+/// Height reserved for the wrapped flow line, in design units: the eight lines
+/// the flow renders (the repository link is set off by blank lines).
+const FLOW_HEIGHT: f32 = 160.0;
 /// Height reserved for the plain-label fallback, in design units.
 const FALLBACK_HEIGHT: f32 = 120.0;
 
@@ -76,18 +77,20 @@ fn build_flow(ui: &mut Ui<Msg>) -> win32ui::Result<FlowText<Msg>> {
         .run(Run::normal("emusic").weight(600))
         .separator("   ")
         .run(Run::weak(format!("Version {}", env!("CARGO_PKG_VERSION"))))
-        .separator("   ")
+        .line_break()
+        .line_break()
         .run(Run::link(REPOSITORY).on_click(|| {
             open_url(REPOSITORY);
             None
         }))
-        .separator("   ")
+        .line_break()
+        .line_break()
         .run(Run::weak("Audio playback: BASS by Un4seen Developments"))
-        .separator(" · ")
+        .line_break()
         .run(Run::weak("SID emulation: cRSID by Hermit"))
-        .separator(" · ")
+        .line_break()
         .run(Run::weak("Interface: win32ui (native Win32)"))
-        .separator(" · ")
+        .line_break()
         .run(Run::weak("Licensed under the MIT license.")))
 }
 
