@@ -4,6 +4,7 @@
 
 mod error;
 pub mod index;
+pub mod remote;
 pub mod scanner;
 pub mod stats;
 mod store;

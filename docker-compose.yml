@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  emusic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: va1erian/emusic-server:latest
+    container_name: emusic-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /path/to/music:/media/music:ro
+      - /path/to/data:/var/lib/emusic-server
+    environment:
+      - RUST_LOG=info,emusic_server=debug
+      - EMUSIC_HOST=0.0.0.0
+      - EMUSIC_PORT=8080
+      - EMUSIC_DATA_DIR=/var/lib/emusic-server
+      - EMUSIC_MUSIC_DIR=/media/music
+    labels:
+      # Cosmos Cloud reverse proxy labels
+      - "cosmos-cloud.enabled=true"
+      - "cosmos-cloud.domain=music.homelab.net"
+      - "cosmos-cloud.target-port=8080"
+      - "cosmos-cloud.tls-cert=letsencrypt"
