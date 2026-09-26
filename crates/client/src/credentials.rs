@@ -1,0 +1,166 @@
+//! Per-server credentials: the device keypair and the current access token.
+//!
+//! Credentials are secrets and are stored outside `config.toml`, one JSON file
+//! per server under the user's config directory, with owner-only permissions
+//! on Unix.
+
+use std::path::{Path, PathBuf};
+
+use pasetors::keys::AsymmetricSecretKey;
+use pasetors::version4::V4;
+use serde::{Deserialize, Serialize};
+
+use crate::auth;
+use crate::error::{ClientError, Result};
+
+/// Stored credentials for one paired server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Credentials {
+    /// Server-assigned device id.
+    pub device_id: String,
+    /// Device name supplied at pairing.
+    pub device_name: String,
+    /// PASERK `k4.secret.…` device private key.
+    pub secret: String,
+    /// Current PASETO access token.
+    pub token: String,
+    /// Token expiry (Unix seconds).
+    pub expires_at: i64,
+    /// Last library version the client synced.
+    pub since_version: i64,
+}
+
+impl Credentials {
+    /// Parses the stored device private key.
+    pub fn secret_key(&self) -> Result<AsymmetricSecretKey<V4>> {
+        auth::parse_secret_key(&self.secret)
+    }
+
+    /// Whether the token expires within `within_secs` of `now`.
+    pub fn expiring_within(&self, within_secs: i64, now: i64) -> bool {
+        self.expires_at.saturating_sub(now) <= within_secs
+    }
+}
+
+/// Reads and writes [`Credentials`] under a directory.
+#[derive(Debug, Clone)]
+pub struct CredentialStore {
+    dir: PathBuf,
+}
+
+impl CredentialStore {
+    /// The default store: `<config>/emusic/servers`.
+    pub fn new() -> Result<Self> {
+        let base = dirs::config_dir().ok_or_else(|| {
+            ClientError::Store("no user configuration directory available".into())
+        })?;
+        Ok(Self {
+            dir: base.join("emusic").join("servers"),
+        })
+    }
+
+    /// A store rooted at an explicit directory (used by tests and the CLI).
+    pub fn with_dir(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+
+    /// The directory holding the credential files.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// The file for a server id.
+    pub fn path(&self, server_id: &str) -> PathBuf {
+        self.dir.join(format!("{server_id}.json"))
+    }
+
+    /// Loads credentials, or `None` when the server is not paired.
+    pub fn load(&self, server_id: &str) -> Result<Option<Credentials>> {
+        let path = self.path(server_id);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str(&text).map(Some).map_err(|error| {
+                ClientError::Store(format!("cannot parse {}: {error}", path.display()))
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Writes credentials atomically with owner-only permissions.
+    pub fn save(&self, server_id: &str, credentials: &Credentials) -> Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        let path = self.path(server_id);
+        let temporary = path.with_extension("json.tmp");
+        let encoded = serde_json::to_vec_pretty(credentials)
+            .map_err(|error| ClientError::Store(error.to_string()))?;
+        write_private(&temporary, &encoded)?;
+        std::fs::rename(&temporary, &path)?;
+        Ok(())
+    }
+
+    /// Removes stored credentials. Missing files are not an error.
+    pub fn remove(&self, server_id: &str) -> Result<()> {
+        match std::fs::remove_file(self.path(server_id)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+/// Writes bytes, restricting the file to the owner on Unix.
+fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> Credentials {
+        Credentials {
+            device_id: "device-1".into(),
+            device_name: "test".into(),
+            secret: "k4.secret.abc".into(),
+            token: "v4.public.xyz".into(),
+            expires_at: 2_000,
+            since_version: 7,
+        }
+    }
+
+    #[test]
+    fn save_load_and_remove_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "emusic-client-creds-{}-{}",
+            std::process::id(),
+            crate::util::unix_now()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = CredentialStore::with_dir(dir.clone());
+        assert!(store.load("srv").unwrap().is_none());
+        store.save("srv", &sample()).unwrap();
+        assert_eq!(store.load("srv").unwrap().unwrap(), sample());
+        store.remove("srv").unwrap();
+        assert!(store.load("srv").unwrap().is_none());
+        store.remove("srv").unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn expiring_within_uses_a_margin() {
+        let credentials = sample();
+        assert!(credentials.expiring_within(1_000, 1_500));
+        assert!(!credentials.expiring_within(100, 1_500));
+    }
+}
