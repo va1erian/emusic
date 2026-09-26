@@ -6,8 +6,9 @@
 
 services:
   emusic-server:
-    # Pin a digest or tag in production; `latest` is shown for brevity.
-    image: va1erian/emusic-server:latest
+    # Pushed by .github/workflows/server-image.yml. Pin a digest or tag in
+    # production; `latest` is shown for brevity.
+    image: ghcr.io/va1erian/emusic-server:latest
     # Or build locally: `build: { context: .., dockerfile: deploy/Dockerfile }`.
     container_name: emusic-server
     restart: unless-stopped
