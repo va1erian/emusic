@@ -55,6 +55,10 @@ pub enum LibraryError {
         #[source]
         source: std::io::Error,
     },
+
+    /// Remote server error during sync.
+    #[error("remote server error: {0}")]
+    RemoteSync(String),
 }
 
 /// Convenience alias for results returned by this crate.

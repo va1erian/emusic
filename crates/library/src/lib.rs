@@ -4,6 +4,7 @@
 
 mod error;
 pub mod index;
+pub mod remote;
 pub mod scanner;
 pub mod stats;
 mod store;
@@ -11,6 +12,7 @@ pub mod tags;
 pub mod watch;
 
 pub use error::{LibraryError, Result};
+pub use remote::RemoteLibraryProvider;
 pub use store::{Folder, MostPlayedEntry, PlayHistoryEntry, Store, TrackStats, default_db_path};
 
 // Re-export domain types used in the public store/scanner/index API so

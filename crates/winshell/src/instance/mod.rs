@@ -8,42 +8,56 @@
 //! that same pipe, and exits.
 
 mod message;
+#[cfg(windows)]
 mod primary;
+#[cfg(windows)]
 mod secondary;
 
 use std::io;
 
 pub use message::IpcMessage;
+#[cfg(windows)]
 pub use primary::Listener;
+#[cfg(windows)]
 pub use secondary::send_to_primary;
 
-use primary::ERROR_ACCESS_DENIED;
+#[cfg(not(windows))]
+#[derive(Debug)]
+pub struct Listener;
+
+#[cfg(not(windows))]
+impl Listener {
+    pub fn take_messages(&self) -> Vec<IpcMessage> {
+        Vec::new()
+    }
+}
+
+#[cfg(not(windows))]
+pub fn send_to_primary(_app_id: &str, _message: &IpcMessage) -> crate::Result<()> {
+    Ok(())
+}
 
 /// The result of [`SingleInstance::acquire`].
 pub enum SingleInstance {
-    /// This process is the primary instance; `Listener` receives requests
-    /// forwarded by later, secondary launches.
+    /// This process is the primary instance.
     Primary(Listener),
-    /// Another process is already primary. The caller should forward its
-    /// own arguments with [`send_to_primary`] and exit.
+    /// Another process is already primary.
     Secondary,
 }
 
 impl SingleInstance {
-    /// Attempts to become the primary instance for `app_id` (e.g.
-    /// `"emusic-<user sid>"`, so different users on the same machine don't
-    /// collide).
-    ///
-    /// `waker` is called from the listener's background thread every time a
-    /// new batch of messages is ready, so the caller can e.g.
-    /// `ctx.request_repaint()`; it is never called if this becomes a
-    /// [`SingleInstance::Secondary`].
+    #[cfg(windows)]
     pub fn acquire(app_id: &str, waker: impl Fn() + Send + Sync + 'static) -> io::Result<Self> {
         match Listener::start(app_id, waker) {
             Ok(listener) => Ok(Self::Primary(listener)),
-            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => Ok(Self::Secondary),
+            Err(e) if e.raw_os_error() == Some(primary::ERROR_ACCESS_DENIED) => Ok(Self::Secondary),
             Err(e) => Err(e),
         }
+    }
+
+    #[cfg(not(windows))]
+    pub fn acquire(_app_id: &str, _waker: impl Fn() + Send + Sync + 'static) -> io::Result<Self> {
+        Ok(Self::Primary(Listener))
     }
 }
 

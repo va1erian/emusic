@@ -32,6 +32,7 @@
 #![forbid(unsafe_code)]
 
 pub mod backend;
+pub mod cache;
 pub mod error;
 pub mod events;
 mod listen;
@@ -43,6 +44,7 @@ pub mod tracker;
 pub mod volume;
 
 pub use backend::{AudioBackend, BackendChannel, BassBackend};
+pub use cache::{CacheError, StreamCacheManager};
 pub use error::PlayerError;
 pub use events::{PlaybackState, PlayerEvent};
 pub use player::Player;

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  emusic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: va1erian/emusic-server:latest
+    container_name: emusic-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./media:/media/music:ro
+      - ./config:/etc/emusic-server
+      - ./data:/var/lib/emusic-server
+    environment:
+      - RUST_LOG=info,emusic_server=debug
+    labels:
+      - "cosmos-cloud.enabled=true"
+      - "cosmos-cloud.domain=music.homelab.net"
+      - "cosmos-cloud.target-port=8080"

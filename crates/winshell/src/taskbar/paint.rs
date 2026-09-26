@@ -10,10 +10,14 @@
 //! This is one of the crate's raw Win32 surfaces: every `unsafe` block carries
 //! a `// SAFETY:` comment.
 
+#[cfg(windows)]
 use std::ffi::c_void;
+#[cfg(windows)]
 use std::mem::size_of;
 
+#[cfg(windows)]
 use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
+#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CLEARTYPE_QUALITY, CreateCompatibleDC, CreateDIBSection,
     CreateFontW, DEFAULT_CHARSET, DIB_RGB_COLORS, DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE,
@@ -21,24 +25,22 @@ use windows::Win32::Graphics::Gdi::{
     SelectObject, SetBkMode, SetStretchBltMode, SetTextColor, StretchDIBits, TRANSPARENT,
 };
 
+#[cfg(windows)]
 use crate::taskbar_list::to_io;
 use crate::{Result, WinshellError};
 
 use super::layout::{self, Panel, PanelLayout, ThumbnailSize};
 
-/// The card's opaque background, `0xAARRGGBB`.
+#[cfg(windows)]
 const BACKGROUND: u32 = 0xFF20_2024;
-/// Title colour (dark grey), as GDI's `0x00BBGGRR`.
+#[cfg(windows)]
 const TITLE_COLOR: COLORREF = COLORREF(0x00F0_F0F0);
-/// Artist/album colour, dimmer than the title.
+#[cfg(windows)]
 const MUTED_COLOR: COLORREF = COLORREF(0x00B4_B4B4);
-/// Elapsed/total colour, between the two.
+#[cfg(windows)]
 const TIME_COLOR: COLORREF = COLORREF(0x00DC_DCDC);
 
-/// Renders `panel` at `size` and returns the 32bpp DIB section holding it.
-///
-/// The caller passes the bitmap to `DwmSetIconicThumbnail` and then destroys
-/// it (DWM copies the pixels; it does not take ownership).
+#[cfg(windows)]
 pub(crate) fn render(size: ThumbnailSize, panel: &Panel<'_>) -> Result<HBITMAP> {
     // DWM's requested maximum is trusted only up to a sane bound so a bogus
     // `lParam` cannot allocate an enormous bitmap.
@@ -116,7 +118,7 @@ pub(crate) fn render(size: ThumbnailSize, panel: &Panel<'_>) -> Result<HBITMAP> 
     Ok(bitmap)
 }
 
-/// Sets every pixel to `color` (`0xAARRGGBB`), keeping the card opaque.
+#[cfg(windows)]
 fn fill_background(pixels: &mut [u8], color: u32) {
     let bytes = color.to_le_bytes();
     for pixel in pixels.as_chunks_mut::<4>().0 {
@@ -124,20 +126,14 @@ fn fill_background(pixels: &mut [u8], color: u32) {
     }
 }
 
-/// Forces the alpha byte of every pixel back to `255`.
-///
-/// GDI's text output treats the 32bpp DIB as `X8R8G8B8` and clears the alpha
-/// byte of the glyph pixels to `0`. DWM reads the alpha channel of the iconic
-/// thumbnail, so those pixels would otherwise composite as transparent and the
-/// text would disappear into the card. The card is fully opaque, so every
-/// pixel is restored after drawing.
+#[cfg(windows)]
 fn force_opaque(pixels: &mut [u8]) {
     for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel[3] = 0xFF;
     }
 }
 
-/// Draws the cover and the text lines over the already-filled buffer.
+#[cfg(windows)]
 fn draw_panel(dc: HDC, layout: &PanelLayout, panel: &Panel<'_>) {
     draw_cover(dc, layout, panel.cover.as_ref());
     let title = text_font(layout.title_px, 600);
@@ -149,8 +145,6 @@ fn draw_panel(dc: HDC, layout: &PanelLayout, panel: &Panel<'_>) {
     draw_line(dc, body, layout.time, &time, TIME_COLOR);
     for font in [title, body] {
         if !font.0.is_null() {
-            // SAFETY: each handle came from `CreateFontW` in `scaled_font` and
-            // is no longer selected after `draw_line` restores the DC's font.
             unsafe {
                 let _ = DeleteObject(font);
             }
@@ -158,7 +152,7 @@ fn draw_panel(dc: HDC, layout: &PanelLayout, panel: &Panel<'_>) {
     }
 }
 
-/// Scales and blits the cover into the layout's cover rectangle, if present.
+#[cfg(windows)]
 fn draw_cover(dc: HDC, layout: &PanelLayout, cover: Option<&layout::Cover<'_>>) {
     let Some(cover) = cover else {
         return;
@@ -172,9 +166,6 @@ fn draw_cover(dc: HDC, layout: &PanelLayout, cover: Option<&layout::Cover<'_>>) 
         return;
     }
 
-    // `StretchDIBits` reads BGRA, so swap red and blue once per pixel. The
-    // alpha is forced opaque so a transparent cover cannot punch a hole in the
-    // card (the background is already painted underneath).
     let mut bgra = Vec::with_capacity(cover.rgba.len());
     for pixel in cover.rgba.as_chunks::<4>().0 {
         bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 0xFF]);
@@ -187,8 +178,6 @@ fn draw_cover(dc: HDC, layout: &PanelLayout, cover: Option<&layout::Cover<'_>>) 
     info.bmiHeader.biBitCount = 32;
     info.bmiHeader.biCompression = BI_RGB.0;
 
-    // SAFETY: `dc` is the live memory DC; `bgra` and `info` are valid for the
-    // call and outlive it; the destination rectangle is inside the DIB.
     unsafe {
         SetStretchBltMode(dc, HALFTONE);
         StretchDIBits(
@@ -209,7 +198,7 @@ fn draw_cover(dc: HDC, layout: &PanelLayout, cover: Option<&layout::Cover<'_>>) 
     }
 }
 
-/// Draws one single-line, vertically centred, ellipsised string.
+#[cfg(windows)]
 fn draw_line(dc: HDC, font: HFONT, rect: layout::Rect, text: &str, color: COLORREF) {
     if text.is_empty() || rect.is_empty() || font.0.is_null() {
         return;
@@ -221,8 +210,6 @@ fn draw_line(dc: HDC, font: HFONT, rect: layout::Rect, text: &str, color: COLORR
         right: rect.right,
         bottom: rect.bottom,
     };
-    // SAFETY: `dc`, `font` and the `RECT` are live; `wide` is a valid buffer
-    // for the call; the previous font is restored immediately below.
     unsafe {
         let old = SelectObject(dc, font);
         SetBkMode(dc, TRANSPARENT);
@@ -237,14 +224,9 @@ fn draw_line(dc: HDC, font: HFONT, rect: layout::Rect, text: &str, color: COLORR
     }
 }
 
-/// Creates a `Segoe UI` font `pixels` tall (the layout's `title_px` /
-/// `body_px`), or a null handle if GDI is out of resources (the caller then
-/// skips the text).
+#[cfg(windows)]
 fn text_font(pixels: i32, weight: i32) -> HFONT {
     let pixels = pixels.clamp(6, 256);
-    // SAFETY: the face name is a static, NUL-terminated UTF-16 literal that
-    // Windows only reads for the call. The returned handle is owned by the
-    // caller.
     unsafe {
         CreateFontW(
             -pixels,
@@ -263,6 +245,14 @@ fn text_font(pixels: i32, weight: i32) -> HFONT {
             windows::core::w!("Segoe UI"),
         )
     }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn render(_size: ThumbnailSize, _panel: &Panel<'_>) -> Result<()> {
+    Err(WinshellError::Io(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Not supported on non-windows",
+    )))
 }
 
 #[cfg(test)]

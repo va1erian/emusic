@@ -65,6 +65,12 @@ pub(super) fn apply_library_commands(
     }
     if rescan {
         library.rescan();
+        if let (Some(url), Some(token)) = (&state.server_url, &state.server_auth_token) {
+            let provider = emusic_library::RemoteLibraryProvider::new(url, token);
+            if let Ok(mut store) = emusic_library::Store::open_default() {
+                let _ = provider.sync_into_store(&mut store, 0);
+            }
+        }
     }
     if cancel {
         library.cancel_scan();

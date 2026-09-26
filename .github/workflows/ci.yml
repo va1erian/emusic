@@ -5,27 +5,51 @@ on:
     branches: [main]
   pull_request:
 
-# A new push to a PR branch cancels the previous run on that branch (#90):
-# stale runs after a rebase were pure latency.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
-  # Incremental artifacts are large and useless in CI; rust-cache sets this
-  # too, but making it explicit keeps the intent obvious (#90).
   CARGO_INCREMENTAL: "0"
 
 jobs:
-  # Formatting and lints. `clippy --all-targets` type-checks everything that
-  # `cargo check --all-targets` would, so the separate `check` invocations the
-  # old single job ran are redundant and were dropped (#90).
-  #
-  # `--features emusic/shot` adds the `emusic-shot` screenshot tool and its
-  # optional `png`/WinRT capture dependencies, so one feature set covers both
-  # the plain and the `shot` passes, without building the crate twice.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ steps.filter.outputs.client }}
+      server: ${{ steps.filter.outputs.server }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            client:
+              - 'crates/app/**'
+              - 'crates/ui/**'
+              - 'crates/bass/**'
+              - 'crates/sid/**'
+              - 'crates/winshell/**'
+              - 'crates/metadata/**'
+              - 'crates/search/**'
+              - 'crates/milkdrop/**'
+              - 'crates/projectm/**'
+              - 'crates/win32ui-demo/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            server:
+              - 'crates/server/**'
+              - 'crates/core/**'
+              - 'crates/library/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+
   lint:
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' || github.ref == 'refs/heads/main' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,18 +60,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          # Only repopulate the cache from main; PR runs restore it but never
-          # pay for the (sometimes multi-minute) cache save.
-          save-if: "true" # TEMP: populate caches from this PR branch for a warm measurement
+          save-if: "true"
 
       - run: cargo fmt --all --check
 
       - run: cargo clippy --workspace --all-targets --features emusic/shot -- -D warnings
 
-  # Tests, including the `shot`-gated `emusic-shot` tool. Running only the
-  # superset invocation keeps every test that `cargo test --workspace` ran and
-  # avoids a second build with a different feature set.
   test:
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' || github.ref == 'refs/heads/main' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,20 +77,38 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          save-if: "true" # TEMP: populate caches from this PR branch for a warm measurement
+          save-if: "true"
 
       - run: cargo test --workspace --features emusic/shot
 
-  # Aggregator that preserves the branch-protection required check named
-  # `ci`. It succeeds only if both `lint` and `test` succeeded, so the
-  # required name does not change while the work itself runs in parallel.
-  ci:
-    if: ${{ always() }}
-    needs: [lint, test]
+  server-ci:
+    needs: changes
+    if: ${{ needs.changes.outputs.server == 'true' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require lint and test to succeed
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo clippy -p emusic-server -p emusic-core -p emusic-library -- -D warnings
+
+      - run: cargo test -p emusic-server -p emusic-core -p emusic-library
+
+  ci:
+    if: ${{ always() }}
+    needs: [changes, lint, test, server-ci]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require lint, test and server-ci to succeed or skip
         run: |
-          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }}"
-          test "${{ needs.lint.result }}" = success
-          test "${{ needs.test.result }}" = success
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} server=${{ needs.server-ci.result }}"
+          for res in "${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.server-ci.result }}"; do
+            if [ "$res" != "success" ] && [ "$res" != "skipped" ]; then
+              echo "Job failed: $res"
+              exit 1
+            fi
+          done

@@ -168,6 +168,15 @@ pub struct Config {
     /// entry, so they still stop and the queue advances (#192).
     #[serde(default = "default_sid_fallback_secs")]
     pub sid_fallback_secs: u32,
+    /// Homelab server URL (e.g. `https://music.homelab.net`).
+    #[serde(default)]
+    pub server_url: Option<String>,
+    /// Homelab server PASETO auth token.
+    #[serde(default)]
+    pub server_auth_token: Option<String>,
+    /// Homelab server paired device ID.
+    #[serde(default)]
+    pub server_device_id: Option<String>,
 }
 
 /// Default SID fallback play length, matching the player's own default.
@@ -211,6 +220,9 @@ impl Default for Config {
             recent_soundfonts: Vec::new(),
             songlengths_path: None,
             sid_fallback_secs: default_sid_fallback_secs(),
+            server_url: None,
+            server_auth_token: None,
+            server_device_id: None,
         }
     }
 }
@@ -254,6 +266,9 @@ impl Config {
             recent_soundfonts: state.recent_soundfonts.clone(),
             songlengths_path: state.songlengths_path.clone(),
             sid_fallback_secs: state.sid_fallback_secs,
+            server_url: state.server_url.clone(),
+            server_auth_token: state.server_auth_token.clone(),
+            server_device_id: state.server_device_id.clone(),
         }
     }
 
@@ -284,6 +299,9 @@ impl Config {
         state.recent_soundfonts = self.recent_soundfonts.clone();
         state.songlengths_path = self.songlengths_path.clone();
         state.sid_fallback_secs = self.sid_fallback_secs;
+        state.server_url = self.server_url.clone();
+        state.server_auth_token = self.server_auth_token.clone();
+        state.server_device_id = self.server_device_id.clone();
     }
 
     /// Restores the player fields (volume, repeat, shuffle, tracker

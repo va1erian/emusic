@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
 use windows_registry::{CURRENT_USER, Type};
 
 use super::roots::AssocRoots;
@@ -58,16 +59,7 @@ impl AssocManager {
         format!("{}.{}", self.app_name, ext)
     }
 
-    /// Registers `exe` as the handler for `exts` (ProgIDs, icons, `shell
-    /// open`/`enqueue` commands, `OpenWithProgids`, `SupportedTypes` and the
-    /// app's `Capabilities`/`RegisteredApplications` entries), then notifies
-    /// Explorer.
-    ///
-    /// Each ProgID's `DefaultIcon` points at the matching
-    /// `icons\file-<ext>.ico` next to `exe` (falling back to
-    /// `icons\file-audio.ico`) when the `icons` directory is present — i.e.
-    /// for an installed build (#125) — and at icon index 0 of `exe` itself
-    /// otherwise (e.g. a dev build that never ran the installer).
+    #[cfg(windows)]
     pub fn register(&self, exe: &Path, exts: &[&str]) -> Result<()> {
         let icons_dir = exe
             .parent()
@@ -83,11 +75,12 @@ impl AssocManager {
         Ok(())
     }
 
-    /// Registers the `Applications\<exe>` entry Explorer's "Open with" and
-    /// "Choose another app" surfaces use, giving emusic a friendly name and
-    /// the command to launch it. Without these, the app can still appear via
-    /// its ProgIDs but shows up as a bare executable name and may fail to
-    /// launch from those dialogs.
+    #[cfg(not(windows))]
+    pub fn register(&self, _exe: &Path, _exts: &[&str]) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(windows)]
     fn register_application(&self, exe: &str) -> Result<()> {
         let app = CURRENT_USER.create(format!(
             r"{}\Applications\{}",
@@ -105,6 +98,7 @@ impl AssocManager {
         Ok(())
     }
 
+    #[cfg(windows)]
     fn register_extension(&self, exe: &str, icons_dir: Option<&Path>, ext: &str) -> Result<()> {
         let progid = self.progid(ext);
         let classes = &self.roots.classes;
@@ -128,8 +122,6 @@ impl AssocManager {
             .create(format!(r"{classes}\{progid}\shell\enqueue\command"))?
             .set_string("", format!("\"{exe}\" --enqueue \"%1\""))?;
 
-        // REG_NONE (type 0): the convention Explorer itself uses for
-        // OpenWithProgids entries — the value only needs to exist.
         CURRENT_USER
             .create(format!(r"{classes}\.{ext}\OpenWithProgids"))?
             .set_bytes(&progid, Type::Other(0), &[])?;
@@ -144,6 +136,7 @@ impl AssocManager {
         Ok(())
     }
 
+    #[cfg(windows)]
     fn register_capabilities(&self, exts: &[&str]) -> Result<()> {
         let app = &self.roots.app;
 
@@ -164,18 +157,20 @@ impl AssocManager {
     }
 
     /// Whether `ext` currently has an emusic ProgID registered.
+    #[cfg(windows)]
     pub fn is_registered(&self, ext: &str) -> bool {
         CURRENT_USER
             .open(format!(r"{}\{}", self.roots.classes, self.progid(ext)))
             .is_ok()
     }
 
-    /// Removes everything [`register`](Self::register) may have written,
-    /// for every extension in [`EXTENSIONS`], then notifies Explorer.
-    ///
-    /// Best-effort and idempotent: missing keys/values are silently
-    /// ignored so this is safe to call whether or not (or how much of)
-    /// registration previously succeeded.
+    #[cfg(not(windows))]
+    pub fn is_registered(&self, _ext: &str) -> bool {
+        false
+    }
+
+    /// Removes everything [`register`](Self::register) may have written.
+    #[cfg(windows)]
     pub fn unregister(&self) -> Result<()> {
         let classes = &self.roots.classes;
         for ext in EXTENSIONS {
@@ -191,6 +186,11 @@ impl AssocManager {
             let _ = registered.remove_value(&self.app_name);
         }
         sys::notify_assoc_changed();
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    pub fn unregister(&self) -> Result<()> {
         Ok(())
     }
 }

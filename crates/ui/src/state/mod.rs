@@ -179,6 +179,12 @@ pub struct AppState {
     /// Fallback play length, in seconds, for SID tunes with no Songlengths
     /// entry (#192).
     pub sid_fallback_secs: u32,
+    /// Homelab server URL.
+    pub server_url: Option<String>,
+    /// Homelab server PASETO auth token.
+    pub server_auth_token: Option<String>,
+    /// Homelab server paired device ID.
+    pub server_device_id: Option<String>,
 }
 
 /// Maximum number of entries kept in [`AppState::recent_soundfonts`].
@@ -229,6 +235,9 @@ impl Default for AppState {
             recent_soundfonts: Vec::new(),
             songlengths_path: None,
             sid_fallback_secs: emusic_player::sid::DEFAULT_TUNE_LENGTH.as_secs() as u32,
+            server_url: None,
+            server_auth_token: None,
+            server_device_id: None,
         }
     }
 }
