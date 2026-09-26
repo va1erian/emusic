@@ -3,6 +3,8 @@
 //! Useful for headless testing and for scripted pulls on a homelab, and as a
 //! reference for the app integration.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -11,6 +13,7 @@ use clap::{Parser, Subcommand};
 use emusic_client::auth::{
     generate_keypair, issue_refresh_proof, public_key_paserk, secret_key_paserk, token_fingerprint,
 };
+use emusic_client::cache::{safe_file_name, safe_id};
 use emusic_client::{
     ClientError, CredentialStore, Credentials, RemoteClient, ServerEndpoint, unix_now,
 };
@@ -209,31 +212,65 @@ fn pull(store: &CredentialStore, url: &str, out: &PathBuf, limit: usize) -> Resu
     std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
 
     let mut downloaded = 0usize;
+    let mut high_water = credentials.since_version;
+    let mut truncated = false;
     for track in &delta.tracks {
         if limit > 0 && downloaded >= limit {
+            truncated = true;
             break;
         }
-        let ext = if track.format.is_empty() {
-            "bin"
-        } else {
-            track.format.as_str()
-        };
-        let destination = out.join(format!("{}.{ext}", track.id));
+        let name = safe_file_name(track)?;
+        let destination = out.join(&name);
+        high_water = high_water.max(track.sync_version);
         if let Ok(metadata) = std::fs::metadata(&destination)
-            && (track.file_size == 0 || metadata.len() == track.file_size)
+            && track.file_size > 0
+            && metadata.is_file()
+            && metadata.len() == track.file_size
         {
             continue;
         }
-        let mut file = std::fs::File::create(&destination)
-            .with_context(|| format!("creating {}", destination.display()))?;
-        client
-            .download_to(&token, &track.id, &mut file)
-            .with_context(|| format!("download {}", track.id))?;
+        let temporary = destination.with_file_name(format!("{name}.part.{}", std::process::id()));
+        let result = (|| -> Result<()> {
+            let mut file = std::fs::File::create(&temporary)
+                .with_context(|| format!("creating {}", temporary.display()))?;
+            client
+                .download_to(&token, &track.id, &mut file)
+                .with_context(|| format!("download {}", track.id))?;
+            file.sync_all()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(error);
+        }
+        if destination.exists() {
+            std::fs::remove_file(&destination)?;
+        }
+        std::fs::rename(&temporary, &destination)?;
         downloaded += 1;
         println!("{} -> {}", track.display_title(), destination.display());
     }
 
-    credentials.since_version = delta.version;
+    // Remove mirrors of tracks the server no longer has.
+    for id in &delta.deleted {
+        let Some(id) = safe_id(id) else {
+            continue;
+        };
+        let prefix = format!("{id}.");
+        let Ok(entries) = std::fs::read_dir(out) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&prefix) && !name.contains(".part.") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    // Only advance the version we actually drained; a truncated run keeps the
+    // high-water mark so the skipped tracks reappear next time.
+    credentials.since_version = if truncated { high_water } else { delta.version };
     store.save(&endpoint.id, &credentials)?;
     println!(
         "downloaded {downloaded} track(s); library version {}",

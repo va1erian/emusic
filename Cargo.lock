@@ -835,7 +835,6 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
- "tracing",
  "ureq",
 ]
 

@@ -235,7 +235,20 @@ writable and the library is mounted read-only.
    docker exec -it emusic-server emusic-server pair
    ```
 
-6. **Pair a device** with the code from step 5.
+6. **Pair a device.** Once the desktop client integration lands, enter the
+   code in the app's *Homelab Server* settings. Until then the `emusic-remote`
+   CLI (built from the same repository, `cargo build -p emusic-client`) can
+   pair and pull right away:
+
+   ```sh
+   emusic-remote pair https://music.example.com --code 123456
+   emusic-remote status https://music.example.com
+   emusic-remote pull   https://music.example.com --out ~/Music/remote
+   ```
+
+   Credentials are stored per server under the user's config directory
+   (`<config>/emusic/servers/<id>.json`); downloads go to the cache directory
+   or `EMUSIC_REMOTE_CACHE`.
 
 > The compose file uses a **named volume** (`emusic-data`) for the data
 > directory; a fresh volume inherits the image's ownership (uid 10001), so no
@@ -318,16 +331,32 @@ the current token (see [Security model](#security-model)).
 
 ### Client integration
 
-> **Status:** the server is complete and deployable; the `emusic` desktop
-> client does not speak to it yet. Until the client integration lands the
-> server can be exercised with `curl` and the pairing/revocation CLIs.
+> **Status:** the server and the cross-platform `emusic-client` core + the
+> `emusic-remote` CLI are available; the `emusic` desktop app's *Homelab
+> Server* UI is not wired up yet.
 
-The desktop client is planned to:
+The `emusic-remote` CLI (crate `emusic-client`) already supports:
+
+```sh
+emusic-remote pair   <url> --code 123456      # one-time pairing code
+emusic-remote status <url>                    # health + token expiry
+emusic-remote list   <url> [--limit 100]      # delta-sync and list tracks
+emusic-remote fetch  <url> <track-id> <file>  # one track
+emusic-remote pull   <url> --out <dir>        # mirror the library (removes deleted)
+emusic-remote songlengths <url> <file>        # HVSC Songlengths.md5 text
+```
+
+`--credentials-dir` overrides where the device keypair and token are stored
+(`<config>/emusic/servers/<id>.json` by default) and `EMUSIC_REMOTE_CACHE`
+overrides the track cache root. The client library is blocking and free of
+Win32/BASS/SQLite so the same code can drive the desktop app later.
+
+The desktop app integration (issue #385) will then:
 
 1. Sync metadata from `GET /library/sync`, caching rows locally.
-2. Fetch tracks (standard audio with `Range` seeking; specialized formats
-   whole) into a local cache and hand the cached path to the existing
-   SID/tracker/MIDI decoders.
+2. Fetch tracks into a local cache and hand the cached path to the existing
+   SID/tracker/MIDI decoders (standard audio lands fully first; true Range
+   streaming via a BASS URL stream is a follow-up).
 3. Store its Ed25519 private key and its last `version`, and refresh its
    token with a proof before expiry.
 4. Expose a *Homelab Server* settings page for the URL and pairing code.

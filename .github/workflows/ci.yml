@@ -79,11 +79,12 @@ jobs:
   # required name does not change while the work itself runs in parallel.
   ci:
     if: ${{ always() }}
-    needs: [lint, test]
+    needs: [lint, test, linux]
     runs-on: ubuntu-latest
     steps:
-      - name: Require lint and test to succeed
+      - name: Require lint, test and linux to succeed
         run: |
-          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }}"
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} linux=${{ needs.linux.result }}"
           test "${{ needs.lint.result }}" = success
           test "${{ needs.test.result }}" = success
+          test "${{ needs.linux.result }}" = success

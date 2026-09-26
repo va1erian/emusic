@@ -90,10 +90,16 @@ impl CredentialStore {
     pub fn save(&self, server_id: &str, credentials: &Credentials) -> Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         let path = self.path(server_id);
-        let temporary = path.with_extension("json.tmp");
+        let temporary = unique_temp(&path);
         let encoded = serde_json::to_vec_pretty(credentials)
             .map_err(|error| ClientError::Store(error.to_string()))?;
-        write_private(&temporary, &encoded)?;
+        if let Err(error) = write_private(&temporary, &encoded) {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(error);
+        }
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
         std::fs::rename(&temporary, &path)?;
         Ok(())
     }
@@ -108,11 +114,24 @@ impl CredentialStore {
     }
 }
 
-/// Writes bytes, restricting the file to the owner on Unix.
+/// A unique sibling path for an in-progress credential write.
+fn unique_temp(path: &Path) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let sequence = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "credentials".to_string());
+    path.with_file_name(format!("{name}.{}.{sequence}.tmp", std::process::id()))
+}
+
+/// Writes bytes, creating the file exclusively and restricting it to the owner
+/// on Unix.
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -162,5 +181,20 @@ mod tests {
         let credentials = sample();
         assert!(credentials.expiring_within(1_000, 1_500));
         assert!(!credentials.expiring_within(100, 1_500));
+    }
+
+    #[test]
+    fn corrupt_credentials_file_is_an_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "emusic-client-corrupt-{}-{}",
+            std::process::id(),
+            crate::util::unix_now()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = CredentialStore::with_dir(dir.clone());
+        std::fs::write(store.path("srv"), b"{ not json").unwrap();
+        assert!(store.load("srv").is_err());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
