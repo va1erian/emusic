@@ -149,6 +149,11 @@ pub struct Config {
     /// (#19); can also be set by hand in `config.toml`.
     #[serde(default)]
     pub library_folders: Vec<PathBuf>,
+    /// Remote `emusic-server` servers to sync (#391), edited in
+    /// Settings → Server. Only the URL and name are stored here; the device
+    /// keypair and token live in the client credential store.
+    #[serde(default)]
+    pub remote_servers: Vec<crate::remote::RemoteServer>,
     /// Tracker module playback settings (Settings → Tracker playback).
     #[serde(default)]
     pub tracker_settings: TrackerSettings,
@@ -206,6 +211,7 @@ impl Default for Config {
             projectm_layout: VizLayout::default(),
             projectm: ProjectMSettings::default(),
             library_folders: Vec::new(),
+            remote_servers: Vec::new(),
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
             recent_soundfonts: Vec::new(),
@@ -249,6 +255,7 @@ impl Config {
             projectm_layout: state.projectm.layout.clone(),
             projectm: state.projectm.settings.clone(),
             library_folders: state.library_folders.clone(),
+            remote_servers: state.remote_servers.clone(),
             tracker_settings: state.tracker_settings,
             midi_soundfont: state.midi_soundfont.clone(),
             recent_soundfonts: state.recent_soundfonts.clone(),
@@ -279,6 +286,7 @@ impl Config {
         state.projectm.layout = self.projectm_layout.clone();
         state.projectm.settings = self.projectm.sanitized();
         state.library_folders = self.library_folders.clone();
+        state.remote_servers = self.remote_servers.clone();
         state.tracker_settings = self.tracker_settings;
         state.midi_soundfont = self.midi_soundfont.clone();
         state.recent_soundfonts = self.recent_soundfonts.clone();

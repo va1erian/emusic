@@ -8,6 +8,8 @@
 pub mod ipc;
 pub mod library;
 pub mod player_adapter;
+pub(crate) mod remote_auth;
+pub mod remote_backend;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,6 +25,7 @@ use crate::player_api::{
 use crate::waker::WakerHandle;
 use library::LibraryBackend;
 use player_adapter::PlayerAdapter;
+use remote_backend::RemoteAudioBackend;
 
 /// A play-lifecycle message from the player adapter to the library backend.
 ///
@@ -89,13 +92,23 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
     };
 
     let library = LibraryBackend::new(bass.clone(), waker);
+    let registry = library.remote_registry();
     let play_message_tx = library.play_message_tx();
 
     let player: Box<dyn PlayerApi> = match bass {
         Some(bass) => {
-            let backend = Arc::new(
+            let inner: Arc<dyn emusic_player::AudioBackend> = Arc::new(
                 emusic_player::BassBackend::new(bass).with_soundfont_dirs(vec![bass_dir()]),
             );
+            // Wrap in the remote-fetching decorator when the cache and
+            // credential store are available; otherwise play local files only.
+            let backend: Arc<dyn emusic_player::AudioBackend> =
+                match (emusic_client::TrackCache::new(), emusic_client::CredentialStore::new()) {
+                    (Ok(cache), Ok(credentials)) => {
+                        Arc::new(RemoteAudioBackend::new(inner, cache, credentials, registry))
+                    }
+                    _ => inner,
+                };
             let player =
                 PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_message_tx));
             Box::new(player)

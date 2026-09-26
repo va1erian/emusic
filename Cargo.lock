@@ -969,6 +969,7 @@ dependencies = [
  "bitflags 2.13.2",
  "clap",
  "dirs",
+ "emusic-client",
  "emusic-core",
  "emusic-library",
  "emusic-metadata",
