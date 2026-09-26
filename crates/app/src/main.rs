@@ -21,7 +21,7 @@ use xui::xui_core::app::Ui;
 use xui::xui_core::backend::{Backend, PlatformSpec};
 
 use emusic::app::{Msg, Win32App};
-use emusic::window::window_spec;
+use emusic::window::{WindowChrome, window_spec};
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -119,9 +119,11 @@ fn wants_canvas() -> bool {
 }
 
 /// Builds the app's backends (real or mock) and constructs the shell around
-/// them, applying any startup notice.
+/// them, applying any startup notice and the window chrome.
+#[allow(clippy::too_many_arguments)]
 fn build_app(
     ui: &mut Ui<Msg>,
+    backend: Rc<dyn Backend>,
     config: Config,
     config_path: Option<PathBuf>,
     ipc: Option<IpcBridge>,
@@ -148,6 +150,8 @@ fn build_app(
     if let Some(notice) = notice {
         app.set_backend_notice(notice);
     }
+    let chrome = WindowChrome::new(backend, ui.window());
+    app.attach_chrome(chrome);
     app
 }
 
@@ -168,11 +172,21 @@ fn run_native(
     let backend = Rc::new(xui::xui_win32::Win32Backend::new());
     let handle_backend = Rc::clone(&backend);
     let backend: Rc<dyn Backend> = backend;
+    let chrome_backend = Rc::clone(&backend);
     xui::xui_core::run_app(backend, spec, move |ui| {
         let handle = handle_backend
             .window_hwnd(ui.window())
             .map(|hwnd| NativeHandle::from_raw(hwnd.raw() as isize));
-        let mut app = build_app(ui, config, config_path, ipc, startup, waker, mock);
+        let mut app = build_app(
+            ui,
+            chrome_backend,
+            config,
+            config_path,
+            ipc,
+            startup,
+            waker,
+            mock,
+        );
         app.attach_shell(emusic_platform::shell(handle, ui.proxy()));
         app
     })
@@ -192,8 +206,18 @@ fn run_canvas(
     mock: bool,
 ) -> anyhow::Result<()> {
     let backend: Rc<dyn Backend> = Rc::new(xui::xui_canvas::WinitBackend::new());
+    let chrome_backend = Rc::clone(&backend);
     xui::xui_core::run_app(backend, spec, move |ui| {
-        let mut app = build_app(ui, config, config_path, ipc, startup, waker, mock);
+        let mut app = build_app(
+            ui,
+            chrome_backend,
+            config,
+            config_path,
+            ipc,
+            startup,
+            waker,
+            mock,
+        );
         app.attach_shell(Box::new(emusic_platform::NullShell));
         app
     })
