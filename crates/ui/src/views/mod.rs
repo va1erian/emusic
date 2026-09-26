@@ -14,6 +14,7 @@ pub mod history;
 pub mod most_played;
 pub mod music;
 pub mod now_playing;
+pub mod preset_browser;
 pub mod search_popup;
 pub mod starred;
 pub mod track_table;

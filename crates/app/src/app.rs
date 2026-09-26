@@ -50,6 +50,7 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
+use crate::views::preset_browser::{self, PresetBrowserView};
 use crate::views::projectm::{
     GraceTimer, PresetFiles, PresetRoots, PresetScanner, ProjectMEvent, VizWindow,
 };
@@ -159,6 +160,12 @@ pub enum Msg {
     VizAvailability(ProjectMAvailability),
     /// Open the projectM surface's right-click menu (#306).
     VizMenu,
+    /// The preset browser's filter box changed (#338).
+    PresetFilter(String),
+    /// A preset-browser row was selected (single click).
+    PresetSelect(usize),
+    /// A preset-browser row was activated (double-click / Enter): play it.
+    PresetPlay(usize),
     /// Close the window and exit.
     Quit,
 }
@@ -176,6 +183,7 @@ pub struct Win32App {
     genres: GenresView,
     most_played: MostPlayedView,
     history: HistoryView,
+    preset_browser: PresetBrowserView,
     settings: SettingsView,
     starred: StarredView,
     right_panel: NowPlayingView,
@@ -218,6 +226,9 @@ pub struct Win32App {
     /// The scanned preset files, cached so a surface opened after the scan
     /// (the independent window, #303) still receives them.
     preset_files: Option<PresetFiles>,
+    /// Bumped whenever `preset_files` changes, so the preset browser (#338)
+    /// rebuilds only on a finished scan and not on every tick.
+    preset_scan_generation: u64,
     /// The preset configuration (disabled packs, user folder) the current scan
     /// was started for, so a settings change restarts it (#305).
     preset_config: Option<(Vec<String>, Option<PathBuf>)>,
@@ -287,6 +298,7 @@ impl Win32App {
         let genres = GenresView::new(ui).expect("create genres view");
         let most_played = MostPlayedView::new(ui).expect("create most played view");
         let history = HistoryView::new(ui).expect("create history view");
+        let preset_browser = PresetBrowserView::new(ui).expect("create preset browser view");
         let settings =
             SettingsView::new(ui, config.visualizer_enabled).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
@@ -332,6 +344,7 @@ impl Win32App {
                 | View::Starred
                 | View::History
                 | View::NowPlaying
+                | View::Visualization
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
@@ -343,6 +356,7 @@ impl Win32App {
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
         history.set_visible(view == View::History);
+        preset_browser.set_visible(view == View::Visualization);
         now_playing_central.set_visible(view == View::NowPlaying);
         // Panel visibility is otherwise only applied by `tick` when it
         // *changes*, so a panel disabled in the saved config must be hidden
@@ -376,6 +390,7 @@ impl Win32App {
             genres,
             most_played,
             history,
+            preset_browser,
             settings,
             starred,
             right_panel,
@@ -393,6 +408,7 @@ impl Win32App {
             viz_grace: GraceTimer::default(),
             preset_scanner: None,
             preset_files: None,
+            preset_scan_generation: 0,
             preset_config: None,
             applied_look,
             applied_appearance,
@@ -439,6 +455,7 @@ impl Win32App {
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
             View::History => self.history.layout().fill(1),
+            View::Visualization => self.preset_browser.layout().fill(1),
             View::NowPlaying => self.now_playing_central.layout().fill(1),
             View::Settings => self.settings.tabs().into_layout_item(),
         };
@@ -607,6 +624,7 @@ impl Win32App {
                     | View::Settings
                     | View::Starred
                     | View::NowPlaying
+                    | View::Visualization
             ));
             self.music.set_visible(view == View::Music);
             self.albums.set_visible(view == View::Albums);
@@ -617,6 +635,7 @@ impl Win32App {
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
             self.history.set_visible(view == View::History);
+            self.preset_browser.set_visible(view == View::Visualization);
             self.now_playing_central
                 .set_visible(view == View::NowPlaying);
             let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
@@ -805,6 +824,15 @@ impl Win32App {
         self.sync_viz_window(ui);
         self.sync_projectm();
         self.sync_viz_lifecycle();
+        // The preset browser reads the scanned list, so it syncs after the
+        // lifecycle (which may have just installed a finished scan) (#338).
+        if view == View::Visualization {
+            self.preset_browser.sync(
+                &self.shell.state.projectm.settings,
+                self.preset_files.as_ref(),
+                self.preset_scan_generation,
+            );
+        }
 
         // The dark/light toggle and the accent picker change the shell.s look;
         // mirror them onto the window.
@@ -843,6 +871,7 @@ impl Win32App {
         self.genres.apply_appearance();
         self.most_played.apply_appearance();
         self.history.apply_appearance();
+        self.preset_browser.apply_appearance();
         self.starred.apply_appearance();
         self.browser.apply_appearance();
         self.right_panel.apply_appearance();
@@ -1042,8 +1071,29 @@ impl Win32App {
                 window.set_presets(files.clone());
             }
             self.preset_files = Some(files);
+            self.preset_scan_generation += 1;
             self.preset_scanner = None;
         }
+    }
+
+    /// Serves a deterministic placeholder preset list instead of a real scan,
+    /// for `emusic-shot` and `emusic --mock` (#338). Cancels the running scan
+    /// and records the current preset configuration so [`Self::poll_preset_scan`]
+    /// does not immediately replace it.
+    pub fn seed_placeholder_presets(&mut self) {
+        let settings = &self.shell.state.projectm.settings;
+        self.preset_config = Some((
+            settings.disabled_packs.clone(),
+            settings.user_preset_dir.clone(),
+        ));
+        self.preset_scanner = None;
+        let files = PresetFiles::placeholder();
+        self.right_panel.viz().set_presets(files.clone());
+        if let Some(window) = &self.viz_window {
+            window.set_presets(files.clone());
+        }
+        self.preset_files = Some(files);
+        self.preset_scan_generation += 1;
     }
 
     /// Refreshes the now-playing model from the player/library, then pushes it
@@ -1554,6 +1604,22 @@ impl App for Win32App {
             Msg::VizMenu => {
                 let menu = menu::viz_context(&self.shell.state);
                 ui.popup(&menu, ui.cursor_position());
+            }
+            Msg::PresetFilter(filter) => {
+                self.preset_browser.set_filter(&filter);
+                self.tick(ui);
+            }
+            Msg::PresetSelect(row) => {
+                self.preset_browser.select(row);
+                self.tick(ui);
+            }
+            Msg::PresetPlay(row) => {
+                if let Some(index) = self.preset_browser.playlist_index(row) {
+                    for command in preset_browser::play_commands(index) {
+                        self.shell.dispatch(command);
+                    }
+                    self.tick(ui);
+                }
             }
             Msg::Quit => {
                 self.shell.save_on_exit();

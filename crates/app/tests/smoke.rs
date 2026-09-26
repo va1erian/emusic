@@ -266,6 +266,46 @@ fn history_view_builds_its_model_and_quits() {
     assert!(constructed.get(), "the app was never constructed");
 }
 
+/// Exercises the preset browser wiring (#338): navigating to the
+/// Visualization view, filtering, selecting and playing a row must rebuild the
+/// list and dispatch the play commands without panicking.
+#[test]
+fn preset_browser_view_filters_selects_and_plays() {
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+
+    let result = win32ui::run_app(
+        WindowSpec::new("emusic.preset-browser").theme(Theme::dark()),
+        move |ui| {
+            let mut app = Win32App::new(
+                ui,
+                Box::new(MockLibrary::new()),
+                Box::new(MockPlayer::default()),
+                Config::default(),
+                None,
+                None,
+                None,
+                WakerSlot::new(),
+            );
+            // Seed the deterministic placeholder list a `--mock`/shot run uses.
+            app.seed_placeholder_presets();
+            ui.emit(Msg::Navigate(emusic_ui::state::View::Visualization));
+            ui.emit(Msg::PresetFilter("dancer".to_owned()));
+            ui.emit(Msg::PresetSelect(0));
+            ui.emit(Msg::PresetPlay(0));
+            ui.emit(Msg::Quit);
+            constructed_for_make.set(true);
+            app
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}
+
 /// Exercises the Albums view wiring (#113): navigating there must build the
 /// grid model from the mock library and tick without panicking.
 #[test]

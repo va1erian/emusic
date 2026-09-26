@@ -23,11 +23,12 @@ pub enum View {
     MostPlayed,
     History,
     NowPlaying,
+    Visualization,
     Settings,
 }
 
 impl View {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Music,
         Self::Albums,
         Self::Artists,
@@ -37,6 +38,7 @@ impl View {
         Self::MostPlayed,
         Self::History,
         Self::NowPlaying,
+        Self::Visualization,
         Self::Settings,
     ];
 
@@ -52,6 +54,7 @@ impl View {
             Self::MostPlayed => "Most Played",
             Self::History => "History",
             Self::NowPlaying => "Now Playing",
+            Self::Visualization => "Visualization",
             Self::Settings => "Settings",
         }
     }
@@ -68,6 +71,7 @@ impl View {
             Self::MostPlayed => "most-played",
             Self::History => "history",
             Self::NowPlaying => "now-playing",
+            Self::Visualization => "visualization",
             Self::Settings => "settings",
         }
     }
