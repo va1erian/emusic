@@ -87,7 +87,12 @@ mod tests {
     use super::*;
 
     fn track(id: i64, path: &str, artist: &str, album: &str, genre: &str) -> Track {
-        let path = PathBuf::from(path);
+        let path_str = if cfg!(not(windows)) {
+            path.replace('\\', "/")
+        } else {
+            path.to_string()
+        };
+        let path = PathBuf::from(&path_str);
         let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
         Track {
             id: TrackId(id),
@@ -174,14 +179,19 @@ mod tests {
     #[test]
     fn directory_scope_is_recursive_when_asked() {
         let index = index();
+        let dir_path_str = if cfg!(not(windows)) {
+            r"C:\music\B".replace('\\', "/")
+        } else {
+            r"C:\music\B".to_string()
+        };
         let shallow = ShuffleScope::Directory {
-            path: PathBuf::from(r"C:\music\B"),
+            path: PathBuf::from(&dir_path_str),
             recursive: false,
         };
         assert_eq!(ids(index.scope_track_ids(&shallow)), vec![3]);
 
         let recursive = ShuffleScope::Directory {
-            path: PathBuf::from(r"C:\music\B"),
+            path: PathBuf::from(&dir_path_str),
             recursive: true,
         };
         assert_eq!(ids(index.scope_track_ids(&recursive)), vec![3, 4]);

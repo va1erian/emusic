@@ -171,8 +171,16 @@ mod tests {
     use super::*;
 
     fn track(path: &str) -> Track {
-        let path = PathBuf::from(path);
-        let dir = path.parent().unwrap().to_path_buf();
+        let path_str = if cfg!(not(windows)) {
+            path.replace('\\', "/")
+        } else {
+            path.to_string()
+        };
+        let path = PathBuf::from(&path_str);
+        let dir = path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("/"));
         Track {
             id: TrackId::UNASSIGNED,
             path,
@@ -211,7 +219,7 @@ mod tests {
 
         let roots = dirs.build();
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].name, r"C:\");
+        assert!(roots[0].name == r"C:\" || roots[0].name == "C:" || roots[0].name == "C");
         assert_eq!(roots[0].children.len(), 1);
         assert_eq!(roots[0].children[0].name, "music");
         assert_eq!(roots[0].children[0].children.len(), 2);

@@ -141,6 +141,9 @@ fn non_default_config() -> Config {
         ],
         songlengths_path: Some(PathBuf::from(r"C:\hvsc\DOCUMENTS\Songlengths.md5")),
         sid_fallback_secs: 240,
+        server_url: Some("https://music.homelab.net".to_string()),
+        server_auth_token: Some("token_123".to_string()),
+        server_device_id: Some("dev_123".to_string()),
     }
 }
 
