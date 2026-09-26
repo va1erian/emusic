@@ -128,6 +128,7 @@ fn non_default_config() -> Config {
             name: "Homelab".to_string(),
             url: "https://music.example.com".to_string(),
         }],
+        server_only: true,
         tracker_settings: TrackerSettings {
             interpolation: Interpolation::Sinc,
             ramping: Ramping::Sensitive,

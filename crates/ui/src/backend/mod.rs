@@ -102,13 +102,15 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
             );
             // Wrap in the remote-fetching decorator when the cache and
             // credential store are available; otherwise play local files only.
-            let backend: Arc<dyn emusic_player::AudioBackend> =
-                match (emusic_client::TrackCache::new(), emusic_client::CredentialStore::new()) {
-                    (Ok(cache), Ok(credentials)) => {
-                        Arc::new(RemoteAudioBackend::new(inner, cache, credentials, registry))
-                    }
-                    _ => inner,
-                };
+            let backend: Arc<dyn emusic_player::AudioBackend> = match (
+                emusic_client::TrackCache::new(),
+                emusic_client::CredentialStore::new(),
+            ) {
+                (Ok(cache), Ok(credentials)) => {
+                    Arc::new(RemoteAudioBackend::new(inner, cache, credentials, registry))
+                }
+                _ => inner,
+            };
             let player =
                 PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_message_tx));
             Box::new(player)
