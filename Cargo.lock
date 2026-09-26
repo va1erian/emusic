@@ -849,6 +849,7 @@ dependencies = [
  "axum",
  "axum-server",
  "clap",
+ "dirs",
  "hex",
  "hmac",
  "http-body-util",

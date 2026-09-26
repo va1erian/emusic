@@ -60,6 +60,12 @@ impl ServerKey {
                 path.display()
             ))
         })?;
+        if encoded.trim().is_empty() {
+            return Err(ServerError::Token(format!(
+                "server key {} is empty; remove it to generate a new one",
+                path.display()
+            )));
+        }
         let secret = AsymmetricSecretKey::<V4>::try_from(encoded.trim()).map_err(|error| {
             ServerError::Token(format!("server key {} is invalid: {error}", path.display()))
         })?;
@@ -163,6 +169,15 @@ mod tests {
         let first = ServerKey::load_or_create(&path).expect("create");
         let second = ServerKey::load_or_create(&path).expect("reload");
         assert_eq!(first.secret(), second.secret());
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn empty_key_file_is_reported_clearly() {
+        let path = temp_path("empty");
+        std::fs::write(&path, b"").unwrap();
+        let error = ServerKey::load(&path).expect_err("empty key must fail");
+        assert!(error.to_string().contains("is empty"));
         std::fs::remove_file(&path).ok();
     }
 }

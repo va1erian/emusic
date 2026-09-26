@@ -42,7 +42,9 @@ pub async fn stream(
 
     let path = match state.roots.resolve(track.root_index, &track.relative_path) {
         Ok(path) => path,
-        Err(error @ (ServerError::PathRejected(_) | ServerError::PathEscape { .. })) => {
+        // Only a genuine escape is a security event; a missing/stale file is
+        // ordinary and must not pollute the audit log.
+        Err(error @ ServerError::PathEscape { .. }) => {
             audit::path_violation(&ip.to_string(), &device.id, &id);
             return Err(error.into());
         }

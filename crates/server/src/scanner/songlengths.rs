@@ -69,11 +69,22 @@ impl SongLengths {
         self.entries.len()
     }
 
-    /// Iterates over every tune's MD5 and durations.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &[f64])> {
-        self.entries
-            .iter()
-            .map(|(key, values)| (key.as_str(), values.as_slice()))
+    /// Renders the table back in HVSC `Songlengths.md5` format, so the client
+    /// can feed it to its existing parser unchanged.
+    pub fn to_hvsc_text(&self) -> String {
+        let mut out = String::new();
+        for (md5, durations) in &self.entries {
+            let values = durations
+                .iter()
+                .map(|duration| format_duration(*duration))
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.push_str(md5);
+            out.push('=');
+            out.push_str(&values);
+            out.push('\n');
+        }
+        out
     }
 
     /// Whether the table has no entries.
@@ -93,6 +104,14 @@ fn parse_duration(token: &str) -> Option<f64> {
         return None;
     }
     Some(minutes as f64 * 60.0 + seconds)
+}
+
+/// Formats seconds as `m:ss.mmm`.
+fn format_duration(seconds: f64) -> String {
+    let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
+    let minutes = total_ms / 60_000;
+    let remainder = total_ms % 60_000;
+    format!("{minutes}:{:02}.{:03}", remainder / 1000, remainder % 1000)
 }
 
 #[cfg(test)]
@@ -142,5 +161,17 @@ mod tests {
         assert_eq!(parse_duration("45"), Some(45.0));
         assert_eq!(parse_duration("garbage"), None);
         assert_eq!(parse_duration("1:-1"), None);
+    }
+
+    #[test]
+    fn hvsc_text_round_trips() {
+        let text = "003a54e4e4b3a26b64a53b5b2a5e5b7f=2:51 4:12.5\n";
+        let lengths = SongLengths::parse(text);
+        let rendered = lengths.to_hvsc_text();
+        let reparsed = SongLengths::parse(&rendered);
+        assert_eq!(
+            reparsed.durations("003a54e4e4b3a26b64a53b5b2a5e5b7f"),
+            lengths.durations("003a54e4e4b3a26b64a53b5b2a5e5b7f")
+        );
     }
 }

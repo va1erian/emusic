@@ -6,6 +6,6 @@ pub mod pairing;
 pub mod paseto;
 
 pub use keys::ServerKey;
-pub use middleware::{AuthDevice, ClientIp, PeerAddr};
+pub use middleware::{AuthDevice, ClientIp};
 pub use pairing::{PairOutcome, pair};
 pub use paseto::{IssuedToken, VerifiedAccess, issue_access_token, verify_access_token};

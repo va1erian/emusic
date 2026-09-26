@@ -9,24 +9,6 @@ use crate::db::models::Device;
 use crate::error::{Result, ServerError};
 
 impl Db {
-    /// Inserts a newly paired device.
-    pub fn insert_device(&self, device: &Device) -> Result<()> {
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT INTO devices (id, name, public_key, paired_at, last_seen, is_revoked)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                device.id,
-                device.name,
-                device.public_key,
-                device.paired_at,
-                device.last_seen,
-                device.is_revoked as i64,
-            ],
-        )?;
-        Ok(())
-    }
-
     /// Fetches a device by id.
     pub fn device_by_id(&self, id: &str) -> Result<Option<Device>> {
         let conn = self.conn()?;
@@ -94,36 +76,30 @@ impl Db {
     /// both consume the same code: the second waits for the first's write lock
     /// and then re-reads the row, which is already `used`.
     pub fn consume_pairing_code(&self, code_hash: &str, now: i64) -> Result<bool> {
-        let expected = decode_hash(code_hash);
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let candidates = {
-            let mut stmt = tx.prepare(
-                "SELECT id, code_hash FROM pairing_codes WHERE used = 0 AND expires_at > ?1",
-            )?;
-            stmt.query_map([now], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-        };
-
-        let mut matched: Option<i64> = None;
-        for (id, stored) in candidates {
-            if constant_time_eq(expected.as_deref(), decode_hash(&stored).as_deref()) {
-                matched = Some(id);
-            }
-        }
-        let consumed = match matched {
-            Some(id) => {
-                tx.execute(
-                    "UPDATE pairing_codes SET used = 1 WHERE id = ?1 AND used = 0",
-                    [id],
-                )? == 1
-            }
-            None => false,
-        };
+        let consumed = consume_code_tx(&tx, code_hash, now)?;
         tx.commit()?;
         Ok(consumed)
+    }
+
+    /// Atomically consumes a pairing code and registers the device in one
+    /// transaction, so a code can never be burned without creating its device.
+    pub fn pair_device_with_code(
+        &self,
+        code_hash: &str,
+        now: i64,
+        device: &Device,
+    ) -> Result<bool> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if !consume_code_tx(&tx, code_hash, now)? {
+            tx.commit()?;
+            return Ok(false);
+        }
+        insert_device_conn(&tx, device)?;
+        tx.commit()?;
+        Ok(true)
     }
 
     /// Removes pairing codes whose expiry has passed.
@@ -136,6 +112,52 @@ impl Db {
 
 fn decode_hash(value: &str) -> Option<Vec<u8>> {
     hex::decode(value).ok()
+}
+
+fn insert_device_conn(conn: &rusqlite::Connection, device: &Device) -> Result<()> {
+    conn.execute(
+        "INSERT INTO devices (id, name, public_key, paired_at, last_seen, is_revoked)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            device.id,
+            device.name,
+            device.public_key,
+            device.paired_at,
+            device.last_seen,
+            device.is_revoked as i64,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Matches and marks a pairing code used. Must run inside a transaction.
+fn consume_code_tx(conn: &rusqlite::Connection, code_hash: &str, now: i64) -> Result<bool> {
+    let expected = decode_hash(code_hash);
+    let candidates = {
+        let mut stmt = conn.prepare(
+            "SELECT id, code_hash FROM pairing_codes WHERE used = 0 AND expires_at > ?1",
+        )?;
+        stmt.query_map([now], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    let mut matched: Option<i64> = None;
+    for (id, stored) in candidates {
+        if constant_time_eq(expected.as_deref(), decode_hash(&stored).as_deref()) {
+            matched = Some(id);
+        }
+    }
+    Ok(match matched {
+        Some(id) => {
+            conn.execute(
+                "UPDATE pairing_codes SET used = 1 WHERE id = ?1 AND used = 0",
+                [id],
+            )? == 1
+        }
+        None => false,
+    })
 }
 
 fn constant_time_eq(a: Option<&[u8]>, b: Option<&[u8]>) -> bool {

@@ -161,11 +161,32 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<HashSet<_>>>()?)
     }
 
-    /// Total number of tracks in the store.
-    pub fn track_count(&self) -> Result<u64> {
+    /// Reads a value from the `meta` key/value table.
+    pub fn meta_get(&self, key: &str) -> Result<Option<String>> {
         let conn = self.conn()?;
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
-        Ok(count as u64)
+        Ok(conn
+            .query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()?)
+    }
+
+    /// Writes a value into the `meta` key/value table.
+    pub fn meta_set(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Removes tombstones recorded before `cutoff` (Unix seconds).
+    pub fn purge_tombstones_before(&self, cutoff: i64) -> Result<usize> {
+        let conn = self.conn()?;
+        let removed = conn.execute("DELETE FROM tombstones WHERE deleted_at < ?1", [cutoff])?;
+        Ok(removed)
     }
 }
 

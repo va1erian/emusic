@@ -54,6 +54,7 @@ fn main() -> Result<()> {
                 .context("running server")?;
         }
         Command::Pair { ttl } => {
+            let ttl = ttl.min(emusic_server::config::MAX_PAIRING_CODE_TTL_SECS);
             let code = server::print_pairing_code(&config, ttl).context("generating code")?;
             println!("{code}");
             println!("Pairing code valid for {ttl}s; enter it in the emusic client.");

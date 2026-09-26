@@ -567,7 +567,7 @@ async fn range_errors_are_reported_correctly() {
 }
 
 #[tokio::test]
-async fn an_emptied_root_keeps_its_rows() {
+async fn an_emptied_root_keeps_rows_for_one_scan_then_prunes() {
     let harness = Harness::new();
     harness.write_wav("song.wav", 200);
     harness.scan().await;
@@ -577,39 +577,53 @@ async fn an_emptied_root_keeps_its_rows() {
         .await;
     assert_eq!(sync_tracks(&sync).len(), 1);
 
-    // The root directory still exists but yields no files: treat as partial.
+    // First empty scan: treated as an unmounted share and guarded.
     std::fs::remove_file(harness.root.join("song.wav")).unwrap();
     harness.scan().await;
     let (_, _, sync) = harness
         .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
         .await;
-    assert_eq!(sync_tracks(&sync).len(), 1, "rows must be kept");
+    assert_eq!(
+        sync_tracks(&sync).len(),
+        1,
+        "rows must be kept on the first empty scan"
+    );
+
+    // Second consecutive empty scan: the wipe is accepted.
+    harness.scan().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    assert!(
+        sync_tracks(&sync).is_empty(),
+        "rows pruned after two empty scans"
+    );
 }
 
 #[tokio::test]
 async fn re_adding_a_track_clears_its_tombstone() {
     let harness = Harness::new();
-    harness.write_wav("song.wav", 200);
+    harness.write_wav("keep.wav", 200);
+    harness.write_wav("gone.wav", 300);
     harness.scan().await;
     let (token, _, _) = harness.pair().await;
+
+    // Deleting one of two tracks writes a real tombstone.
+    std::fs::remove_file(harness.root.join("gone.wav")).unwrap();
+    harness.scan().await;
     let (_, _, sync) = harness
         .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
         .await;
-    let id = sync_tracks(&sync)[0]["id"].as_str().unwrap().to_string();
+    let value: serde_json::Value = serde_json::from_slice(&sync).unwrap();
+    assert_eq!(value["deleted"].as_array().unwrap().len(), 1);
 
-    std::fs::remove_file(harness.root.join("song.wav")).unwrap();
+    // Re-adding it must clear the tombstone.
+    harness.write_wav("gone.wav", 300);
     harness.scan().await;
-    harness.write_wav("song.wav", 200);
-    harness.scan().await;
-
     let (_, _, sync) = harness
         .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
         .await;
     let value: serde_json::Value = serde_json::from_slice(&sync).unwrap();
     assert!(value["deleted"].as_array().unwrap().is_empty());
-    assert!(
-        sync_tracks(&sync)
-            .iter()
-            .any(|track| track["id"] == id.as_str())
-    );
+    assert_eq!(sync_tracks(&sync).len(), 2);
 }

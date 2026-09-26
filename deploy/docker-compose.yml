@@ -2,7 +2,8 @@
 #
 # Cosmos Cloud terminates TLS and routes https://music.homelab.net to the
 # internal port 8080; emusic-server runs plain HTTP inside the bridge network.
-# See docs/server.md for the pairing and hardening walkthrough.
+# The service is configured entirely from the environment by default; mount a
+# `server.toml` and pass `--config` if you prefer a file. See docs/server.md.
 
 services:
   emusic-server:
@@ -14,17 +15,19 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    environment:
+      - RUST_LOG=info,emusic_server=debug
+      # The server only reads the library and writes its own data directory.
+      - EMUSIC_SERVER_LIBRARY_PATHS=/media/music
+      - EMUSIC_SERVER_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
+      - EMUSIC_SERVER_HVSC_SONGLENGTHS=/media/hvsc_sid/DOCUMENTS/Songlengths.md5
     volumes:
       # Music is mounted read-only: the server never writes to the library.
       - /path/to/music:/media/music:ro
       - /path/to/sid:/media/hvsc_sid:ro
-      - /path/to/config:/etc/emusic-server:ro
-      - /path/to/data:/var/lib/emusic-server
-    environment:
-      - RUST_LOG=info,emusic_server=debug
-      # Or configure entirely from the environment:
-      # - EMUSIC_SERVER_LIBRARY_PATHS=/media/music;/media/hvsc_sid
-      # - EMUSIC_SERVER_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
+      # A named volume is pre-owned by the image's uid 10001. For a bind mount
+      # instead, first `mkdir -p /path/to/data && chown 10001:10001 /path/to/data`.
+      - emusic-data:/var/lib/emusic-server
     read_only: true
     tmpfs:
       - /tmp
@@ -36,3 +39,6 @@ services:
       - "cosmos-cloud.enabled=true"
       - "cosmos-cloud.domain=music.homelab.net"
       - "cosmos-cloud.target-port=8080"
+
+volumes:
+  emusic-data:

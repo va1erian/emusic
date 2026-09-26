@@ -147,6 +147,9 @@ pub struct TrackView {
     pub format: String,
     /// Either `stream` or `module`.
     pub kind: String,
+    /// Whether the client should fetch the whole file and render it natively
+    /// (SID, tracker module or MIDI) rather than stream it for seeking.
+    pub specialized: bool,
     /// Tagged title.
     pub title: Option<String>,
     /// Tagged artist.
@@ -189,6 +192,7 @@ impl From<&TrackRecord> for TrackView {
             id: track.id.clone(),
             format: track.format.clone(),
             kind: track.kind.clone(),
+            specialized: is_specialized_format(&track.format),
             title: track.title.clone(),
             artist: track.artist.clone(),
             album_artist: track.album_artist.clone(),
@@ -228,5 +232,38 @@ impl From<SyncDelta> for SyncDeltaView {
             tracks: delta.tracks.iter().map(TrackView::from).collect(),
             deleted: delta.deleted,
         }
+    }
+}
+
+/// Whether a format label must be fetched whole and rendered by the client.
+fn is_specialized_format(format: &str) -> bool {
+    matches!(
+        format,
+        "sid"
+            | "psid"
+            | "rsid"
+            | "mid"
+            | "midi"
+            | "mod"
+            | "xm"
+            | "it"
+            | "s3m"
+            | "mo3"
+            | "mtm"
+            | "umx"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn specialized_formats_are_flagged() {
+        assert!(is_specialized_format("sid"));
+        assert!(is_specialized_format("xm"));
+        assert!(is_specialized_format("mid"));
+        assert!(!is_specialized_format("flac"));
+        assert!(!is_specialized_format("mp3"));
     }
 }
