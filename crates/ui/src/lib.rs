@@ -23,6 +23,7 @@ pub mod library_api;
 pub mod mock;
 pub mod panels;
 pub mod player_api;
+pub mod remote;
 pub mod search;
 pub mod shell;
 pub mod state;
