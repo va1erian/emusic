@@ -31,20 +31,8 @@ const SEARCH_WIDTH: f32 = 200.0;
 const SEARCH_HEIGHT: f32 = 22.0;
 /// Horizontal inset of the band contents from the window edges.
 const BAND_INSET: f32 = 6.0;
-/// The transport/band marks. The Win32 build drew these with the Segoe Fluent
-/// Icons glyphs (`E892` previous, `E768` play, `E769` pause, `E71A` stop,
-/// `E893` next, `E8EE` repeat, `E8B1` shuffle, `E721` search), but the portable
-/// [`Glyph`] has no transport variants and [`Glyph::Text`] cannot select the
-/// icon font, so the same Fluent codepoints render as missing glyphs. Until a
-/// portable icon set lands (xui #114), use the standard Unicode media marks,
-/// which the default UI font does render and which mirror the Fluent shapes.
-const GLYPH_PREVIOUS: &str = "\u{23EE}";
-const GLYPH_PLAY: &str = "\u{25B6}";
-const GLYPH_PAUSE: &str = "\u{23F8}";
-const GLYPH_STOP: &str = "\u{23F9}";
-const GLYPH_NEXT: &str = "\u{23ED}";
-const GLYPH_REPEAT: &str = "\u{27F3}";
-const GLYPH_SHUFFLE: &str = "\u{21C4}";
+/// The transport/band marks use the portable [`Glyph`] transport variants, so
+/// the same Fluent icons the Win32 build drew render on every backend.
 /// Window buttons on platforms that draw no native chrome; Fluent has no
 /// minimize/maximize pair that matches the native caption at this size, so keep
 /// the simple short marks.
@@ -173,28 +161,24 @@ impl TopBarView {
 
 /// Builds the transport bar for the given play state.
 fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg> {
-    let play = if playing {
-        Glyph::Text(GLYPH_PAUSE)
-    } else {
-        Glyph::Text(GLYPH_PLAY)
-    };
+    let play = if playing { Glyph::Pause } else { Glyph::Play };
     // Transport, repeat and shuffle stay together on the left, as in the Win32
     // build; a flexible spacer on each side of the elapsed/seek/total group
     // keeps it near the centre and lets the band fill the client width, with
     // the volume and search pinned right.
     let bar = TopBar::new(ui, Rect::default())
         .expect("create top bar")
-        .icon(PREVIOUS, Glyph::Text(GLYPH_PREVIOUS))
+        .icon(PREVIOUS, Glyph::Previous)
         .tooltip(PREVIOUS, "Previous")
         .icon(PLAY_PAUSE, play)
         .tooltip(PLAY_PAUSE, if playing { "Pause" } else { "Play" })
-        .icon(STOP, Glyph::Text(GLYPH_STOP))
+        .icon(STOP, Glyph::Stop)
         .tooltip(STOP, "Stop")
-        .icon(NEXT, Glyph::Text(GLYPH_NEXT))
+        .icon(NEXT, Glyph::Next)
         .tooltip(NEXT, "Next")
-        .toggle(REPEAT, Glyph::Text(GLYPH_REPEAT))
+        .toggle(REPEAT, Glyph::Repeat)
         .tooltip(REPEAT, "Repeat")
-        .toggle(SHUFFLE, Glyph::Text(GLYPH_SHUFFLE))
+        .toggle(SHUFFLE, Glyph::Shuffle)
         .tooltip(SHUFFLE, "Shuffle")
         .spacer()
         .label(ELAPSED, "0:00")
