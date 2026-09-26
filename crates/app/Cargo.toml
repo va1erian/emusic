@@ -3,7 +3,7 @@ name = "emusic"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "emusic: Windows music player and library, native Win32 UI on xui"
+description = "emusic: music player and library, portable xui_core UI on xui"
 build = "build.rs"
 
 [[bin]]
@@ -18,38 +18,39 @@ required-features = ["shot"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-emusic-milkdrop = { path = "../milkdrop" }
-emusic-player = { path = "../player" }
-emusic-projectm = { path = "../projectm" }
+emusic-platform = { path = "../platform" }
 emusic-ui = { path = "../ui" }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-rfd = { version = "0.15", default-features = false }
 png = { version = "0.18", optional = true }
-souvlaki = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-winshell = { path = "../winshell" }
 
 [target.'cfg(windows)'.dependencies]
-# The umbrella crate; on Windows its default `win32` feature re-exports the
-# `xui-win32` backend as `xui::*`. Pinned to a rev for reproducible CI.
-xui = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", default-features = false, features = ["win32"] }
+# The umbrella crate. On Windows its default `win32` feature re-exports the
+# `xui-win32` backend, but the app imports portable widgets from
+# `xui::xui_core::widget` and names the backend only in `main`.
+xui = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", default-features = false, features = ["win32"] }
 # Declared directly (optional) only so the `shot` feature can turn on its
-# `wgc` (Windows.Graphics.Capture) feature; the app never names the backend.
-xui-win32 = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", optional = true }
+# `wgc` (Windows.Graphics.Capture) feature and the screenshot tool can capture.
+xui-win32 = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", optional = true }
+# Single-instance/IPC handshake and file associations are Windows-only app
+# integration; the association helpers live in `emusic-platform`.
+winshell = { path = "../winshell" }
 
 [target.'cfg(not(windows))'.dependencies]
 # The portable software backend, so the crate structure stays cross-platform.
-xui = { git = "https://github.com/va1erian/xui", rev = "fb37cbbdec2dd1e70669a16c41f9e9b6453e6e95", default-features = false, features = ["canvas"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", default-features = false, features = ["canvas"] }
+
+[dev-dependencies]
+emusic-player = { path = "../player" }
 
 [features]
-# The headless screenshot tool (`emusic-shot`, #118). Off by default so the
-# PNG encoder and the WinRT capture bindings never enter the real binary's
-# dependency tree. `xui` has no `wgc` feature (it lives on the `xui-win32`
-# backend), so enabling `shot` activates the direct `xui-win32` dependency and
-# its `wgc` feature; feature unification turns capture on for the backend `xui`
-# re-exports.
+default = []
+# The screenshot tool (`emusic-shot`, #118). Off by default so the PNG encoder
+# and the WinRT capture bindings never enter the real binary's dependency tree.
 shot = ["dep:png", "dep:xui-win32", "xui-win32/wgc"]
+# Windows dev/compare: build the software backend too and pick it with
+# `XUI_BACKEND=canvas`, mirroring `xui`'s own gallery.
+canvas = ["xui/canvas"]
 
 [build-dependencies]
 embed-resource = "3.0"

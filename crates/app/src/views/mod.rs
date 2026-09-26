@@ -1,27 +1,13 @@
-//! The app's views (#106).
+//! The app's views.
 //!
-//! Each region of the main window is a view: a struct owning the controls it
-//! draws into, a `sync` that updates them from the shell's state, and — for
-//! the central area — a message type mapped from control notifications. The
-//! first slice puts placeholders where the real views will go.
+//! #370 ports the **Music** view and its shared **track table** to the portable
+//! `xui_core` widget layer as the reference; every other region is a documented
+//! [`placeholder`](placeholder) owned by a later issue. Each view owns its own
+//! widgets and exposes a small, stable interface (`set_bounds`, `set_visible`,
+//! `sync`, and its own `Msg` hooks), so one can be ported without touching the
+//! shell's wiring.
 
-pub mod album_grid;
-pub mod artists;
-pub mod column_browser;
-pub mod folders;
-pub mod genres;
-pub mod history;
-pub mod most_played;
 pub mod music;
-pub mod name_counts;
 pub mod navigator;
-pub mod now_playing;
 pub mod placeholder;
-pub mod preset_browser;
-pub mod projectm;
-pub mod settings;
-pub mod starred;
-pub mod status_bar;
-pub mod top_bar;
 pub mod track_table;
-pub mod visualizer;

@@ -1,19 +1,21 @@
-//! Maps the shell's colour scheme and accent (#276) onto `xui`'s palette.
+//! Maps the shell's colour scheme and accent (#276) onto the portable
+//! [`xui_core::theme::Theme`].
 
 use emusic_ui::state::{Accent, Theme};
-use xui::Color;
+use xui::xui_core::Color;
+use xui::xui_core::theme::Theme as UiTheme;
 
 /// How far the selection tint moves from the background toward the accent.
 const DARK_SELECTION_MIX: f32 = 0.35;
 const LIGHT_SELECTION_MIX: f32 = 0.25;
 
-/// The `xui` palette for `theme`, with every accent-driven token
+/// The portable palette for `theme`, with every accent-driven token
 /// (highlights, focus border, selection, text on accent) taken from `accent`.
 #[must_use]
-pub fn win32_theme(theme: Theme, accent: Accent) -> xui::Theme {
+pub fn app_theme(theme: Theme, accent: Accent) -> UiTheme {
     let base = match theme {
-        Theme::Dark => xui::Theme::dark(),
-        Theme::Light => xui::Theme::light(),
+        Theme::Dark => UiTheme::dark(),
+        Theme::Light => UiTheme::light(),
     };
     let [r, g, b] = accent.rgb().to_array();
     let accent = Color::rgb(r, g, b);
@@ -21,7 +23,7 @@ pub fn win32_theme(theme: Theme, accent: Accent) -> xui::Theme {
         Theme::Dark => DARK_SELECTION_MIX,
         Theme::Light => LIGHT_SELECTION_MIX,
     };
-    xui::Theme {
+    UiTheme {
         accent,
         border_focused: accent,
         selection: base.background.lerp(accent, mix),
@@ -48,21 +50,21 @@ mod tests {
 
     #[test]
     fn accent_replaces_the_windows_blue() {
-        let theme = win32_theme(Theme::Dark, Accent::Custom(Rgb::from_rgb(0xE8, 0x7A, 0x1E)));
+        let theme = app_theme(Theme::Dark, Accent::Custom(Rgb::from_rgb(0xE8, 0x7A, 0x1E)));
         assert_eq!(theme.accent, Color::rgb(0xE8, 0x7A, 0x1E));
         assert_eq!(theme.border_focused, theme.accent);
         assert!(theme.is_dark);
-        assert_eq!(theme.background, xui::Theme::dark().background);
+        assert_eq!(theme.background, UiTheme::dark().background);
     }
 
     #[test]
     fn text_on_accent_stays_readable() {
-        let yellow = win32_theme(
+        let yellow = app_theme(
             Theme::Light,
             Accent::Custom(Rgb::from_rgb(0xFF, 0xE0, 0x00)),
         );
         assert_eq!(yellow.text_on_accent, Color::rgb(0, 0, 0));
-        let navy = win32_theme(
+        let navy = app_theme(
             Theme::Light,
             Accent::Custom(Rgb::from_rgb(0x10, 0x20, 0x80)),
         );
