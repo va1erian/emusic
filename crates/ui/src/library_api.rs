@@ -286,6 +286,13 @@ pub trait LibraryDataSource {
         None
     }
 
+    /// The remote network indicator (#391): shown while a track is fetched from
+    /// a server and after, until the next track opens. Kept separate from
+    /// [`LibraryDataSource::status_text`] so a scan cannot clear it.
+    fn network_activity(&self) -> Option<String> {
+        None
+    }
+
     /// Rescans every enabled folder, even if the folder set is unchanged.
     fn rescan(&mut self) {}
 
