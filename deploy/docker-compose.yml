@@ -1,0 +1,37 @@
+# emusic-server behind Cosmos Cloud.
+#
+# Cosmos Cloud terminates TLS and routes https://music.homelab.net to the
+# internal port 8080; emusic-server runs plain HTTP inside the bridge network.
+# See docs/server.md for the pairing and hardening walkthrough.
+
+services:
+  emusic-server:
+    # Pin a digest or tag in production; `latest` is shown for brevity.
+    image: va1erian/emusic-server:latest
+    # Or build locally: `build: { context: .., dockerfile: deploy/Dockerfile }`.
+    container_name: emusic-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Music is mounted read-only: the server never writes to the library.
+      - /path/to/music:/media/music:ro
+      - /path/to/sid:/media/hvsc_sid:ro
+      - /path/to/config:/etc/emusic-server:ro
+      - /path/to/data:/var/lib/emusic-server
+    environment:
+      - RUST_LOG=info,emusic_server=debug
+      # Or configure entirely from the environment:
+      # - EMUSIC_SERVER_LIBRARY_PATHS=/media/music;/media/hvsc_sid
+      # - EMUSIC_SERVER_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    labels:
+      - "cosmos-cloud.enabled=true"
+      - "cosmos-cloud.domain=music.homelab.net"
+      - "cosmos-cloud.target-port=8080"
