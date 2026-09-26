@@ -154,6 +154,10 @@ pub struct Config {
     /// keypair and token live in the client credential store.
     #[serde(default)]
     pub remote_servers: Vec<crate::remote::RemoteServer>,
+    /// When set, the local library folders are ignored and only remote tracks
+    /// are shown (#391) — useful to prove playback is coming from the server.
+    #[serde(default)]
+    pub server_only: bool,
     /// Tracker module playback settings (Settings → Tracker playback).
     #[serde(default)]
     pub tracker_settings: TrackerSettings,
@@ -212,6 +216,7 @@ impl Default for Config {
             projectm: ProjectMSettings::default(),
             library_folders: Vec::new(),
             remote_servers: Vec::new(),
+            server_only: false,
             tracker_settings: TrackerSettings::default(),
             midi_soundfont: None,
             recent_soundfonts: Vec::new(),
@@ -256,6 +261,7 @@ impl Config {
             projectm: state.projectm.settings.clone(),
             library_folders: state.library_folders.clone(),
             remote_servers: state.remote_servers.clone(),
+            server_only: state.server_only,
             tracker_settings: state.tracker_settings,
             midi_soundfont: state.midi_soundfont.clone(),
             recent_soundfonts: state.recent_soundfonts.clone(),
@@ -287,6 +293,7 @@ impl Config {
         state.projectm.settings = self.projectm.sanitized();
         state.library_folders = self.library_folders.clone();
         state.remote_servers = self.remote_servers.clone();
+        state.server_only = self.server_only;
         state.tracker_settings = self.tracker_settings;
         state.midi_soundfont = self.midi_soundfont.clone();
         state.recent_soundfonts = self.recent_soundfonts.clone();

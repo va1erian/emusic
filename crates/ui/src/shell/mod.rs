@@ -117,7 +117,12 @@ impl Shell {
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
         config.apply_to_player(player.as_mut());
-        library.set_folders(&config.library_folders);
+        if config.server_only {
+            // Server-only mode ignores the configured local folders.
+            library.set_folders(&[]);
+        } else {
+            library.set_folders(&config.library_folders);
+        }
         library.set_remote_servers(&config.remote_servers);
         // The session was just applied to the player; drop it from the
         // baseline so the per-tick settings compare doesn't treat the

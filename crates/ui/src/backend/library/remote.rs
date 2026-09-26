@@ -82,7 +82,9 @@ impl RemoteState {
                 Ok(()) => info!("remote sync finished"),
                 Err(error) => {
                     warn!(%error, "remote sync failed");
-                    let _ = updates.send(super::Update::Status(format!("Remote sync failed: {error}")));
+                    let _ = updates.send(super::Update::Status(format!(
+                        "Remote sync failed: {error}"
+                    )));
                 }
             }
             running.store(false, Ordering::Release);
@@ -107,10 +109,7 @@ fn run(
             Err(error) => {
                 failures += 1;
                 warn!(server = %server.name, %error, "remote server sync failed");
-                let _ = updates.send(super::Update::Status(format!(
-                    "{}: {error}",
-                    server.name
-                )));
+                let _ = updates.send(super::Update::Status(format!("{}: {error}", server.name)));
             }
         }
     }
@@ -119,7 +118,9 @@ fn run(
     let snapshot = match private_store(store) {
         Some(store) => Snapshot::from_store(&store, folders)?,
         None => {
-            let guard = store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let guard = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             Snapshot::from_store(&guard, folders)?
         }
     };
@@ -151,7 +152,9 @@ fn sync_server(
     match private_store(store) {
         Some(mut store) => apply_delta(&mut store, &client, &token, server, cache),
         None => {
-            let mut guard = store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut guard = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             apply_delta(&mut guard, &client, &token, server, cache)
         }
     }
@@ -230,7 +233,9 @@ pub(crate) fn track_from_view(view: &TrackView, path: PathBuf) -> Track {
         duration_ms,
         bitrate: None,
         sample_rate: None,
-        channels: view.channels.map(|channels| channels.min(u8::MAX as u32) as u8),
+        channels: view
+            .channels
+            .map(|channels| channels.min(u8::MAX as u32) as u8),
         title: view.title.clone(),
         artist: view.artist.clone(),
         album_artist: view.album_artist.clone(),

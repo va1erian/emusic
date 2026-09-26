@@ -101,6 +101,8 @@ pub enum Command {
     RemoveRemoteServer(String),
     /// Sync every configured remote server now (#391).
     SyncRemote,
+    /// Ignore the local library folders and show only remote tracks (#391).
+    SetServerOnly(bool),
     /// Remove one playback history entry (History view, #24).
     HistoryRemove(i64),
     /// Clear the whole playback history (History view, #24), after the

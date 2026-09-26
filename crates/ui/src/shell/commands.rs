@@ -22,6 +22,7 @@ pub(super) fn apply_library_commands(
     let mut folders_changed = false;
     let mut remote_changed = false;
     let mut sync_remote = false;
+    let mut server_only_changed = false;
     let mut rescan = false;
     let mut cancel = false;
     let mut remove_history = None;
@@ -40,6 +41,7 @@ pub(super) fn apply_library_commands(
             Command::LibraryCancelScan => cancel = true,
             Command::AddRemoteServer(_) | Command::RemoveRemoteServer(_) => remote_changed = true,
             Command::SyncRemote => sync_remote = true,
+            Command::SetServerOnly(_) => server_only_changed = true,
             Command::HistoryRemove(id) => remove_history = Some(*id),
             Command::HistoryClear => clear_history = true,
             Command::ToggleStarred(id) => toggle_starred.push(*id),
@@ -64,8 +66,15 @@ pub(super) fn apply_library_commands(
         }
     }
 
-    if folders_changed {
-        library.set_folders(&state.library_folders);
+    if folders_changed || server_only_changed {
+        // In server-only mode the local folders are reconciled away (their
+        // tracks are purged), leaving only the remote rows.
+        let effective: &[PathBuf] = if state.server_only {
+            &[]
+        } else {
+            &state.library_folders
+        };
+        library.set_folders(effective);
     }
     if remote_changed {
         library.set_remote_servers(&state.remote_servers);

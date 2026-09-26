@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use emusic_client::{CredentialStore, RemoteClient, TrackCache};
-use emusic_player::backend::{AudioBackend, BackendChannel};
 use emusic_player::PlayerError;
+use emusic_player::backend::{AudioBackend, BackendChannel};
 use tracing::warn;
 
 use crate::remote::RemoteRegistry;
@@ -99,8 +99,16 @@ impl AudioBackend for RemoteAudioBackend {
 fn parse_remote_path(path: &Path, root: &Path) -> Option<(String, String)> {
     let rest = path.strip_prefix(root).ok()?;
     let mut components = rest.components();
-    let server = components.next()?.as_os_str().to_string_lossy().into_owned();
-    let file = components.next()?.as_os_str().to_string_lossy().into_owned();
+    let server = components
+        .next()?
+        .as_os_str()
+        .to_string_lossy()
+        .into_owned();
+    let file = components
+        .next()?
+        .as_os_str()
+        .to_string_lossy()
+        .into_owned();
     if components.next().is_some() {
         return None;
     }
@@ -119,7 +127,10 @@ mod tests {
             parse_remote_path(Path::new(r"C:\cache\remote\srv1\abc.flac"), root),
             Some(("srv1".to_string(), "abc".to_string()))
         );
-        assert_eq!(parse_remote_path(Path::new(r"C:\music\song.flac"), root), None);
+        assert_eq!(
+            parse_remote_path(Path::new(r"C:\music\song.flac"), root),
+            None
+        );
         // Nested paths (unexpected) are rejected.
         assert_eq!(
             parse_remote_path(Path::new(r"C:\cache\remote\srv1\sub\abc.flac"), root),

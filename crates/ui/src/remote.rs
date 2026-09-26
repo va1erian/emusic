@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use emusic_client::auth::{generate_keypair, public_key_paserk, secret_key_paserk};
+use emusic_client::{CredentialStore, Credentials, RemoteClient};
+
 /// A live, shared view of the configured servers, so the playback backend can
 /// resolve a cache path's server id to its URL without owning the config.
 #[derive(Debug, Clone, Default)]
@@ -77,6 +80,36 @@ impl RemoteServer {
     }
 }
 
+/// Pairs a new device with a server on the calling (background) thread:
+/// generates a device keypair, exchanges the one-time code for a token and
+/// stores the credentials. Returns the server entry and a success message.
+///
+/// This is a blocking network call; the UI runs it on a worker thread.
+pub fn pair(device_name: &str, url: &str, code: &str) -> Result<(RemoteServer, String), String> {
+    let name = device_name.trim();
+    let name = if name.is_empty() { "emusic" } else { name };
+    let server = RemoteServer::new(name, url)?;
+    let client = RemoteClient::from_endpoint(&server.endpoint()).map_err(|e| e.to_string())?;
+    let (secret, public) = generate_keypair().map_err(|e| e.to_string())?;
+    let public_key = public_key_paserk(&public).map_err(|e| e.to_string())?;
+    let response = client
+        .pair(code.trim(), &server.name, &public_key)
+        .map_err(|e| e.to_string())?;
+    let credentials = Credentials {
+        device_id: response.device_id,
+        device_name: response.device_name.clone(),
+        secret: secret_key_paserk(&secret).map_err(|e| e.to_string())?,
+        token: response.auth_token,
+        expires_at: response.expires_at,
+        since_version: 0,
+    };
+    CredentialStore::new()
+        .map_err(|e| e.to_string())?
+        .save(&server.id, &credentials)
+        .map_err(|e| e.to_string())?;
+    Ok((server, format!("Paired as {}", response.device_name)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +137,11 @@ mod tests {
         assert_eq!(registry.get("missing"), None);
         registry.replace(&[]);
         assert_eq!(registry.get(&server.id), None);
+    }
+
+    #[test]
+    fn pair_rejects_a_scheme_less_url_before_networking() {
+        let error = pair("pc", "music.example.com", "123456").unwrap_err();
+        assert!(error.contains("http"), "unexpected error: {error}");
     }
 }
