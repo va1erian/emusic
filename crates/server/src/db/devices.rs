@@ -200,10 +200,12 @@ mod tests {
     use super::*;
 
     fn temp_db() -> Db {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "emusic-srv-devices-{}-{}.db",
-            std::process::id(),
-            crate::util::unix_now()
+            "emusic-srv-devices-{}-{unique}.db",
+            std::process::id()
         ));
         let _ = std::fs::remove_file(&path);
         Db::open_at(&path).expect("open db")
