@@ -68,4 +68,41 @@ mod tests {
         let err = apply(&conn).unwrap_err();
         assert!(matches!(err, LibraryError::UnsupportedSchemaVersion { .. }));
     }
+
+    #[test]
+    fn upgrading_from_the_previous_version_preserves_tracks() {
+        // Build the v5 schema (all but the last migration) and insert one
+        // starred track, then apply the pending migration.
+        let conn = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            conn.execute_batch(migration).unwrap();
+        }
+        conn.pragma_update(None, "user_version", CURRENT_VERSION - 1)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO tracks
+                (path, dir, filename, ext, size, mtime, kind, duration_ms,
+                 art_source_kind, added_at, starred)
+             VALUES ('p', 'd', 'f', 'flac', 1, 1, 0, 1, 0, 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        apply(&conn).unwrap();
+
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let tracks: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
+            .unwrap();
+        let starred: i64 = conn
+            .query_row("SELECT count(*) FROM tracks WHERE starred = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, CURRENT_VERSION);
+        assert_eq!(tracks, 1);
+        assert_eq!(starred, 1, "upgrading must not reset user data");
+    }
 }
