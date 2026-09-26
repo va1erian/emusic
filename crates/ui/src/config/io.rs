@@ -22,8 +22,14 @@ pub enum ConfigError {
 }
 
 /// `%APPDATA%\emusic\config.toml` (`dirs::config_dir` maps to `%APPDATA%`
-/// on Windows). `None` only if the OS provides no home directory.
+/// on Windows). When `EMUSIC_DATA_DIR` is set, the config is read from and
+/// written to `<EMUSIC_DATA_DIR>/config.toml` instead, so a test/development
+/// run is fully isolated (#391). `None` only if the OS provides no home
+/// directory and no override is set.
 pub fn config_path() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("EMUSIC_DATA_DIR") {
+        return Some(PathBuf::from(dir).join("config.toml"));
+    }
     Some(dirs::config_dir()?.join("emusic").join("config.toml"))
 }
 

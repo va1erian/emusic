@@ -113,14 +113,19 @@ impl Rgba8Image {
     }
 }
 
-/// `%LOCALAPPDATA%\emusic\thumbs\<hash>.jpg`, or `None` if there is no local
-/// data directory (thumbnails are then decoded on every request).
+/// `%LOCALAPPDATA%\emusic\thumbs\<hash>.jpg`, or `<EMUSIC_DATA_DIR>/thumbs`
+/// when that variable is set (#391), or `None` if there is no local data
+/// directory (thumbnails are then decoded on every request).
 ///
 /// Public so callers name the on-disk thumbnail for a source path the
 /// same way and shares one cache.
 #[must_use]
 pub fn thumbnail_cache_path(source: &Path) -> Option<PathBuf> {
-    let dir = dirs::data_local_dir()?.join("emusic").join("thumbs");
+    let dir = if let Some(dir) = std::env::var_os("EMUSIC_DATA_DIR") {
+        PathBuf::from(dir).join("thumbs")
+    } else {
+        dirs::data_local_dir()?.join("emusic").join("thumbs")
+    };
     Some(dir.join(format!("{:016x}.jpg", hash(&source.to_string_lossy()))))
 }
 
