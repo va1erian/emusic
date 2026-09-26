@@ -90,6 +90,11 @@ impl MostPlayedView {
     }
 
     /// Shows or hides the whole view (its tabs, count label and table).
+    /// The track table's client origin, to anchor the row context menu.
+    pub fn context_origin(&self) -> xui::xui_core::geometry::Point {
+        self.table.context_origin()
+    }
+
     pub fn set_visible(&self, visible: bool) {
         self.tabs.set_visible(visible);
         self.ui.set_visible(self.count.id(), visible);

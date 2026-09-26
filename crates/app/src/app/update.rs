@@ -93,12 +93,19 @@ impl Win32App {
                 }
                 self.tick_inner();
             }
-            Msg::ContextRow(row) => {
-                // The portable `ListView` reports the row but not the pointer,
-                // so open near the central area's top-left corner.
+            Msg::ContextRow(row, at) => {
                 self.context_row = Some(row);
-                let at = self.central_bounds;
-                self.context_menu.show_context(at.left + 8, at.top + 8);
+                // The list reports the node-local pointer; offset it by the
+                // view's list origin to anchor the popup under the pointer.
+                let origin = match self.shell.state.view {
+                    View::Music => self.music.context_origin(),
+                    View::Folders => self.folders.context_origin(),
+                    View::Starred => self.starred.context_origin(),
+                    View::MostPlayed => self.most_played.context_origin(),
+                    _ => xui::xui_core::geometry::Point::new(0, 0),
+                };
+                self.context_menu
+                    .show_context(origin.x + at.x, origin.y + at.y);
             }
             Msg::ContextAction(action) => {
                 let Some(row) = self.context_row else {

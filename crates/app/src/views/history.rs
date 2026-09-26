@@ -156,7 +156,7 @@ impl HistoryView {
             .column("Listened", dip(LISTENED_WIDTH))
             .column("Status", dip(STATUS_WIDTH))
             .on_activate(|row| Some(Msg::PlayRow(row)))
-            .on_context(|row| Some(Msg::ContextRow(row)));
+            .on_context(|row, at| Some(Msg::ContextRow(row, at)));
 
         HistoryView {
             ui: ui.clone(),

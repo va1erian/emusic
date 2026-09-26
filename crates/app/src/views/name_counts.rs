@@ -99,7 +99,7 @@ impl NameCountsView {
         }
         let list = list
             .on_activate(|row| Some(Msg::NameCountShuffle(row)))
-            .on_context(|row| Some(Msg::ContextRow(row)));
+            .on_context(|row, at| Some(Msg::ContextRow(row, at)));
 
         NameCountsView {
             ui: ui.clone(),

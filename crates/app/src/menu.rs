@@ -7,9 +7,8 @@
 //!
 //! The track context menu is built once (the widget pools its popups) and shown
 //! at a client point with [`Menu::show_context`] when a row is right-clicked.
-//! The portable `ListView` reports the row but not the pointer, so the menu
-//! opens near the track table's top-left corner (a pointer-position hook is an
-//! xui follow-up).
+//! The portable `ListView` reports the row and the pointer, so the menu opens
+//! at the pointer, translated from the list's node-local point to the window.
 
 use emusic_ui::state::{AppState, Command, PanelKind, View};
 use xui::xui_core::app::Ui;

@@ -97,6 +97,11 @@ impl MusicView {
     }
 
     /// Shows or hides the header row and the table together.
+    /// The track table's client origin, to anchor the row context menu.
+    pub fn context_origin(&self) -> xui::xui_core::geometry::Point {
+        self.table.context_origin()
+    }
+
     pub fn set_visible(&self, visible: bool) {
         self.ui.set_visible(self.count.id(), visible);
         self.ui.set_visible(self.shuffle.id(), visible);

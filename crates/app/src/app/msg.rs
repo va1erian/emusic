@@ -4,6 +4,7 @@ use emusic_platform::ShellAction;
 use emusic_ui::library_api::StatsWindow;
 use emusic_ui::state::{Accent, Command, ShortcutAction, View};
 use emusic_ui::views::column_browser::Pane;
+use xui::xui_core::geometry::Point;
 
 use crate::views::track_table::ContextAction;
 
@@ -29,8 +30,9 @@ pub enum Msg {
     ToggleStarRow(usize),
     /// Sort the Music view by a header column.
     SortColumn(usize),
-    /// Open the context menu for a Music view row.
-    ContextRow(usize),
+    /// Open the context menu for a track table row, at the node-local point
+    /// the right-click happened.
+    ContextRow(usize, Point),
     /// Run a track-table context-menu action.
     ContextAction(ContextAction),
     /// Open File -> Database info.
