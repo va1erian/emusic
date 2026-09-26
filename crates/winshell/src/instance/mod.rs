@@ -39,24 +39,14 @@ pub fn send_to_primary(_app_id: &str, _message: &IpcMessage) -> crate::Result<()
 
 /// The result of [`SingleInstance::acquire`].
 pub enum SingleInstance {
-    /// This process is the primary instance; `Listener` receives requests
-    /// forwarded by later, secondary launches.
+    /// This process is the primary instance.
     Primary(Listener),
-    /// Another process is already primary. The caller should forward its
-    /// own arguments with [`send_to_primary`] and exit.
+    /// Another process is already primary.
     Secondary,
 }
 
 impl SingleInstance {
     #[cfg(windows)]
-    /// Attempts to become the primary instance for `app_id` (e.g.
-    /// `"emusic-<user sid>"`, so different users on the same machine don't
-    /// collide).
-    ///
-    /// `waker` is called from the listener's background thread every time a
-    /// new batch of messages is ready, so the caller can e.g.
-    /// `ctx.request_repaint()`; it is never called if this becomes a
-    /// [`SingleInstance::Secondary`].
     pub fn acquire(app_id: &str, waker: impl Fn() + Send + Sync + 'static) -> io::Result<Self> {
         match Listener::start(app_id, waker) {
             Ok(listener) => Ok(Self::Primary(listener)),
