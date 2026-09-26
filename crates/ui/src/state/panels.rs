@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 pub struct PanelVisibility {
     pub navigator: bool,
     pub right_panel: bool,
+    /// The right panel's upcoming "next tracks" queue list. Only meaningful
+    /// while [`right_panel`](Self::right_panel) is on.
+    pub next_tracks: bool,
     pub status_bar: bool,
 }
 
@@ -17,6 +20,7 @@ impl Default for PanelVisibility {
         Self {
             navigator: true,
             right_panel: true,
+            next_tracks: true,
             status_bar: true,
         }
     }
@@ -29,5 +33,7 @@ impl Default for PanelVisibility {
 pub enum PanelKind {
     Navigator,
     RightPanel,
+    /// The right panel's upcoming "next tracks" queue list.
+    NextTracks,
     StatusBar,
 }

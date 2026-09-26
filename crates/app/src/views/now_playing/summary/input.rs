@@ -31,9 +31,11 @@ impl Hit {
     }
 }
 
-/// The clickable region under a client point, if any.
+/// The clickable region under a client point, if any. The regions are stored
+/// in document coordinates, so the current scroll offset is added to the
+/// viewport point before the lookup.
 fn hit(widget: &SummaryWidget, x: i32, y: i32) -> Option<Hit> {
-    let point = Point::new(x, y);
+    let point = Point::new(x, y + widget.scroll_offset());
     widget
         .hits
         .borrow()

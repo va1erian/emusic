@@ -27,6 +27,10 @@ use input::Hit;
 
 /// Artwork box edge, in device-independent pixels.
 pub(super) const ARTWORK_EDGE: f32 = 200.0;
+/// Height of the whole summary document, in device-independent pixels: enough
+/// for the artwork, the metadata lines and the tracker-module block, so the
+/// scrollbar (when the panel is short) reaches all of it.
+pub(super) const CONTENT_HEIGHT: f32 = ARTWORK_EDGE + 260.0;
 /// Padding around the panel content.
 const PAD: f32 = 8.0;
 /// Gap between blocks.
@@ -176,6 +180,10 @@ pub(super) struct SummaryWidget {
     hits: RefCell<Vec<(Rect, Hit)>>,
     hot: Cell<Option<Hit>>,
     pressed: Cell<Option<Hit>>,
+    /// The current vertical scroll offset in device pixels, when the summary
+    /// is hosted with a scrollbar. Hit-testing adds it to the viewport point
+    /// so a scrolled click still lands on the region it was drawn in.
+    scroll: Cell<i32>,
     fonts: RefCell<Fonts>,
 }
 
@@ -188,8 +196,20 @@ impl SummaryWidget {
             hits: RefCell::new(Vec::new()),
             hot: Cell::new(None),
             pressed: Cell::new(None),
+            scroll: Cell::new(0),
             fonts: RefCell::new(Fonts::from_metrics(crate::appearance::metrics())),
         }
+    }
+
+    /// Records the scroll offset (device pixels) reported by the host
+    /// scrollbar, so input hit-testing follows the scrolled content.
+    pub(super) fn set_scroll_offset(&self, offset_px: i32) {
+        self.scroll.set(offset_px);
+    }
+
+    /// The current scroll offset, in device pixels.
+    pub(super) fn scroll_offset(&self) -> i32 {
+        self.scroll.get()
     }
 
     /// Rebuilds the summary's fonts from new appearance metrics (#309). New
@@ -231,7 +251,7 @@ impl CustomWidget for SummaryWidget {
     fn preferred_size(&self, dpi: u32) -> Option<Size> {
         Some(Size::new(
             dip(PANEL_WIDTH).to_px(dpi).value(),
-            dip(ARTWORK_EDGE + 260.0).to_px(dpi).value(),
+            dip(CONTENT_HEIGHT).to_px(dpi).value(),
         ))
     }
 

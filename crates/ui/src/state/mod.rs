@@ -239,6 +239,7 @@ impl AppState {
             Command::TogglePanel(kind) => match kind {
                 PanelKind::Navigator => self.panels.navigator = !self.panels.navigator,
                 PanelKind::RightPanel => self.panels.right_panel = !self.panels.right_panel,
+                PanelKind::NextTracks => self.panels.next_tracks = !self.panels.next_tracks,
                 PanelKind::StatusBar => self.panels.status_bar = !self.panels.status_bar,
             },
             Command::SetSearchQuery(query) => self.search_query = query.clone(),

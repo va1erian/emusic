@@ -36,15 +36,25 @@ impl WidgetPair {
     /// Creates the summary widget and the queue list, wiring the queue's
     /// jump/context/remove events to the surface-specific messages the
     /// caller supplies, and builds the artwork cache woken by `waker`.
+    ///
+    /// `scroll_summary` hosts the summary in a native vertical scrollbar
+    /// (the right sidebar, which is short); the full-width central view has
+    /// the room to show it whole, so it leaves the scrollbar off.
     pub(super) fn new(
         ui: &mut Ui<Msg>,
         waker: WakerHandle,
+        scroll_summary: bool,
         on_activate: impl Fn(usize) -> Option<Msg> + 'static,
         on_context: impl Fn(usize) -> Option<Msg> + 'static,
         on_remove: impl Fn() -> Msg + 'static,
     ) -> win32ui::Result<Self> {
         let summary =
             Custom::new(ui, SummaryWidget::new())?.on_event(|event| Some(Msg::NowPlaying(event)));
+        let summary = if scroll_summary {
+            scrollable_summary(ui.dpi(), summary)
+        } else {
+            summary
+        };
         let queue = queue::build(ui, on_activate, on_context)?;
         Ok(Self {
             summary,
@@ -60,6 +70,12 @@ impl WidgetPair {
     /// Shows or hides both native controls.
     pub(super) fn set_visible(&self, visible: bool) {
         self.summary.set_visible(visible);
+        self.queue.set_visible(visible);
+    }
+
+    /// Shows or hides just the upcoming "next tracks" queue list, leaving the
+    /// summary in place.
+    pub(super) fn set_queue_visible(&self, visible: bool) {
         self.queue.set_visible(visible);
     }
 
@@ -142,4 +158,17 @@ impl WidgetPair {
 /// The full-queue index of a preview row.
 fn entry_index(row: &QueueRow) -> usize {
     row.index
+}
+
+/// Gives the summary a native vertical scrollbar sized to its full document,
+/// so a short sidebar can scroll the metadata and module block. The widget
+/// records the offset so its click hit-testing follows the scrolled content.
+fn scrollable_summary(dpi: u32, summary: Custom<SummaryWidget, Msg>) -> Custom<SummaryWidget, Msg> {
+    let widget = summary.widget();
+    let summary = summary.with_vscroll().on_scroll(move |offset| {
+        widget.borrow().set_scroll_offset(offset.to_px(dpi).value());
+        None
+    });
+    summary.set_content_height(dip(super::summary::CONTENT_HEIGHT));
+    summary
 }

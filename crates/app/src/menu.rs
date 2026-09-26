@@ -33,6 +33,9 @@ pub fn build(state: &AppState) -> Menu<Msg> {
         .checked_item("Now playing panel", None, state.panels.right_panel, || {
             Msg::Dispatch(Command::TogglePanel(PanelKind::RightPanel))
         })
+        .checked_item("Next tracks", None, state.panels.next_tracks, || {
+            Msg::Dispatch(Command::TogglePanel(PanelKind::NextTracks))
+        })
         .checked_item("Status bar", None, state.panels.status_bar, || {
             Msg::Dispatch(Command::TogglePanel(PanelKind::StatusBar))
         })
