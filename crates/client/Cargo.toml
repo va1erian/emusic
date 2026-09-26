@@ -1,0 +1,36 @@
+[package]
+name = "emusic-client"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Cross-platform client for emusic-server: pairing, sync and track cache"
+
+[lib]
+name = "emusic_client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "emusic-remote"
+path = "src/bin/emusic_remote.rs"
+
+[dependencies]
+# `anyhow` and `clap` are for the `emusic-remote` CLI binary.
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+hex = "0.4"
+http = "1"
+pasetors = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tracing = "0.1"
+ureq = { version = "3", features = ["json"] }
+
+[dev-dependencies]
+axum = "0.8"
+emusic-server = { path = "../server" }
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time"] }
