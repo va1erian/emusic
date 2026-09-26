@@ -1,6 +1,12 @@
-//! Windows shell integration for emusic.
-
-#![forbid(unsafe_code)]
+//! Windows shell integration for emusic: single instance detection with
+//! named-pipe IPC ([`instance`]), per-user file association registration
+//! ([`assoc`]), taskbar thumbnail-toolbar transport buttons ([`thumbbar`]),
+//! the DWM iconic taskbar thumbnail / progress bar ([`taskbar`]) and the
+//! focused-control query backing bare-key shortcuts ([`input`]).
+//!
+//! This crate is library-only; wiring it into the `app` binary (argument
+//! parsing, deciding when to register associations, etc.) is a separate
+//! concern.
 
 mod error;
 mod sys;
