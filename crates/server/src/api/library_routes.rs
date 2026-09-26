@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use crate::api::error::ApiError;
 use crate::audit;
 use crate::auth::middleware::{AuthDevice, ClientIp};
-use crate::db::models::SyncDelta;
+use crate::db::models::{SyncDeltaView, TrackView};
 use crate::error::ServerError;
 use crate::scanner::art;
 use crate::state::AppState;
@@ -28,13 +28,13 @@ pub async fn sync(
     State(state): State<AppState>,
     AuthDevice(_): AuthDevice,
     Query(query): Query<SyncQuery>,
-) -> Result<Json<SyncDelta>, ApiError> {
+) -> Result<Json<SyncDeltaView>, ApiError> {
     let since = query.since_version.unwrap_or(0).max(0);
     let db = state.db.clone();
     let delta = tokio::task::spawn_blocking(move || db.sync_since(since))
         .await
         .map_err(|_| ApiError::internal())??;
-    Ok(Json(delta))
+    Ok(Json(delta.into()))
 }
 
 /// `GET /api/v1/tracks/{id}/meta`
@@ -42,12 +42,14 @@ pub async fn track_meta(
     State(state): State<AppState>,
     AuthDevice(_): AuthDevice,
     Path(id): Path<String>,
-) -> Result<Json<crate::db::models::TrackRecord>, ApiError> {
+) -> Result<Json<TrackView>, ApiError> {
     let db = state.db.clone();
     let track = tokio::task::spawn_blocking(move || db.track_by_id(&id))
         .await
         .map_err(|_| ApiError::internal())??;
-    track.map(Json).ok_or_else(ApiError::not_found)
+    track
+        .map(|track| Json(TrackView::from(&track)))
+        .ok_or_else(ApiError::not_found)
 }
 
 /// `GET /api/v1/albums/{id}/art`

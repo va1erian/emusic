@@ -27,12 +27,20 @@ pub const REFRESH_FOR_CLAIM: &str = "refresh_for";
 pub const SCOPE_LIBRARY: &str = "library:read stream:read";
 
 /// An issued access token and its absolute expiry (Unix seconds).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct IssuedToken {
     /// The PASETO token string.
     pub token: String,
     /// Expiry as a Unix timestamp in seconds.
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for IssuedToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IssuedToken")
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Verified properties of an access token.

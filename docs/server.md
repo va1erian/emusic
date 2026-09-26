@@ -56,9 +56,8 @@ environment override, which makes container configuration file-free.
 | `security.tls_key` | `EMUSIC_SERVER_TLS_KEY` | empty | PEM key for direct TLS. |
 | `security.token_ttl_hours` | `EMUSIC_SERVER_TOKEN_TTL_HOURS` | `168` | Access-token lifetime. |
 | `security.max_pairing_attempts_per_min` | `EMUSIC_SERVER_MAX_PAIRING_ATTEMPTS` | `3` | Per client IP. |
-| `security.pairing_code_ttl_secs` | — | `600` | Code lifetime. |
-| `security.refresh_proof_skew_secs` | — | `60` | Clock skew for proofs. |
-| `security.max_body_bytes` | — | `65536` | Request body limit. |
+| `security.pairing_code_ttl_secs` | — | `600` | Code lifetime (max 1 hour). |
+| `security.max_body_bytes` | — | `65536` | Request body limit (max 1 MiB). |
 | `library.paths` | `EMUSIC_SERVER_LIBRARY_PATHS` | required | Read-only roots. |
 | `library.hvsc_songlengths_path` | `EMUSIC_SERVER_HVSC_SONGLENGTHS` | none | HVSC `Songlengths.md5`. |
 | `library.scan_interval_secs` | `EMUSIC_SERVER_SCAN_INTERVAL` | `3600` | `0` disables periodic scans. |
@@ -75,7 +74,10 @@ Unknown TOML keys are rejected so typos cannot disable a security control.
 
 1. The operator runs `emusic-server pair` (or a paired device calls
    `POST /api/v1/devices/pairing-codes`) to mint a random six-digit code.
-   Only `SHA-256(code)` is stored; the code expires and is single-use.
+   Only a keyed HMAC of the code is stored — the HMAC key is the server
+   secret, which lives in `server.key` rather than the database — so a leak
+   of the database alone does not yield a brute-forceable code. The code
+   expires and is single-use, enforced atomically in one transaction.
 2. The client generates an Ed25519 keypair and calls
    `POST /api/v1/auth/pair` with the code, a device name and its public key in
    PASERK form (`k4.public.…`).
@@ -144,7 +146,7 @@ All routes are under `/api/v1` and require a bearer token except `health` and
 
 | Method & path | Description |
 | --- | --- |
-| `GET /health` | Liveness: version, track count, library version. |
+| `GET /health` | Unauthenticated liveness: `status` and `started_at` only. |
 | `POST /auth/pair` | Pair a device. Body: `pairing_code`, `device_name`, `public_key`. |
 | `POST /auth/refresh` | Extend a session. Body: `proof`. |
 | `GET /devices` | List paired devices (no public keys). |
@@ -180,7 +182,11 @@ song lengths are indexed server-side and exposed through the API.
 ### Docker + Cosmos Cloud
 
 Use [deploy/docker-compose.yml](../deploy/docker-compose.yml) and
-[deploy/Dockerfile](../deploy/Dockerfile). Cosmos Cloud terminates TLS and
+[deploy/Dockerfile](../deploy/Dockerfile). A prebuilt image is published to the
+GitHub Container Registry by
+[.github/workflows/server-image.yml](../.github/workflows/server-image.yml):
+`ghcr.io/va1erian/emusic-server:latest`, plus `sha-<short>` and version tags.
+Cosmos Cloud terminates TLS and
 forwards `https://music.homelab.net` to the internal port `8080`; the server
 runs plain HTTP inside the bridge network. Set `trusted_proxies` to the Cosmos
 Cloud bridge subnet, for example:
@@ -208,8 +214,9 @@ If no reverse proxy is used, set both `security.tls_cert` and
 ## Operations
 
 - **Scanning** runs on startup and then every `scan_interval_secs`. A scan that
-  cannot see part of the library (unreachable root or unreadable directory) is
-  marked partial and never deletes rows it could not verify.
+  cannot see part of the library (unreachable root, unreadable directory or a
+  root that suddenly yields zero files) is marked partial and never deletes
+  rows it could not verify, so an unmounted share cannot wipe the index.
 - **Pairing** a new client: `emusic-server pair`, enter the code in the desktop
   app's *Homelab Server* settings.
 - **Revoking** a lost device: `emusic-server revoke <device_id>`; its tokens

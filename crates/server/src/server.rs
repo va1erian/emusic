@@ -1,7 +1,7 @@
 //! Server assembly and lifecycle.
 
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use axum_server::tls_rustls::RustlsConfig;
@@ -105,14 +105,16 @@ pub async fn run(config: Config) -> Result<()> {
 
 /// Resolves the configured host/port into a socket address.
 pub fn listen_addr(config: &Config) -> Result<SocketAddr> {
-    format!("{}:{}", config.server.host.trim(), config.server.port)
-        .parse()
-        .map_err(|error| {
-            ServerError::Config(format!(
-                "cannot parse listen address {}:{}: {error}",
-                config.server.host, config.server.port
-            ))
-        })
+    let host = config.server.host.trim();
+    let port = config.server.port;
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(SocketAddr::new(ip, port));
+    }
+    format!("{host}:{port}").parse().map_err(|error| {
+        ServerError::Config(format!(
+            "cannot parse listen address {host}:{port}: {error}"
+        ))
+    })
 }
 
 /// Resolves on Ctrl-C (all platforms) or SIGTERM (Unix).
@@ -142,7 +144,8 @@ pub async fn shutdown_signal() {
 /// Generates and prints a pairing code, for the `pair` CLI subcommand.
 pub fn print_pairing_code(config: &Config, ttl_secs: u64) -> Result<String> {
     let db = Db::open(&config.server.data_dir)?;
-    let code = crate::auth::pairing::generate_pairing_code(&db, ttl_secs, unix_now())?;
+    let key = ServerKey::load_or_create(&key_path(&config.server.data_dir))?;
+    let code = crate::auth::pairing::generate_pairing_code(&db, &key, ttl_secs, unix_now())?;
     Ok(code)
 }
 

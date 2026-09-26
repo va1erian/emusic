@@ -17,10 +17,11 @@ pub enum RangeError {
 ///
 /// Returns an inclusive `(start, end)` pair.
 pub fn parse_range(raw: &str, len: u64) -> Result<(u64, u64), RangeError> {
-    let spec = raw
-        .strip_prefix("bytes=")
-        .ok_or(RangeError::Invalid)?
-        .trim();
+    let (unit, spec) = raw.trim().split_once('=').ok_or(RangeError::Invalid)?;
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return Err(RangeError::Invalid);
+    }
+    let spec = spec.trim();
     if spec.contains(',') {
         return Err(RangeError::Invalid);
     }
@@ -106,6 +107,12 @@ mod tests {
     #[test]
     fn empty_file_is_unsatisfiable() {
         assert_eq!(parse_range("bytes=0-", 0), Err(RangeError::Unsatisfiable));
+    }
+
+    #[test]
+    fn unit_is_case_insensitive() {
+        assert_eq!(parse_range("Bytes=0-9", 100), Ok((0, 9)));
+        assert_eq!(parse_range("BYTES=0-9", 100), Ok((0, 9)));
     }
 
     #[test]

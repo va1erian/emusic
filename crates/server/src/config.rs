@@ -3,9 +3,9 @@
 //!
 //! The file is the source of truth for structure; environment variables are
 //! applied on top so a container can be configured without baking a file into
-//! the image (see `docs/server.md`). Validation is intentionally strict: a
-//! server that would bind the wrong interface, accept unbounded bodies or run
-//! without TLS/proxy trust is refused at startup rather than at first request.
+//! the image (see `docs/server.md`). Validation is intentionally strict:
+//! inconsistent or out-of-range values are refused at startup rather than
+//! silently weakening a control at first request.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -17,6 +17,15 @@ use crate::error::{Result, ServerError};
 
 /// Default listen port when behind a TLS-terminating reverse proxy.
 pub const DEFAULT_PORT: u16 = 8080;
+
+/// Upper bound for `security.token_ttl_hours` (one year).
+pub const MAX_TOKEN_TTL_HOURS: u64 = 24 * 365;
+
+/// Upper bound for `security.pairing_code_ttl_secs` (one hour).
+pub const MAX_PAIRING_CODE_TTL_SECS: u64 = 3600;
+
+/// Upper bound for `security.max_body_bytes` (1 MiB).
+pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// Top-level configuration tree.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -70,8 +79,6 @@ pub struct SecurityConfig {
     pub max_pairing_attempts_per_min: u32,
     /// How long a generated pairing code stays valid.
     pub pairing_code_ttl_secs: u64,
-    /// Accepted clock skew when validating refresh-proof tokens, in seconds.
-    pub refresh_proof_skew_secs: u64,
     /// Maximum accepted request body size, in bytes.
     pub max_body_bytes: usize,
 }
@@ -84,7 +91,6 @@ impl Default for SecurityConfig {
             token_ttl_hours: 168,
             max_pairing_attempts_per_min: 3,
             pairing_code_ttl_secs: 600,
-            refresh_proof_skew_secs: 60,
             max_body_bytes: 64 * 1024,
         }
     }
@@ -220,6 +226,11 @@ impl Config {
                 "security.token_ttl_hours must be greater than 0".into(),
             ));
         }
+        if self.security.token_ttl_hours > MAX_TOKEN_TTL_HOURS {
+            return Err(ServerError::Config(format!(
+                "security.token_ttl_hours must not exceed {MAX_TOKEN_TTL_HOURS}"
+            )));
+        }
         if self.security.max_pairing_attempts_per_min == 0 {
             return Err(ServerError::Config(
                 "security.max_pairing_attempts_per_min must be greater than 0".into(),
@@ -230,10 +241,20 @@ impl Config {
                 "security.pairing_code_ttl_secs must be greater than 0".into(),
             ));
         }
+        if self.security.pairing_code_ttl_secs > MAX_PAIRING_CODE_TTL_SECS {
+            return Err(ServerError::Config(format!(
+                "security.pairing_code_ttl_secs must not exceed {MAX_PAIRING_CODE_TTL_SECS}"
+            )));
+        }
         if self.security.max_body_bytes == 0 {
             return Err(ServerError::Config(
                 "security.max_body_bytes must be greater than 0".into(),
             ));
+        }
+        if self.security.max_body_bytes > MAX_BODY_BYTES {
+            return Err(ServerError::Config(format!(
+                "security.max_body_bytes must not exceed {MAX_BODY_BYTES}"
+            )));
         }
 
         if self.library.paths.is_empty() {

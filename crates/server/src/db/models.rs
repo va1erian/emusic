@@ -136,3 +136,97 @@ pub struct SyncDelta {
     /// Identifiers of tracks deleted since the requested version.
     pub deleted: Vec<String>,
 }
+
+/// Track metadata as sent to clients: everything except the internal
+/// `root_index` and `relative_path`, which are not disclosed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackView {
+    /// Opaque track identifier.
+    pub id: String,
+    /// Lowercase format label.
+    pub format: String,
+    /// Either `stream` or `module`.
+    pub kind: String,
+    /// Tagged title.
+    pub title: Option<String>,
+    /// Tagged artist.
+    pub artist: Option<String>,
+    /// Tagged album artist.
+    pub album_artist: Option<String>,
+    /// Tagged album.
+    pub album: Option<String>,
+    /// Opaque album identifier.
+    pub album_id: Option<String>,
+    /// Tagged genre.
+    pub genre: Option<String>,
+    /// Tagged year.
+    pub year: Option<i32>,
+    /// Tagged track number.
+    pub track_no: Option<u32>,
+    /// Tagged disc number.
+    pub disc_no: Option<u32>,
+    /// Duration in seconds, when known.
+    pub duration_secs: Option<f64>,
+    /// Number of subtunes.
+    pub subtunes: u32,
+    /// Channel count, when known.
+    pub channels: Option<u32>,
+    /// File size in bytes.
+    pub file_size: u64,
+    /// Cheap change fingerprint.
+    pub hash: String,
+    /// Whether artwork is available.
+    pub has_art: bool,
+    /// Monotonic version at which this row last changed.
+    pub sync_version: i64,
+    /// Unix timestamp (seconds) when the track was first seen.
+    pub added_at: i64,
+}
+
+impl From<&TrackRecord> for TrackView {
+    fn from(track: &TrackRecord) -> Self {
+        Self {
+            id: track.id.clone(),
+            format: track.format.clone(),
+            kind: track.kind.clone(),
+            title: track.title.clone(),
+            artist: track.artist.clone(),
+            album_artist: track.album_artist.clone(),
+            album: track.album.clone(),
+            album_id: track.album_id.clone(),
+            genre: track.genre.clone(),
+            year: track.year,
+            track_no: track.track_no,
+            disc_no: track.disc_no,
+            duration_secs: track.duration_secs,
+            subtunes: track.subtunes,
+            channels: track.channels,
+            file_size: track.file_size,
+            hash: track.hash.clone(),
+            has_art: track.has_art,
+            sync_version: track.sync_version,
+            added_at: track.added_at,
+        }
+    }
+}
+
+/// A sync batch as sent to clients (no internal path fields).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyncDeltaView {
+    /// The current library version after this batch.
+    pub version: i64,
+    /// Added or updated tracks.
+    pub tracks: Vec<TrackView>,
+    /// Identifiers of tracks deleted since the requested version.
+    pub deleted: Vec<String>,
+}
+
+impl From<SyncDelta> for SyncDeltaView {
+    fn from(delta: SyncDelta) -> Self {
+        Self {
+            version: delta.version,
+            tracks: delta.tracks.iter().map(TrackView::from).collect(),
+            deleted: delta.deleted,
+        }
+    }
+}

@@ -83,7 +83,9 @@ impl Harness {
 
     /// Pairs a fresh device and returns `(token, device_id, device_secret)`.
     async fn pair(&self) -> (String, String, AsymmetricSecretKey<V4>) {
-        let code = auth::pairing::generate_pairing_code(&self.state.db, 600, unix_now()).unwrap();
+        let code =
+            auth::pairing::generate_pairing_code(&self.state.db, &self.state.keys, 600, unix_now())
+                .unwrap();
         let (secret, public) = generate_device_keypair().unwrap();
         let body = serde_json::json!({
             "pairing_code": code,
@@ -211,7 +213,13 @@ async fn protected_endpoints_require_a_token() {
 #[tokio::test]
 async fn pairing_rejects_a_wrong_code() {
     let harness = Harness::new();
-    let real = auth::pairing::generate_pairing_code(&harness.state.db, 600, unix_now()).unwrap();
+    let real = auth::pairing::generate_pairing_code(
+        &harness.state.db,
+        &harness.state.keys,
+        600,
+        unix_now(),
+    )
+    .unwrap();
     let wrong = if real == "111111" { "222222" } else { "111111" };
     let (_, public) = generate_device_keypair().unwrap();
     let body = serde_json::json!({
@@ -242,8 +250,13 @@ async fn pairing_grants_access_to_sync() {
 async fn pairing_is_rate_limited_per_ip() {
     let harness = Harness::new();
     for attempt in 0..4 {
-        let code =
-            auth::pairing::generate_pairing_code(&harness.state.db, 600, unix_now()).unwrap();
+        let code = auth::pairing::generate_pairing_code(
+            &harness.state.db,
+            &harness.state.keys,
+            600,
+            unix_now(),
+        )
+        .unwrap();
         let (_, public) = generate_device_keypair().unwrap();
         let body = serde_json::json!({
             "pairing_code": code,
@@ -453,4 +466,150 @@ async fn album_art_is_served_from_sidecar_files() {
         .request(harness.authed("GET", "/api/v1/albums/missing/art", &token))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_pairing_code_cannot_be_reused() {
+    let harness = Harness::new();
+    let code = auth::pairing::generate_pairing_code(
+        &harness.state.db,
+        &harness.state.keys,
+        600,
+        unix_now(),
+    )
+    .unwrap();
+    let (_, public) = generate_device_keypair().unwrap();
+    let public = public_key_paserk(&public).unwrap();
+
+    let first = serde_json::json!({
+        "pairing_code": code, "device_name": "one", "public_key": public,
+    });
+    let (status, _, _) = harness
+        .request(json_request("POST", "/api/v1/auth/pair", &first))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let second = serde_json::json!({
+        "pairing_code": code, "device_name": "two", "public_key": public,
+    });
+    let (status, _, _) = harness
+        .request(json_request("POST", "/api/v1/auth/pair", &second))
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_expired_pairing_code_is_rejected() {
+    let harness = Harness::new();
+    let now = unix_now();
+    let hash = auth::pairing::pairing_code_hash(&harness.state.keys, "123456");
+    harness
+        .state
+        .db
+        .insert_pairing_code(&hash, now - 700, now - 100)
+        .unwrap();
+    let (_, public) = generate_device_keypair().unwrap();
+    let body = serde_json::json!({
+        "pairing_code": "123456",
+        "device_name": "late",
+        "public_key": public_key_paserk(&public).unwrap(),
+    });
+    let (status, _, _) = harness
+        .request(json_request("POST", "/api/v1/auth/pair", &body))
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn oversized_bodies_are_rejected() {
+    let harness = Harness::new();
+    let huge = "x".repeat(200 * 1024);
+    let body = serde_json::json!({
+        "pairing_code": "123456",
+        "device_name": huge,
+        "public_key": "k4.public.AAAA",
+    });
+    let request = json_request("POST", "/api/v1/auth/pair", &body);
+    let (status, _, _) = harness.request(request).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn range_errors_are_reported_correctly() {
+    let harness = Harness::new();
+    harness.write_wav("song.wav", 400);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let id = sync_tracks(&sync)[0]["id"].as_str().unwrap().to_string();
+
+    let mut unsatisfiable = harness.authed("GET", &format!("/api/v1/tracks/{id}/stream"), &token);
+    unsatisfiable
+        .headers_mut()
+        .insert(header::RANGE, "bytes=999999999-".parse().unwrap());
+    let (status, headers, _) = harness.request(unsatisfiable).await;
+    assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
+    assert!(
+        headers[header::CONTENT_RANGE]
+            .to_str()
+            .unwrap()
+            .starts_with("bytes */")
+    );
+
+    let mut malformed = harness.authed("GET", &format!("/api/v1/tracks/{id}/stream"), &token);
+    malformed
+        .headers_mut()
+        .insert(header::RANGE, "bytes=abc".parse().unwrap());
+    let (status, _, _) = harness.request(malformed).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn an_emptied_root_keeps_its_rows() {
+    let harness = Harness::new();
+    harness.write_wav("song.wav", 200);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    assert_eq!(sync_tracks(&sync).len(), 1);
+
+    // The root directory still exists but yields no files: treat as partial.
+    std::fs::remove_file(harness.root.join("song.wav")).unwrap();
+    harness.scan().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    assert_eq!(sync_tracks(&sync).len(), 1, "rows must be kept");
+}
+
+#[tokio::test]
+async fn re_adding_a_track_clears_its_tombstone() {
+    let harness = Harness::new();
+    harness.write_wav("song.wav", 200);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let id = sync_tracks(&sync)[0]["id"].as_str().unwrap().to_string();
+
+    std::fs::remove_file(harness.root.join("song.wav")).unwrap();
+    harness.scan().await;
+    harness.write_wav("song.wav", 200);
+    harness.scan().await;
+
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let value: serde_json::Value = serde_json::from_slice(&sync).unwrap();
+    assert!(value["deleted"].as_array().unwrap().is_empty());
+    assert!(
+        sync_tracks(&sync)
+            .iter()
+            .any(|track| track["id"] == id.as_str())
+    );
 }

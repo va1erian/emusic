@@ -66,9 +66,13 @@ pub fn walk_root(root: &Path) -> RootWalk {
                     continue;
                 };
                 let Ok(metadata) = entry.metadata() else {
+                    // The file exists but we cannot stat it: do not let its
+                    // row be deleted as "missing".
+                    outcome.partial = true;
                     continue;
                 };
                 let Some(relative_path) = relative_slash_path(root, path) else {
+                    outcome.partial = true;
                     continue;
                 };
                 outcome.files.push(FoundFile {

@@ -17,8 +17,6 @@ use tower_http::trace::TraceLayer;
 
 use crate::state::AppState;
 
-use error::ApiError;
-
 /// Builds the complete application router.
 pub fn router(state: AppState) -> Router {
     let max_body = state.config.security.max_body_bytes;
@@ -43,22 +41,11 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// `GET /api/v1/health` — unauthenticated liveness/readiness probe.
-async fn health(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
-    let db = state.db.clone();
-    let counts = tokio::task::spawn_blocking(move || {
-        let tracks = db.track_count()?;
-        let version = db.library_version()?;
-        Ok::<_, crate::error::ServerError>((tracks, version))
-    })
-    .await
-    .map_err(|_| ApiError::internal())??;
-    let status = state.scan.status().await;
-    Ok(Json(json!({
+/// `GET /api/v1/health` — unauthenticated liveness probe. Deliberately
+/// exposes no library state: it only confirms the process is serving.
+async fn health(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
         "status": "ok",
         "started_at": state.started_at,
-        "tracks": counts.0,
-        "library_version": counts.1,
-        "scan_running": status.running,
-    })))
+    }))
 }

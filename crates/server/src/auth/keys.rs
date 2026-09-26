@@ -37,13 +37,19 @@ impl ServerKey {
 
     /// Loads the server key from `path`, generating and persisting one if it
     /// does not exist yet.
+    ///
+    /// When another process wins the creation race, its key is loaded instead
+    /// of returning the losing in-memory key, so all processes agree.
     pub fn load_or_create(path: &Path) -> Result<Self> {
         if path.exists() {
             return Self::load(path);
         }
         let key = Self::generate()?;
-        key.persist(path)?;
-        Ok(key)
+        if key.persist(path)? {
+            Ok(key)
+        } else {
+            Self::load(path)
+        }
     }
 
     /// Loads an existing key from disk.
@@ -60,8 +66,9 @@ impl ServerKey {
         Self::from_secret(secret)
     }
 
-    /// Writes the key to disk with restrictive permissions.
-    pub fn persist(&self, path: &Path) -> Result<()> {
+    /// Writes the key to disk with restrictive permissions. Returns `true`
+    /// when this process created the file, `false` when it already existed.
+    pub fn persist(&self, path: &Path) -> Result<bool> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -78,10 +85,10 @@ impl ServerKey {
                 file.write_all(encoded.as_bytes())?;
                 file.write_all(b"\n")?;
                 file.sync_all()?;
-                Ok(())
+                Ok(true)
             }
-            // A concurrent process created it first: load theirs instead.
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            // A concurrent process created it first: it owns the key.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
             Err(error) => Err(error.into()),
         }
     }
