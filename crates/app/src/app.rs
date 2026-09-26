@@ -902,8 +902,10 @@ impl Win32App {
     }
 
     /// Runs one keyboard-shortcut action: [`shortcut_command`] turns the
-    /// action and the player snapshot into a shell command (Search yields none
-    /// and only focuses the top-bar box, which is frontend state).
+    /// action and the player snapshot into a shell command. Only
+    /// [`ShortcutAction::Search`] yields none; it focuses the top-bar box,
+    /// which is frontend state. The check is explicit so a future action that
+    /// maps to no command cannot silently focus search.
     fn handle_shortcut(&mut self, action: ShortcutAction) {
         let player = self.shell.player.as_ref();
         let command = shortcut_command(
@@ -914,7 +916,9 @@ impl Win32App {
         );
         if let Some(command) = command {
             self.shell.dispatch(command);
-        } else if let Some(top_bar) = &self.top_bar {
+        } else if action == ShortcutAction::Search
+            && let Some(top_bar) = &self.top_bar
+        {
             top_bar.focus_search();
         }
     }
@@ -1715,6 +1719,8 @@ fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> win32ui::Shortcut {
         ShortcutKey::Down => Key::DOWN,
         ShortcutKey::F5 => Key::F5,
         ShortcutKey::F => Key::F,
+        ShortcutKey::R => Key::R,
+        ShortcutKey::L => Key::L,
     };
     let mut accelerator = win32ui::Shortcut::key(key);
     if shortcut.ctrl {
