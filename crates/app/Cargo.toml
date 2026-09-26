@@ -28,17 +28,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # The umbrella crate. On Windows its default `win32` feature re-exports the
 # `xui-win32` backend, but the app imports portable widgets from
 # `xui::xui_core::widget` and names the backend only in `main`.
-xui = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", default-features = false, features = ["win32"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "74010826e3c2f0c2835aaf58886079a5cc209494", default-features = false, features = ["win32"] }
 # Declared directly (optional) only so the `shot` feature can turn on its
 # `wgc` (Windows.Graphics.Capture) feature and the screenshot tool can capture.
-xui-win32 = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", optional = true }
+xui-win32 = { git = "https://github.com/va1erian/xui", rev = "74010826e3c2f0c2835aaf58886079a5cc209494", optional = true }
 # Single-instance/IPC handshake and file associations are Windows-only app
 # integration; the association helpers live in `emusic-platform`.
 winshell = { path = "../winshell" }
 
 [target.'cfg(not(windows))'.dependencies]
 # The portable software backend, so the crate structure stays cross-platform.
-xui = { git = "https://github.com/va1erian/xui", rev = "f21896913324c09c0c4d6c249dbe931a06bde90e", default-features = false, features = ["canvas"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "74010826e3c2f0c2835aaf58886079a5cc209494", default-features = false, features = ["canvas"] }
 
 [dev-dependencies]
 emusic-player = { path = "../player" }
