@@ -17,6 +17,9 @@ use crate::util::unix_now;
 #[derive(Debug, Clone, Copy)]
 pub struct PeerAddr(pub IpAddr);
 
+/// Minimum interval between persisted `last_seen` updates for a device.
+const TOUCH_INTERVAL_SECS: i64 = 60;
+
 impl<S> FromRequestParts<S> for PeerAddr
 where
     S: Send + Sync,
@@ -71,7 +74,7 @@ impl FromRequestParts<AppState> for AuthDevice {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = bearer_token(parts).ok_or_else(|| {
+        let token = bearer_token(&parts.headers).ok_or_else(|| {
             crate::audit::auth_failed(&client_string(parts, state), "missing token");
             ApiError::unauthorized("missing bearer token")
         })?;
@@ -97,17 +100,25 @@ impl FromRequestParts<AppState> for AuthDevice {
             return Err(ApiError::unauthorized("device revoked"));
         }
 
-        let db = state.db.clone();
-        let id = device.id.clone();
-        let _ = tokio::task::spawn_blocking(move || db.touch_device(&id, unix_now())).await;
+        // Coalesce last-seen writes: an active client would otherwise force a
+        // database write on every single request.
+        let now = unix_now();
+        if device
+            .last_seen
+            .is_none_or(|last| now.saturating_sub(last) >= TOUCH_INTERVAL_SECS)
+        {
+            let db = state.db.clone();
+            let id = device.id.clone();
+            let _ = tokio::task::spawn_blocking(move || db.touch_device(&id, now)).await;
+        }
 
         Ok(AuthDevice(device))
     }
 }
 
 /// Bearer token from the `Authorization` header, if well-formed.
-pub fn bearer_token(parts: &Parts) -> Option<&str> {
-    let value = parts.headers.get(AUTHORIZATION)?.to_str().ok()?;
+pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer") {
         return None;

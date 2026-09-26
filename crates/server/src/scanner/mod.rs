@@ -98,8 +98,26 @@ impl Scanner {
             }
 
             if walked.can_delete() {
-                let removed = missing_ids(db, root_index as i64, &seen)?;
-                report.tracks_deleted += db.delete_tracks(&removed)? as u64;
+                let existing = db.track_ids_for_root(root_index as i64)?;
+                if existing.is_empty() {
+                    // Nothing indexed for this root yet.
+                } else if seen.is_empty() {
+                    // A previously non-empty root now yields zero files: this
+                    // is far more likely an unmounted share than a user
+                    // deleting the whole library, so keep the rows and mark
+                    // the scan partial instead of wiping the index.
+                    tracing::warn!(
+                        root = %root.display(),
+                        "root yielded no files; keeping existing rows"
+                    );
+                    report.partial = true;
+                } else {
+                    let removed: Vec<String> = existing
+                        .into_iter()
+                        .filter(|id| !seen.contains(id))
+                        .collect();
+                    report.tracks_deleted += db.delete_tracks(&removed)? as u64;
+                }
             }
 
             on_update(ScanUpdate {
@@ -113,15 +131,6 @@ impl Scanner {
         Ok(report)
     }
 }
-
-fn missing_ids(db: &Db, root_index: i64, seen: &HashSet<String>) -> Result<Vec<String>> {
-    let existing = db.track_ids_for_root(root_index)?;
-    Ok(existing
-        .into_iter()
-        .filter(|id| !seen.contains(id))
-        .collect())
-}
-
 /// Progress notification emitted during a scan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanUpdate {

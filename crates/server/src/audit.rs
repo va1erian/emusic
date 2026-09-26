@@ -22,7 +22,11 @@ pub const AUDIT_TARGET: &str = "emusic_server::audit";
 pub fn init(data_dir: &Path) -> std::io::Result<WorkerGuard> {
     std::fs::create_dir_all(data_dir)?;
     let file_appender = tracing_appender::rolling::daily(data_dir, "audit.log");
-    let (audit_writer, guard) = tracing_appender::non_blocking(file_appender);
+    // Security events must not be dropped under load: block the audit event
+    // producer rather than lose a record (`lossy(false)`).
+    let (audit_writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
+        .lossy(false)
+        .finish(file_appender);
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,emusic_server=debug"));

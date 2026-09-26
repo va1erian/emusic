@@ -21,14 +21,6 @@ pub enum ServerError {
     #[error("database pool error: {0}")]
     Pool(#[from] r2d2::Error),
 
-    /// A requested track does not exist.
-    #[error("track not found")]
-    TrackNotFound,
-
-    /// A requested device does not exist.
-    #[error("device not found")]
-    DeviceNotFound,
-
     /// The supplied credentials are invalid, expired or revoked.
     #[error("unauthorized: {0}")]
     Unauthorized(String),
@@ -53,10 +45,6 @@ pub enum ServerError {
     /// A pairing code was wrong, expired or already used.
     #[error("invalid pairing code")]
     InvalidPairingCode,
-
-    /// The caller is being rate limited.
-    #[error("rate limit exceeded")]
-    RateLimited,
 
     /// Metadata parsing failed for a scanned file.
     #[error("metadata error: {0}")]

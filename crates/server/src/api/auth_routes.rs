@@ -8,12 +8,11 @@ use axum::extract::Path;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::http::header::AUTHORIZATION;
 use serde::{Deserialize, Serialize};
 
 use crate::api::error::ApiError;
 use crate::audit;
-use crate::auth::middleware::AuthDevice;
+use crate::auth::middleware::{AuthDevice, ClientIp, bearer_token};
 use crate::auth::pairing;
 use crate::auth::paseto::{issue_access_token, token_fingerprint, verify_refresh_proof};
 use crate::db::devices::parse_device_public_key;
@@ -21,8 +20,11 @@ use crate::db::models::Device;
 use crate::state::AppState;
 use crate::util::unix_now;
 
+/// Pairing-code minting attempts allowed per minute, per client IP.
+const PAIRING_CODE_ATTEMPT_LIMIT: u32 = 10;
+
 /// Pairing request body.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct PairRequest {
     /// The one-time code shown by the server CLI.
     pub pairing_code: String,
@@ -46,7 +48,7 @@ pub struct PairResponse {
 }
 
 /// Refresh request body.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct RefreshRequest {
     /// A device-signed PASETO bound to the presented access token.
     pub proof: String,
@@ -100,7 +102,7 @@ pub struct PairingCodeResponse {
 /// `POST /api/v1/auth/pair`
 pub async fn pair(
     State(state): State<AppState>,
-    crate::auth::middleware::ClientIp(ip): crate::auth::middleware::ClientIp,
+    ClientIp(ip): ClientIp,
     Json(request): Json<PairRequest>,
 ) -> Result<Json<PairResponse>, ApiError> {
     let ip_text = ip.to_string();
@@ -150,18 +152,14 @@ pub async fn pair(
 /// `POST /api/v1/auth/refresh`
 pub async fn refresh(
     State(state): State<AppState>,
-    crate::auth::middleware::ClientIp(ip): crate::auth::middleware::ClientIp,
+    ClientIp(ip): ClientIp,
     AuthDevice(device): AuthDevice,
     headers: HeaderMap,
     Json(request): Json<RefreshRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
     let ip_text = ip.to_string();
-    let token = headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split_once(' ').map(|(_, token)| token.trim()))
-        .filter(|token| !token.is_empty())
-        .ok_or_else(|| ApiError::unauthorized("missing bearer token"))?;
+    let token =
+        bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("missing bearer token"))?;
     let fingerprint = token_fingerprint(token);
 
     let public = parse_device_public_key(&device.public_key)?;
@@ -193,14 +191,27 @@ pub async fn list_devices(
 /// `POST /api/v1/devices/pairing-codes`
 pub async fn create_pairing_code(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     AuthDevice(_): AuthDevice,
 ) -> Result<Json<PairingCodeResponse>, ApiError> {
+    let ip_text = ip.to_string();
+    if !state.rate.check(
+        &format!("paircode:{ip_text}"),
+        PAIRING_CODE_ATTEMPT_LIMIT,
+        Duration::from_secs(60),
+    ) {
+        audit::rate_limited(&ip_text, "pairing-code");
+        return Err(ApiError::too_many_requests());
+    }
+
     let db = state.db.clone();
+    let keys = Arc::clone(&state.keys);
     let ttl = state.config.security.pairing_code_ttl_secs;
-    let code =
-        tokio::task::spawn_blocking(move || pairing::generate_pairing_code(&db, ttl, unix_now()))
-            .await
-            .map_err(|_| ApiError::internal())??;
+    let code = tokio::task::spawn_blocking(move || {
+        pairing::generate_pairing_code(&db, &keys, ttl, unix_now())
+    })
+    .await
+    .map_err(|_| ApiError::internal())??;
     Ok(Json(PairingCodeResponse {
         pairing_code: code,
         expires_in_secs: ttl,
@@ -210,7 +221,7 @@ pub async fn create_pairing_code(
 /// `DELETE /api/v1/devices/{id}`
 pub async fn revoke(
     State(state): State<AppState>,
-    crate::auth::middleware::ClientIp(ip): crate::auth::middleware::ClientIp,
+    ClientIp(ip): ClientIp,
     AuthDevice(_): AuthDevice,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {

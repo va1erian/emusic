@@ -78,12 +78,10 @@ impl From<ServerError> for ApiError {
         match error {
             ServerError::Unauthorized(message) => Self::unauthorized(message),
             ServerError::InvalidPairingCode => Self::unauthorized("invalid pairing code"),
-            ServerError::RateLimited => Self::too_many_requests(),
-            ServerError::TrackNotFound | ServerError::DeviceNotFound => Self::not_found(),
             // Path violations are never disclosed to the client; the real
             // event is written to the audit log by the caller.
             ServerError::PathRejected(_) | ServerError::PathEscape { .. } => Self::not_found(),
-            ServerError::Conflict(message) => Self::conflict(message),
+            ServerError::Conflict(_) => Self::conflict("conflict"),
             other => {
                 tracing::error!(%other, "request failed");
                 Self::internal()

@@ -64,7 +64,7 @@ fn extract_embedded(path: &Path) -> Option<Artwork> {
     }
     let mime = picture
         .mime_type()
-        .map(|mime| mime.as_str().to_string())
+        .map(|mime| sanitize_image_mime(mime.as_str()).to_string())
         .unwrap_or_else(|| "application/octet-stream".to_string());
     Some(Artwork {
         bytes: data.to_vec(),
@@ -97,6 +97,19 @@ pub fn mime_for(ext: Option<&str>) -> &'static str {
         Some("webp") => "image/webp",
         Some("gif") => "image/gif",
         Some("bmp") => "image/bmp",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Whitelists a tag-provided MIME string to a known image type, so a crafted
+/// file cannot put arbitrary text in the `Content-Type` header.
+fn sanitize_image_mime(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "image/jpeg",
+        "image/png" => "image/png",
+        "image/webp" => "image/webp",
+        "image/gif" => "image/gif",
+        "image/bmp" => "image/bmp",
         _ => "application/octet-stream",
     }
 }
@@ -140,5 +153,16 @@ mod tests {
         assert_eq!(mime_for(Some("jpeg")), "image/jpeg");
         assert_eq!(mime_for(Some("png")), "image/png");
         assert_eq!(mime_for(None), "application/octet-stream");
+    }
+
+    #[test]
+    fn tag_mime_is_whitelisted() {
+        assert_eq!(sanitize_image_mime("image/png"), "image/png");
+        assert_eq!(sanitize_image_mime("IMAGE/JPEG"), "image/jpeg");
+        assert_eq!(sanitize_image_mime("text/html"), "application/octet-stream");
+        assert_eq!(
+            sanitize_image_mime("image/svg+xml\r\nX: y"),
+            "application/octet-stream"
+        );
     }
 }

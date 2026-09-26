@@ -15,6 +15,11 @@ pub async fn ws(
     AuthDevice(_): AuthDevice,
     upgrade: WebSocketUpgrade,
 ) -> Response {
+    // Clients only receive events; cap inbound frames so a peer cannot send
+    // large messages.
+    let upgrade = upgrade
+        .max_message_size(64 * 1024)
+        .max_frame_size(16 * 1024);
     upgrade.on_upgrade(move |socket| handle(socket, state))
 }
 

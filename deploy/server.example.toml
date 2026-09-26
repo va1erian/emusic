@@ -20,7 +20,6 @@ tls_key = ""
 token_ttl_hours = 168
 max_pairing_attempts_per_min = 3
 pairing_code_ttl_secs = 600
-refresh_proof_skew_secs = 60
 max_body_bytes = 65536
 
 [library]

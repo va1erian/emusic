@@ -42,7 +42,6 @@ tls_key = "/etc/key.pem"
 token_ttl_hours = 24
 max_pairing_attempts_per_min = 5
 pairing_code_ttl_secs = 300
-refresh_proof_skew_secs = 30
 max_body_bytes = 4096
 
 [library]
@@ -125,6 +124,21 @@ fn tls_half_configuration_is_rejected() {
 fn zero_token_ttl_is_rejected() {
     let mut config = Config::from_toml(MINIMAL).expect("parse");
     config.security.token_ttl_hours = 0;
+    assert!(config.validate().is_err());
+}
+
+#[test]
+fn out_of_range_security_values_are_rejected() {
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.security.token_ttl_hours = MAX_TOKEN_TTL_HOURS + 1;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.security.pairing_code_ttl_secs = MAX_PAIRING_CODE_TTL_SECS + 1;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.security.max_body_bytes = MAX_BODY_BYTES + 1;
     assert!(config.validate().is_err());
 }
 

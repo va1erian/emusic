@@ -188,7 +188,7 @@ impl ScanCoordinator {
         let events = self.events.clone();
         let status = Arc::clone(&self.status);
         let scan_db = db.clone();
-        let report = tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             let mut on_update = |update: ScanUpdate| {
                 let _ = events.send(ServerEvent::ScanProgress {
                     root_index: update.root_index,
@@ -201,9 +201,24 @@ impl ScanCoordinator {
             scanner.scan(&scan_db, DEFAULT_BATCH_SIZE, &mut on_update)
         })
         .await
-        .map_err(|error| ServerError::Metadata(format!("scan task failed: {error}")))??;
+        .map_err(|error| ServerError::Metadata(format!("scan task failed: {error}")))?;
 
-        let version = db.library_version()?;
+        // Reset the running flag on every path, including scan and version
+        // errors, so the status endpoint never gets stuck "running".
+        let report = match result {
+            Ok(report) => report,
+            Err(error) => {
+                self.finish_running().await;
+                return Err(error);
+            }
+        };
+        let version = match db.library_version() {
+            Ok(version) => version,
+            Err(error) => {
+                self.finish_running().await;
+                return Err(error);
+            }
+        };
         {
             let mut status = self.status.write().await;
             status.running = false;
@@ -234,5 +249,11 @@ impl ScanCoordinator {
             report.elapsed_ms,
         );
         Ok(report)
+    }
+
+    /// Marks the coordinator as no longer scanning.
+    async fn finish_running(&self) {
+        let mut status = self.status.write().await;
+        status.running = false;
     }
 }

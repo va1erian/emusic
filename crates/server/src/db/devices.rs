@@ -1,6 +1,7 @@
 //! Device and pairing-code persistence.
 
 use rusqlite::OptionalExtension;
+use rusqlite::TransactionBehavior;
 use subtle::ConstantTimeEq;
 
 use crate::db::Db;
@@ -84,33 +85,27 @@ impl Db {
         Ok(())
     }
 
-    /// Number of pairing codes that are neither used nor expired.
-    pub fn active_pairing_codes(&self, now: i64) -> Result<u32> {
-        let conn = self.conn()?;
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM pairing_codes WHERE used = 0 AND expires_at > ?1",
-            [now],
-            |row| row.get(0),
-        )?;
-        Ok(count as u32)
-    }
-
     /// Consumes a valid pairing code, comparing hashes in constant time.
     ///
     /// Returns `false` for unknown, expired or already-used codes without
     /// revealing which of those applies.
+    ///
+    /// Runs in an `IMMEDIATE` transaction so two concurrent requests cannot
+    /// both consume the same code: the second waits for the first's write lock
+    /// and then re-reads the row, which is already `used`.
     pub fn consume_pairing_code(&self, code_hash: &str, now: i64) -> Result<bool> {
         let expected = decode_hash(code_hash);
-        let conn = self.conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, code_hash FROM pairing_codes WHERE used = 0 AND expires_at > ?1",
-        )?;
-        let candidates = stmt
-            .query_map([now], |row| {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let candidates = {
+            let mut stmt = tx.prepare(
+                "SELECT id, code_hash FROM pairing_codes WHERE used = 0 AND expires_at > ?1",
+            )?;
+            stmt.query_map([now], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        drop(stmt);
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        };
 
         let mut matched: Option<i64> = None;
         for (id, stored) in candidates {
@@ -118,13 +113,17 @@ impl Db {
                 matched = Some(id);
             }
         }
-        match matched {
+        let consumed = match matched {
             Some(id) => {
-                conn.execute("UPDATE pairing_codes SET used = 1 WHERE id = ?1", [id])?;
-                Ok(true)
+                tx.execute(
+                    "UPDATE pairing_codes SET used = 1 WHERE id = ?1 AND used = 0",
+                    [id],
+                )? == 1
             }
-            None => Ok(false),
-        }
+            None => false,
+        };
+        tx.commit()?;
+        Ok(consumed)
     }
 
     /// Removes pairing codes whose expiry has passed.
@@ -157,15 +156,6 @@ fn row_to_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<Device> {
     })
 }
 
-/// Hashes a plaintext pairing code for storage and comparison.
-pub fn hash_pairing_code(code: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(b"emusic-server/pairing-code/v1:");
-    hasher.update(code.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
 /// Validates the shape of a generated code (exactly six ASCII digits).
 pub fn is_valid_pairing_code_format(code: &str) -> bool {
     code.len() == 6 && code.bytes().all(|byte| byte.is_ascii_digit())
@@ -178,4 +168,76 @@ pub fn parse_device_public_key(
     use std::convert::TryFrom;
     pasetors::keys::AsymmetricPublicKey::<pasetors::version4::V4>::try_from(public_key)
         .map_err(|_| ServerError::Token("device public key is not a valid PASERK key".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::Barrier;
+
+    use super::*;
+
+    fn temp_db() -> Db {
+        let path = std::env::temp_dir().join(format!(
+            "emusic-srv-devices-{}-{}.db",
+            std::process::id(),
+            crate::util::unix_now()
+        ));
+        let _ = std::fs::remove_file(&path);
+        Db::open_at(&path).expect("open db")
+    }
+
+    #[test]
+    fn pairing_code_is_single_use() {
+        let db = temp_db();
+        let now = crate::util::unix_now();
+        db.insert_pairing_code("aabb", now, now + 600).unwrap();
+        assert!(db.consume_pairing_code("aabb", now).unwrap());
+        assert!(!db.consume_pairing_code("aabb", now).unwrap());
+    }
+
+    #[test]
+    fn expired_pairing_code_cannot_be_consumed() {
+        let db = temp_db();
+        let now = crate::util::unix_now();
+        db.insert_pairing_code("aabb", now - 700, now - 100)
+            .unwrap();
+        assert!(!db.consume_pairing_code("aabb", now).unwrap());
+    }
+
+    #[test]
+    fn concurrent_consumers_win_at_most_once() {
+        let db = Arc::new(temp_db());
+        let now = crate::util::unix_now();
+        db.insert_pairing_code("aabb", now, now + 600).unwrap();
+
+        let threads = 8;
+        let barrier = Arc::new(Barrier::new(threads));
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                let db = Arc::clone(&db);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    db.consume_pairing_code("aabb", now).unwrap()
+                })
+            })
+            .collect();
+        let mut wins = 0;
+        for handle in handles {
+            if handle.join().unwrap() {
+                wins += 1;
+            }
+        }
+        assert_eq!(wins, 1, "exactly one concurrent consumer may win");
+    }
+
+    #[test]
+    fn wrong_code_does_not_consume() {
+        let db = temp_db();
+        let now = crate::util::unix_now();
+        db.insert_pairing_code("aabb", now, now + 600).unwrap();
+        assert!(!db.consume_pairing_code("ccdd", now).unwrap());
+        assert!(db.consume_pairing_code("aabb", now).unwrap());
+    }
 }
