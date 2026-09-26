@@ -286,7 +286,10 @@ pub(crate) fn track_from_view(view: &TrackView, path: PathBuf) -> Track {
         channels: view
             .channels
             .map(|channels| channels.min(u8::MAX as u32) as u8),
-        title: view.title.clone(),
+        title: view
+            .title
+            .clone()
+            .or_else(|| view.filename.clone().filter(|name| !name.trim().is_empty())),
         artist: view.artist.clone(),
         album_artist: view.album_artist.clone(),
         album: view.album.clone(),
@@ -309,6 +312,7 @@ mod tests {
     fn view() -> TrackView {
         TrackView {
             id: "abc".into(),
+            filename: Some("song.xm".into()),
             format: "xm".into(),
             kind: "module".into(),
             specialized: true,
@@ -344,6 +348,14 @@ mod tests {
         assert_eq!(track.channels, Some(8));
         assert_eq!(track.size, 4096);
         assert_eq!(track.title.as_deref(), Some("Song"));
+    }
+
+    #[test]
+    fn falls_back_to_the_file_name_without_a_title() {
+        let mut view = view();
+        view.title = None;
+        let track = track_from_view(&view, PathBuf::from(r"C:\cache\srv\abc.xm"));
+        assert_eq!(track.title.as_deref(), Some("song.xm"));
     }
 
     fn set(items: &[&str]) -> std::collections::HashSet<String> {
