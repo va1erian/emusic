@@ -317,11 +317,11 @@ fn execute_tag_update(
     ])
 }
 
-fn path_to_string(path: &Path) -> String {
+pub(crate) fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn track_kind_to_i64(kind: TrackKind) -> i64 {
+pub(crate) fn track_kind_to_i64(kind: TrackKind) -> i64 {
     match kind {
         TrackKind::Stream => 0,
         TrackKind::Module => 1,
@@ -335,7 +335,7 @@ fn track_kind_from_i64(value: i64) -> TrackKind {
     }
 }
 
-fn art_source_to_columns(art_source: &ArtSource) -> (i64, Option<String>) {
+pub(crate) fn art_source_to_columns(art_source: &ArtSource) -> (i64, Option<String>) {
     match art_source {
         ArtSource::None => (0, None),
         ArtSource::Embedded => (1, None),
