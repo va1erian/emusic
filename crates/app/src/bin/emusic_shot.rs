@@ -339,7 +339,7 @@ fn render_one(
 ) -> anyhow::Result<()> {
     // Theme, view and appearance go through the config so the shell adopts
     // them exactly as it adopts a user's saved settings.
-    let config = Config {
+    let mut config = Config {
         theme: theme.shell(),
         accent,
         appearance,
@@ -348,6 +348,13 @@ fn render_one(
         last_view: view,
         ..Config::default()
     };
+    if view == View::Visualization {
+        // Mark a placeholder preset as the one showing, so the browser shot
+        // shows its current-preset highlight (#338).
+        config.projectm.last_preset = Some(std::path::PathBuf::from(
+            "visualizations/presets/cream-of-the-crop/Dancer.milk",
+        ));
+    }
     let out = out.to_path_buf();
     let spec = window_spec(width, height, theme.win32(accent));
 
@@ -384,6 +391,9 @@ fn render_one(
         if let Some(notice) = backends.notice {
             app.set_backend_notice(notice);
         }
+        // The mock run has no preset install layout, so the preset browser
+        // (#338) is shot against the deterministic placeholder list.
+        app.seed_placeholder_presets();
         // Show the requested Settings tab (the tab strip is built from the
         // shell state when the layout is next installed).
         if let (View::Settings, Some(tab)) = (view, settings_tab) {

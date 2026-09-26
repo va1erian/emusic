@@ -36,6 +36,8 @@ pub enum PresetRequest {
     Next,
     Previous,
     Random,
+    /// Show the preset at this playlist index (the preset browser, #338).
+    Index(usize),
 }
 
 /// A visualization request, carried by [`Command::Viz`](super::Command::Viz).

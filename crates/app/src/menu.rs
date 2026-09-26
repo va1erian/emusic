@@ -102,6 +102,9 @@ fn viz_menu(state: &AppState) -> Menu<Msg> {
             Msg::Viz(VizCommand::ToggleVisible)
         })
         .keyed("viz-show")
+        .item("Browse presets…", None, || {
+            Msg::Dispatch(Command::SetView(View::Visualization))
+        })
         .separator()
         .submenu("Preset", preset)
         .submenu("Placement", placement)

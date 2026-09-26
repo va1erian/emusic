@@ -17,6 +17,7 @@ pub mod name_counts;
 pub mod navigator;
 pub mod now_playing;
 pub mod placeholder;
+pub mod preset_browser;
 pub mod projectm;
 pub mod settings;
 pub mod starred;

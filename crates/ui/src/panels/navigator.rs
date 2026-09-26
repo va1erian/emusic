@@ -30,6 +30,7 @@ pub const ACTIVITY_VIEWS: &[View] = &[
     View::MostPlayed,
     View::History,
     View::NowPlaying,
+    View::Visualization,
 ];
 
 /// The navigator's sections, in order.

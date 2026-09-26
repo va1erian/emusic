@@ -181,16 +181,17 @@ impl NavigatorWidget {
     /// The title-bar icon for a view (Segoe Fluent Icons codepoint).
     fn glyph(view: View) -> &'static str {
         match view {
-            View::Music => "\u{E8D6}",      // Audio
-            View::Albums => "\u{E93C}",     // MusicAlbum
-            View::Artists => "\u{E716}",    // People
-            View::Genres => "\u{E8EC}",     // Tag
-            View::Folders => "\u{E8B7}",    // Folder
-            View::Starred => "\u{E734}",    // FavoriteStar
-            View::MostPlayed => "\u{E735}", // FavoriteStarFill
-            View::History => "\u{E81C}",    // History
-            View::NowPlaying => "\u{E768}", // Play
-            View::Settings => "\u{E713}",   // Settings
+            View::Music => "\u{E8D6}",         // Audio
+            View::Albums => "\u{E93C}",        // MusicAlbum
+            View::Artists => "\u{E716}",       // People
+            View::Genres => "\u{E8EC}",        // Tag
+            View::Folders => "\u{E8B7}",       // Folder
+            View::Starred => "\u{E734}",       // FavoriteStar
+            View::MostPlayed => "\u{E735}",    // FavoriteStarFill
+            View::History => "\u{E81C}",       // History
+            View::NowPlaying => "\u{E768}",    // Play
+            View::Visualization => "\u{E7F4}", // TVMonitor
+            View::Settings => "\u{E713}",      // Settings
         }
     }
 }

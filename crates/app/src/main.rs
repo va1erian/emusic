@@ -100,6 +100,11 @@ fn run_ui(
         if let Some(notice) = notice {
             app.set_backend_notice(notice);
         }
+        if mock {
+            // A `--mock` run has no preset install layout; serve the same
+            // deterministic placeholder list the screenshot tool uses (#338).
+            app.seed_placeholder_presets();
+        }
         attach_shell_integrations(ui, &mut app, hook_waker);
         app
     })

@@ -283,7 +283,7 @@ impl EngineSlot {
 /// the scanned folders. Must run with the GL context current.
 fn apply_presets(instance: &Instance, files: &PresetFiles) {
     if !files.presets.is_empty() {
-        match instance.add_preset_files(&files.presets) {
+        match instance.add_preset_files(&files.paths()) {
             Ok(count) => tracing::info!(count, "projectM playlist loaded"),
             Err(err) => tracing::warn!(%err, "could not add projectM presets"),
         }
@@ -327,6 +327,12 @@ fn apply_request(
                 .instance
                 .play_index(random_index(count), hard_cut)
                 .map(|_| ())
+        }
+        PresetRequest::Index(index) => {
+            if index >= engine.instance.preset_count() {
+                return Ok(());
+            }
+            engine.instance.play_index(index, hard_cut).map(|_| ())
         }
     }
 }

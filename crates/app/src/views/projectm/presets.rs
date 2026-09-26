@@ -13,6 +13,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
 use emusic_ui::state::projectm::ProjectMSettings;
+use emusic_ui::views::preset_browser::PresetEntry;
 
 /// The install layout under the executable.
 const VISUALIZATIONS_DIR: &str = "visualizations";
@@ -71,10 +72,46 @@ impl PresetRoots {
 /// The files a scan found.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct PresetFiles {
-    /// Every `.milk` file under the roots.
-    pub presets: Vec<PathBuf>,
+    /// Every `.milk` file under the roots, in playlist order, tagged with the
+    /// pack folder it came from.
+    pub presets: Vec<PresetEntry>,
     /// The texture folders to hand to projectM.
     pub textures: Vec<PathBuf>,
+}
+
+impl PresetFiles {
+    /// The preset paths in playlist order, for
+    /// [`Instance::add_preset_files`](emusic_projectm::Instance::add_preset_files).
+    pub(crate) fn paths(&self) -> Vec<PathBuf> {
+        self.presets
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect()
+    }
+
+    /// The entries a mock/fallback run serves instead of a real scan (#338).
+    /// Deterministic, so screenshots and tests are reproducible.
+    pub(crate) fn placeholder() -> Self {
+        let packs = ["cream-of-the-crop", "en-d", "milkdrop-original"];
+        let presets = packs
+            .iter()
+            .flat_map(|pack| {
+                ["Alpha", "Dancer", "Pulse", "Zebra"].map(|name| {
+                    PresetEntry::new(
+                        PathBuf::from("visualizations")
+                            .join("presets")
+                            .join(pack)
+                            .join(format!("{name}.milk")),
+                        *pack,
+                    )
+                })
+            })
+            .collect();
+        Self {
+            presets,
+            textures: Vec::new(),
+        }
+    }
 }
 
 /// Walks `roots` on a background thread and exposes the file list once ready.
@@ -108,7 +145,7 @@ impl PresetScanner {
 fn scan(roots: &PresetRoots) -> PresetFiles {
     let mut presets = Vec::new();
     for dir in &roots.preset_dirs {
-        collect_presets(dir, &mut presets);
+        collect_presets(dir, &pack_name(dir), &mut presets);
     }
     PresetFiles {
         presets,
@@ -116,21 +153,30 @@ fn scan(roots: &PresetRoots) -> PresetFiles {
     }
 }
 
-/// Appends every `.milk` file under `dir` (recursively) to `out`.
-fn collect_presets(dir: &Path, out: &mut Vec<PathBuf>) {
+/// The pack folder's display name: its last path component, or the whole path
+/// when it has none (a drive root, say).
+fn pack_name(dir: &Path) -> String {
+    dir.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| dir.to_string_lossy().into_owned())
+}
+
+/// Appends every `.milk` file under `dir` (recursively) to `out`, tagging each
+/// with the root `pack` it was found under.
+fn collect_presets(dir: &Path, pack: &str, out: &mut Vec<PresetEntry>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_presets(&path, out);
+            collect_presets(&path, pack, out);
         } else if path
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case(PRESET_EXTENSION))
         {
-            out.push(path);
+            out.push(PresetEntry::new(path, pack));
         }
     }
 }
@@ -208,10 +254,42 @@ mod tests {
         let mut names: Vec<String> = files
             .presets
             .iter()
-            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .map(|entry| {
+                entry
+                    .path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         names.sort();
         assert_eq!(names, vec!["a.milk", "b.MILK"]);
+        assert!(
+            files.presets.iter().all(|entry| entry.pack == "pack"),
+            "every entry carries the root folder's name"
+        );
+    }
+
+    #[test]
+    fn paths_preserve_playlist_order_and_match_the_entries() {
+        let files = PresetFiles::placeholder();
+        assert!(!files.presets.is_empty());
+        let paths = files.paths();
+        assert_eq!(paths.len(), files.presets.len());
+        assert!(
+            paths
+                .iter()
+                .zip(&files.presets)
+                .all(|(path, entry)| *path == entry.path),
+            "the paths handed to projectM keep the scanned order"
+        );
+        assert!(
+            files.presets.iter().all(|entry| !entry.name.is_empty()
+                && !entry.pack.is_empty()
+                && entry.path.extension().is_some_and(|ext| ext == "milk")),
+            "every placeholder carries a name, a pack and a .milk file"
+        );
     }
 
     #[test]
