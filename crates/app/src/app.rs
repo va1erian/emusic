@@ -10,7 +10,9 @@
 //! shell services go through [`emusic_platform`], whose signature names no
 //! backend type.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use emusic_platform::{NowPlaying, NullShell, ShellAction, ShellIntegration, ThumbButton};
@@ -19,16 +21,21 @@ use emusic_ui::config::Config;
 use emusic_ui::library_api::{LibraryDataSource, StatsWindow, TrackInfo};
 use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
-use emusic_ui::state::{Command, ShortcutAction, View, shortcut_command};
+use emusic_ui::state::{Accent, Command, ShortcutAction, View, shortcut_command};
 use emusic_ui::views::column_browser::Pane;
 use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::{Commands, Ctx};
 use emusic_ui::waker::WakerSlot;
-use xui::xui_core::app::{App, Ui};
+use xui::xui_core::app::{App, Ui, WindowHandle};
 use xui::xui_core::backend::{Event, TimerId, WidgetId};
 use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
+use xui::xui_core::widget::{Dialog, DialogAction, Menu};
 
+use crate::dialogs::{
+    self, database_info, database_info::DatabaseInfoChoice, properties, tag_editor,
+};
+use crate::menu;
 use crate::theme::app_theme;
 use crate::views::artists::ArtistsView;
 use crate::views::column_browser::{self, ColumnBrowserView};
@@ -39,6 +46,7 @@ use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
+use crate::views::settings::SettingsView;
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::TopBarView;
@@ -77,6 +85,16 @@ pub enum Msg {
     ContextRow(usize),
     /// Run a track-table context-menu action.
     ContextAction(ContextAction),
+    /// Open File -> Database info.
+    DatabaseInfo,
+    /// Show Help -> Keyboard shortcuts.
+    KeyboardShortcuts,
+    /// Go to Help -> About (the Settings view's About page).
+    About,
+    /// Pick a new accent colour from the Settings page (#40).
+    SetAccent(Accent),
+    /// The tag editor left a save request in its bridge (#376).
+    TagEditorApply,
     /// Start a shuffled playback over the Music view's currently visible
     /// tracks (its header's "Shuffle all" button, #242).
     MusicShuffleAll,
@@ -87,8 +105,10 @@ pub enum Msg {
     NameCountShuffle(usize),
     /// The Most Played view's time-window selector changed.
     MostPlayed(StatsWindow),
-    /// Clear the whole play history (the confirmation dialog is #376's).
+    /// Ask to clear the whole play history; shows the confirmation dialog.
     HistoryClear,
+    /// The user confirmed clearing the whole play history.
+    HistoryClearConfirmed,
     /// A keyboard shortcut from the central `SHORTCUTS` table fired.
     Shortcut(ShortcutAction),
     /// A transport action the OS shell asked for (#320, #321).
@@ -123,7 +143,12 @@ pub struct Win32App {
     history: HistoryView,
     /// The Music view's three cascading facet lists (#372).
     browser: ColumnBrowserView,
+    settings: SettingsView,
     placeholder: Placeholder,
+    /// The File/View/Help menu bar, with its ticks kept in step with the state.
+    menu: Menu<Msg>,
+    /// The track table's pooled right-click menu.
+    context_menu: Menu<Msg>,
     /// The window-level chrome (drag region, window buttons), attached by the
     /// binary once the backend exists; `None` in headless runs.
     chrome: Option<WindowChrome>,
@@ -142,9 +167,24 @@ pub struct Win32App {
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// When the views were last fully synced.
     last_full_sync: Instant,
+    /// The central area last laid out, so a context menu opens near it.
+    central_bounds: Rect,
     /// The row the track context menu was opened on, while a context action is
     /// pending.
     context_row: Option<usize>,
+    /// The Help -> Keyboard shortcuts message dialog, while it is open.
+    shortcuts_dialog: Option<Dialog<Msg>>,
+    /// The History -> Clear confirmation, while it is open.
+    history_dialog: Option<Dialog<Msg>>,
+    /// The open tag editor's session, while its window is up (#376).
+    tag_editor: Option<TagEditorSession>,
+}
+
+/// An open tag editor window plus the bridge that carries its save request to
+/// the main window and the shared model's status back.
+struct TagEditorSession {
+    bridge: Rc<RefCell<tag_editor::Bridge>>,
+    window: WindowHandle<tag_editor::Msg>,
 }
 
 impl Win32App {
@@ -176,6 +216,7 @@ impl Win32App {
         let most_played = MostPlayedView::new(ui);
         let history = HistoryView::new(ui);
         let browser = ColumnBrowserView::new(ui);
+        let settings = SettingsView::new(ui);
         let placeholder = Placeholder::new(ui, "view", "later issues");
 
         waker.bind(UiWaker::new(ui.proxy()));
@@ -186,6 +227,9 @@ impl Win32App {
         if !startup_files.is_empty() {
             shell.player.replace_and_play(&startup_files, 0);
         }
+
+        let menu = menu::bar(ui, Rect::default(), &shell.state);
+        let context_menu = menu::track_context(ui);
 
         // The portable runtime has no dedicated resize hook; a window-level
         // event mapper observes `Event::Resize` and relayouts.
@@ -214,7 +258,10 @@ impl Win32App {
             most_played,
             history,
             browser,
+            settings,
             placeholder,
+            menu,
+            context_menu,
             chrome: None,
             shell_integration: Box::new(NullShell),
             timer: None,
@@ -223,7 +270,11 @@ impl Win32App {
             applied_browser_visible,
             applied_look: look,
             last_full_sync: Instant::now(),
+            central_bounds: Rect::default(),
             context_row: None,
+            shortcuts_dialog: None,
+            history_dialog: None,
+            tag_editor: None,
         };
         app.apply_visibility();
         app.relayout();
@@ -351,6 +402,11 @@ impl Win32App {
             _ => {}
         }
         self.navigator.sync(view);
+        menu::sync(&self.menu, &self.shell.state);
+        if view == View::Settings {
+            self.settings
+                .sync(self.shell.state.accent, self.shell.state.theme);
+        }
 
         // The transport and status models are shell state, synced from the
         // live player/library before the views read them.
@@ -374,10 +430,11 @@ impl Win32App {
     }
 
     /// Shows the active central view and hides the others.
-    fn apply_visibility(&self) {
+    fn apply_visibility(&mut self) {
         let view = self.shell.state.view;
         let music = view == View::Music;
         let folders = view == View::Folders;
+        let settings = view == View::Settings;
         self.music.set_visible(music);
         self.folders.set_visible(folders);
         self.artists.set_visible(view == View::Artists);
@@ -387,6 +444,7 @@ impl Win32App {
         self.history.set_visible(view == View::History);
         self.browser
             .set_visible(music && self.shell.state.music.browser.visible);
+        self.settings.set_visible(settings);
         let ported = matches!(
             view,
             View::Music
@@ -396,6 +454,7 @@ impl Win32App {
                 | View::Starred
                 | View::MostPlayed
                 | View::History
+                | View::Settings
         );
         self.placeholder.set_visible(!ported);
         self.navigator
@@ -416,12 +475,20 @@ impl Win32App {
         let client = self.ui.client_rect();
         let dpi = self.ui.dpi();
         let caption = self.caption_inset_px(dpi);
+        let menu_h = dip(menu::MENU_BAR_HEIGHT).to_px(dpi).value();
         let top_bar = dip(TOP_BAR_HEIGHT).to_px(dpi).value();
         let bar_top = client.top + caption;
-        let bar_bottom = bar_top + top_bar;
+        if let Some(id) = self.menu.id() {
+            self.ui.apply_moves(&[(
+                id,
+                Rect::new(client.left, bar_top, client.right, bar_top + menu_h),
+            )]);
+        }
+        let band_top = bar_top + menu_h;
+        let bar_bottom = band_top + top_bar;
         self.top_bar.set_bounds(
             Rect::new(client.left, client.top, client.right, bar_top),
-            Rect::new(client.left, bar_top, client.right, bar_bottom),
+            Rect::new(client.left, band_top, client.right, bar_bottom),
         );
 
         let status = if self.shell.state.panels.status_bar {
@@ -446,6 +513,7 @@ impl Win32App {
             bottom,
         ));
         let central = Rect::new(client.left + navigator_width, top, client.right, bottom);
+        self.central_bounds = central;
         match self.shell.state.view {
             View::Music => {
                 // The browser strip sits above the header + table; hidden, it
@@ -477,6 +545,7 @@ impl Win32App {
             View::Starred => self.starred.set_bounds(central),
             View::MostPlayed => self.most_played.set_bounds(central),
             View::History => self.history.set_bounds(central),
+            View::Settings => self.settings.set_bounds(central),
             _ => self.placeholder.set_bounds(central),
         }
     }
@@ -559,6 +628,15 @@ impl App for Win32App {
     type Msg = Msg;
 
     fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        self.handle(msg, ui);
+        self.after_update(ui);
+    }
+}
+
+impl Win32App {
+    /// Applies one message. Each arm runs the shell and syncs the views; the
+    /// dialog bookkeeping runs afterwards in [`Win32App::after_update`].
+    fn handle(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
         match msg {
             Msg::Wake | Msg::Timer => self.tick_inner(),
             Msg::Resize => self.relayout(),
@@ -630,10 +708,11 @@ impl App for Win32App {
                 self.tick_inner();
             }
             Msg::ContextRow(row) => {
-                // The portable context menu is #376's; remember the row and log
-                // where it would open.
+                // The portable `ListView` reports the row but not the pointer,
+                // so open near the central area's top-left corner.
                 self.context_row = Some(row);
-                tracing::debug!(row, "track context menu is not ported yet");
+                let at = self.central_bounds;
+                self.context_menu.show_context(at.left + 8, at.top + 8);
             }
             Msg::ContextAction(action) => {
                 let Some(row) = self.context_row else {
@@ -646,10 +725,42 @@ impl App for Win32App {
                     View::MostPlayed => self.most_played.track(row),
                     _ => None,
                 };
-                if let Some(track) = track
-                    && let Some(command) = track_table::run_context_action(action, &track)
-                {
+                let Some(track) = track else {
+                    return;
+                };
+                if action == ContextAction::Properties {
+                    properties::show(ui, &track);
+                    return;
+                }
+                let command = track_table::run_context_action(action, &track);
+                if let Some(command) = command {
                     self.shell.dispatch(command);
+                    self.tick_inner();
+                }
+            }
+            Msg::DatabaseInfo => {
+                let choice = database_info::show(ui, self.shell.library.as_ref());
+                if choice == Some(DatabaseInfoChoice::Rescan) {
+                    self.shell.dispatch(Command::LibraryRescan);
+                    self.tick_inner();
+                }
+            }
+            Msg::KeyboardShortcuts => self.show_shortcuts(ui),
+            Msg::About => {
+                self.shell.dispatch(Command::SetView(View::Settings));
+                self.tick_inner();
+            }
+            Msg::SetAccent(accent) => {
+                self.shell.dispatch(Command::SetAccent(accent));
+                self.tick_inner();
+            }
+            Msg::TagEditorApply => {
+                let Some(session) = &self.tag_editor else {
+                    return;
+                };
+                let request = session.bridge.borrow_mut().apply.take();
+                if let Some(request) = request {
+                    self.shell.dispatch(Command::RequestTagEdits(vec![request]));
                     self.tick_inner();
                 }
             }
@@ -698,9 +809,8 @@ impl App for Win32App {
                 self.shell.state.most_played.window = window;
                 self.tick_inner();
             }
-            Msg::HistoryClear => {
-                // The confirmation dialog is #376's; until then the button
-                // clears directly.
+            Msg::HistoryClear => self.show_history_clear(ui),
+            Msg::HistoryClearConfirmed => {
                 self.shell.dispatch(Command::HistoryClear);
                 self.tick_inner();
             }
@@ -732,6 +842,109 @@ impl App for Win32App {
                 ui.quit();
             }
         }
+    }
+
+    /// Runs the dialog bookkeeping after a message: reaps a closed tag editor,
+    /// opens a pending one, mirrors its status, and drops a closed message
+    /// dialog.
+    fn after_update(&mut self, ui: &Ui<Msg>) {
+        let closed = self
+            .tag_editor
+            .as_ref()
+            .is_some_and(|session| !session.window.is_open());
+        if closed {
+            self.tag_editor = None;
+            self.shell.state.tag_editor = None;
+        }
+        self.maybe_open_tag_editor(ui);
+        self.mirror_tag_editor_status();
+        if self
+            .shortcuts_dialog
+            .as_ref()
+            .is_some_and(|dialog| !dialog.is_open())
+        {
+            self.shortcuts_dialog = None;
+        }
+        if self
+            .history_dialog
+            .as_ref()
+            .is_some_and(|dialog| !dialog.is_open())
+        {
+            self.history_dialog = None;
+        }
+    }
+
+    /// Opens the tag editor window for the editor state the shell just resolved
+    /// (via [`Command::OpenTagEditor`]), if none is open yet.
+    fn maybe_open_tag_editor(&mut self, ui: &Ui<Msg>) {
+        if self.tag_editor.is_some() {
+            return;
+        }
+        let Some(state) = self.shell.state.tag_editor.as_ref() else {
+            return;
+        };
+        let bridge = Rc::new(RefCell::new(tag_editor::Bridge::new(state.status.clone())));
+        match tag_editor::open(ui, state, Rc::clone(&bridge), ui.proxy()) {
+            Ok(window) => {
+                self.tag_editor = Some(TagEditorSession { bridge, window });
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not open the tag editor window");
+                self.shell.state.tag_editor = None;
+            }
+        }
+    }
+
+    /// Mirrors the shared model's editor status into the open bridge, so the
+    /// dialog's poll sees a finished save.
+    fn mirror_tag_editor_status(&self) {
+        if let Some(session) = &self.tag_editor
+            && let Some(state) = self.shell.state.tag_editor.as_ref()
+        {
+            session.bridge.borrow_mut().status = state.status.clone();
+        }
+    }
+
+    /// Shows the Clear-history confirmation dialog, if it is not already open.
+    fn show_history_clear(&mut self, ui: &Ui<Msg>) {
+        if self
+            .history_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.is_open())
+        {
+            return;
+        }
+        let dialog = Dialog::confirm(
+            ui,
+            "Clear play history?",
+            "This removes every recorded play, including the most-played \
+             rankings. Per-track play counts are kept. This cannot be undone.",
+        )
+        .expect("create clear-history dialog")
+        .accept_label("Clear history")
+        .on_action(|action| match action {
+            DialogAction::Accept(_) => Some(Msg::HistoryClearConfirmed),
+            DialogAction::Cancel => None,
+        });
+        dialog.open();
+        self.history_dialog = Some(dialog);
+    }
+
+    /// Shows the Help -> Keyboard shortcuts message dialog, if it is not already
+    /// open.
+    fn show_shortcuts(&mut self, ui: &Ui<Msg>) {
+        if self
+            .shortcuts_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.is_open())
+        {
+            return;
+        }
+        let dialog = Dialog::message(ui, "Keyboard shortcuts", &dialogs::shortcuts_text())
+            .expect("create keyboard shortcuts dialog")
+            .on_action(|_| None);
+        dialog.open();
+        self.shortcuts_dialog = Some(dialog);
     }
 }
 

@@ -5,8 +5,9 @@
 //! the **Folders** view onto the model `TreeView`; #372 ports the remaining
 //! list views — **Artists**, **Genres**, **Starred**, **Most Played**,
 //! **History** and the Music view's **column browser** — onto the model
-//! `ListView`. The **Albums** grid (#374), the **Now Playing** view, the
-//! **visualizer** (#371) and **Settings** (#376) are still documented
+//! `ListView`. **Settings** (#376) ports onto the portable pickers/flow text.
+//! The **Albums** grid (#374), the **Now Playing** view and the **visualizer**
+//! (#371) are still documented
 //! [`placeholder`](placeholder)s. Each view owns its own widgets and exposes a
 //! small, stable interface (`set_bounds`, `set_visible`, `sync`, and its own
 //! `Msg` hooks), so one can be ported without touching the shell's wiring.
@@ -21,6 +22,7 @@ pub mod music;
 pub mod name_counts;
 pub mod navigator;
 pub mod placeholder;
+pub mod settings;
 pub mod starred;
 pub mod status_bar;
 pub mod top_bar;

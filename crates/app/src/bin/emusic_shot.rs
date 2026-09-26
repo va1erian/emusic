@@ -8,15 +8,16 @@
 //! `Windows.Graphics.Capture` through `xui_win32::capture_hwnd` (the `wgc`
 //! feature), so it reads the DWM-composited surface without raising the window.
 //!
-//! The multi-window dialog shots and the per-appearance flags of the original
-//! tool are not ported yet: the portable `xui_core` runtime has no second
-//! window and the dialogs are #376's, so this tool now captures the main window
-//! only (follow-up to #370).
+//! `--dialog properties|tags|database` opens the respective secondary dialog
+//! (#376) and captures *that* window instead, through the portable
+//! `WindowHandle::capture` path.
 //!
 //! ```text
 //! cargo run -p emusic --features shot --bin emusic-shot -- --view music --out shot.png
+//! cargo run -p emusic --features shot --bin emusic-shot -- --dialog properties --out props.png
 //! ```
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
@@ -24,16 +25,19 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow};
 use clap::Parser;
-use xui::xui_core::app::{App, Ui};
-use xui::xui_core::backend::{Backend, TimerId};
+use xui::xui_core::app::{App, Ui, WindowHandle};
+use xui::xui_core::backend::{Backend, PlatformSpec, TimerId};
 use xui_win32::Hwnd;
 use xui_win32::capture::capture_hwnd;
 
 use emusic_ui::config::Config;
+use emusic_ui::library_api::TrackInfo;
 use emusic_ui::state::{Accent, Theme, View};
+use emusic_ui::tag_editor::{Status, TagEditorState};
 use emusic_ui::waker::WakerSlot;
 
 use emusic::app::{Msg, Win32App};
+use emusic::dialogs::{database_info, properties, tag_editor};
 use emusic::window::window_spec;
 
 /// How long the window is left to settle before the capture.
@@ -51,6 +55,10 @@ struct Cli {
     /// Render every view into `--out`'s directory, one fresh process each.
     #[arg(long)]
     all: bool,
+
+    /// Capture a dialog window instead of a view.
+    #[arg(long, value_enum)]
+    dialog: Option<DialogArg>,
 
     #[arg(long, value_enum, default_value = "dark")]
     theme: ThemeArg,
@@ -73,6 +81,14 @@ struct Cli {
 enum ThemeArg {
     Dark,
     Light,
+}
+
+/// The dialog the `--dialog` flag captures.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum DialogArg {
+    Properties,
+    Tags,
+    Database,
 }
 
 impl ThemeArg {
@@ -99,14 +115,19 @@ fn main() -> anyhow::Result<()> {
         return run_all(&cli);
     }
 
-    let view = match cli.view.as_deref() {
-        Some(slug) => parse_view(slug)?,
-        None => View::Music,
-    };
     if let Some(parent) = cli.out.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create output directory {}", parent.display()))?;
     }
+
+    if let Some(dialog) = cli.dialog {
+        return render_dialog(dialog, cli.theme, cli.accent, width, height, &cli.out);
+    }
+
+    let view = match cli.view.as_deref() {
+        Some(slug) => parse_view(slug)?,
+        None => View::Music,
+    };
     render_one(view, cli.theme, cli.accent, width, height, &cli.out)
 }
 
@@ -260,6 +281,152 @@ impl App for ShotApp {
         ui.close();
         // `ui.close()` only closes the window; the run loop still has to be
         // told to stop, or the process hangs after the capture.
+        ui.quit();
+    }
+}
+
+/// Runs the app for one dialog and writes its capture to `out`.
+fn render_dialog(
+    dialog: DialogArg,
+    theme: ThemeArg,
+    accent: Accent,
+    width: f32,
+    height: f32,
+    out: &std::path::Path,
+) -> anyhow::Result<()> {
+    let backend: Rc<dyn Backend> = Rc::new(xui_win32::Win32Backend::new());
+    let spec = window_spec(width, height);
+    let out = out.to_path_buf();
+    let waker = WakerSlot::new();
+    let backends = emusic_ui::backend::build(true, waker.handle());
+    let track = mock_track();
+    let theme = theme.shell();
+
+    match dialog {
+        DialogArg::Properties => run_dialog(backend, spec, out, theme, accent, move |ui| {
+            properties::open(ui, &track)
+        }),
+        DialogArg::Tags => {
+            let state = TagEditorState::new(&track);
+            run_dialog(backend, spec, out, theme, accent, move |ui| {
+                let bridge = Rc::new(RefCell::new(tag_editor::Bridge::new(Status::Editing)));
+                tag_editor::open(ui, &state, bridge, ui.proxy())
+            })
+        }
+        DialogArg::Database => {
+            let library = backends.library;
+            run_dialog(backend, spec, out, theme, accent, move |ui| {
+                database_info::open(ui, library.as_ref())
+            })
+        }
+    }
+}
+
+/// A deterministic track the dialog shots render.
+fn mock_track() -> TrackInfo {
+    TrackInfo {
+        id: 1,
+        title: "Yellow Ledbetter".to_owned(),
+        artist: "Pearl Jam".to_owned(),
+        album: "Jeremy".to_owned(),
+        album_artist: "Pearl Jam".to_owned(),
+        genre: "Rock".to_owned(),
+        year: Some(1992),
+        track_no: Some(4),
+        disc_no: Some(1),
+        composer: "Eddie Vedder".to_owned(),
+        duration: Duration::from_secs(301),
+        path: r"C:\Music\Pearl Jam\Jeremy\04 - Yellow Ledbetter.flac".to_owned(),
+        format: "flac".to_owned(),
+        codec: "FLAC".to_owned(),
+        bitrate: Some(920),
+        sample_rate: Some(44_100),
+        bit_depth: Some(16),
+        channels: Some(2),
+        play_count: 12,
+        last_played_minutes_ago: Some(90),
+        starred: true,
+        ..TrackInfo::default()
+    }
+}
+
+/// Opens one dialog window on a throwaway main window, captures it after the
+/// settle period and quits.
+fn run_dialog<H: 'static>(
+    backend: Rc<dyn Backend>,
+    spec: PlatformSpec,
+    out: PathBuf,
+    theme: Theme,
+    accent: Accent,
+    open: impl FnOnce(&Ui<Msg>) -> xui::xui_core::backend::Result<WindowHandle<H>> + 'static,
+) -> anyhow::Result<()> {
+    xui::xui_core::run_app(backend, spec, move |ui| {
+        // The dialog inherits this window's theme at the moment it opens.
+        ui.set_theme(emusic::theme::app_theme(theme, accent));
+        // The throwaway main window only exists to own the tick timer, so its
+        // `Msg::Timer` must be mapped or `DialogShotApp::update` is never called
+        // and the process hangs on an open dialog. `Win32App::new` registers
+        // this on the real main window; the shot's bare window has to do it.
+        ui.on_timer(|_| Some(Msg::Timer));
+        let handle = match open(ui) {
+            Ok(handle) => Some(handle),
+            Err(error) => {
+                eprintln!("emusic-shot: could not open the dialog window: {error}");
+                None
+            }
+        };
+        let timer = ui.set_timer(TICK_MS);
+        DialogShotApp {
+            handle,
+            out,
+            timer: Some(timer),
+            deadline: Instant::now() + SETTLE,
+            done: false,
+        }
+    })
+    .map_err(|error| anyhow!("{error}"))
+}
+
+/// Captures a secondary dialog window after the settle period.
+struct DialogShotApp<H: 'static> {
+    /// `None` when the dialog window could not be created; the app then just
+    /// quits so a backend that cannot open it fails clearly instead of hanging.
+    handle: Option<WindowHandle<H>>,
+    out: PathBuf,
+    timer: Option<TimerId>,
+    deadline: Instant,
+    done: bool,
+}
+
+impl<H: 'static> App for DialogShotApp<H> {
+    type Msg = Msg;
+
+    fn update(&mut self, _msg: Msg, ui: &mut Ui<Msg>) {
+        if self.done || Instant::now() < self.deadline {
+            return;
+        }
+        self.done = true;
+        if let Some(id) = self.timer.take() {
+            ui.kill_timer(id);
+        }
+        match self.handle.take() {
+            Some(handle) => {
+                match handle.capture() {
+                    Ok(image) => {
+                        match write_png(image.pixels(), image.width(), image.height(), &self.out) {
+                            Ok(()) => eprintln!("wrote {}", self.out.display()),
+                            Err(error) => {
+                                eprintln!("emusic-shot: write {}: {error:#}", self.out.display())
+                            }
+                        }
+                    }
+                    Err(error) => eprintln!("emusic-shot: capture failed: {error}"),
+                }
+                handle.close();
+            }
+            None => eprintln!("emusic-shot: no dialog window was open to capture"),
+        }
+        ui.close();
         ui.quit();
     }
 }
