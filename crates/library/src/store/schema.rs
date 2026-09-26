@@ -6,7 +6,7 @@
 //! edited — add a new one instead.
 
 /// The schema version this build of `emusic-library` expects.
-pub const CURRENT_VERSION: i64 = 5;
+pub const CURRENT_VERSION: i64 = 6;
 
 pub const MIGRATIONS: &[&str] = &[
     // v1: initial schema.
@@ -81,5 +81,20 @@ pub const MIGRATIONS: &[&str] = &[
     // that have been finalized. Pre-existing rows are already finished.
     r"
     ALTER TABLE plays ADD COLUMN finished INTEGER NOT NULL DEFAULT 1;
+    ",
+    // v6: remote tracks (#391). A row sourced from an `emusic-server` carries
+    // the owning server, the server track id and the sync version at which it
+    // last changed; `remote_servers` remembers the last synced library version
+    // per server for delta sync.
+    r"
+    ALTER TABLE tracks ADD COLUMN remote_server_id TEXT;
+    ALTER TABLE tracks ADD COLUMN remote_track_id TEXT;
+    ALTER TABLE tracks ADD COLUMN remote_sync_version INTEGER;
+    CREATE INDEX idx_tracks_remote ON tracks(remote_server_id);
+
+    CREATE TABLE remote_servers (
+        server_id       TEXT PRIMARY KEY,
+        since_version   INTEGER NOT NULL DEFAULT 0
+    );
     ",
 ];

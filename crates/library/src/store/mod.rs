@@ -7,6 +7,7 @@
 
 mod folders;
 mod migrations;
+mod remote;
 mod schema;
 mod stats;
 mod tracks;
@@ -19,6 +20,7 @@ use rusqlite::Connection;
 use crate::error::{LibraryError, Result};
 
 pub use folders::Folder;
+pub use remote::RemoteTrack;
 pub use stats::{MostPlayedEntry, PlayHistoryEntry, TrackStats};
 
 /// How long a connection waits for another writer's lock before returning
