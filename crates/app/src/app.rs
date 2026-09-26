@@ -16,10 +16,11 @@ use std::time::{Duration, Instant};
 use emusic_platform::{NowPlaying, NullShell, ShellAction, ShellIntegration, ThumbButton};
 use emusic_ui::backend::ipc::IpcBridge;
 use emusic_ui::config::Config;
-use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::library_api::{LibraryDataSource, StatsWindow, TrackInfo};
 use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, ShortcutAction, View, shortcut_command};
+use emusic_ui::views::column_browser::Pane;
 use emusic_ui::views::folders::FoldersMsg;
 use emusic_ui::views::{Commands, Ctx};
 use emusic_ui::waker::WakerSlot;
@@ -29,10 +30,16 @@ use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 
 use crate::theme::app_theme;
+use crate::views::artists::ArtistsView;
+use crate::views::column_browser::{self, ColumnBrowserView};
 use crate::views::folders::FoldersView;
+use crate::views::genres::GenresView;
+use crate::views::history::HistoryView;
+use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
+use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::TopBarView;
 use crate::views::track_table::{self, ContextAction};
@@ -73,6 +80,15 @@ pub enum Msg {
     /// Start a shuffled playback over the Music view's currently visible
     /// tracks (its header's "Shuffle all" button, #242).
     MusicShuffleAll,
+    /// A column-browser pane's selection changed (the rows now selected).
+    BrowserRow { pane: Pane, rows: Vec<usize> },
+    /// Shuffle-play the artist/genre of the activated name+counts row
+    /// (Artists/Genres; the portable context menu is #376's).
+    NameCountShuffle(usize),
+    /// The Most Played view's time-window selector changed.
+    MostPlayed(StatsWindow),
+    /// Clear the whole play history (the confirmation dialog is #376's).
+    HistoryClear,
     /// A keyboard shortcut from the central `SHORTCUTS` table fired.
     Shortcut(ShortcutAction),
     /// A transport action the OS shell asked for (#320, #321).
@@ -100,6 +116,13 @@ pub struct Win32App {
     status_bar: StatusBarView,
     music: MusicView,
     folders: FoldersView,
+    artists: ArtistsView,
+    genres: GenresView,
+    starred: StarredView,
+    most_played: MostPlayedView,
+    history: HistoryView,
+    /// The Music view's three cascading facet lists (#372).
+    browser: ColumnBrowserView,
     placeholder: Placeholder,
     /// The window-level chrome (drag region, window buttons), attached by the
     /// binary once the backend exists; `None` in headless runs.
@@ -113,6 +136,8 @@ pub struct Win32App {
     applied_view: View,
     /// Panel visibility last applied, so toggling one re-lays the shell out.
     applied_panels: emusic_ui::state::PanelVisibility,
+    /// Column-browser visibility last applied, so toggling it re-lays out.
+    applied_browser_visible: bool,
     /// Theme and accent last applied to the window, so a change re-themes it.
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// When the views were last fully synced.
@@ -145,7 +170,13 @@ impl Win32App {
         let status_bar = StatusBarView::new(ui);
         let music = MusicView::new(ui);
         let folders = FoldersView::new(ui);
-        let placeholder = Placeholder::new(ui, "Music", "later issues");
+        let artists = ArtistsView::new(ui);
+        let genres = GenresView::new(ui);
+        let starred = StarredView::new(ui);
+        let most_played = MostPlayedView::new(ui);
+        let history = HistoryView::new(ui);
+        let browser = ColumnBrowserView::new(ui);
+        let placeholder = Placeholder::new(ui, "view", "later issues");
 
         waker.bind(UiWaker::new(ui.proxy()));
         let mut shell = Shell::new(library, player, config, config_path, waker);
@@ -167,6 +198,8 @@ impl Win32App {
 
         let applied_view = shell.state.view;
         let applied_panels = shell.state.panels;
+        let applied_browser_visible =
+            applied_view == View::Music && shell.state.music.browser.visible;
         let mut app = Win32App {
             shell,
             ui: ui.clone(),
@@ -175,12 +208,19 @@ impl Win32App {
             status_bar,
             music,
             folders,
+            artists,
+            genres,
+            starred,
+            most_played,
+            history,
+            browser,
             placeholder,
             chrome: None,
             shell_integration: Box::new(NullShell),
             timer: None,
             applied_view,
             applied_panels,
+            applied_browser_visible,
             applied_look: look,
             last_full_sync: Instant::now(),
             context_row: None,
@@ -250,30 +290,65 @@ impl Win32App {
     fn sync_views(&mut self, changes: Changes) {
         let view = self.shell.state.view;
         let panels = self.shell.state.panels;
-        if view != self.applied_view || panels != self.applied_panels {
+        let browser_visible = view == View::Music && self.shell.state.music.browser.visible;
+        if view != self.applied_view
+            || panels != self.applied_panels
+            || browser_visible != self.applied_browser_visible
+        {
             self.applied_view = view;
             self.applied_panels = panels;
+            self.applied_browser_visible = browser_visible;
             self.apply_visibility();
             self.relayout();
         }
 
-        if view == View::Music {
-            let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
-            self.music.sync(
-                &self.shell.state,
-                self.shell.library.as_ref(),
-                &self.shell.search,
-                playing_id,
-                changes,
-            );
-        } else if view == View::Folders {
-            self.refresh_folders();
-            let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
-            self.folders.sync(
-                &self.shell.state.folders,
-                self.shell.library.as_ref(),
-                playing_id,
-            );
+        let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+        match view {
+            View::Music => {
+                self.refresh_music();
+                self.browser.sync(&self.shell.state.music.browser);
+                self.music.sync(
+                    &self.shell.state,
+                    self.shell.library.as_ref(),
+                    &self.shell.search,
+                    playing_id,
+                    changes,
+                );
+            }
+            View::Folders => {
+                self.refresh_folders();
+                self.folders.sync(
+                    &self.shell.state.folders,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                );
+            }
+            View::Artists => self
+                .artists
+                .sync(&mut self.shell.state, self.shell.library.as_ref()),
+            View::Genres => self
+                .genres
+                .sync(&mut self.shell.state, self.shell.library.as_ref()),
+            View::Starred => {
+                self.starred.sync(
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                );
+            }
+            View::MostPlayed => {
+                self.most_played.sync(
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                );
+            }
+            View::History => {
+                let rebuild = changes.intersects(Changes::LIBRARY);
+                self.history
+                    .sync(self.shell.library.as_ref(), playing_id, rebuild);
+            }
+            _ => {}
         }
         self.navigator.sync(view);
 
@@ -305,12 +380,29 @@ impl Win32App {
         let folders = view == View::Folders;
         self.music.set_visible(music);
         self.folders.set_visible(folders);
-        self.placeholder.set_visible(!music && !folders);
+        self.artists.set_visible(view == View::Artists);
+        self.genres.set_visible(view == View::Genres);
+        self.starred.set_visible(view == View::Starred);
+        self.most_played.set_visible(view == View::MostPlayed);
+        self.history.set_visible(view == View::History);
+        self.browser
+            .set_visible(music && self.shell.state.music.browser.visible);
+        let ported = matches!(
+            view,
+            View::Music
+                | View::Folders
+                | View::Artists
+                | View::Genres
+                | View::Starred
+                | View::MostPlayed
+                | View::History
+        );
+        self.placeholder.set_visible(!ported);
         self.navigator
             .set_visible(self.shell.state.panels.navigator);
         self.status_bar
             .set_visible(self.shell.state.panels.status_bar);
-        if !music && !folders {
+        if !ported {
             self.placeholder.sync(&format!(
                 "{} view: not ported to xui_core yet (see the migration epic #369)",
                 view.label()
@@ -354,12 +446,38 @@ impl Win32App {
             bottom,
         ));
         let central = Rect::new(client.left + navigator_width, top, client.right, bottom);
-        if self.shell.state.view == View::Music {
-            self.music.set_bounds(central);
-        } else if self.shell.state.view == View::Folders {
-            self.folders.set_bounds(central);
-        } else {
-            self.placeholder.set_bounds(central);
+        match self.shell.state.view {
+            View::Music => {
+                // The browser strip sits above the header + table; hidden, it
+                // takes no space.
+                let browser_height = if self.shell.state.music.browser.visible {
+                    dip(self.shell.state.music.browser.height)
+                        .to_px(dpi)
+                        .value()
+                        .min(bottom - top)
+                } else {
+                    0
+                };
+                self.browser.set_bounds(Rect::new(
+                    central.left,
+                    central.top,
+                    central.right,
+                    central.top + browser_height,
+                ));
+                self.music.set_bounds(Rect::new(
+                    central.left,
+                    central.top + browser_height,
+                    central.right,
+                    central.bottom,
+                ));
+            }
+            View::Folders => self.folders.set_bounds(central),
+            View::Artists => self.artists.set_bounds(central),
+            View::Genres => self.genres.set_bounds(central),
+            View::Starred => self.starred.set_bounds(central),
+            View::MostPlayed => self.most_played.set_bounds(central),
+            View::History => self.history.set_bounds(central),
+            _ => self.placeholder.set_bounds(central),
         }
     }
 
@@ -400,6 +518,13 @@ impl Win32App {
         let tracks: Vec<&TrackInfo> = self.shell.library.as_ref().tracks().iter().collect();
         let cx = Ctx::with_library(&tracks, None, self.shell.library.as_ref());
         self.shell.state.folders.refresh(&cx);
+    }
+
+    /// Rebuilds the Music model's column-browser facets, visible indices and
+    /// search count from the library snapshot and the live search.
+    fn refresh_music(&mut self) {
+        let tracks: Vec<&TrackInfo> = self.shell.library.as_ref().tracks().iter().collect();
+        self.shell.state.music.refresh(&tracks, &self.shell.search);
     }
 
     /// Applies a Folders intent through the shared model, dispatches the
@@ -449,6 +574,9 @@ impl App for Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.activate(row),
                     View::Folders => self.folders.activate(row),
+                    View::Starred => self.starred.activate(row),
+                    View::MostPlayed => self.most_played.activate(row),
+                    View::History => self.history.activate(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -460,6 +588,8 @@ impl App for Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.toggle_star(row),
                     View::Folders => self.folders.toggle_star(row),
+                    View::Starred => self.starred.toggle_star(row),
+                    View::MostPlayed => self.most_played.toggle_star(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -485,6 +615,16 @@ impl App for Win32App {
                         self.folders
                             .resort(&self.shell.state.folders, self.shell.library.as_ref());
                     }
+                    View::Starred => {
+                        self.shell.state.starred.table.sort.toggle(id);
+                        self.starred
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
+                    View::MostPlayed => {
+                        self.shell.state.most_played.table.sort.toggle(id);
+                        self.most_played
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
                     _ => return,
                 }
                 self.tick_inner();
@@ -502,6 +642,8 @@ impl App for Win32App {
                 let track = match self.shell.state.view {
                     View::Music => self.music.track(row),
                     View::Folders => self.folders.track(row),
+                    View::Starred => self.starred.track(row),
+                    View::MostPlayed => self.most_played.track(row),
                     _ => None,
                 };
                 if let Some(track) = track
@@ -526,6 +668,40 @@ impl App for Win32App {
                     &self.shell.search,
                 );
                 self.shell.dispatch(command);
+                self.tick_inner();
+            }
+            Msg::BrowserRow { pane, rows } => {
+                if column_browser::apply_selection(&mut self.shell.state.music.browser, pane, &rows)
+                {
+                    self.tick_inner();
+                }
+            }
+            Msg::NameCountShuffle(row) => {
+                let commands = match self.shell.state.view {
+                    View::Artists => self.artists.shuffle(
+                        row,
+                        &mut self.shell.state,
+                        self.shell.library.as_ref(),
+                    ),
+                    View::Genres => {
+                        self.genres
+                            .shuffle(row, &mut self.shell.state, self.shell.library.as_ref())
+                    }
+                    _ => Vec::new(),
+                };
+                for command in commands {
+                    self.shell.dispatch(command);
+                }
+                self.tick_inner();
+            }
+            Msg::MostPlayed(window) => {
+                self.shell.state.most_played.window = window;
+                self.tick_inner();
+            }
+            Msg::HistoryClear => {
+                // The confirmation dialog is #376's; until then the button
+                // clears directly.
+                self.shell.dispatch(Command::HistoryClear);
                 self.tick_inner();
             }
             Msg::Shortcut(action) => {
