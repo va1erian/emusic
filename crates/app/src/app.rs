@@ -30,9 +30,16 @@ use crate::theme::app_theme;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
+use crate::views::status_bar::StatusBarView;
+use crate::views::top_bar::TopBarView;
 use crate::views::track_table::{self, ContextAction};
 use crate::waker::UiWaker;
-use crate::window::CAPTION_HEIGHT;
+use crate::window::{CAPTION_HEIGHT, WindowChrome};
+
+/// The transport band's height, in device-independent pixels.
+const TOP_BAR_HEIGHT: f32 = 40.0;
+/// The bottom status band's height, in device-independent pixels.
+const STATUS_BAR_HEIGHT: f32 = 24.0;
 
 /// Everything the window can ask the app to do.
 pub enum Msg {
@@ -63,6 +70,10 @@ pub enum Msg {
     Shortcut(ShortcutAction),
     /// A transport action the OS shell asked for (#320, #321).
     Shell(ShellAction),
+    /// Minimize the window (a portable window button, non-Windows chrome).
+    Minimize,
+    /// Toggle the window between maximized and restored (non-Windows chrome).
+    ToggleMaximize,
     /// Close the window and exit.
     Quit,
 }
@@ -78,8 +89,13 @@ pub struct Win32App {
     shell: Shell,
     ui: Ui<Msg>,
     navigator: NavigatorView,
+    top_bar: TopBarView,
+    status_bar: StatusBarView,
     music: MusicView,
     placeholder: Placeholder,
+    /// The window-level chrome (drag region, window buttons), attached by the
+    /// binary once the backend exists; `None` in headless runs.
+    chrome: Option<WindowChrome>,
     /// The OS shell integration. A [`NullShell`] until the binary attaches the
     /// real one (headless runs never do).
     shell_integration: Box<dyn ShellIntegration>,
@@ -87,6 +103,8 @@ pub struct Win32App {
     timer: Option<(TimerId, u32)>,
     /// View last applied, so a change re-lays the central area out.
     applied_view: View,
+    /// Panel visibility last applied, so toggling one re-lays the shell out.
+    applied_panels: emusic_ui::state::PanelVisibility,
     /// Theme and accent last applied to the window, so a change re-themes it.
     applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
     /// When the views were last fully synced.
@@ -115,6 +133,8 @@ impl Win32App {
         ui.set_theme(app_theme(look.0, look.1));
 
         let navigator = NavigatorView::new(ui);
+        let top_bar = TopBarView::new(ui);
+        let status_bar = StatusBarView::new(ui);
         let music = MusicView::new(ui);
         let placeholder = Placeholder::new(ui, "Music", "later issues");
 
@@ -137,15 +157,20 @@ impl Win32App {
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_view = shell.state.view;
+        let applied_panels = shell.state.panels;
         let mut app = Win32App {
             shell,
             ui: ui.clone(),
             navigator,
+            top_bar,
+            status_bar,
             music,
             placeholder,
+            chrome: None,
             shell_integration: Box::new(NullShell),
             timer: None,
             applied_view,
+            applied_panels,
             applied_look: look,
             last_full_sync: Instant::now(),
             context_row: None,
@@ -154,6 +179,15 @@ impl Win32App {
         app.relayout();
         app.tick_inner();
         app
+    }
+
+    /// Attaches the window chrome, so the top bar can drag the window and the
+    /// portable window buttons can act on it. Only the real binary calls this;
+    /// shot/tests leave no chrome in place.
+    pub fn attach_chrome(&mut self, chrome: WindowChrome) {
+        self.top_bar.apply_chrome(&chrome);
+        self.chrome = Some(chrome);
+        self.relayout();
     }
 
     /// Registers the OS shell integration (#320–#322). Only the real binary
@@ -205,8 +239,10 @@ impl Win32App {
     /// Pushes the current shell state into the views and reflects the theme.
     fn sync_views(&mut self, changes: Changes) {
         let view = self.shell.state.view;
-        if view != self.applied_view {
+        let panels = self.shell.state.panels;
+        if view != self.applied_view || panels != self.applied_panels {
             self.applied_view = view;
+            self.applied_panels = panels;
             self.apply_visibility();
             self.relayout();
         }
@@ -223,6 +259,20 @@ impl Win32App {
         }
         self.navigator.sync(view);
 
+        // The transport and status models are shell state, synced from the
+        // live player/library before the views read them.
+        let player = self.shell.player.as_ref();
+        self.shell.state.top_bar.sync(player);
+        self.top_bar
+            .sync(&self.shell.state.top_bar, &self.shell.state.search_query);
+        self.shell.state.status_bar.sync(
+            self.shell.state.search_result_count,
+            self.shell.library.as_ref(),
+            player,
+        );
+        let notice = self.shell.backend_notice();
+        self.status_bar.sync(&self.shell.state.status_bar, notice);
+
         let look = (self.shell.state.theme, self.shell.state.accent);
         if look != self.applied_look {
             self.applied_look = look;
@@ -238,6 +288,8 @@ impl Win32App {
         self.placeholder.set_visible(!music);
         self.navigator
             .set_visible(self.shell.state.panels.navigator);
+        self.status_bar
+            .set_visible(self.shell.state.panels.status_bar);
         if !music {
             self.placeholder.sync(&format!(
                 "{} view: not ported to xui_core yet (see the migration epic #369)",
@@ -246,13 +298,30 @@ impl Win32App {
         }
     }
 
-    /// Positions the navigator and the active central view from the client
-    /// area, below the reserved caption band.
-    fn relayout(&self) {
+    /// Positions the caption band, the transport band, the status bar and the
+    /// central area from the client rectangle.
+    fn relayout(&mut self) {
         let client = self.ui.client_rect();
         let dpi = self.ui.dpi();
-        let caption = dip(CAPTION_HEIGHT).to_px(dpi).value();
-        let top = client.top + caption;
+        let caption = self.caption_inset_px(dpi);
+        let top_bar = dip(TOP_BAR_HEIGHT).to_px(dpi).value();
+        let bar_top = client.top + caption;
+        let bar_bottom = bar_top + top_bar;
+        self.top_bar.set_bounds(
+            Rect::new(client.left, client.top, client.right, bar_top),
+            Rect::new(client.left, bar_top, client.right, bar_bottom),
+        );
+
+        let status = if self.shell.state.panels.status_bar {
+            dip(STATUS_BAR_HEIGHT).to_px(dpi).value()
+        } else {
+            0
+        };
+        let bottom = client.bottom - status;
+        self.status_bar
+            .set_bounds(Rect::new(client.left, bottom, client.right, client.bottom));
+
+        let top = bar_bottom;
         let navigator_width = if self.shell.state.panels.navigator {
             dip(self.shell.state.navigator_width).to_px(dpi).value()
         } else {
@@ -262,19 +331,23 @@ impl Win32App {
             client.left,
             top,
             client.left + navigator_width,
-            client.bottom,
+            bottom,
         ));
-        let central = Rect::new(
-            client.left + navigator_width,
-            top,
-            client.right,
-            client.bottom,
-        );
+        let central = Rect::new(client.left + navigator_width, top, client.right, bottom);
         if self.shell.state.view == View::Music {
             self.music.set_bounds(central);
         } else {
             self.placeholder.set_bounds(central);
         }
+    }
+
+    /// The caption band height in device pixels: the backend's reserved caption
+    /// inset when the chrome is attached, else the requested constant.
+    fn caption_inset_px(&self, dpi: u32) -> i32 {
+        self.chrome.as_ref().map_or_else(
+            || dip(CAPTION_HEIGHT).to_px(dpi).value(),
+            |chrome| chrome.caption_inset().to_px(dpi).value(),
+        )
     }
 
     /// Keeps a single repeating timer in step with the shell's `next_wake`.
@@ -383,6 +456,16 @@ impl App for Win32App {
                 if let Some(command) = shell_command(action) {
                     self.shell.dispatch(command);
                     self.tick_inner();
+                }
+            }
+            Msg::Minimize => {
+                if let Some(chrome) = &self.chrome {
+                    chrome.minimize();
+                }
+            }
+            Msg::ToggleMaximize => {
+                if let Some(chrome) = &self.chrome {
+                    chrome.toggle_maximize();
                 }
             }
             Msg::Quit => {
