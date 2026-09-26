@@ -11,6 +11,10 @@ pub enum ClientError {
     #[error("not paired with this server")]
     NotPaired,
 
+    /// The pairing code was wrong, expired or already used.
+    #[error("invalid or expired pairing code")]
+    PairingCode,
+
     /// The server rejected a request.
     #[error("server error ({status}): {message}")]
     Http {

@@ -1,10 +1,12 @@
 //! The blocking HTTP client for the server REST API.
 //!
-//! One [`RemoteClient`] per server; it owns a `ureq` agent with a bounded
-//! timeout so a stalled server cannot hang a worker thread. Non-2xx responses
-//! are parsed for the server's `{"error": ...}` body.
+//! One [`RemoteClient`] per server; it owns a `ureq` agent with bounded
+//! connect/response timeouts and a generous body budget, so a stalled server
+//! fails fast while a large download on a slow link can still finish. Non-2xx
+//! responses are parsed for the server's `{"error": ...}` body, and response
+//! bodies are capped to bound memory.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -13,6 +15,15 @@ use serde_json::json;
 use crate::config::{ServerEndpoint, normalize_url};
 use crate::error::{ClientError, Result};
 use crate::types::{ApiErrorBody, Health, PairResponse, SyncDelta, TokenResponse, TrackView};
+
+/// Maximum bytes buffered for a JSON response (sync/meta).
+const MAX_JSON_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum bytes buffered for a text response (song lengths).
+const MAX_TEXT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum bytes buffered for an error body.
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+/// Total budget for receiving a response body (large tracks on slow links).
+const BODY_BUDGET: Duration = Duration::from_secs(30 * 60);
 
 /// A client bound to one server base URL.
 #[derive(Debug, Clone)]
@@ -28,7 +39,10 @@ impl RemoteClient {
         let config = ureq::Agent::config_builder()
             // Read the status ourselves so we can surface the JSON error body.
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(60)))
+            .timeout_resolve(Some(Duration::from_secs(10)))
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_recv_response(Some(Duration::from_secs(30)))
+            .timeout_recv_body(Some(BODY_BUDGET))
             .build();
         Ok(Self {
             base,
@@ -65,10 +79,8 @@ impl RemoteClient {
                 message: error_message(response),
             });
         }
-        response
-            .into_body()
-            .read_json::<T>()
-            .map_err(|error| ClientError::Protocol(error.to_string()))
+        let bytes = read_capped(response, MAX_JSON_BYTES)?;
+        serde_json::from_slice(&bytes).map_err(|error| ClientError::Protocol(error.to_string()))
     }
 
     fn decode_text(response: http::Response<ureq::Body>) -> Result<String> {
@@ -82,10 +94,8 @@ impl RemoteClient {
                 message: error_message(response),
             });
         }
-        response
-            .into_body()
-            .read_to_string()
-            .map_err(|error| ClientError::Protocol(error.to_string()))
+        let bytes = read_capped(response, MAX_TEXT_BYTES)?;
+        String::from_utf8(bytes).map_err(|error| ClientError::Protocol(error.to_string()))
     }
 
     /// `GET /api/v1/health`.
@@ -115,6 +125,11 @@ impl RemoteClient {
             .post(self.url("/api/v1/auth/pair"))
             .send_json(&body)
             .map_err(map_transport)?;
+        // A 401 here means the pairing code was wrong or expired, not a
+        // revoked device.
+        if response.status().as_u16() == 401 {
+            return Err(ClientError::PairingCode);
+        }
         Self::decode(response)
     }
 
@@ -140,7 +155,7 @@ impl RemoteClient {
 
     /// `GET /api/v1/tracks/{id}/meta`.
     pub fn track_meta(&self, token: &str, track_id: &str) -> Result<TrackView> {
-        let url = self.url(&format!("/api/v1/tracks/{track_id}/meta"));
+        let url = self.url(&format!("/api/v1/tracks/{}/meta", encode_segment(track_id)));
         let response = Self::bearer(self.agent.get(url), token)
             .call()
             .map_err(map_transport)?;
@@ -157,7 +172,10 @@ impl RemoteClient {
 
     /// Streams a track's bytes into `writer`, returning the byte count.
     pub fn download_to(&self, token: &str, track_id: &str, writer: &mut impl Write) -> Result<u64> {
-        let url = self.url(&format!("/api/v1/tracks/{track_id}/stream"));
+        let url = self.url(&format!(
+            "/api/v1/tracks/{}/stream",
+            encode_segment(track_id)
+        ));
         let response = Self::bearer(self.agent.get(url), token)
             .call()
             .map_err(map_transport)?;
@@ -177,13 +195,46 @@ impl RemoteClient {
     }
 }
 
-/// Extracts the server's error message, falling back to the status text.
-fn error_message(mut response: http::Response<ureq::Body>) -> String {
-    let status = response.status();
-    match response.body_mut().read_json::<ApiErrorBody>() {
-        Ok(body) => body.error,
-        Err(_) => format!("HTTP {status}"),
+/// Reads at most `max` bytes of a response body.
+fn read_capped(response: http::Response<ureq::Body>, max: usize) -> Result<Vec<u8>> {
+    let reader = response.into_body().into_reader();
+    let mut buffer = Vec::new();
+    let read = reader
+        .take(max as u64 + 1)
+        .read_to_end(&mut buffer)
+        .map_err(|error| ClientError::Network(error.to_string()))?;
+    if read > max {
+        return Err(ClientError::Protocol(format!(
+            "server response exceeds {max} bytes"
+        )));
     }
+    Ok(buffer)
+}
+
+/// Extracts the server's error message, falling back to the status text.
+fn error_message(response: http::Response<ureq::Body>) -> String {
+    let status = response.status();
+    match read_capped(response, MAX_ERROR_BYTES)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<ApiErrorBody>(&bytes).ok())
+    {
+        Some(body) => body.error,
+        None => format!("HTTP {status}"),
+    }
+}
+
+/// Percent-encodes a value for use as a single URL path segment.
+fn encode_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push_str(&format!("{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 /// Maps a transport-level `ureq` error.
@@ -193,5 +244,17 @@ fn map_transport(error: ureq::Error) -> ClientError {
             ClientError::Network("cannot reach the server".into())
         }
         other => ClientError::Network(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encodes_path_segments() {
+        assert_eq!(encode_segment("abc123"), "abc123");
+        assert_eq!(encode_segment("a/b"), "a%2Fb");
+        assert_eq!(encode_segment("a b#c"), "a%20b%23c");
     }
 }

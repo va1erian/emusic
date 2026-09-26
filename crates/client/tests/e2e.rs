@@ -4,6 +4,7 @@
 use std::f64::consts::PI;
 use std::net::{SocketAddr, TcpListener};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use emusic_client::auth::{
@@ -251,4 +252,85 @@ fn revoked_device_is_rejected() {
         .sync(&pairing.credentials.token, 0)
         .expect_err("must fail");
     assert!(matches!(error, ClientError::Unauthorized));
+}
+
+#[test]
+fn refresh_proof_bound_to_another_token_is_rejected() {
+    let server = start_server();
+    let pairing = pair(&server);
+    let proof = issue_refresh_proof(
+        &pairing.credentials.secret_key().expect("secret"),
+        &token_fingerprint("a different token"),
+        Duration::from_secs(120),
+        Duration::from_secs(30),
+    )
+    .expect("proof");
+    let error = pairing
+        .client
+        .refresh(&pairing.credentials.token, &proof)
+        .expect_err("must fail");
+    assert!(matches!(error, ClientError::Unauthorized));
+}
+
+#[test]
+fn cached_file_is_reused_without_contacting_the_server() {
+    let server = start_server();
+    let pairing = pair(&server);
+    let delta = pairing
+        .client
+        .sync(&pairing.credentials.token, 0)
+        .expect("sync");
+    let track = &delta.tracks[0];
+
+    let dir = tempfile::tempdir().expect("cache dir");
+    let cache = TrackCache::with_root(dir.path().to_path_buf());
+    let path = cache.path_for(&pairing.endpoint.id, track).expect("path");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, vec![0u8; track.file_size as usize]).unwrap();
+
+    // A client pointing at a dead port proves no network call is made.
+    let dead = RemoteClient::new("http://127.0.0.1:1").expect("client");
+    let reused = cache
+        .ensure(&dead, "unused", &pairing.endpoint.id, track)
+        .expect("reused");
+    assert_eq!(reused, path);
+}
+
+#[test]
+fn concurrent_cache_fetches_do_not_corrupt_the_file() {
+    let server = start_server();
+    let pairing = pair(&server);
+    let delta = pairing
+        .client
+        .sync(&pairing.credentials.token, 0)
+        .expect("sync");
+    let track = Arc::new(delta.tracks[0].clone());
+
+    let dir = tempfile::tempdir().expect("cache dir");
+    let cache = Arc::new(TrackCache::with_root(dir.path().to_path_buf()));
+    let client = Arc::new(pairing.client.clone());
+    let endpoint = Arc::new(pairing.endpoint.clone());
+    let token = Arc::new(pairing.credentials.token.clone());
+
+    let handles: Vec<_> = (0..4)
+        .map(|_| {
+            let cache = Arc::clone(&cache);
+            let client = Arc::clone(&client);
+            let endpoint = Arc::clone(&endpoint);
+            let token = Arc::clone(&token);
+            let track = Arc::clone(&track);
+            std::thread::spawn(move || {
+                cache
+                    .ensure(&client, &token, &endpoint.id, &track)
+                    .expect("ensure")
+            })
+        })
+        .collect();
+
+    let mut paths = Vec::new();
+    for handle in handles {
+        paths.push(handle.join().expect("join"));
+    }
+    assert!(paths.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(std::fs::metadata(&paths[0]).unwrap().len(), track.file_size);
 }
