@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 pub struct TrackView {
     /// Opaque track identifier.
     pub id: String,
+    /// The file's name (final path component), for display fallback.
+    #[serde(default)]
+    pub filename: Option<String>,
     /// Lowercase format label (`flac`, `mp3`, `sid`, `xm`, `mid`, ...).
     pub format: String,
     /// Either `stream` or `module`.
@@ -61,11 +64,16 @@ fn one() -> u32 {
 }
 
 impl TrackView {
-    /// Title to display, falling back to the file name derived from the id.
+    /// Title to display: the tagged title, else the file name, else the id.
     pub fn display_title(&self) -> String {
         self.title
             .as_deref()
             .filter(|title| !title.trim().is_empty())
+            .or_else(|| {
+                self.filename
+                    .as_deref()
+                    .filter(|name| !name.trim().is_empty())
+            })
             .unwrap_or(&self.id)
             .to_string()
     }

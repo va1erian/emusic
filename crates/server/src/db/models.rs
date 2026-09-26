@@ -138,11 +138,15 @@ pub struct SyncDelta {
 }
 
 /// Track metadata as sent to clients: everything except the internal
-/// `root_index` and `relative_path`, which are not disclosed.
+/// `root_index` and `relative_path`, which are not disclosed. `filename` is
+/// the path's final component only, so clients can show it when a file has no
+/// title tag without revealing the library layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrackView {
     /// Opaque track identifier.
     pub id: String,
+    /// The file's name (final path component), for display fallback.
+    pub filename: String,
     /// Lowercase format label.
     pub format: String,
     /// Either `stream` or `module`.
@@ -190,6 +194,7 @@ impl From<&TrackRecord> for TrackView {
     fn from(track: &TrackRecord) -> Self {
         Self {
             id: track.id.clone(),
+            filename: file_name(&track.relative_path),
             format: track.format.clone(),
             kind: track.kind.clone(),
             specialized: is_specialized_format(&track.format),
@@ -254,6 +259,15 @@ fn is_specialized_format(format: &str) -> bool {
     )
 }
 
+/// The final component of a stored relative path (forward slashes).
+fn file_name(relative_path: &str) -> String {
+    relative_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(relative_path)
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +279,12 @@ mod tests {
         assert!(is_specialized_format("mid"));
         assert!(!is_specialized_format("flac"));
         assert!(!is_specialized_format("mp3"));
+    }
+
+    #[test]
+    fn file_name_is_the_last_component() {
+        assert_eq!(file_name("Album/Disc 1/01 - Song.flac"), "01 - Song.flac");
+        assert_eq!(file_name("song.mp3"), "song.mp3");
+        assert_eq!(file_name(""), "");
     }
 }

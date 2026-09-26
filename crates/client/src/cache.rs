@@ -204,6 +204,7 @@ mod tests {
     fn track(id: &str, format: &str) -> TrackView {
         TrackView {
             id: id.into(),
+            filename: None,
             format: format.into(),
             kind: "stream".into(),
             specialized: false,
