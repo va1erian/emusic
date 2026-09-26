@@ -53,7 +53,7 @@ fn from_store_builds_track_info() {
         watch: false,
     };
 
-    let snapshot = Snapshot::from_store(&store, std::slice::from_ref(&folder)).unwrap();
+    let snapshot = Snapshot::from_store(&store, std::slice::from_ref(&folder), None).unwrap();
     assert_eq!(snapshot.tracks.len(), 1);
     let info = &snapshot.tracks[0];
     assert_eq!(info.id, 1);
@@ -75,7 +75,7 @@ fn from_store_builds_dir_tree_with_counts() {
     at_root.path = PathBuf::from(r"C:\music\2.flac");
     store.upsert_tracks(&mut [in_album, at_root]).unwrap();
 
-    let snapshot = Snapshot::from_store(&store, &[]).unwrap();
+    let snapshot = Snapshot::from_store(&store, &[], None).unwrap();
     assert_eq!(snapshot.dirs.len(), 1);
     let root = &snapshot.dirs[0];
     let music = &root.children[0];
@@ -106,7 +106,7 @@ fn from_store_maps_history_and_most_played_windows() {
         ))
         .unwrap();
 
-    let mut snapshot = Snapshot::from_store(&store, &[]).unwrap();
+    let mut snapshot = Snapshot::from_store(&store, &[], None).unwrap();
 
     // History: newest first, both the completed play and the skip, with the
     // played track resolved for double-click playback.
@@ -209,7 +209,7 @@ fn from_store_carries_the_starred_flag() {
         .unwrap();
     store.set_starred(track.id, true).unwrap();
 
-    let snapshot = Snapshot::from_store(&store, &[]).unwrap();
+    let snapshot = Snapshot::from_store(&store, &[], None).unwrap();
     assert!(snapshot.tracks[0].starred);
 }
 

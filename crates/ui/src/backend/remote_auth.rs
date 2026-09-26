@@ -4,6 +4,7 @@
 //! token for a server; this refreshes it with the device-signed proof shortly
 //! before it expires and persists the result.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use emusic_client::auth::{issue_refresh_proof, token_fingerprint};
@@ -11,6 +12,10 @@ use emusic_client::{CredentialStore, RemoteClient};
 
 /// How close to expiry a token is refreshed.
 pub(crate) const REFRESH_MARGIN_SECS: i64 = 24 * 3600;
+
+/// Serialises credential load/refresh/save across the sync worker and the
+/// playback workers, so two threads cannot race the credential file.
+static REFRESH_LOCK: Mutex<()> = Mutex::new(());
 
 /// Loads the stored token for `server_id`, refreshing it if it is close to
 /// expiry. Errors are strings so callers can surface them as status/playback
@@ -20,6 +25,9 @@ pub(crate) fn ensure_token(
     credentials: &CredentialStore,
     server_id: &str,
 ) -> Result<String, String> {
+    let _guard = REFRESH_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut creds = credentials
         .load(server_id)
         .map_err(|error| error.to_string())?

@@ -246,6 +246,7 @@ fn scan_does_not_hold_the_shared_store_lock() {
         handle,
         Vec::new(),
         None,
+        None,
     );
 
     let mut scanning = false;
