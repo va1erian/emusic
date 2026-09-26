@@ -344,6 +344,14 @@ impl Win32App {
         starred.set_visible(view == View::Starred);
         history.set_visible(view == View::History);
         now_playing_central.set_visible(view == View::NowPlaying);
+        // Panel visibility is otherwise only applied by `tick` when it
+        // *changes*, so a panel disabled in the saved config must be hidden
+        // here or the first tick would skip it and the panel would stay on.
+        navigator.set_visible(shell.state.panels.navigator);
+        right_panel.set_visible(shell.state.panels.right_panel);
+        right_panel
+            .set_queue_visible(shell.state.panels.right_panel && shell.state.panels.next_tracks);
+        status.set_visible(shell.state.panels.status_bar);
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
@@ -767,6 +775,8 @@ impl Win32App {
         if panels != self.applied_panels {
             self.navigator.set_visible(panels.navigator);
             self.right_panel.set_visible(panels.right_panel);
+            self.right_panel
+                .set_queue_visible(panels.right_panel && panels.next_tracks);
             self.status.set_visible(panels.status_bar);
             ui.relayout();
             self.applied_panels = panels;

@@ -43,6 +43,7 @@ impl CentralNowPlayingView {
         let pair = WidgetPair::new(
             ui,
             waker,
+            false,
             |row| Some(Msg::CentralQueueJump(row)),
             |row| Some(Msg::CentralQueueContext(row)),
             || Msg::CentralQueueRemove,

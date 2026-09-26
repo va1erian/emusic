@@ -74,6 +74,7 @@ fn non_default_config() -> Config {
         panels: PanelVisibility {
             navigator: false,
             right_panel: true,
+            next_tracks: false,
             status_bar: false,
         },
         column_browser_visible: false,

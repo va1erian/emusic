@@ -65,6 +65,7 @@ impl NowPlayingView {
         let pair = WidgetPair::new(
             ui,
             waker,
+            true,
             |row| Some(Msg::QueueJump(row)),
             |row| Some(Msg::QueueContext(row)),
             || Msg::QueueRemove,
@@ -113,6 +114,12 @@ impl NowPlayingView {
     /// Shows or hides the whole panel (both native controls).
     pub fn set_visible(&self, visible: bool) {
         self.pair.set_visible(visible);
+    }
+
+    /// Shows or hides just the upcoming "next tracks" queue list, leaving the
+    /// summary and visualization in place.
+    pub fn set_queue_visible(&self, visible: bool) {
+        self.pair.set_queue_visible(visible);
     }
 
     /// Applies the current appearance metrics and zebra flag (#309).
