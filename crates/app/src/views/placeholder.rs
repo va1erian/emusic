@@ -1,10 +1,12 @@
 //! A documented placeholder for a view that is not ported yet.
 //!
-//! #370 establishes the portable shell and ports the Music view + track table
-//! as the reference; the other central views are owned by later issues
-//! (#371 custom-painted views, #373 navigator, #374 album grid, #375 top bar,
-//! #376 dialogs). Until then each draws a single label naming the view, so the
-//! shell stays green and every view has a stable place to grow into.
+//! #370 established the portable shell and ported the Music view + track table;
+//! #373 the navigator and Folders; #372 the list views (Artists, Genres,
+//! Starred, Most Played, History, column browser). The remaining central views
+//! are owned by later issues (#371 custom-painted views, #374 album grid,
+//! #376 dialogs/settings). Until then each draws a single label naming the
+//! view, so the shell stays green and every view has a stable place to grow
+//! into.
 
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
