@@ -93,6 +93,7 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
 
     let library = LibraryBackend::new(bass.clone(), waker);
     let registry = library.remote_registry();
+    let updates = library.updates_handle();
     let play_message_tx = library.play_message_tx();
 
     let player: Box<dyn PlayerApi> = match bass {
@@ -106,9 +107,13 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
                 emusic_client::TrackCache::new(),
                 emusic_client::CredentialStore::new(),
             ) {
-                (Ok(cache), Ok(credentials)) => {
-                    Arc::new(RemoteAudioBackend::new(inner, cache, credentials, registry))
-                }
+                (Ok(cache), Ok(credentials)) => Arc::new(RemoteAudioBackend::new(
+                    inner,
+                    cache,
+                    credentials,
+                    registry,
+                    updates,
+                )),
                 _ => inner,
             };
             let player =

@@ -53,7 +53,7 @@ impl Updates {
     }
 
     /// Sends `update` and wakes the UI. Mirrors [`Sender::send`].
-    fn send(&self, update: Update) -> Result<(), std::sync::mpsc::SendError<Update>> {
+    pub(crate) fn send(&self, update: Update) -> Result<(), std::sync::mpsc::SendError<Update>> {
         let result = self.tx.send(update);
         if result.is_ok() {
             self.waker.wake();
@@ -69,6 +69,9 @@ pub(crate) enum Update {
     Snapshot(Box<Snapshot>),
     /// A progress line for the status bar; empty clears it.
     Status(String),
+    /// The remote network indicator (#391): a status line kept separately from
+    /// the scan/auto-tag progress so a scan finishing cannot clear it.
+    Network(Option<String>),
     /// A scan with this id finished; clears the scanning state if it is still
     /// the current one (an older scan's completion is ignored).
     ScanFinished(u64),
@@ -97,6 +100,8 @@ pub struct LibraryBackend {
     stats_recorder: StatsRecorder,
     watcher: Option<Watcher>,
     status: Option<String>,
+    /// Remote network indicator text (#391), independent of `status`.
+    network: Option<String>,
     loader_started: bool,
     /// Id handed to the next scan; makes stale `ScanFinished` messages
     /// detectable.
@@ -190,6 +195,7 @@ impl LibraryBackend {
             stats_recorder,
             watcher,
             status: None,
+            network: None,
             loader_started: false,
             next_scan_id: 0,
             active_scan: None,
@@ -220,6 +226,12 @@ impl LibraryBackend {
     /// remote cache path can be resolved to its server URL (#391).
     pub(crate) fn remote_registry(&self) -> crate::remote::RemoteRegistry {
         self.remote_registry.clone()
+    }
+
+    /// A handle the playback decorator can use to post status lines (the
+    /// network indicator) to the same channel the scanner uses (#391).
+    pub(crate) fn updates_handle(&self) -> Updates {
+        self.update_tx.clone()
     }
 
     /// The path filter applied when building snapshots in server-only mode:
@@ -416,6 +428,9 @@ impl LibraryDataSource for LibraryBackend {
                 Update::Status(text) => {
                     self.status = if text.is_empty() { None } else { Some(text) };
                 }
+                Update::Network(text) => {
+                    self.network = text.filter(|text| !text.is_empty());
+                }
                 Update::ScanFinished(id) => {
                     if self.active_scan.as_ref().is_some_and(|scan| scan.id == id) {
                         self.active_scan = None;
@@ -531,6 +546,10 @@ impl LibraryDataSource for LibraryBackend {
 
     fn remote_status(&self) -> Option<String> {
         self.remote.status()
+    }
+
+    fn network_activity(&self) -> Option<String> {
+        self.network.clone()
     }
 
     fn rescan(&mut self) {

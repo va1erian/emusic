@@ -15,6 +15,7 @@ use emusic_player::PlayerError;
 use emusic_player::backend::{AudioBackend, BackendChannel};
 use tracing::warn;
 
+use crate::backend::library::{Update, Updates};
 use crate::remote::RemoteRegistry;
 
 /// Wraps another [`AudioBackend`], fetching remote cache paths first.
@@ -23,6 +24,8 @@ pub(crate) struct RemoteAudioBackend {
     cache: TrackCache,
     credentials: CredentialStore,
     registry: RemoteRegistry,
+    /// Posts the network-indicator status line while a track is fetched.
+    updates: Updates,
 }
 
 impl RemoteAudioBackend {
@@ -33,12 +36,14 @@ impl RemoteAudioBackend {
         cache: TrackCache,
         credentials: CredentialStore,
         registry: RemoteRegistry,
+        updates: Updates,
     ) -> Self {
         Self {
             inner,
             cache,
             credentials,
             registry,
+            updates,
         }
     }
 
@@ -58,16 +63,38 @@ impl RemoteAudioBackend {
         let view = client
             .track_meta(&token, &track_id)
             .map_err(|error| error.to_string())?;
-        let destination = self
+        // Network indicator: shown in the status bar while the file downloads,
+        // then left as the current track's source until the next track opens.
+        let _ = self.updates.send(Update::Network(Some(format!(
+            "⇅ Streaming \"{}\" from {}…",
+            view.display_title(),
+            server.name
+        ))));
+        let result = self
             .cache
             .ensure(&client, &token, &server_id, &view)
-            .map_err(|error| error.to_string())?;
-        Ok(Some(destination))
+            .map_err(|error| error.to_string());
+        match result {
+            Ok(destination) => {
+                let _ = self.updates.send(Update::Network(Some(format!(
+                    "⇅ \"{}\" from {}",
+                    view.display_title(),
+                    server.name
+                ))));
+                Ok(Some(destination))
+            }
+            Err(message) => {
+                let _ = self.updates.send(Update::Network(None));
+                Err(message)
+            }
+        }
     }
 }
 
 impl AudioBackend for RemoteAudioBackend {
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError> {
+        // Clear any previous track's source indicator before this one.
+        let _ = self.updates.send(Update::Network(None));
         match self.materialise(path) {
             Ok(Some(local)) => self.inner.open(&local),
             Ok(None) => self.inner.open(path),
