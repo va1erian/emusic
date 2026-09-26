@@ -246,7 +246,13 @@ impl AudioBackend for BassBackend {
         // oscilloscope; `get_data_fft` works regardless.
         let channel = if is_tracker_module(path) {
             self.clear_active_midi_channel();
-            BassChannel::Music(self.bass.open_music(path, MusicFlags::FLOAT, 0)?)
+            // PRESCAN computes an accurate length and seek table, without
+            // which BASS can neither report a module's duration nor seek it
+            // (the transport bar's total and slider would stay dead, #362).
+            // POSRESET stops sounding notes when a seek moves the position,
+            // so a jump doesn't leave a note hanging.
+            let flags = MusicFlags::FLOAT | MusicFlags::PRESCAN | MusicFlags::POSRESET;
+            BassChannel::Music(self.bass.open_music(path, flags, 0)?)
         } else if is_midi_file(path) {
             let stream = self.bass.open_stream(path, StreamFlags::FLOAT)?;
             self.register_midi_channel(stream.handle());
