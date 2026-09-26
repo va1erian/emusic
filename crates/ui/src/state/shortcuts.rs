@@ -8,7 +8,8 @@
 
 use std::time::Duration;
 
-use super::Command;
+use super::projectm::PresetRequest;
+use super::{Command, VizCommand};
 
 /// How far [`ShortcutAction::SeekBackward`]/[`ShortcutAction::SeekForward`]
 /// move the playhead per press, in seconds.
@@ -39,6 +40,14 @@ pub enum ShortcutAction {
     Search,
     /// Rescan every enabled library folder.
     Rescan,
+    /// Switch the visualization to the next projectM preset.
+    PresetNext,
+    /// Switch the visualization to the previous projectM preset.
+    PresetPrevious,
+    /// Switch the visualization to a random projectM preset.
+    PresetRandom,
+    /// Lock or unlock the visualization's current projectM preset.
+    PresetLock,
 }
 
 /// A physical key a shortcut binds to, in the toolkit-agnostic vocabulary.
@@ -61,6 +70,10 @@ pub enum ShortcutKey {
     F5,
     /// The `F` letter key.
     F,
+    /// The `R` letter key.
+    R,
+    /// The `L` letter key.
+    L,
 }
 
 impl ShortcutKey {
@@ -74,6 +87,8 @@ impl ShortcutKey {
             ShortcutKey::Down => "Down",
             ShortcutKey::F5 => "F5",
             ShortcutKey::F => "F",
+            ShortcutKey::R => "R",
+            ShortcutKey::L => "L",
         }
     }
 }
@@ -125,7 +140,8 @@ impl Shortcut {
 /// volume clamps to `[0, 1]`.
 ///
 /// [`ShortcutAction::Search`] returns `None`: focusing the top-bar search box
-/// is frontend state, not a shell command.
+/// is frontend state, not a shell command. Every other action (transport,
+/// library and projectM preset) maps onto a [`Command`].
 pub fn shortcut_command(
     action: ShortcutAction,
     position: Duration,
@@ -153,6 +169,14 @@ pub fn shortcut_command(
             (volume - VOLUME_STEP).clamp(0.0, 1.0),
         )),
         ShortcutAction::Rescan => Some(Command::LibraryRescan),
+        ShortcutAction::PresetNext => Some(Command::Viz(VizCommand::Preset(PresetRequest::Next))),
+        ShortcutAction::PresetPrevious => {
+            Some(Command::Viz(VizCommand::Preset(PresetRequest::Previous)))
+        }
+        ShortcutAction::PresetRandom => {
+            Some(Command::Viz(VizCommand::Preset(PresetRequest::Random)))
+        }
+        ShortcutAction::PresetLock => Some(Command::Viz(VizCommand::TogglePresetLock)),
         ShortcutAction::Search => None,
     }
 }
@@ -245,6 +269,38 @@ pub const SHORTCUTS: &[Shortcut] = &[
         alt: false,
         description: "Rescan the library",
     },
+    Shortcut {
+        action: ShortcutAction::PresetNext,
+        key: ShortcutKey::Right,
+        ctrl: true,
+        shift: false,
+        alt: true,
+        description: "Next preset",
+    },
+    Shortcut {
+        action: ShortcutAction::PresetPrevious,
+        key: ShortcutKey::Left,
+        ctrl: true,
+        shift: false,
+        alt: true,
+        description: "Previous preset",
+    },
+    Shortcut {
+        action: ShortcutAction::PresetRandom,
+        key: ShortcutKey::R,
+        ctrl: true,
+        shift: false,
+        alt: true,
+        description: "Random preset",
+    },
+    Shortcut {
+        action: ShortcutAction::PresetLock,
+        key: ShortcutKey::L,
+        ctrl: true,
+        shift: false,
+        alt: true,
+        description: "Lock the current preset",
+    },
 ];
 
 #[cfg(test)]
@@ -263,6 +319,10 @@ mod tests {
             ShortcutAction::VolumeDown,
             ShortcutAction::Search,
             ShortcutAction::Rescan,
+            ShortcutAction::PresetNext,
+            ShortcutAction::PresetPrevious,
+            ShortcutAction::PresetRandom,
+            ShortcutAction::PresetLock,
         ] {
             let count = SHORTCUTS
                 .iter()
@@ -289,6 +349,27 @@ mod tests {
             none(ShortcutAction::Search),
             None,
             "Search focuses the frontend's search box, not a command"
+        );
+    }
+
+    #[test]
+    fn preset_actions_map_to_their_commands() {
+        let none = |action| shortcut_command(action, Duration::ZERO, None, 0.5);
+        assert_eq!(
+            none(ShortcutAction::PresetNext),
+            Some(Command::Viz(VizCommand::Preset(PresetRequest::Next)))
+        );
+        assert_eq!(
+            none(ShortcutAction::PresetPrevious),
+            Some(Command::Viz(VizCommand::Preset(PresetRequest::Previous)))
+        );
+        assert_eq!(
+            none(ShortcutAction::PresetRandom),
+            Some(Command::Viz(VizCommand::Preset(PresetRequest::Random)))
+        );
+        assert_eq!(
+            none(ShortcutAction::PresetLock),
+            Some(Command::Viz(VizCommand::TogglePresetLock))
         );
     }
 
@@ -351,5 +432,12 @@ mod tests {
         assert_eq!(find(ShortcutAction::VolumeUp).display(), "Ctrl+Up");
         assert_eq!(find(ShortcutAction::Search).display(), "Ctrl+F");
         assert_eq!(find(ShortcutAction::Rescan).display(), "F5");
+        assert_eq!(find(ShortcutAction::PresetNext).display(), "Ctrl+Alt+Right");
+        assert_eq!(
+            find(ShortcutAction::PresetPrevious).display(),
+            "Ctrl+Alt+Left"
+        );
+        assert_eq!(find(ShortcutAction::PresetRandom).display(), "Ctrl+Alt+R");
+        assert_eq!(find(ShortcutAction::PresetLock).display(), "Ctrl+Alt+L");
     }
 }
