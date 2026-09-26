@@ -70,26 +70,26 @@ pub async fn stream_track(
         && let Some((start, end)) = parse_range_header(range_header, file_size)
     {
         let chunk_size = end - start + 1;
-            file.seek(SeekFrom::Start(start))
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        file.seek(SeekFrom::Start(start))
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-            let mut buffer = vec![0u8; chunk_size as usize];
-            use std::io::Read;
-            file.read_exact(&mut buffer)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let mut buffer = vec![0u8; chunk_size as usize];
+        use std::io::Read;
+        file.read_exact(&mut buffer)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-            let content_range = format!("bytes {start}-{end}/{file_size}");
-            let response = (
-                StatusCode::PARTIAL_CONTENT,
-                [
-                    (header::CONTENT_TYPE, mime_type),
-                    (header::ACCEPT_RANGES, "bytes".to_string()),
-                    (header::CONTENT_RANGE, content_range),
-                    (header::CONTENT_LENGTH, chunk_size.to_string()),
-                ],
-                buffer,
-            )
-                .into_response();
+        let content_range = format!("bytes {start}-{end}/{file_size}");
+        let response = (
+            StatusCode::PARTIAL_CONTENT,
+            [
+                (header::CONTENT_TYPE, mime_type),
+                (header::ACCEPT_RANGES, "bytes".to_string()),
+                (header::CONTENT_RANGE, content_range),
+                (header::CONTENT_LENGTH, chunk_size.to_string()),
+            ],
+            buffer,
+        )
+            .into_response();
 
         return Ok(response);
     }

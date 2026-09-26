@@ -32,6 +32,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 /// Grants the process `pid` the right to call `SetForegroundWindow`, even
 /// though it isn't currently the foreground process.
+///
+/// Used by the primary instance right after accepting an IPC connection, so
+/// the (briefly foreground) secondary launcher can hand control back to it.
 #[cfg(windows)]
 pub fn allow_set_foreground_window(pid: u32) -> io::Result<()> {
     // SAFETY: `AllowSetForegroundWindow` only reads `pid`; there is no
@@ -46,7 +49,8 @@ pub fn allow_set_foreground_window(_pid: u32) -> io::Result<()> {
 }
 
 /// Returns the process id of the server end of a connected named-pipe
-/// client handle.
+/// client handle (anything implementing [`AsHandle`], e.g. an
+/// `interprocess` `PipeStream`).
 #[cfg(windows)]
 pub fn named_pipe_server_process_id(pipe: &impl AsHandle) -> io::Result<u32> {
     let raw = pipe.as_handle().as_raw_handle();
@@ -107,6 +111,8 @@ pub fn is_remote_drive(path: &std::path::Path) -> bool {
         std::path::Prefix::Disk(drive) | std::path::Prefix::VerbatimDisk(drive) => {
             let root = format!("{}:\\", drive as char);
             let root = windows::core::HSTRING::from(&*root);
+            // SAFETY: `GetDriveTypeW` only reads its argument; `root` is a
+            // valid HSTRING that outlives the call.
             let drive_type = unsafe { GetDriveTypeW(&root) };
             drive_type == DRIVE_REMOTE
         }
@@ -115,13 +121,21 @@ pub fn is_remote_drive(path: &std::path::Path) -> bool {
 }
 
 /// Opens `target` — a file, folder or URI such as `ms-settings:...` — with
-/// whatever handler the shell has registered for it.
+/// whatever handler the shell has registered for it, exactly as double-
+/// clicking it in Explorer would.
+///
+/// `explorer.exe` cannot launch a `ms-settings:` URI: it treats the argument
+/// as a filesystem path, fails to resolve it and opens Documents instead. The
+/// URI therefore has to go through `ShellExecuteW`.
 #[cfg(windows)]
 pub fn shell_open(target: &str) -> io::Result<()> {
     let operation = windows::core::HSTRING::from("open");
     let file = windows::core::HSTRING::from(target);
     // SAFETY: `ShellExecuteW` only reads the two valid, null-terminated
-    // HSTRINGs for the duration of the call.
+    // HSTRINGs for the duration of the call; a null `hwnd` is the documented
+    // way to open a URI without an owning window. The returned `HINSTANCE` is
+    // not an owned handle for this call — only its value matters, and any
+    // value <= 32 is a documented error code rather than a handle.
     let result = unsafe {
         ShellExecuteW(
             HWND::default(),
@@ -149,10 +163,47 @@ pub fn shell_open(_target: &str) -> io::Result<()> {
     ))
 }
 
+/// The window class name of the window that currently has keyboard focus, if
+/// any.
+///
+/// Returns `None` when no window has focus (e.g. the app is not foreground) or
+/// the class name cannot be read. The class name is the raw Win32 name — e.g.
+/// `"Edit"` for a text field — not a friendly label.
+#[cfg(windows)]
+pub fn focused_window_class() -> Option<String> {
+    // SAFETY: `GetFocus` takes no arguments and only reads the calling
+    // thread's focus window; a null result is its documented "no focus" case.
+    let hwnd = unsafe { GetFocus() };
+    if hwnd.0.is_null() {
+        return None;
+    }
+    let mut buffer = [0u16; 256];
+    // SAFETY: `buffer` is a valid, writable slice of `buffer.len()` UTF-16
+    // code units, and `hwnd` is a live window handle for the duration of the
+    // call; the returned length is at most `buffer.len()`.
+    let length = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if length <= 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..length as usize]))
+}
+
 #[cfg(not(windows))]
 #[allow(dead_code)]
 pub fn focused_window_class() -> Option<String> {
     None
+}
+
+/// Tells Explorer that file associations changed, so icons and "Open with"
+/// menus refresh without a logoff/logon.
+#[cfg(windows)]
+pub fn notify_assoc_changed() {
+    // SAFETY: `SHChangeNotify` with `SHCNE_ASSOCCHANGED`/`SHCNF_IDLIST`
+    // ignores `dwItem1`/`dwItem2`; passing `None` for both is the
+    // documented usage for a global association-change notification.
+    unsafe {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None);
+    }
 }
 
 #[cfg(not(windows))]

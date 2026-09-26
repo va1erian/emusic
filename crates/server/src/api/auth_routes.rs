@@ -32,7 +32,10 @@ pub async fn pair(
         state.config.security.max_pairing_attempts_per_min,
         std::time::Duration::from_secs(60),
     ) {
-        return Err((StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded for pairing attempts".to_string()));
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "Rate limit exceeded for pairing attempts".to_string(),
+        ));
     }
 
     let valid = state
