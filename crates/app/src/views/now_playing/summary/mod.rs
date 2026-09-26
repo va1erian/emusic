@@ -17,10 +17,10 @@ use std::rc::Rc;
 use emusic_ui::library_api::TrackInfo;
 use emusic_ui::state::Metrics;
 use emusic_ui::views::now_playing::{ModuleView, NowPlayingView as Model};
-use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, RectF, TextSystem};
-use win32ui::gdi::Canvas;
-use win32ui::prelude::*;
-use win32ui::{Rect, RgbaImage, Size, Theme};
+use xui::d2d::{D2dCanvas, Font, FontSpec, ImageId, RectF, TextSystem};
+use xui::gdi::Canvas;
+use xui::prelude::*;
+use xui::{Rect, RgbaImage, Size, Theme};
 
 use super::PANEL_WIDTH;
 use input::Hit;

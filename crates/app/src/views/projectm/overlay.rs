@@ -4,12 +4,12 @@
 //! top-right that pop the visualization out, take it fullscreen or hide it.
 //!
 //! The buttons are owner-drawn while the surface uses its GDI fallback. A
-//! [`Renderer::Gl`](win32ui::Renderer::Gl) surface cannot show native siblings
+//! [`Renderer::Gl`](xui::Renderer::Gl) surface cannot show native siblings
 //! and the app forbids `unsafe`, so the GL overlay is blocked on the upstream
-//! win32ui issue; once it lands, this layout and hit-testing are reused for it.
+//! xui issue; once it lands, this layout and hit-testing are reused for it.
 
-use win32ui::gdi::{Canvas, Font, TextFormat};
-use win32ui::{Rect, Theme, dip};
+use xui::gdi::{Canvas, Font, TextFormat};
+use xui::{Rect, Theme, dip};
 
 /// What an overlay button asks the shell to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

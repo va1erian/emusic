@@ -12,7 +12,7 @@ use emusic_ui::config::Config;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::mock::{MockLibrary, MockPlayer};
 use emusic_ui::waker::WakerSlot;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 /// Milliseconds after which the watchdog gives up on the app.
 const WATCHDOG_MS: u32 = 5000;
@@ -24,7 +24,7 @@ fn app_constructs_ticks_and_quits() {
     let constructed_for_make = Rc::clone(&constructed);
     let exited_for_make = Rc::clone(&exited_early);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.smoke").theme(Theme::light()),
         move |ui| {
             let watchdog = ui.set_timer(WATCHDOG_MS).ok();
@@ -32,7 +32,7 @@ fn app_constructs_ticks_and_quits() {
             ui.on_timer(move |fired| {
                 if Some(fired) == watchdog {
                     exited.set(true);
-                    win32ui::quit(1);
+                    xui::quit(1);
                 }
                 None
             });
@@ -69,7 +69,7 @@ fn app_constructs_ticks_and_quits() {
 /// queue model) runs too. Skips if the session cannot create windows.
 #[test]
 fn app_constructs_with_a_playing_track_and_queue() {
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.smoke.playing").theme(Theme::light()),
         move |ui| {
             let library = MockLibrary::new();
@@ -102,7 +102,7 @@ fn settings_view_builds_its_controls_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.settings").theme(Theme::dark()),
         move |ui| {
             let app = Win32App::new(
@@ -136,7 +136,7 @@ fn artists_view_builds_its_model_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.artists").theme(Theme::light()),
         move |ui| {
             let app = Win32App::new(
@@ -170,7 +170,7 @@ fn genres_view_builds_its_model_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.genres").theme(Theme::dark()),
         move |ui| {
             let app = Win32App::new(
@@ -205,7 +205,7 @@ fn most_played_view_builds_its_table_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.most-played").theme(Theme::dark()),
         move |ui| {
             let app = Win32App::new(
@@ -239,7 +239,7 @@ fn history_view_builds_its_model_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.history").theme(Theme::dark()),
         move |ui| {
             let app = Win32App::new(
@@ -274,7 +274,7 @@ fn preset_browser_view_filters_selects_and_plays() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.preset-browser").theme(Theme::dark()),
         move |ui| {
             let mut app = Win32App::new(
@@ -313,7 +313,7 @@ fn albums_view_builds_its_model_and_quits() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.albums").theme(Theme::dark()),
         move |ui| {
             let app = Win32App::new(
@@ -352,7 +352,7 @@ fn visualization_window_opens_hides_and_reopens() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.viz-window").theme(Theme::dark()),
         move |ui| {
             let config = Config {
@@ -403,7 +403,7 @@ fn appearance_changes_apply_live_and_quit() {
     let constructed = Rc::new(Cell::new(false));
     let constructed_for_make = Rc::clone(&constructed);
 
-    let result = win32ui::run_app(
+    let result = xui::run_app(
         WindowSpec::new("emusic.appearance").theme(Theme::dark()),
         move |ui| {
             let config = Config {

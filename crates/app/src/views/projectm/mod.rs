@@ -4,7 +4,7 @@
 //!
 //! [`ProjectMView`] is the one owner-drawn widget every projectM surface
 //! hosts — the panel (#302), the independent window (#303) and fullscreen
-//! (#304). It renders with OpenGL through `win32ui`'s [`Renderer::Gl`] and
+//! (#304). It renders with OpenGL through `xui`'s [`Renderer::Gl`] and
 //! drives a runtime-loaded libprojectM instance ([`emusic_projectm`]),
 //! falling back to a CPU plasma ([`emusic_milkdrop`]) plus a one-line hint
 //! when the libraries are missing or no OpenGL context can be created.
@@ -16,7 +16,7 @@
 //! keeps no reference to the shell; the frontend pushes settings and audio
 //! into it and drains its events, so #302 can wire it without back-references.
 //!
-//! [`Renderer::Gl`]: win32ui::Renderer::Gl
+//! [`Renderer::Gl`]: xui::Renderer::Gl
 
 mod engine;
 mod fallback;
@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -71,7 +71,7 @@ pub enum ProjectMGesture {
 ///
 /// Generic over the host window's message type `M` so the panel can use the
 /// app's [`Msg`] and the independent window (#303) can use its own, forwarding
-/// gestures back through a [`Proxy`](win32ui::Proxy).
+/// gestures back through a [`Proxy`](xui::Proxy).
 pub struct ProjectMView<M = Msg> {
     custom: Custom<ProjectMWidget, M>,
 }
@@ -79,7 +79,7 @@ pub struct ProjectMView<M = Msg> {
 impl<M: 'static> ProjectMView<M> {
     /// Creates the surface. Its widget paints a placeholder until projectM can
     /// start, so construction never needs the DLLs or a GL context.
-    pub fn new(ui: &mut Ui<M>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<M>) -> xui::Result<Self> {
         let widget = ProjectMWidget::new(ui.dpi());
         Ok(Self {
             custom: Custom::new(ui, widget)?,

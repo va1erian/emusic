@@ -7,8 +7,8 @@
 
 use emusic_milkdrop::Frame;
 use emusic_ui::state::projectm::ProjectMAvailability;
-use win32ui::gdi::{Font, TextFormat};
-use win32ui::{Color, Rect, Theme};
+use xui::gdi::{Font, TextFormat};
+use xui::{Color, Rect, Theme};
 
 /// Plasma bands drawn vertically; enough to read as a gradient, few enough to
 /// stay cheap at panel size.
@@ -29,7 +29,7 @@ pub(crate) fn hint(availability: &ProjectMAvailability) -> &'static str {
 /// Draws `frame` as a vertical plasma, then `hint` on a band at the bottom.
 /// `font` is reused across frames; when it is `None` the hint is skipped.
 pub(crate) fn paint(
-    canvas: &win32ui::gdi::Canvas,
+    canvas: &xui::gdi::Canvas,
     bounds: Rect,
     frame: Frame,
     theme: &Theme,

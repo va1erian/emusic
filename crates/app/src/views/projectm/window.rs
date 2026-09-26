@@ -17,8 +17,8 @@ use std::rc::Rc;
 
 use emusic_ui::state::WindowGeometry;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMSettings, VizCommand, VizDock};
-use win32ui::prelude::*;
-use win32ui::{column, dip};
+use xui::prelude::*;
+use xui::{column, dip};
 
 use super::presets::PresetFiles;
 use super::{ProjectMEvent, ProjectMGesture, ProjectMView};
@@ -147,7 +147,7 @@ pub(crate) struct VizWindow {
 impl VizWindow {
     /// Opens the window, restoring `saved` geometry (clamped to the work area)
     /// before it is first shown. The child inherits the opener's theme.
-    pub fn open(ui: &Ui<Msg>, saved: WindowGeometry) -> win32ui::Result<Self> {
+    pub fn open(ui: &Ui<Msg>, saved: WindowGeometry) -> xui::Result<Self> {
         let main = ui.proxy();
         let dpi = Rc::new(Cell::new(96));
         let dpi_for_make = Rc::clone(&dpi);

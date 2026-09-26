@@ -14,8 +14,8 @@
 use emusic::app::Msg;
 use emusic::views::projectm::ProjectMView;
 use emusic_ui::mock::MockPlayer;
-use win32ui::column;
-use win32ui::prelude::*;
+use xui::column;
+use xui::prelude::*;
 
 /// The harness app: the surface, the mock player it is fed from, and the
 /// repaint timer.
@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter("warn")
         .with_writer(std::io::stderr)
         .init();
-    win32ui::run_app(
+    xui::run_app(
         WindowSpec::new("emusic projectM").theme(Theme::dark()),
         |ui| {
             let view = ProjectMView::new(ui).expect("create projectM view");

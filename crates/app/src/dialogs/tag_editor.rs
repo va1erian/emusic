@@ -15,8 +15,8 @@ use std::rc::Rc;
 
 use emusic_ui::library_api::EditRequest;
 use emusic_ui::tag_editor::{Failure, Status, TagEditorState, TagForm, TagFormErrors};
-use win32ui::prelude::*;
-use win32ui::{WindowSpec, dip, row};
+use xui::prelude::*;
+use xui::{WindowSpec, dip, row};
 
 use crate::app::Msg as AppMsg;
 
@@ -466,7 +466,7 @@ pub fn open<M: 'static>(
     state: &TagEditorState,
     bridge: Rc<RefCell<Bridge>>,
     sink: Proxy<AppMsg>,
-) -> win32ui::Result<WindowHandle<Msg>> {
+) -> xui::Result<WindowHandle<Msg>> {
     ui.open_window(spec(), move |ui| {
         TagEditorDialog::new(ui, state, bridge, sink)
     })

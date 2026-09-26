@@ -5,8 +5,8 @@
 //! follow: a struct owning its control(s), a `sync` that updates it from the
 //! shell's model, and an [`AsControl`] impl so the layout tree can place it.
 
-use win32ui::prelude::*;
-use win32ui::{Control, Label};
+use xui::prelude::*;
+use xui::{Control, Label};
 
 /// A not-yet-implemented view: one static label.
 pub struct Placeholder {

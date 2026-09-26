@@ -10,8 +10,8 @@
 use emusic_ui::library_api::TrackInfo;
 use emusic_ui::views::track_table::columns;
 use emusic_ui::views::track_table::properties::{self, PropertySection};
-use win32ui::prelude::*;
-use win32ui::{WindowSpec, dip, row};
+use xui::prelude::*;
+use xui::{WindowSpec, dip, row};
 
 /// The dialog's client width, in design units.
 const WIDTH: f32 = 560.0;
@@ -232,7 +232,7 @@ pub fn show<M: 'static>(ui: &Ui<M>, track: &TrackInfo) {
 /// Opens the dialog as a non-modal owned window and returns its handle. The
 /// screenshot tool uses this to capture the dialog (a modal's nested loop
 /// would block the tool's own capture tick).
-pub fn open<M: 'static>(ui: &Ui<M>, track: &TrackInfo) -> win32ui::Result<WindowHandle<Msg>> {
+pub fn open<M: 'static>(ui: &Ui<M>, track: &TrackInfo) -> xui::Result<WindowHandle<Msg>> {
     let spec = spec(track);
     let track = track.clone();
     ui.open_window(spec, move |ui| PropertiesDialog::new(ui, &track))

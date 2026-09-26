@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use emusic_ui::state::AppState;
-use win32ui::prelude::*;
-use win32ui::{Button, CheckBox};
+use xui::prelude::*;
+use xui::{Button, CheckBox};
 
 use crate::app::Msg;
 
@@ -41,7 +41,7 @@ pub(super) struct PacksSection {
 
 impl PacksSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let mut packs = Vec::with_capacity(KNOWN_PACKS.len());
         for pack in KNOWN_PACKS {
             let checkbox = CheckBox::new(ui, pack)?.on_toggle(move |on| {

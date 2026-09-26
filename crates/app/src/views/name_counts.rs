@@ -9,8 +9,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use win32ui::prelude::*;
-use win32ui::{Control, Fill, ListModel, ListView, Menu, dip};
+use xui::prelude::*;
+use xui::{Control, Fill, ListModel, ListView, Menu, dip};
 
 use crate::app::Msg;
 

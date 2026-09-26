@@ -9,7 +9,7 @@
 //! (see [`ThumbState::new`]).
 //!
 //! Decoding and scaling go through the Windows Imaging Component (WIC) via
-//! [`win32ui::imaging`], not the `image` crate, so the Win32 binary does not
+//! [`xui::imaging`], not the `image` crate, so the Win32 binary does not
 //! link a bundled decoder (#119).
 
 use std::path::Path;
@@ -21,8 +21,8 @@ use emusic_ui::image_cache::{
     thumbnail_cache_path,
 };
 use emusic_ui::waker::WakerHandle;
-use win32ui::RgbaImage;
-use win32ui::imaging;
+use xui::RgbaImage;
+use xui::imaging;
 
 /// Longest edge of a decoded thumbnail, in pixels.
 const THUMB_SIZE: u32 = 200;
@@ -167,9 +167,9 @@ fn write_cache(source: &Path, image: &Rgba8Image) {
     }
 }
 
-/// Borrows the shared image type as the `win32ui` RGBA buffer WIC takes.
-fn to_win32(image: &Rgba8Image) -> win32ui::RgbaImage {
-    win32ui::RgbaImage {
+/// Borrows the shared image type as the `xui` RGBA buffer WIC takes.
+fn to_win32(image: &Rgba8Image) -> xui::RgbaImage {
+    xui::RgbaImage {
         width: image.width,
         height: image.height,
         pixels: image.pixels.clone(),

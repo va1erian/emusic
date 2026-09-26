@@ -11,7 +11,7 @@ use std::path::Path;
 
 use emusic_ui::views::now_playing::{NowPlayingView as Model, QueueRow};
 use emusic_ui::waker::WakerHandle;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -48,7 +48,7 @@ impl WidgetPair {
         on_context: impl Fn(usize) -> Option<Msg> + 'static,
         on_remove: impl Fn() -> Msg + 'static,
         on_delete: impl Fn() -> Msg + 'static,
-    ) -> win32ui::Result<Self> {
+    ) -> xui::Result<Self> {
         let summary =
             Custom::new(ui, SummaryWidget::new())?.on_event(|event| Some(Msg::NowPlaying(event)));
         let summary = if scroll_summary {

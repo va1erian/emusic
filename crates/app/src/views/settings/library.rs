@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
-use win32ui::{Button, Fill, ListView, Proxy, dip};
+use xui::prelude::*;
+use xui::{Button, Fill, ListView, Proxy, dip};
 
 use crate::app::Msg;
 
@@ -58,7 +58,7 @@ pub(super) struct LibraryPage {
 
 impl LibraryPage {
     /// Builds the page's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> xui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let heading = Label::new(&mut panel, Rect::default(), "Music folders")?;

@@ -12,8 +12,8 @@ use emusic_ui::library_api::{ArtistInfo, LibraryDataSource};
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::artists::ArtistsMsg;
 use emusic_ui::views::{Commands, Ctx};
-use win32ui::prelude::*;
-use win32ui::{Control, Label, Layout, Menu, column, dip};
+use xui::prelude::*;
+use xui::{Control, Label, Layout, Menu, column, dip};
 
 use crate::app::Msg;
 use crate::views::name_counts::{CountColumn, NameCountRow, NameCountsView};

@@ -13,8 +13,8 @@ use std::rc::Rc;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMSettings};
 use emusic_ui::state::{Command, VizCommand};
 use emusic_ui::views::preset_browser::PresetBrowser;
-use win32ui::prelude::*;
-use win32ui::{
+use xui::prelude::*;
+use xui::{
     CheckBox, Control, Edit, Label, Layout, ListModel, ListView, RowStyle, column, dip, row,
 };
 
@@ -84,7 +84,7 @@ pub struct PresetBrowserView {
 impl PresetBrowserView {
     /// Creates the filter box, the lock toggle, the count label and the
     /// (empty) virtualized list.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let filter = Edit::single_line(ui)?
             .cue("Filter by name or pack")
             .on_change(|text| Some(Msg::PresetFilter(text.to_owned())));
@@ -104,7 +104,7 @@ impl PresetBrowserView {
                 }
             })
             .add_column(
-                win32ui::Column::new("Name", Fill, |row: &PresetRow| row.name.as_str()).cell_color(
+                xui::Column::new("Name", Fill, |row: &PresetRow| row.name.as_str()).cell_color(
                     move |row, theme| {
                         (current_for_name.get() == Some(row.playlist_index)).then_some(theme.accent)
                     },

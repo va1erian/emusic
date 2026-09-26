@@ -12,8 +12,8 @@ use emusic_player::tracker::{
 };
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
-use win32ui::{Button, CheckBox, ComboBox, RadioGroup};
+use xui::prelude::*;
+use xui::{Button, CheckBox, ComboBox, RadioGroup};
 
 use crate::app::Msg;
 
@@ -105,7 +105,7 @@ pub(super) struct TrackerSection {
 
 impl TrackerSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let interpolation = RadioGroup::new(
             ui,
             [

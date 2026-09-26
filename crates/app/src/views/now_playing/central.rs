@@ -15,8 +15,8 @@
 
 use emusic_ui::views::now_playing::NowPlayingView as Model;
 use emusic_ui::waker::WakerHandle;
-use win32ui::prelude::*;
-use win32ui::{column, dip};
+use xui::prelude::*;
+use xui::{column, dip};
 
 use crate::app::Msg;
 
@@ -39,7 +39,7 @@ impl CentralNowPlayingView {
     /// through [`Msg::CentralQueueJump`], [`Msg::CentralQueueContext`] and
     /// [`Msg::CentralQueueRemove`], distinct from the right panel's, so the
     /// two lists (both visible at once) can be told apart.
-    pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> xui::Result<Self> {
         let pair = WidgetPair::new(
             ui,
             waker,

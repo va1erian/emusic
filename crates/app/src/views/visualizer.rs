@@ -16,10 +16,10 @@ use emusic_ui::panels::visualizer::analysis::{
 };
 use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::state::VisualizerMode;
-use win32ui::d2d::{PointF, Stroke};
-use win32ui::gdi::Canvas;
-use win32ui::prelude::*;
-use win32ui::{Custom, CustomWidget, Input, MouseButton, Point, Rect, Size, Theme, WidgetCx};
+use xui::d2d::{PointF, Stroke};
+use xui::gdi::Canvas;
+use xui::prelude::*;
+use xui::{Custom, CustomWidget, Input, MouseButton, Point, Rect, Size, Theme, WidgetCx};
 
 use crate::app::Msg;
 
@@ -146,7 +146,7 @@ pub struct VisualizerView {
 
 impl VisualizerView {
     /// Creates the strip; a click cycles the mode.
-    pub fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let widget = VisualizerWidget {
             frame: RefCell::new(Frame::default()),
             dpi: Cell::new(ui.dpi()),

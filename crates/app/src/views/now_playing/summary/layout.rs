@@ -2,7 +2,7 @@
 //! widget's client rectangle and DPI. Pure and unit-tested — painting and
 //! hit-testing both read this one layout.
 
-use win32ui::Rect;
+use xui::Rect;
 
 use super::{ARTWORK_EDGE, GAP, LINE, LINK_GAP, PAD, STAR, TITLE_LINE};
 

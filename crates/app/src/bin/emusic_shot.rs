@@ -4,7 +4,7 @@
 //!
 //! Runs the real [`Win32App`](emusic::app::Win32App) against the
 //! deterministic mock backend and writes one PNG per view. Capture uses
-//! `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path
+//! `xui`'s occlusion-proof `Windows.Graphics.Capture` path
 //! (`Ui::capture_composited`, the `wgc` feature): it reads the DWM-composited
 //! surface, so it includes the frame, caption buttons and any backdrop
 //! material and is not sensitive to child-window paint timing. When that is
@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow, bail};
 use clap::Parser;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use emusic_ui::backend;
 use emusic_ui::config::Config;
@@ -114,7 +114,7 @@ struct Cli {
     out: PathBuf,
 }
 
-/// The CLI's theme spelling, mapped to the shell's and `win32ui`'s palettes.
+/// The CLI's theme spelling, mapped to the shell's and `xui`'s palettes.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 enum ThemeArg {
     Dark,
@@ -138,7 +138,7 @@ impl ThemeArg {
         }
     }
 
-    fn win32(self, accent: Accent) -> win32ui::Theme {
+    fn win32(self, accent: Accent) -> xui::Theme {
         win32_theme(self.shell(), accent)
     }
 
@@ -364,7 +364,7 @@ fn render_one(
         config.accent_tint_strength,
     );
 
-    win32ui::run_app(spec, move |ui| {
+    xui::run_app(spec, move |ui| {
         let waker = WakerSlot::new();
         let backends = backend::build(true, waker.handle());
         // A track with rich tags/stats makes the dialog shot representative.
@@ -443,12 +443,12 @@ struct ShotApp {
 
 /// One of the capturable dialogs, opened non-modal for the shot.
 enum ShotDialog {
-    Properties(win32ui::WindowHandle<emusic::dialogs::properties::Msg>),
-    TagEditor(win32ui::WindowHandle<emusic::dialogs::tag_editor::Msg>),
+    Properties(xui::WindowHandle<emusic::dialogs::properties::Msg>),
+    TagEditor(xui::WindowHandle<emusic::dialogs::tag_editor::Msg>),
 }
 
 impl ShotDialog {
-    fn capture(&self) -> win32ui::Result<RgbaImage> {
+    fn capture(&self) -> xui::Result<RgbaImage> {
         match self {
             Self::Properties(handle) => handle.capture(),
             Self::TagEditor(handle) => handle.capture(),

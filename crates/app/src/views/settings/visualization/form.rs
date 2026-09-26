@@ -13,8 +13,8 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 use emusic_ui::state::projectm::ProjectMSettings;
-use win32ui::prelude::*;
-use win32ui::{Button, CheckBox, Edit};
+use xui::prelude::*;
+use xui::{Button, CheckBox, Edit};
 
 use crate::app::Msg;
 
@@ -98,7 +98,7 @@ pub(super) struct Form {
 
 impl Form {
     /// Builds the controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let duration = Slider::new(ui, DURATION_RANGE)?.on_change(|value| {
             Some(Msg::Settings(SettingsMsg::Viz(
                 VisualizationEdit::PresetDuration(value),
@@ -309,7 +309,7 @@ fn slider_row(label: &Label, value: &Label, slider: LayoutItem) -> FormRow {
 }
 
 /// Builds a plain label that also explains itself on hover.
-fn label(ui: &mut Ui<Msg>, text: &str, tooltip: &str) -> win32ui::Result<Label> {
+fn label(ui: &mut Ui<Msg>, text: &str, tooltip: &str) -> xui::Result<Label> {
     let label = Label::new(ui, Rect::default(), text)?;
     label.set_tooltip(tooltip);
     Ok(label)

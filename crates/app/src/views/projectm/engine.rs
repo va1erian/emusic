@@ -123,7 +123,7 @@ impl EngineSlot {
     }
 
     /// Reports that the GL surface could not be created, if the first paint
-    /// never reached [`CustomWidget::paint_gl`](win32ui::CustomWidget::paint_gl).
+    /// never reached [`CustomWidget::paint_gl`](xui::CustomWidget::paint_gl).
     pub(super) fn report_no_gl(&self) -> Option<ProjectMEvent> {
         if self.status.get() == Status::Unknown && !self.gl_painted.get() {
             self.change(Status::NoOpenGl)

@@ -15,7 +15,7 @@
 //! needed is gone.
 //!
 //! Artwork is decoded by the Windows Imaging Component (WIC) through
-//! [`win32ui::imaging`], so the Win32 binary does not link the `image` crate
+//! [`xui::imaging`], so the Win32 binary does not link the `image` crate
 //! (#119).
 
 use std::path::Path;
@@ -26,8 +26,8 @@ use emusic_ui::image_cache::{
     ImageSink, Rgba8Image, ThumbCache, embedded_artwork, folder_artwork_path,
 };
 use emusic_ui::waker::WakerHandle;
-use win32ui::RgbaImage;
-use win32ui::imaging;
+use xui::RgbaImage;
+use xui::imaging;
 
 /// Decoded bytes the artwork LRU may hold before evicting older covers.
 const BYTE_BUDGET: usize = 16 * 1024 * 1024;
@@ -37,7 +37,7 @@ pub type ArtworkCache = ThumbCache<Win32ImageSink>;
 
 /// Keeps decoded images as RGBA buffers for [`D2dCanvas::image`].
 ///
-/// [`D2dCanvas::image`]: win32ui::d2d::D2dCanvas::image
+/// [`D2dCanvas::image`]: xui::d2d::D2dCanvas::image
 pub struct Win32ImageSink;
 
 impl ImageSink for Win32ImageSink {

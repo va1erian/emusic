@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 use emusic_ui::state::AppState;
 use emusic_ui::views::Commands;
-use win32ui::Proxy;
-use win32ui::prelude::*;
+use xui::Proxy;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -34,7 +34,7 @@ pub(super) struct PlaybackPage {
 
 impl PlaybackPage {
     /// Builds every section's controls.
-    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> xui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let page = Self {

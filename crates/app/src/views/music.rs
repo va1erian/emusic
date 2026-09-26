@@ -9,8 +9,8 @@ use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
 use emusic_ui::search::SearchEngine;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::column_browser::ColumnBrowser;
-use win32ui::prelude::*;
-use win32ui::{Button, Control, Label, LayoutItem, Menu, Rect, Result, Ui, dip, row};
+use xui::prelude::*;
+use xui::{Button, Control, Label, LayoutItem, Menu, Rect, Result, Ui, dip, row};
 
 use crate::app::Msg;
 use crate::views::track_table::TrackView;
@@ -153,7 +153,7 @@ impl MusicView {
     pub fn run_context(
         &self,
         action: crate::views::track_table::ContextAction,
-        hwnd: win32ui::Hwnd,
+        hwnd: xui::Hwnd,
     ) -> Option<emusic_ui::state::Command> {
         self.table.run_context(action, hwnd)
     }

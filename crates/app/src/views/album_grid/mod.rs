@@ -7,7 +7,7 @@
 //! This module only owns the native controls, draws the tiles (through
 //! [`tile::content`]) and turns control events into [`AlbumMsg`]s.
 //!
-//! [`ListView`]: win32ui::ListView
+//! [`ListView`]: xui::ListView
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -22,8 +22,8 @@ use emusic_ui::views::album_grid::{
 use emusic_ui::views::track_table::TrackTableMsg;
 use emusic_ui::views::{Commands, Ctx};
 use emusic_ui::waker::WakerHandle;
-use win32ui::prelude::*;
-use win32ui::{Button, ComboBox, Label, column, dip, row};
+use xui::prelude::*;
+use xui::{Button, ComboBox, Label, column, dip, row};
 
 use crate::app::Msg;
 use crate::views::track_table::{ContextAction, column_id};

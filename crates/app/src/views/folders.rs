@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use emusic_ui::library_api::DirNodeInfo;
 use emusic_ui::views::folders::FoldersView as FoldersModel;
-use win32ui::prelude::*;
-use win32ui::{CheckBox, Control, Layout, Menu, Node, TreeModel, TreeView, column, dip, row};
+use xui::prelude::*;
+use xui::{CheckBox, Control, Layout, Menu, Node, TreeModel, TreeView, column, dip, row};
 
 use crate::app::Msg;
 use crate::views::track_table::TrackView;
@@ -215,7 +215,7 @@ impl FoldersView {
     pub fn run_context(
         &self,
         action: crate::views::track_table::ContextAction,
-        hwnd: win32ui::Hwnd,
+        hwnd: xui::Hwnd,
     ) -> Option<emusic_ui::state::Command> {
         self.table.run_context(action, hwnd)
     }

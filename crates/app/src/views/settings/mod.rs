@@ -1,9 +1,9 @@
 //! Win32 Settings view (#115).
 //!
-//! A view struct per the #106 pattern: a native tab strip (`win32ui`'s
-//! [`Tabs`](win32ui::Tabs) control) over six pages — Library folders,
+//! A view struct per the #106 pattern: a native tab strip (`xui`'s
+//! [`Tabs`](xui::Tabs) control) over six pages — Library folders,
 //! Appearance, Visualization, File associations, Playback
-//! and About. Each page owns standard win32ui controls and only reads and
+//! and About. Each page owns standard xui controls and only reads and
 //! writes the shared `emusic-ui` state, emitting [`Command`]s for the shell to
 //! apply; it never duplicates sorting, filtering or formatting.
 //!
@@ -11,8 +11,8 @@
 //! installed, so the strip only exists while Settings is the active view; the
 //! Library page's folder list is a native `ListView` with its own scrollbar.
 //!
-//! Each page's controls are created through its [`ScrollPanel`] — a `win32ui`
-//! `Panel` inside a `ScrollView` (win32ui #119) — so a page taller than the
+//! Each page's controls are created through its [`ScrollPanel`] — a `xui`
+//! `Panel` inside a `ScrollView` (xui #119) — so a page taller than the
 //! window scrolls vertically with the wheel and the scrollbar instead of being
 //! cut off.
 
@@ -35,8 +35,8 @@ use emusic_ui::state::{
     Accent, AppState, Density, FontSize, SettingsTab, Theme as UiTheme, VisualizerMode,
 };
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
-use win32ui::{Layout, dip};
+use xui::prelude::*;
+use xui::{Layout, dip};
 
 use crate::app::Msg;
 
@@ -155,7 +155,7 @@ impl SettingsView {
     /// Builds every page's controls. `visualizer_enabled` seeds the
     /// Appearance page's mode row so no reinstall is needed on the first
     /// sync (see `AppearancePage::new`, #327).
-    pub fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> xui::Result<Self> {
         let proxy = ui.proxy();
         let library = library::LibraryPage::new(ui, proxy.clone())?;
         let appearance = appearance::AppearancePage::new(ui, visualizer_enabled)?;

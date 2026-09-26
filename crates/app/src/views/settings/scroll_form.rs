@@ -1,12 +1,12 @@
-//! The scrollable host for a Settings page (win32ui #119).
+//! The scrollable host for a Settings page (xui #119).
 //!
-//! A page's controls are created through a `win32ui` [`Panel`]'s scoped `Ui`,
+//! A page's controls are created through a `xui` [`Panel`]'s scoped `Ui`,
 //! so they parent to the panel rather than the top-level window; the panel is
 //! handed to a [`ScrollView`], so the whole form scrolls with the wheel and the
 //! scrollbar when a page is taller than the window.
 
-use win32ui::Dip;
-use win32ui::prelude::*;
+use xui::Dip;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -36,7 +36,7 @@ fn build_form(rows: Vec<FormRow>) -> (Layout, Dip) {
     (column, height)
 }
 
-/// A page's controls hosted in a `win32ui` [`Panel`] inside a [`ScrollView`].
+/// A page's controls hosted in a `xui` [`Panel`] inside a [`ScrollView`].
 pub(super) struct ScrollPanel {
     view: ScrollView,
     panel: Panel,
@@ -44,7 +44,7 @@ pub(super) struct ScrollPanel {
 
 impl ScrollPanel {
     /// Creates the scroll view and installs an empty content panel.
-    pub(super) fn new(ui: &mut Ui<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>) -> xui::Result<Self> {
         let view = ScrollView::new(ui)?;
         let panel = Panel::new(ui)?;
         view.set_content(&panel);

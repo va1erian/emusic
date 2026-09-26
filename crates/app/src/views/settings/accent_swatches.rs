@@ -4,9 +4,9 @@
 use std::cell::Cell;
 
 use emusic_ui::state::Accent;
-use win32ui::gdi::Canvas;
-use win32ui::prelude::*;
-use win32ui::{Color, Custom, CustomWidget, Input, MouseButton, Size, Theme, WidgetCx, dip};
+use xui::gdi::Canvas;
+use xui::prelude::*;
+use xui::{Color, Custom, CustomWidget, Input, MouseButton, Size, Theme, WidgetCx, dip};
 
 /// Side of one swatch, in design units.
 const SWATCH: f32 = 24.0;
@@ -113,6 +113,6 @@ impl CustomWidget for AccentSwatches {
 pub(super) fn create<M: 'static>(
     ui: &mut Ui<M>,
     on_pick: impl Fn(Accent) -> Option<M> + 'static,
-) -> win32ui::Result<Custom<AccentSwatches, M>> {
+) -> xui::Result<Custom<AccentSwatches, M>> {
     Ok(Custom::new(ui, AccentSwatches::new(ui.dpi()))?.on_event(on_pick))
 }

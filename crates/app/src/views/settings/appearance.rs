@@ -11,7 +11,7 @@ use emusic_ui::state::{
     Accent, AppState, Density, FontSize, Rgb, Theme as UiTheme, VisualizerMode,
 };
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
+use xui::prelude::*;
 
 use crate::app::Msg;
 
@@ -51,10 +51,10 @@ impl AppearancePage {
     ///
     /// `visualizer_enabled` is the saved flag: the mode row must be part of
     /// the very first form. Reinstalling the form later (from `sync`, while
-    /// the page is still hidden) measures win32ui's `Auto` natural sizes
+    /// the page is still hidden) measures xui's `Auto` natural sizes
     /// from the not-yet-laid-out bounds and collapses the Theme/Font/Density
     /// radios and the custom picker to zero width (#327).
-    pub(super) fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>, visualizer_enabled: bool) -> xui::Result<Self> {
         let form = ScrollPanel::new(ui)?;
         let mut panel = form.ui(ui);
         let theme = RadioGroup::new(
@@ -99,7 +99,7 @@ impl AppearancePage {
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
 
         // Window accent tint (#355): tints the acrylic title strip, top bar
-        // and status band; the strength slider drives win32ui's tint alpha.
+        // and status band; the strength slider drives xui's tint alpha.
         let tint = CheckBox::new(&mut panel, "Tint acrylic bands with the accent")?
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::SetAccentTint(on))));
         let tint_strength = Slider::new(&mut panel, 0.0..=255.0)?.on_change(|value| {

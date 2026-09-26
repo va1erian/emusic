@@ -27,8 +27,8 @@ use std::cell::Cell;
 use emusic_ui::state::projectm::{VizCommand, VizDock};
 use emusic_ui::views::now_playing::NowPlayingView as Model;
 use emusic_ui::waker::WakerHandle;
-use win32ui::prelude::*;
-use win32ui::{column, dip};
+use xui::prelude::*;
+use xui::{column, dip};
 
 use crate::app::Msg;
 use crate::views::projectm::{ProjectMGesture, ProjectMView};
@@ -61,7 +61,7 @@ impl NowPlayingView {
     /// jump/context/remove through [`Msg::QueueJump`], [`Msg::QueueContext`]
     /// and [`Msg::QueueRemove`]; the visualization's hover buttons and
     /// double-click route through [`Msg::Viz`].
-    pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> win32ui::Result<Self> {
+    pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> xui::Result<Self> {
         let pair = WidgetPair::new(
             ui,
             waker,

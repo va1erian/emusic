@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use emusic_player::midi::soundfont_problem;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
-use win32ui::prelude::*;
-use win32ui::{Button, ComboBox, Edit, Proxy};
+use xui::prelude::*;
+use xui::{Button, ComboBox, Edit, Proxy};
 
 use crate::app::Msg;
 
@@ -41,7 +41,7 @@ pub(super) struct MidiSection {
 
 impl MidiSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
-    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> win32ui::Result<Self> {
+    pub(super) fn new(ui: &mut Ui<Msg>, proxy: Proxy<Msg>) -> xui::Result<Self> {
         let edit = Edit::single_line(ui)?
             .cue("path to a .sf2 / .sf3 / .sfz file")
             .on_submit(|| Some(Msg::Settings(SettingsMsg::MidiCommit)))
