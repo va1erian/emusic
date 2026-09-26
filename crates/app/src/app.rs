@@ -20,6 +20,8 @@ use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
 use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::{Command, ShortcutAction, View, shortcut_command};
+use emusic_ui::views::folders::FoldersMsg;
+use emusic_ui::views::{Commands, Ctx};
 use emusic_ui::waker::WakerSlot;
 use xui::xui_core::app::{App, Ui};
 use xui::xui_core::backend::{Event, TimerId, WidgetId};
@@ -27,6 +29,7 @@ use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 
 use crate::theme::app_theme;
+use crate::views::folders::FoldersView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::placeholder::Placeholder;
@@ -53,6 +56,10 @@ pub enum Msg {
     Dispatch(Command),
     /// Switch the central view (navigator row click).
     Navigate(View),
+    /// The Folders tree selected a directory.
+    FoldersSelect(String),
+    /// The Folders view's "include subfolders" checkbox changed.
+    FoldersSubfolders(bool),
     /// Play the Music view row (double-click / Enter).
     PlayRow(usize),
     /// Toggle the star of a track table row.
@@ -92,6 +99,7 @@ pub struct Win32App {
     top_bar: TopBarView,
     status_bar: StatusBarView,
     music: MusicView,
+    folders: FoldersView,
     placeholder: Placeholder,
     /// The window-level chrome (drag region, window buttons), attached by the
     /// binary once the backend exists; `None` in headless runs.
@@ -136,6 +144,7 @@ impl Win32App {
         let top_bar = TopBarView::new(ui);
         let status_bar = StatusBarView::new(ui);
         let music = MusicView::new(ui);
+        let folders = FoldersView::new(ui);
         let placeholder = Placeholder::new(ui, "Music", "later issues");
 
         waker.bind(UiWaker::new(ui.proxy()));
@@ -165,6 +174,7 @@ impl Win32App {
             top_bar,
             status_bar,
             music,
+            folders,
             placeholder,
             chrome: None,
             shell_integration: Box::new(NullShell),
@@ -256,6 +266,14 @@ impl Win32App {
                 playing_id,
                 changes,
             );
+        } else if view == View::Folders {
+            self.refresh_folders();
+            let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+            self.folders.sync(
+                &self.shell.state.folders,
+                self.shell.library.as_ref(),
+                playing_id,
+            );
         }
         self.navigator.sync(view);
 
@@ -284,13 +302,15 @@ impl Win32App {
     fn apply_visibility(&self) {
         let view = self.shell.state.view;
         let music = view == View::Music;
+        let folders = view == View::Folders;
         self.music.set_visible(music);
-        self.placeholder.set_visible(!music);
+        self.folders.set_visible(folders);
+        self.placeholder.set_visible(!music && !folders);
         self.navigator
             .set_visible(self.shell.state.panels.navigator);
         self.status_bar
             .set_visible(self.shell.state.panels.status_bar);
-        if !music {
+        if !music && !folders {
             self.placeholder.sync(&format!(
                 "{} view: not ported to xui_core yet (see the migration epic #369)",
                 view.label()
@@ -336,6 +356,8 @@ impl Win32App {
         let central = Rect::new(client.left + navigator_width, top, client.right, bottom);
         if self.shell.state.view == View::Music {
             self.music.set_bounds(central);
+        } else if self.shell.state.view == View::Folders {
+            self.folders.set_bounds(central);
         } else {
             self.placeholder.set_bounds(central);
         }
@@ -372,6 +394,27 @@ impl Win32App {
         }
     }
 
+    /// Rebuilds the Folders model (its tree rows and visible ids) from the
+    /// library snapshot.
+    fn refresh_folders(&mut self) {
+        let tracks: Vec<&TrackInfo> = self.shell.library.as_ref().tracks().iter().collect();
+        let cx = Ctx::with_library(&tracks, None, self.shell.library.as_ref());
+        self.shell.state.folders.refresh(&cx);
+    }
+
+    /// Applies a Folders intent through the shared model, dispatches the
+    /// commands it emits, and refreshes the model.
+    fn apply_folders(&mut self, message: FoldersMsg) {
+        let tracks: Vec<&TrackInfo> = self.shell.library.as_ref().tracks().iter().collect();
+        let cx = Ctx::with_library(&tracks, None, self.shell.library.as_ref());
+        let mut out = Commands::new();
+        self.shell.state.folders.update(message, &cx, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
+        }
+        self.refresh_folders();
+    }
+
     /// Runs one keyboard-shortcut action through the shared table helper.
     fn handle_shortcut(&mut self, action: ShortcutAction) {
         let player = self.shell.player.as_ref();
@@ -403,27 +446,48 @@ impl App for Win32App {
                 self.tick_inner();
             }
             Msg::PlayRow(row) => {
-                if let Some(command) = self.music.activate(row) {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.activate(row),
+                    View::Folders => self.folders.activate(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
                     self.shell.dispatch(command);
                     self.tick_inner();
                 }
             }
             Msg::ToggleStarRow(row) => {
-                if let Some(command) = self.music.toggle_star(row) {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.toggle_star(row),
+                    View::Folders => self.folders.toggle_star(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
                     self.shell.dispatch(command);
                     self.tick_inner();
                 }
             }
             Msg::SortColumn(column) => {
-                if let Some(id) = track_table::column_id(column) {
-                    self.shell.state.music.table.sort.toggle(id);
-                    self.music.resort(
-                        &self.shell.state,
-                        self.shell.library.as_ref(),
-                        &self.shell.search,
-                    );
-                    self.tick_inner();
+                let Some(id) = track_table::column_id(column) else {
+                    return;
+                };
+                match self.shell.state.view {
+                    View::Music => {
+                        self.shell.state.music.table.sort.toggle(id);
+                        self.music.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            &self.shell.search,
+                        );
+                    }
+                    View::Folders => {
+                        self.shell.state.folders.table.sort.toggle(id);
+                        self.folders
+                            .resort(&self.shell.state.folders, self.shell.library.as_ref());
+                    }
+                    _ => return,
                 }
+                self.tick_inner();
             }
             Msg::ContextRow(row) => {
                 // The portable context menu is #376's; remember the row and log
@@ -432,12 +496,28 @@ impl App for Win32App {
                 tracing::debug!(row, "track context menu is not ported yet");
             }
             Msg::ContextAction(action) => {
-                if let Some(track) = self.context_row.and_then(|row| self.music.track(row))
+                let Some(row) = self.context_row else {
+                    return;
+                };
+                let track = match self.shell.state.view {
+                    View::Music => self.music.track(row),
+                    View::Folders => self.folders.track(row),
+                    _ => None,
+                };
+                if let Some(track) = track
                     && let Some(command) = track_table::run_context_action(action, &track)
                 {
                     self.shell.dispatch(command);
                     self.tick_inner();
                 }
+            }
+            Msg::FoldersSelect(path) => {
+                self.apply_folders(FoldersMsg::SelectNode(path));
+                self.tick_inner();
+            }
+            Msg::FoldersSubfolders(include) => {
+                self.apply_folders(FoldersMsg::SetIncludeSubfolders(include));
+                self.tick_inner();
             }
             Msg::MusicShuffleAll => {
                 let command = self.music.shuffle_all(

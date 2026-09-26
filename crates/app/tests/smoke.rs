@@ -122,3 +122,31 @@ fn music_view_commands_dispatch() {
         eprintln!("skipping: this session cannot create windows");
     }
 }
+
+/// The Folders view's tree selection, subfolder toggle and table actions run
+/// the whole dispatch path (navigator -> model -> table) without panicking.
+#[test]
+fn folders_view_commands_dispatch() {
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+        );
+        ui.emit(Msg::Navigate(View::Folders));
+        ui.emit(Msg::FoldersSubfolders(false));
+        ui.emit(Msg::FoldersSelect(r"C:\music".to_string()));
+        ui.emit(Msg::PlayRow(0));
+        ui.emit(Msg::SortColumn(2));
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
+}
