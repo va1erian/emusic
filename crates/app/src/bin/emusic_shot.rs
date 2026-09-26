@@ -356,7 +356,13 @@ fn render_one(
         ));
     }
     let out = out.to_path_buf();
-    let spec = window_spec(width, height, theme.win32(accent));
+    let spec = window_spec(
+        width,
+        height,
+        theme.win32(accent),
+        config.accent_tint,
+        config.accent_tint_strength,
+    );
 
     win32ui::run_app(spec, move |ui| {
         let waker = WakerSlot::new();

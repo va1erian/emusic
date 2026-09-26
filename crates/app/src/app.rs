@@ -243,8 +243,9 @@ pub struct Win32App {
     /// The preset configuration (disabled packs, user folder) the current scan
     /// was started for, so a settings change restarts it (#305).
     preset_config: Option<(Vec<String>, Option<PathBuf>)>,
-    /// Theme and accent last applied to the window, so a change re-themes it.
-    applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
+    /// Theme, accent and accent tint last applied to the window, so a change
+    /// re-themes it (#276, #355).
+    applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent, bool, u8),
     /// Font size, density and zebra last applied, so a change relayouts once
     /// (#309).
     applied_appearance: Appearance,
@@ -381,7 +382,12 @@ impl Win32App {
         ui.on_timer(|_| Some(Msg::Timer));
 
         let applied_panels = shell.state.panels;
-        let applied_look = (shell.state.theme, shell.state.accent);
+        let applied_look = (
+            shell.state.theme,
+            shell.state.accent,
+            shell.state.accent_tint,
+            shell.state.accent_tint_strength,
+        );
         let applied_appearance = shell.state.appearance;
         // `0` can never equal a real DPI, so the first sync applies the
         // appearance to the lists (whose controls were created with the
@@ -846,15 +852,22 @@ impl Win32App {
             );
         }
 
-        // The dark/light toggle and the accent picker change the shell.s look;
-        // mirror them onto the window.
-        let look = (self.shell.state.theme, self.shell.state.accent);
+        // The dark/light toggle, the accent picker and the accent tint (#355)
+        // change the shell's look; mirror them onto the window.
+        let look = (
+            self.shell.state.theme,
+            self.shell.state.accent,
+            self.shell.state.accent_tint,
+            self.shell.state.accent_tint_strength,
+        );
         if look != self.applied_look {
             let theme = win32_theme(look.0, look.1);
             ui.set_theme(theme);
             if let Some(window) = &self.viz_window {
                 window.set_theme(theme);
             }
+            ui.set_accent_tint(look.2);
+            ui.set_accent_tint_strength(look.3);
             self.applied_look = look;
         }
 

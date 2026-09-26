@@ -65,6 +65,10 @@ pub enum SettingsMsg {
     SetTheme(UiTheme),
     /// The Appearance page picked an accent preset.
     SetAccent(Accent),
+    /// The Appearance page toggled the window accent tint (#355).
+    SetAccentTint(bool),
+    /// The Appearance page changed the accent tint strength (#355).
+    SetAccentTintStrength(u8),
     /// The Appearance page toggled the status-bar visualizer.
     ToggleVisualizer(bool),
     /// The Appearance page picked a visualizer mode.

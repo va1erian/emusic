@@ -15,6 +15,7 @@ use emusic_ui::waker::{Waker as _, WakerSlot};
 use winshell::{IpcMessage, SingleInstance};
 
 use emusic::app::{Msg, Win32App};
+use emusic::theme::win32_theme;
 use emusic::window::window_spec;
 
 fn main() -> anyhow::Result<()> {
@@ -65,11 +66,9 @@ fn run_ui(
     let startup = (!startup.files.is_empty()).then_some(startup);
     let ipc = ipc::IpcBridge::primary(listener);
 
-    // The window chrome follows the theme the shell was configured with.
-    let window_theme = match config.theme {
-        emusic_ui::state::Theme::Dark => win32ui::Theme::dark(),
-        emusic_ui::state::Theme::Light => win32ui::Theme::light(),
-    };
+    // The window chrome follows the theme and accent the shell was configured
+    // with, so the accent tint (#355) starts from the user's colour.
+    let window_theme = win32_theme(config.theme, config.accent);
 
     // Register the shell's `TaskbarButtonCreated` message before the window
     // exists, so the raw-message hook below recognises it even if the taskbar
@@ -77,37 +76,46 @@ fn run_ui(
     #[cfg(target_os = "windows")]
     winshell::thumbbar::taskbar_button_created_message();
 
-    win32ui::run_app(window_spec(1100.0, 720.0, window_theme), move |ui| {
-        let backends = backend::build(mock, waker.handle());
-        let emusic_ui::backend::Backends {
-            library,
-            player,
-            notice,
-        } = backends;
-        // Keep a handle on the waker across `Win32App::new` (which binds it)
-        // so the taskbar message hook can wake the app even while it is idle.
-        let hook_waker = waker.handle();
-        let mut app = Win32App::new(
-            ui,
-            library,
-            player,
-            config,
-            config_path,
-            Some(ipc),
-            startup,
-            waker,
-        );
-        if let Some(notice) = notice {
-            app.set_backend_notice(notice);
-        }
-        if mock {
-            // A `--mock` run has no preset install layout; serve the same
-            // deterministic placeholder list the screenshot tool uses (#338).
-            app.seed_placeholder_presets();
-        }
-        attach_shell_integrations(ui, &mut app, hook_waker);
-        app
-    })
+    win32ui::run_app(
+        window_spec(
+            1100.0,
+            720.0,
+            window_theme,
+            config.accent_tint,
+            config.accent_tint_strength,
+        ),
+        move |ui| {
+            let backends = backend::build(mock, waker.handle());
+            let emusic_ui::backend::Backends {
+                library,
+                player,
+                notice,
+            } = backends;
+            // Keep a handle on the waker across `Win32App::new` (which binds it)
+            // so the taskbar message hook can wake the app even while it is idle.
+            let hook_waker = waker.handle();
+            let mut app = Win32App::new(
+                ui,
+                library,
+                player,
+                config,
+                config_path,
+                Some(ipc),
+                startup,
+                waker,
+            );
+            if let Some(notice) = notice {
+                app.set_backend_notice(notice);
+            }
+            if mock {
+                // A `--mock` run has no preset install layout; serve the same
+                // deterministic placeholder list the screenshot tool uses (#338).
+                app.seed_placeholder_presets();
+            }
+            attach_shell_integrations(ui, &mut app, hook_waker);
+            app
+        },
+    )
     .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
 }
 
