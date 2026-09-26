@@ -31,15 +31,23 @@ const SEARCH_WIDTH: f32 = 200.0;
 const SEARCH_HEIGHT: f32 = 22.0;
 /// Horizontal inset of the band contents from the window edges.
 const BAND_INSET: f32 = 6.0;
-/// A spinner/transport glyph's text size is handled by the widget; these are
-/// the short marks drawn as icons.
-const GLYPH_PREVIOUS: &str = "\u{25C0}\u{25C0}";
+/// The transport/band marks. The Win32 build drew these with the Segoe Fluent
+/// Icons glyphs (`E892` previous, `E768` play, `E769` pause, `E71A` stop,
+/// `E893` next, `E8EE` repeat, `E8B1` shuffle, `E721` search), but the portable
+/// [`Glyph`] has no transport variants and [`Glyph::Text`] cannot select the
+/// icon font, so the same Fluent codepoints render as missing glyphs. Until a
+/// portable icon set lands (xui #114), use the standard Unicode media marks,
+/// which the default UI font does render and which mirror the Fluent shapes.
+const GLYPH_PREVIOUS: &str = "\u{23EE}";
 const GLYPH_PLAY: &str = "\u{25B6}";
 const GLYPH_PAUSE: &str = "\u{23F8}";
-const GLYPH_STOP: &str = "\u{25A0}";
-const GLYPH_NEXT: &str = "\u{25B6}\u{25B6}";
+const GLYPH_STOP: &str = "\u{23F9}";
+const GLYPH_NEXT: &str = "\u{23ED}";
 const GLYPH_REPEAT: &str = "\u{27F3}";
 const GLYPH_SHUFFLE: &str = "\u{21C4}";
+/// Window buttons on platforms that draw no native chrome; Fluent has no
+/// minimize/maximize pair that matches the native caption at this size, so keep
+/// the simple short marks.
 const GLYPH_MINIMIZE: &str = "\u{2013}";
 const GLYPH_MAXIMIZE: &str = "\u{25A1}";
 
@@ -170,6 +178,10 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
     } else {
         Glyph::Text(GLYPH_PLAY)
     };
+    // Transport, repeat and shuffle stay together on the left, as in the Win32
+    // build; a flexible spacer on each side of the elapsed/seek/total group
+    // keeps it near the centre and lets the band fill the client width, with
+    // the volume and search pinned right.
     let bar = TopBar::new(ui, Rect::default())
         .expect("create top bar")
         .icon(PREVIOUS, Glyph::Text(GLYPH_PREVIOUS))
@@ -180,17 +192,16 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
         .tooltip(STOP, "Stop")
         .icon(NEXT, Glyph::Text(GLYPH_NEXT))
         .tooltip(NEXT, "Next")
-        .spacer_weight(2)
-        .label(ELAPSED, "0:00")
-        .slider(SEEK, 0.0, 1.0)
-        .tooltip(SEEK, "Seek")
-        .label(TOTAL, "")
-        .spacer_weight(2)
         .toggle(REPEAT, Glyph::Text(GLYPH_REPEAT))
         .tooltip(REPEAT, "Repeat")
         .toggle(SHUFFLE, Glyph::Text(GLYPH_SHUFFLE))
         .tooltip(SHUFFLE, "Shuffle")
-        .spacer_weight(2)
+        .spacer()
+        .label(ELAPSED, "0:00")
+        .slider(SEEK, 0.0, 1.0)
+        .tooltip(SEEK, "Seek")
+        .label(TOTAL, "")
+        .spacer()
         .slider(VOLUME, 0.0, 1.0)
         .tooltip(VOLUME, "Volume")
         .icon(SEARCH, Glyph::Search)
