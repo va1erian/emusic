@@ -189,11 +189,13 @@ impl AlbumGridView {
     /// Shows or hides the whole view (central-area routing). The track list
     /// and close button stay governed by the selection.
     ///
-    /// Hiding releases the grid's renderer and decoded covers: browsing a
-    /// gallery leaves a Direct2D target, uploaded cover bitmaps and decoded
-    /// RGBA resident, none of which is needed while another view is shown. The
-    /// on-disk thumbnail cache stays, so showing the view again re-decodes only
-    /// the tiles it actually paints.
+    /// Hiding releases the grid's uploaded cover images and decoded covers:
+    /// browsing a gallery leaves decoded RGBA and uploaded cover bitmaps
+    /// resident, none of which is needed while another view is shown. The
+    /// renderer surface itself is kept, so showing the view again paints into
+    /// the existing target rather than recreating one (which would flash an
+    /// unpainted frame). The on-disk thumbnail cache stays, so showing the view
+    /// again re-decodes only the tiles it actually paints.
     pub fn set_visible(&self, visible: bool) {
         if self.active.get() != visible {
             self.active.set(visible);
@@ -204,11 +206,12 @@ impl AlbumGridView {
         }
     }
 
-    /// Drops the grid's renderer (Direct2D target and image caches) and the
-    /// decoded cover buffers. Clearing each tile's uploaded-image id is what
-    /// makes the next paint re-upload the covers the new surface.
+    /// Drops the grid's uploaded cover images (retained RGBA and device
+    /// bitmaps) and the decoded cover buffers, keeping the renderer surface.
+    /// Clearing each tile's uploaded-image id is what makes the next paint
+    /// re-upload the covers into the same target.
     fn release_caches(&self) {
-        self.grid.release_renderer();
+        self.grid.release_images();
         for tile in self.tiles.iter() {
             tile.clear_cover();
         }
