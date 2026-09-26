@@ -6,7 +6,7 @@
 //! right-click menu.
 
 use emusic_ui::state::projectm::{PresetRequest, VizDock};
-use emusic_ui::state::{AppState, Command, PanelKind, View, VizCommand};
+use emusic_ui::state::{AppState, Command, PanelKind, SettingsTab, View, VizCommand};
 use win32ui::Menu;
 use win32ui::prelude::*;
 
@@ -50,12 +50,21 @@ pub fn build(state: &AppState) -> Menu<Msg> {
         .separator()
         .submenu("&Visualization", viz_menu(state));
 
-    let help = Menu::new().item("Keyboard shortcuts…", None, || Msg::KeyboardShortcuts);
+    let help = Menu::new()
+        .item("Keyboard shortcuts…", None, || Msg::KeyboardShortcuts)
+        .separator()
+        .item("&About emusic", None, about_message);
 
     Menu::new()
         .submenu("&File", file)
         .submenu("&View", view)
         .submenu("&Help", help)
+}
+
+/// The message Help → About emusic dispatches (#364): switch to Settings with
+/// the About tab selected. A free function so the item's mapping is testable.
+fn about_message() -> Msg {
+    Msg::Dispatch(Command::OpenSettings(SettingsTab::About))
 }
 
 /// The View → Visualization submenu: show/hide, preset navigation and lock,
@@ -138,4 +147,19 @@ pub fn viz_context(state: &AppState) -> Menu<Msg> {
         )
         .separator()
         .item("Hide", None, || Msg::Viz(VizCommand::SetVisible(false)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn about_item_opens_settings_on_the_about_tab() {
+        match about_message() {
+            Msg::Dispatch(Command::OpenSettings(tab)) => {
+                assert_eq!(tab, SettingsTab::About);
+            }
+            _ => panic!("Help → About emusic must open Settings → About"),
+        }
+    }
 }

@@ -7,13 +7,17 @@ use emusic_player::tracker::TrackerSettings;
 
 use crate::library_api::{EditRequest, TrackQuery};
 
-use super::{Accent, PanelKind, View, VizCommand};
+use super::{Accent, PanelKind, SettingsTab, View, VizCommand};
 
 /// One-shot request emitted by a panel/view during `ui()`, applied by the
 /// shell after layout so widgets never need `&mut AppState` themselves.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     SetView(View),
+    /// Switch to the Settings view with `tab` selected (#364). Unlike
+    /// [`Command::SetView`], which leaves the active Settings sub-page where it
+    /// was, this also selects the tab (e.g. Help → About emusic).
+    OpenSettings(SettingsTab),
     ToggleTheme,
     SetAccent(Accent),
     /// Tint the win32 window's acrylic bands with the accent, or stop (#355).
