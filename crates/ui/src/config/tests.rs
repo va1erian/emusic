@@ -16,8 +16,8 @@ use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
 use crate::state::projectm::{ProjectMSettings, VizDock, VizLayout, VizMonitor};
 use crate::state::{
-    Accent, AppState, Appearance, Density, FontSize, PanelVisibility, Rgb, Theme, View,
-    VisualizerMode, WindowGeometry,
+    Accent, AppState, Appearance, DEFAULT_ACCENT_TINT_STRENGTH, Density, FontSize, PanelVisibility,
+    Rgb, Theme, View, VisualizerMode, WindowGeometry,
 };
 
 /// A single-track explicit queue snapshot, for session tests.
@@ -66,6 +66,8 @@ fn non_default_config() -> Config {
         shuffle: true,
         theme: Theme::Light,
         accent: Accent::Blue,
+        accent_tint: true,
+        accent_tint_strength: 0xC8,
         appearance: Appearance {
             font_size: FontSize::Larger,
             density: Density::Spacious,
@@ -208,6 +210,9 @@ fn missing_fields_fall_back_to_defaults() {
     // Everything absent keeps its default.
     assert_eq!(config.theme, Theme::default());
     assert_eq!(config.accent, Accent::default());
+    // An accent tint is opt-in (#355), but its strength keeps its default.
+    assert!(!config.accent_tint);
+    assert_eq!(config.accent_tint_strength, DEFAULT_ACCENT_TINT_STRENGTH);
     // A config written before #309 has no appearance section: size/density
     // fall back to the defaults and zebra stays on.
     assert_eq!(config.appearance, Appearance::default());
@@ -247,6 +252,8 @@ fn unknown_fields_are_ignored() {
     assert_eq!(config.repeat_mode, defaults.repeat_mode);
     assert_eq!(config.theme, defaults.theme);
     assert_eq!(config.accent, defaults.accent);
+    assert_eq!(config.accent_tint, defaults.accent_tint);
+    assert_eq!(config.accent_tint_strength, defaults.accent_tint_strength);
     assert_eq!(config.appearance, defaults.appearance);
     assert_eq!(config.panels, defaults.panels);
     assert_eq!(

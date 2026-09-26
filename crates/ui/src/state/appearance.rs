@@ -32,6 +32,10 @@ impl Rgb {
 /// MusicBee-ish orange, the default accent ([`Accent::Orange`]).
 pub const DEFAULT_ACCENT: Rgb = Rgb::from_rgb(0xE8, 0x7A, 0x1E);
 
+/// Default strength of the window accent tint (#355), `0..=255`, matching
+/// `win32ui`'s own default.
+pub const DEFAULT_ACCENT_TINT_STRENGTH: u8 = 0x66;
+
 /// Colour scheme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

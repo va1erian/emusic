@@ -16,6 +16,10 @@ pub enum Command {
     SetView(View),
     ToggleTheme,
     SetAccent(Accent),
+    /// Tint the win32 window's acrylic bands with the accent, or stop (#355).
+    SetAccentTint(bool),
+    /// Set the accent tint strength, `0..=255` (#355).
+    SetAccentTintStrength(u8),
     /// Cycle the visualizer strip's mode (spectrum → oscilloscope → off),
     /// emitted by clicking the strip (#25).
     CycleVisualizer,

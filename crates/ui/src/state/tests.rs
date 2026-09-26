@@ -22,3 +22,14 @@ fn go_to_album_switches_view_and_selects_the_album() {
     assert_eq!(state.view, View::Albums);
     assert!(state.album_grid.selected.is_some());
 }
+
+#[test]
+fn accent_tint_commands_update_the_state() {
+    let mut state = AppState::default();
+    assert!(!state.accent_tint);
+
+    state.apply_local(&Command::SetAccentTint(true));
+    state.apply_local(&Command::SetAccentTintStrength(0xD0));
+    assert!(state.accent_tint);
+    assert_eq!(state.accent_tint_strength, 0xD0);
+}

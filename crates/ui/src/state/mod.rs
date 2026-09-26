@@ -17,7 +17,7 @@ mod view;
 mod visualizer;
 mod window;
 
-pub use appearance::{Accent, DEFAULT_ACCENT, Rgb, Theme};
+pub use appearance::{Accent, DEFAULT_ACCENT, DEFAULT_ACCENT_TINT_STRENGTH, Rgb, Theme};
 pub use command::Command;
 pub use metrics::{Appearance, Density, FontSize, Metrics};
 pub use palette::{Palette, Rgba};
@@ -67,6 +67,12 @@ pub struct AppState {
     pub view: View,
     pub theme: Theme,
     pub accent: Accent,
+    /// Whether the win32 window's acrylic bands are tinted with the accent
+    /// (#355).
+    pub accent_tint: bool,
+    /// The accent tint's strength, `0..=255` (#355); ignored when
+    /// [`AppState::accent_tint`] is off.
+    pub accent_tint_strength: u8,
     /// Font size, list density and zebra striping (#309).
     pub appearance: Appearance,
     pub panels: PanelVisibility,
@@ -184,6 +190,8 @@ impl Default for AppState {
             view: View::Music,
             theme: Theme::Dark,
             accent: Accent::default(),
+            accent_tint: false,
+            accent_tint_strength: DEFAULT_ACCENT_TINT_STRENGTH,
             appearance: Appearance::default(),
             panels: PanelVisibility::default(),
             navigator_width: DEFAULT_NAVIGATOR_WIDTH,
@@ -238,6 +246,8 @@ impl AppState {
             Command::SetView(view) => self.view = *view,
             Command::ToggleTheme => self.theme = self.theme.toggled(),
             Command::SetAccent(accent) => self.accent = *accent,
+            Command::SetAccentTint(on) => self.accent_tint = *on,
+            Command::SetAccentTintStrength(strength) => self.accent_tint_strength = *strength,
             Command::CycleVisualizer => self.visualizer = self.visualizer.next(),
             Command::Viz(cmd) => self.projectm.apply(cmd),
             Command::TogglePanel(kind) => match kind {

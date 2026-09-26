@@ -95,6 +95,12 @@ pub struct Config {
     pub theme: Theme,
     /// UI accent colour (preset name or `#rrggbb`).
     pub accent: Accent,
+    /// Whether the win32 window's acrylic bands are tinted with the accent
+    /// (#355).
+    pub accent_tint: bool,
+    /// Accent tint strength, `0..=255` (#355).
+    #[serde(default = "default_accent_tint_strength")]
+    pub accent_tint_strength: u8,
     /// Font size, list density and zebra striping (#309).
     #[serde(default)]
     pub appearance: Appearance,
@@ -169,6 +175,11 @@ fn default_sid_fallback_secs() -> u32 {
     emusic_player::sid::DEFAULT_TUNE_LENGTH.as_secs() as u32
 }
 
+/// Default accent tint strength (#355).
+fn default_accent_tint_strength() -> u8 {
+    crate::state::DEFAULT_ACCENT_TINT_STRENGTH
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -177,6 +188,8 @@ impl Default for Config {
             shuffle: false,
             theme: Theme::default(),
             accent: Accent::default(),
+            accent_tint: false,
+            accent_tint_strength: default_accent_tint_strength(),
             appearance: Appearance::default(),
             panels: PanelVisibility::default(),
             column_browser_visible: true,
@@ -218,6 +231,8 @@ impl Config {
             shuffle: player.shuffle(),
             theme: state.theme,
             accent: state.accent,
+            accent_tint: state.accent_tint,
+            accent_tint_strength: state.accent_tint_strength,
             appearance: state.appearance,
             panels: state.panels,
             column_browser_visible: state.music.browser.visible,
@@ -247,6 +262,8 @@ impl Config {
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.theme = self.theme;
         state.accent = self.accent;
+        state.accent_tint = self.accent_tint;
+        state.accent_tint_strength = self.accent_tint_strength;
         state.appearance = self.appearance;
         state.panels = self.panels;
         state.music.browser.visible = self.column_browser_visible;

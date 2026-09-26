@@ -36,6 +36,9 @@ pub(super) struct AppearancePage {
     accent: Custom<AccentSwatches, Msg>,
     custom_label: Label,
     custom: ColorPicker<Msg>,
+    tint: CheckBox<Msg>,
+    tint_strength_label: Label,
+    tint_strength: Slider<Msg>,
     visualizer: CheckBox<Msg>,
     mode_label: Label,
     mode: RadioGroup<VisualizerMode, Msg>,
@@ -95,6 +98,16 @@ impl AppearancePage {
             .checked(visualizer_enabled)
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
 
+        // Window accent tint (#355): tints the acrylic title strip, top bar
+        // and status band; the strength slider drives win32ui's tint alpha.
+        let tint = CheckBox::new(&mut panel, "Tint acrylic bands with the accent")?
+            .on_toggle(|on| Some(Msg::Settings(SettingsMsg::SetAccentTint(on))));
+        let tint_strength = Slider::new(&mut panel, 0.0..=255.0)?.on_change(|value| {
+            Some(Msg::Settings(SettingsMsg::SetAccentTintStrength(
+                value.round().clamp(0.0, 255.0) as u8,
+            )))
+        });
+
         let page = Self {
             form,
             heading: Label::new(&mut panel, Rect::default(), "Appearance")?,
@@ -109,6 +122,9 @@ impl AppearancePage {
             accent,
             custom_label: Label::new(&mut panel, Rect::default(), "Custom colour")?,
             custom,
+            tint,
+            tint_strength_label: Label::new(&mut panel, Rect::default(), "Tint strength")?,
+            tint_strength,
             visualizer,
             mode_label: Label::new(&mut panel, Rect::default(), "Visualizer mode")?,
             mode,
@@ -162,6 +178,11 @@ impl AppearancePage {
                 ),
                 ROW_HEIGHT,
             ),
+            (self.tint.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
+            (
+                labelled(&self.tint_strength_label, self.tint_strength.fill(1)),
+                ROW_HEIGHT,
+            ),
             (self.visualizer.height(dip(ROW_HEIGHT)), ROW_HEIGHT),
         ];
         if self.visualizer_on.get() {
@@ -212,6 +233,10 @@ impl AppearancePage {
         self.custom.set_color(Color::rgb(r, g, b));
         self.visualizer.set_checked(state.visualizer_enabled);
         self.mode.set_selected(&state.visualizer);
+        self.tint.set_checked(state.accent_tint);
+        self.tint_strength
+            .set_value(f64::from(state.accent_tint_strength));
+        self.tint_strength.set_enabled(state.accent_tint);
         if self.visualizer_on.get() != state.visualizer_enabled {
             self.visualizer_on.set(state.visualizer_enabled);
             self.refresh_mode_visibility();
@@ -235,6 +260,13 @@ impl AppearancePage {
             }
             SettingsMsg::SetAccent(accent) => {
                 out.push(emusic_ui::state::Command::SetAccent(*accent));
+            }
+            SettingsMsg::SetAccentTint(on) => {
+                out.push(emusic_ui::state::Command::SetAccentTint(*on));
+                self.tint_strength.set_enabled(*on);
+            }
+            SettingsMsg::SetAccentTintStrength(strength) => {
+                out.push(emusic_ui::state::Command::SetAccentTintStrength(*strength));
             }
             SettingsMsg::ToggleVisualizer(on) => {
                 state.visualizer_enabled = *on;
