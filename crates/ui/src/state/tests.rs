@@ -2,7 +2,7 @@
 //! [`AppState::apply_local`]. The [`Accent`] spelling tests live alongside
 //! the appearance code (#94).
 
-use crate::state::{AppState, Command, View};
+use crate::state::{AppState, Command, SettingsTab, View};
 
 #[test]
 fn go_to_artist_switches_view_and_seeds_the_search() {
@@ -21,6 +21,19 @@ fn go_to_album_switches_view_and_selects_the_album() {
     });
     assert_eq!(state.view, View::Albums);
     assert!(state.album_grid.selected.is_some());
+}
+
+#[test]
+fn open_settings_selects_the_view_and_tab() {
+    let mut state = AppState {
+        view: View::Music,
+        settings_tab: SettingsTab::Library,
+        ..AppState::default()
+    };
+
+    state.apply_local(&Command::OpenSettings(SettingsTab::About));
+    assert_eq!(state.view, View::Settings);
+    assert_eq!(state.settings_tab, SettingsTab::About);
 }
 
 #[test]

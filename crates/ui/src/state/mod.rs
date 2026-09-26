@@ -244,6 +244,10 @@ impl AppState {
     pub fn apply_local(&mut self, cmd: &Command) {
         match cmd {
             Command::SetView(view) => self.view = *view,
+            Command::OpenSettings(tab) => {
+                self.view = View::Settings;
+                self.settings_tab = *tab;
+            }
             Command::ToggleTheme => self.theme = self.theme.toggled(),
             Command::SetAccent(accent) => self.accent = *accent,
             Command::SetAccentTint(on) => self.accent_tint = *on,
