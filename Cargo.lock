@@ -4180,7 +4180,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 [[package]]
 name = "xui"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=1f5a60d2ab3c77992fb417d43a38cef3752b05ed#1f5a60d2ab3c77992fb417d43a38cef3752b05ed"
+source = "git+https://github.com/va1erian/xui?rev=792c7917fcdaf370db7a5940c6b6e5a9e207fd96#792c7917fcdaf370db7a5940c6b6e5a9e207fd96"
 dependencies = [
  "embed-resource",
  "xui-canvas",
@@ -4191,7 +4191,7 @@ dependencies = [
 [[package]]
 name = "xui-canvas"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=1f5a60d2ab3c77992fb417d43a38cef3752b05ed#1f5a60d2ab3c77992fb417d43a38cef3752b05ed"
+source = "git+https://github.com/va1erian/xui?rev=792c7917fcdaf370db7a5940c6b6e5a9e207fd96#792c7917fcdaf370db7a5940c6b6e5a9e207fd96"
 dependencies = [
  "cosmic-text",
  "glow",
@@ -4206,7 +4206,7 @@ dependencies = [
 [[package]]
 name = "xui-core"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=1f5a60d2ab3c77992fb417d43a38cef3752b05ed#1f5a60d2ab3c77992fb417d43a38cef3752b05ed"
+source = "git+https://github.com/va1erian/xui?rev=792c7917fcdaf370db7a5940c6b6e5a9e207fd96#792c7917fcdaf370db7a5940c6b6e5a9e207fd96"
 dependencies = [
  "png 0.17.16",
  "zune-jpeg",
@@ -4215,7 +4215,7 @@ dependencies = [
 [[package]]
 name = "xui-gpu"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=1f5a60d2ab3c77992fb417d43a38cef3752b05ed#1f5a60d2ab3c77992fb417d43a38cef3752b05ed"
+source = "git+https://github.com/va1erian/xui?rev=792c7917fcdaf370db7a5940c6b6e5a9e207fd96#792c7917fcdaf370db7a5940c6b6e5a9e207fd96"
 dependencies = [
  "glow",
  "xui-core",
@@ -4224,7 +4224,7 @@ dependencies = [
 [[package]]
 name = "xui-win32"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=1f5a60d2ab3c77992fb417d43a38cef3752b05ed#1f5a60d2ab3c77992fb417d43a38cef3752b05ed"
+source = "git+https://github.com/va1erian/xui?rev=792c7917fcdaf370db7a5940c6b6e5a9e207fd96#792c7917fcdaf370db7a5940c6b6e5a9e207fd96"
 dependencies = [
  "embed-resource",
  "glow",
