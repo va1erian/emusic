@@ -3,7 +3,7 @@ name = "emusic"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "emusic: Windows music player and library, native Win32 UI on win32ui"
+description = "emusic: music player and library; the binary dispatches to a platform frontend"
 build = "build.rs"
 
 [[bin]]
@@ -18,24 +18,26 @@ required-features = ["shot"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-emusic-milkdrop = { path = "../milkdrop" }
-emusic-player = { path = "../player" }
-emusic-projectm = { path = "../projectm" }
 emusic-ui = { path = "../ui" }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-rfd = { version = "0.15", default-features = false }
-png = { version = "0.18", optional = true }
-souvlaki = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
+
+# The native frontend is the Windows default; the portable frontend is the
+# default everywhere else. Each frontend pulls its own toolkit only on the
+# platform it targets, so the binary names the platform boundary once.
+[target.'cfg(windows)'.dependencies]
+emusic-frontend-win32 = { path = "../frontend-win32" }
+png = { version = "0.18", optional = true }
+win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main", optional = true }
 winshell = { path = "../winshell" }
 
+[target.'cfg(not(windows))'.dependencies]
+emusic-frontend-portable = { path = "../frontend-portable" }
+
 [features]
-# The headless screenshot tool (`emusic-shot`, #118). Off by default so the
-# PNG encoder and the WinRT capture bindings never enter the real binary's
-# dependency tree.
-shot = ["dep:png", "win32ui/wgc"]
+# The headless screenshot tool (`emusic-shot`, #118). Off by default so the PNG
+# encoder and the WinRT capture bindings never enter the real binary's tree.
+shot = ["dep:png", "dep:win32ui", "win32ui/wgc"]
 
 [build-dependencies]
 embed-resource = "3.0"

@@ -1,0 +1,28 @@
+[package]
+name = "emusic-frontend-win32"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "emusic's native Win32 frontend (win32ui): the view layer over emusic-ui"
+
+# The native frontend is Windows-only. On other targets the crate compiles to
+# an empty library (see `src/lib.rs`), mirroring `xui-win32`, so the workspace
+# still checks where a portable frontend is selected instead.
+[target.'cfg(windows)'.dependencies]
+anyhow = "1"
+emusic-milkdrop = { path = "../milkdrop" }
+emusic-player = { path = "../player" }
+emusic-projectm = { path = "../projectm" }
+emusic-ui = { path = "../ui" }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rfd = { version = "0.15", default-features = false }
+souvlaki = "0.8"
+tracing = "0.1"
+win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main" }
+winshell = { path = "../winshell" }
+
+[build-dependencies]
+embed-resource = "3.0"
+
+[target.'cfg(windows)'.dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -11,8 +11,8 @@
 //! renders presets; without them it shows the fallback plasma and the
 //! "projectM not installed" hint. Close the window to quit.
 
-use emusic::app::Msg;
-use emusic::views::projectm::ProjectMView;
+use emusic_frontend_win32::app::Msg;
+use emusic_frontend_win32::views::projectm::ProjectMView;
 use emusic_ui::mock::MockPlayer;
 use win32ui::column;
 use win32ui::prelude::*;

@@ -1,23 +1,25 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
-//! A thin shell around `emusic-ui`: `main` handles the CLI, file associations
-//! and the single-instance handshake, then opens a `win32ui` window whose app
-//! owns the shared [`Shell`](emusic_ui::shell::Shell).
+//! emusic's thin entry point (#106, #merge): it owns the CLI, the file
+//! associations and the single-instance handshake, then hands a
+//! [`Startup`](emusic_ui::startup::Startup) to whichever frontend is compiled
+//! in — the native Win32 one on Windows, the portable one elsewhere.
+//!
+//! No toolkit is named here (except `winshell` for the Windows process
+//! bootstrap): the frontend crate owns the window and the message loop.
 
 use std::env;
 
 use clap::Parser;
-use emusic_ui::backend::{self, ipc};
 use emusic_ui::cli::Cli;
 use emusic_ui::config::{self, Config};
-use emusic_ui::waker::{Waker as _, WakerSlot};
-use winshell::{IpcMessage, SingleInstance};
+use emusic_ui::waker::WakerSlot;
 
-use emusic::app::{Msg, Win32App};
-use emusic::icon;
-use emusic::theme::win32_theme;
-use emusic::window::window_spec;
+#[cfg(not(windows))]
+use emusic_frontend_portable as frontend;
+#[cfg(windows)]
+use emusic_frontend_win32 as frontend;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -29,6 +31,16 @@ fn main() -> anyhow::Result<()> {
     if cli.unregister {
         return unregister_associations();
     }
+
+    run(cli)
+}
+
+/// Windows bootstrap: the single-instance handshake, then the native frontend.
+#[cfg(windows)]
+fn run(cli: Cli) -> anyhow::Result<()> {
+    use emusic_ui::backend::ipc;
+    use emusic_ui::waker::Waker as _;
+    use winshell::{IpcMessage, SingleInstance};
 
     let message = IpcMessage {
         enqueue: cli.enqueue,
@@ -47,118 +59,44 @@ fn main() -> anyhow::Result<()> {
             tracing::info!("emusic is already running; forwarded arguments and exiting");
             Ok(())
         }
-        SingleInstance::Primary(listener) => run_ui(cli, message, waker, listener),
+        SingleInstance::Primary(listener) => {
+            let ipc = ipc::IpcBridge::primary(listener);
+            frontend::run(build_startup(cli, Some(ipc), waker))
+        }
     }
 }
 
-/// Opens the main window and runs the message loop until it closes.
-fn run_ui(
+/// Non-Windows bootstrap: no single-instance/IPC pipe yet, so it runs the
+/// portable frontend directly.
+#[cfg(not(windows))]
+fn run(cli: Cli) -> anyhow::Result<()> {
+    frontend::run(build_startup(cli, None, WakerSlot::new()))
+}
+
+/// Resolves the configuration and packages the session for the frontend.
+fn build_startup(
     cli: Cli,
-    startup: IpcMessage,
+    ipc: Option<emusic_ui::backend::ipc::IpcBridge>,
     waker: WakerSlot,
-    listener: winshell::Listener,
-) -> anyhow::Result<()> {
+) -> emusic_ui::startup::Startup {
     let mock = cli.mock;
     // A `--mock` run never touches the real user's config (#135).
     let config_path = if mock { None } else { config::config_path() };
     let config = config_path
         .as_deref()
         .map_or_else(Config::default, config::load);
-    let startup = (!startup.files.is_empty()).then_some(startup);
-    let ipc = ipc::IpcBridge::primary(listener);
-
-    // The window chrome follows the theme and accent the shell was configured
-    // with, so the accent tint (#355) starts from the user's colour.
-    let window_theme = win32_theme(config.theme, config.accent);
-
-    // Register the shell's `TaskbarButtonCreated` message before the window
-    // exists, so the raw-message hook below recognises it even if the taskbar
-    // announces the button while the window is being created (#321).
-    #[cfg(target_os = "windows")]
-    winshell::thumbbar::taskbar_button_created_message();
-
-    win32ui::run_app(
-        window_spec(
-            1100.0,
-            720.0,
-            window_theme,
-            config.accent_tint,
-            config.accent_tint_strength,
-        ),
-        move |ui| {
-            icon::install(ui);
-            let backends = backend::build(mock, waker.handle());
-            let emusic_ui::backend::Backends {
-                library,
-                player,
-                notice,
-            } = backends;
-            // Keep a handle on the waker across `Win32App::new` (which binds it)
-            // so the taskbar message hook can wake the app even while it is idle.
-            let hook_waker = waker.handle();
-            let mut app = Win32App::new(
-                ui,
-                library,
-                player,
-                config,
-                config_path,
-                Some(ipc),
-                startup,
-                waker,
-            );
-            if let Some(notice) = notice {
-                app.set_backend_notice(notice);
-            }
-            if mock {
-                // A `--mock` run has no preset install layout; serve the same
-                // deterministic placeholder list the screenshot tool uses (#338).
-                app.seed_placeholder_presets();
-            }
-            attach_shell_integrations(ui, &mut app, hook_waker);
-            app
-        },
-    )
-    .map_err(|err| anyhow::anyhow!("win32ui: {err}"))
+    emusic_ui::startup::Startup {
+        config,
+        config_path,
+        ipc,
+        files: cli.files.clone(),
+        enqueue: cli.enqueue,
+        waker,
+        mock,
+    }
 }
 
-/// Binds the OS integrations to this window (#320, #321, #322) and installs
-/// the taskbar message hook they need.
-///
-/// The hook forwards the raw message to the winshell taskbar hooks
-/// ([`winshell::thumbbar::msg_hook`] and [`winshell::taskbar::msg_hook`]) and
-/// wakes the app when either claims one, so an otherwise-idle app still drains
-/// the press or renders the requested thumbnail. It has to be installed after
-/// [`Win32App::new`] bound the waker but before the window is first shown (the
-/// shell announces the taskbar button only after that).
-fn attach_shell_integrations(
-    ui: &mut win32ui::Ui<Msg>,
-    app: &mut Win32App,
-    hook_waker: emusic_ui::waker::WakerHandle,
-) {
-    let hwnd = ui.hwnd().raw();
-    app.attach_smtc(emusic::backend::smtc::Smtc::new(Some(
-        hwnd as *mut std::ffi::c_void,
-    )));
-    app.attach_thumbbar(emusic::backend::thumbbar::ThumbBar::new(Some(
-        hwnd as isize,
-    )));
-    app.attach_taskbar_preview(emusic::backend::taskbar::TaskbarPreview::new(
-        Some(hwnd as isize),
-        hook_waker.clone(),
-    ));
-    ui.on_raw_message(move |msg| {
-        // `|` (not `||`): both hooks must see every message, and either may
-        // claim it. The thumbnail-toolbar hook owns `WM_COMMAND`/
-        // `TaskbarButtonCreated`; the taskbar hook owns the DWM thumbnail
-        // request.
-        let claimed = winshell::thumbbar::msg_hook(msg) | winshell::taskbar::msg_hook(msg);
-        if claimed {
-            hook_waker.wake();
-        }
-        claimed
-    });
-}
-
+#[cfg(windows)]
 fn register_associations() -> anyhow::Result<()> {
     let exe = env::current_exe()?;
     let manager = winshell::assoc::AssocManager::new("emusic");
@@ -167,9 +105,20 @@ fn register_associations() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
+fn register_associations() -> anyhow::Result<()> {
+    anyhow::bail!("registering file associations is a Windows feature")
+}
+
+#[cfg(windows)]
 fn unregister_associations() -> anyhow::Result<()> {
     let manager = winshell::assoc::AssocManager::new("emusic");
     manager.unregister()?;
     tracing::info!("removed emusic file associations");
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn unregister_associations() -> anyhow::Result<()> {
+    anyhow::bail!("file associations are a Windows feature")
 }

@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use win32ui::prelude::*;
 
-/// The resource id `build.rs` embeds from `emusic.rc` (see [`emusic::icon`]).
+/// The resource id `build.rs` embeds from `emusic.rc` (see [`emusic_frontend_win32::icon`]).
 const ICON_RESOURCE_ID: u16 = 1;
 
 struct IconApp;
@@ -37,7 +37,7 @@ fn the_embedded_icon_installs_on_a_window() {
                 Icon::from_resource(ICON_RESOURCE_ID).is_ok(),
                 "resource id {ICON_RESOURCE_ID} must be embedded by build.rs"
             );
-            emusic::icon::install(ui);
+            emusic_frontend_win32::icon::install(ui);
             installed_for_make.set(true);
             ui.emit(());
             IconApp

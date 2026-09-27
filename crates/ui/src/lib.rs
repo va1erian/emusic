@@ -25,6 +25,7 @@ pub mod panels;
 pub mod player_api;
 pub mod search;
 pub mod shell;
+pub mod startup;
 pub mod state;
 pub mod tag_editor;
 pub mod views;

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use emusic::app::{Msg, Win32App};
+use emusic_frontend_win32::app::{Msg, Win32App};
 use emusic_player::QueueSnapshot;
 use emusic_player::tracker::TrackerSettings;
 use emusic_ui::config::Config;

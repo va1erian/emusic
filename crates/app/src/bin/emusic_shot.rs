@@ -2,7 +2,7 @@
 
 //! Headless screenshot tool for the app (#118).
 //!
-//! Runs the real [`Win32App`](emusic::app::Win32App) against the
+//! Runs the real [`Win32App`](emusic_frontend_win32::app::Win32App) against the
 //! deterministic mock backend and writes one PNG per view. Capture uses
 //! `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path
 //! (`Ui::capture_composited`, the `wgc` feature): it reads the DWM-composited
@@ -40,11 +40,11 @@ use emusic_ui::state::{
 };
 use emusic_ui::waker::WakerSlot;
 
-use emusic::app::{Msg, Win32App};
-use emusic::icon;
-use emusic::theme::win32_theme;
-use emusic::views::settings::SettingsMsg;
-use emusic::window::window_spec;
+use emusic_frontend_win32::app::{Msg, Win32App};
+use emusic_frontend_win32::icon;
+use emusic_frontend_win32::theme::win32_theme;
+use emusic_frontend_win32::views::settings::SettingsMsg;
+use emusic_frontend_win32::window::window_spec;
 
 /// How long the window is left to settle (create its controls) before the
 /// capture. The capture itself waits for a composited frame, so this is only
@@ -445,8 +445,8 @@ struct ShotApp {
 
 /// One of the capturable dialogs, opened non-modal for the shot.
 enum ShotDialog {
-    Properties(win32ui::WindowHandle<emusic::dialogs::properties::Msg>),
-    TagEditor(win32ui::WindowHandle<emusic::dialogs::tag_editor::Msg>),
+    Properties(win32ui::WindowHandle<emusic_frontend_win32::dialogs::properties::Msg>),
+    TagEditor(win32ui::WindowHandle<emusic_frontend_win32::dialogs::tag_editor::Msg>),
 }
 
 impl ShotDialog {
@@ -468,16 +468,24 @@ impl App for ShotApp {
         }
         if self.dialog.is_none() {
             let opened = if let Some(track) = self.properties.take() {
-                Some(emusic::dialogs::properties::open(ui, &track).map(ShotDialog::Properties))
+                Some(
+                    emusic_frontend_win32::dialogs::properties::open(ui, &track)
+                        .map(ShotDialog::Properties),
+                )
             } else if let Some(state) = self.tag_editor.take() {
                 let bridge = std::rc::Rc::new(std::cell::RefCell::new(
-                    emusic::dialogs::tag_editor::Bridge::new(
+                    emusic_frontend_win32::dialogs::tag_editor::Bridge::new(
                         emusic_ui::tag_editor::Status::Editing,
                     ),
                 ));
                 Some(
-                    emusic::dialogs::tag_editor::open(ui, &state, bridge, ui.proxy())
-                        .map(ShotDialog::TagEditor),
+                    emusic_frontend_win32::dialogs::tag_editor::open(
+                        ui,
+                        &state,
+                        bridge,
+                        ui.proxy(),
+                    )
+                    .map(ShotDialog::TagEditor),
                 )
             } else {
                 None
