@@ -9,11 +9,11 @@
 //!
 //! When the active backend provides no native window buttons
 //! ([`crate::backend::is_canvas()`]) the caption band above the transport band
-//! is shown as a transparent drag region and portable window buttons are added
-//! to the bar. The native Win32 backend provides its own chrome (the extended
-//! title bar owns the strip and the native caption buttons own minimize/
-//! maximize/close), so the band node stays hidden and no portable buttons are
-//! added.
+//! carries the app title and the portable minimize/maximize/close buttons at
+//! its trailing edge, and the band's empty area stays the window's drag region.
+//! The native Win32 backend provides its own chrome (the extended title bar
+//! owns the strip and the native caption buttons own minimize/maximize/close),
+//! so the band stays hidden and the transport bar is unchanged.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -24,7 +24,7 @@ use emusic_ui::state::Command;
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Edit, Glyph, HasText, Label, TopBar, TopBarId};
+use xui::xui_core::widget::{Edit, Glyph, HasText, TopBar, TopBarId};
 
 use crate::app::Msg;
 use crate::backend::is_canvas;
@@ -36,6 +36,14 @@ const SEARCH_WIDTH: f32 = 200.0;
 const SEARCH_HEIGHT: f32 = 22.0;
 /// Horizontal inset of the band contents from the window edges.
 const BAND_INSET: f32 = 6.0;
+/// The app title shown at the caption band's leading edge.
+const CAPTION_TITLE: &str = "emusic";
+/// Design width of one caption band button. It mirrors the portable `TopBar`'s
+/// item width (`xui_core`'s `topbar::items::ITEM`), so the three window buttons
+/// tile their band without a gap.
+const CAPTION_BUTTON: f32 = 36.0;
+/// Design width of the trailing window-button group.
+const CAPTION_BUTTONS: f32 = 3.0 * CAPTION_BUTTON;
 /// The transport/band marks use the portable [`Glyph`] transport variants, so
 /// the same Fluent icons the Win32 build drew render on every backend.
 /// Window buttons on platforms that draw no native chrome; Fluent has no
@@ -59,11 +67,18 @@ const MINIMIZE: TopBarId = TopBarId::new(11);
 const MAXIMIZE: TopBarId = TopBarId::new(12);
 const CLOSE: TopBarId = TopBarId::new(13);
 const SEARCH: TopBarId = TopBarId::new(14);
+const TITLE: TopBarId = TopBarId::new(15);
 
-/// The top region: the caption drag band and the transport band.
+/// The top region: the caption band and the transport band.
 pub struct TopBarView {
     ui: Ui<Msg>,
-    caption: Label<Msg>,
+    /// The caption band: the app title, with the rest of the band as the
+    /// window's drag region. Shown only on the canvas backend.
+    caption: TopBar<Msg>,
+    /// The caption band's trailing window buttons. Shown only on the canvas
+    /// backend, as a node of its own so a click reaches the button instead of
+    /// the drag region it sits on.
+    caption_buttons: TopBar<Msg>,
     /// The band's background surface, behind the transport and the search, so
     /// the one-line search field's column shares the band's colour.
     band: TopBar<Msg>,
@@ -82,7 +97,8 @@ pub struct TopBarView {
 impl TopBarView {
     /// Builds the caption band, the transport bar and the search box.
     pub fn new(ui: &Ui<Msg>) -> TopBarView {
-        let caption = Label::new(ui, Rect::default(), "").expect("create caption band");
+        let caption = build_caption(ui);
+        let caption_buttons = build_caption_buttons(ui);
         // The band's surface spans the whole transport band, behind the
         // transport bar and the search field; it is raised below them.
         let band = TopBar::new(ui, Rect::default()).expect("create band");
@@ -92,14 +108,18 @@ impl TopBarView {
             .expect("create search box")
             .on_change(|text| Some(Msg::Dispatch(Command::SetSearchQuery(text.to_string()))));
         // A backend that draws no native caption (the canvas backend, also when
-        // it runs on Windows) uses the band as the app's drag region; the
-        // native Win32 backend owns the strip and hides it.
-        ui.set_visible(caption.id(), is_canvas());
+        // it runs on Windows) shows the caption band and its buttons; the
+        // native Win32 backend owns the strip and hides them.
+        let canvas = is_canvas();
+        ui.set_visible(caption.id(), canvas);
+        ui.set_visible(caption_buttons.id(), canvas);
         ui.raise(bar.id());
         ui.raise(search.id());
+        ui.raise(caption_buttons.id());
         TopBarView {
             ui: ui.clone(),
             caption,
+            caption_buttons,
             band,
             bar,
             search,
@@ -110,7 +130,8 @@ impl TopBarView {
         }
     }
 
-    /// Marks the caption band as the window's drag region.
+    /// Marks the caption band as the window's drag region. The trailing window
+    /// buttons are a separate node above it, so they still receive their clicks.
     pub fn apply_chrome(&self, chrome: &WindowChrome) {
         chrome.set_drag_region(self.caption.id(), true);
     }
@@ -122,6 +143,13 @@ impl TopBarView {
         let search_w = dip(SEARCH_WIDTH).to_px(dpi).value();
         let search_h = dip(SEARCH_HEIGHT).to_px(dpi).value();
         let inset = dip(BAND_INSET).to_px(dpi).value();
+        let buttons_w = dip(CAPTION_BUTTONS).to_px(dpi).value();
+        let buttons = Rect::new(
+            (caption.right - buttons_w).max(caption.left),
+            caption.top,
+            caption.right,
+            caption.bottom,
+        );
         let bar_right = (bar.right - search_w - inset).max(bar.left);
         self.bar_bounds = Rect::new(bar.left, bar.top, bar_right, bar.bottom);
         let edit_top = (bar.top + bar.bottom - search_h) / 2;
@@ -133,6 +161,7 @@ impl TopBarView {
         );
         self.ui.apply_moves(&[
             (self.caption.id(), caption),
+            (self.caption_buttons.id(), buttons),
             (self.band.id(), bar),
             (self.bar.id(), self.bar_bounds),
             (self.search.id(), edit),
@@ -177,6 +206,37 @@ impl TopBarView {
     }
 }
 
+/// Builds the caption band: the app title at the leading edge. The rest of the
+/// band is left empty so it is the window's drag region.
+fn build_caption(ui: &Ui<Msg>) -> TopBar<Msg> {
+    TopBar::new(ui, Rect::default())
+        .expect("create caption band")
+        .label(TITLE, CAPTION_TITLE)
+}
+
+/// Builds the caption band's trailing window buttons (canvas backend only).
+fn build_caption_buttons(ui: &Ui<Msg>) -> TopBar<Msg> {
+    TopBar::new(ui, Rect::default())
+        .expect("create caption buttons")
+        .icon(MINIMIZE, Glyph::Text(GLYPH_MINIMIZE))
+        .tooltip(MINIMIZE, "Minimize")
+        .icon(MAXIMIZE, Glyph::Text(GLYPH_MAXIMIZE))
+        .tooltip(MAXIMIZE, "Maximize")
+        .icon(CLOSE, Glyph::Close)
+        .tooltip(CLOSE, "Close")
+        .on_click(|id| {
+            if id == MINIMIZE {
+                Some(Msg::Minimize)
+            } else if id == MAXIMIZE {
+                Some(Msg::ToggleMaximize)
+            } else if id == CLOSE {
+                Some(Msg::Quit)
+            } else {
+                None
+            }
+        })
+}
+
 /// Builds the transport bar for the given play state.
 fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg> {
     let play = if playing { Glyph::Pause } else { Glyph::Play };
@@ -210,21 +270,6 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
         .icon(SEARCH, Glyph::Search)
         .tooltip(SEARCH, "Search the library");
 
-    // A backend that draws no native window buttons (the canvas backend, also
-    // when it runs on Windows) gets portable ones at the trailing edge; the
-    // native Win32 backend keeps its own.
-    let bar = if is_canvas() {
-        bar.spacer()
-            .icon(MINIMIZE, Glyph::Text(GLYPH_MINIMIZE))
-            .tooltip(MINIMIZE, "Minimize")
-            .icon(MAXIMIZE, Glyph::Text(GLYPH_MAXIMIZE))
-            .tooltip(MAXIMIZE, "Maximize")
-            .icon(CLOSE, Glyph::Close)
-            .tooltip(CLOSE, "Close")
-    } else {
-        bar
-    };
-
     bar.on_click(move |id| {
         if id == PREVIOUS {
             Some(Msg::Dispatch(Command::PlayerPrevious))
@@ -234,12 +279,6 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
             Some(Msg::Dispatch(Command::PlayerStop))
         } else if id == NEXT {
             Some(Msg::Dispatch(Command::PlayerNext))
-        } else if id == MINIMIZE {
-            Some(Msg::Minimize)
-        } else if id == MAXIMIZE {
-            Some(Msg::ToggleMaximize)
-        } else if id == CLOSE {
-            Some(Msg::Quit)
         } else {
             None
         }

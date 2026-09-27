@@ -23,6 +23,7 @@ pub mod most_played;
 pub mod music;
 pub mod name_counts;
 pub mod navigator;
+pub(crate) mod navigator_icons;
 pub mod now_playing;
 pub mod settings;
 pub mod starred;
