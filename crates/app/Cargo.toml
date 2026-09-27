@@ -42,9 +42,6 @@ winshell = { path = "../winshell" }
 # The portable software backend, so the crate structure stays cross-platform.
 xui = { git = "https://github.com/va1erian/xui", rev = "1f5a60d2ab3c77992fb417d43a38cef3752b05ed", default-features = false, features = ["canvas"] }
 
-[dev-dependencies]
-emusic-player = { path = "../player" }
-
 [features]
 default = []
 # The screenshot tool (`emusic-shot`, #118). Off by default so the PNG encoder

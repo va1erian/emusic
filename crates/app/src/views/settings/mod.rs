@@ -136,6 +136,11 @@ pub struct SettingsView {
     /// Whether the whole view is shown; the selected page is only visible when
     /// this is set too.
     visible: Cell<bool>,
+    /// The tab whose page has been laid out. Tracked here rather than read from
+    /// the strip because a strip click selects the tab itself before it raises
+    /// [`Msg::Settings`], so the strip would already match the shell state by
+    /// the time [`Self::sync`] runs.
+    applied_tab: Cell<SettingsTab>,
 }
 
 impl SettingsView {
@@ -173,6 +178,7 @@ impl SettingsView {
             playback,
             about,
             visible: Cell::new(false),
+            applied_tab: Cell::new(SettingsTab::default()),
         }
     }
 
@@ -187,19 +193,24 @@ impl SettingsView {
         self.visible.set(visible);
         self.tabs.set_visible(visible);
         self.apply_page_visibility();
+        self.relayout_pages();
     }
 
     /// Pushes the shell state into the pages, selecting the shared tab and
     /// re-laying the page when it changed.
     pub fn sync(&mut self, state: &AppState, library: &dyn LibraryDataSource) {
-        let index = SettingsTab::ALL
-            .iter()
-            .position(|tab| *tab == state.settings_tab)
-            .unwrap_or(0);
-        if index != self.tabs.selected() {
+        if state.settings_tab != self.applied_tab.get() {
+            let index = SettingsTab::ALL
+                .iter()
+                .position(|tab| *tab == state.settings_tab)
+                .unwrap_or(0);
             self.tabs.select(index);
-            self.relayout_pages();
+            self.applied_tab.set(state.settings_tab);
+            // Show the page before re-laying its form out: a hidden page has no
+            // bounds, so placing its widgets would be a no-op and they would
+            // stay at creation size until the next resize.
             self.apply_page_visibility();
+            self.relayout_pages();
         }
         self.library.sync(state, library);
         self.appearance.sync(state);

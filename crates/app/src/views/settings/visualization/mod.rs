@@ -2,11 +2,12 @@
 //! preset packs and their on-disk status, the optional user preset folder and
 //! the projectM engine status.
 //!
-//! Every field change is pushed as
-//! [`Command::Viz`](emusic_ui::state::Command::Viz)`(`[`VizCommand::SetSettings`]`)`,
-//! which the shell applies to the shared state and the running surface; the
-//! pack list is counted on a background thread so thousands of `.milk` files
-//! never stall the UI.
+//! Every field change is pushed as [`Command::Viz`] with a
+//! [`VizCommand::SetSettings`] payload; the shell applies it to the shared
+//! state and the running surface. The pack list is counted on a background
+//! thread so thousands of `.milk` files never stall the UI.
+//!
+//! [`Command::Viz`]: emusic_ui::state::Command::Viz
 
 mod form;
 mod packs;
