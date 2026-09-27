@@ -253,6 +253,20 @@ impl Win32App {
                     self.tick_inner();
                 }
             }
+            Msg::QueueContext(row, at) => {
+                self.queue_context_row = Some(row);
+                let origin = self.now_playing.context_origin();
+                self.queue_context
+                    .show_context(origin.x + at.x, origin.y + at.y);
+            }
+            Msg::QueueRemove => {
+                if let Some(row) = self.queue_context_row.take()
+                    && let Some(index) = self.now_playing.entry_index(row)
+                {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick_inner();
+                }
+            }
             Msg::PresetFilter(text) => {
                 self.visualization.set_filter(&text);
                 self.tick_inner();
@@ -269,7 +283,7 @@ impl Win32App {
                     self.tick_inner();
                 }
             }
-            Msg::PresetToggleLock(_on) => {
+            Msg::PresetToggleLock => {
                 self.shell
                     .dispatch(Command::Viz(VizCommand::TogglePresetLock));
                 self.tick_inner();
@@ -311,14 +325,6 @@ impl Win32App {
 
     /// Turns a summary click into a now-playing intent, if it carries one.
     fn handle_summary(&mut self, event: SummaryEvent, ui: &Ui<Msg>) {
-        // The Properties dialog is frontend-owned (the model keeps only the
-        // intent), so it is opened directly, as the track table does.
-        if event == SummaryEvent::ShowProperties {
-            if let Some(track) = self.shell.state.now_playing.track() {
-                properties::show(ui, track);
-            }
-            return;
-        }
         let message = {
             let model = &self.shell.state.now_playing;
             match event {
@@ -328,7 +334,23 @@ impl Win32App {
                 SummaryEvent::EditTags => {
                     model.track().map(|track| NowPlayingMsg::EditTags(track.id))
                 }
-                SummaryEvent::ShowProperties => None,
+                // The Properties dialog is frontend-owned (the model keeps only
+                // the intent), so it is opened directly, as the track table does.
+                SummaryEvent::ShowProperties => {
+                    if let Some(track) = model.track() {
+                        properties::show(ui, track);
+                    }
+                    None
+                }
+                // Reveal-in-file-manager is not ported yet; it goes through the
+                // same logged stub the track table's context menu uses.
+                SummaryEvent::OpenFolder => {
+                    if let Some(track) = model.track() {
+                        let _ =
+                            track_table::run_context_action(ContextAction::OpenFileLocation, track);
+                    }
+                    None
+                }
                 SummaryEvent::GoToArtist => model
                     .now_playing()
                     .filter(|np| !np.artist.is_empty())

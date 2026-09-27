@@ -66,6 +66,11 @@ pub enum Msg {
     NowPlayingSummary(SummaryEvent),
     /// Activate a preview row of the Now Playing queue (double-click / Enter).
     QueueActivate(usize),
+    /// Open the Now Playing queue's context menu on a row, at the list-local
+    /// point the right-click happened.
+    QueueContext(usize, Point),
+    /// Remove the Now Playing queue entry the context menu was opened on.
+    QueueRemove,
     /// The preset browser's filter text changed.
     PresetFilter(String),
     /// The preset browser selected a visible row.
@@ -73,7 +78,7 @@ pub enum Msg {
     /// The preset browser played a visible row.
     PresetPlay(usize),
     /// The preset browser's "Lock current preset" toggle changed.
-    PresetToggleLock(bool),
+    PresetToggleLock,
     /// The Most Played view's time-window selector changed.
     MostPlayed(StatsWindow),
     /// Ask to clear the whole play history; shows the confirmation dialog.

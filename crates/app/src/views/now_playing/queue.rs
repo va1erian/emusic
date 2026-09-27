@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use emusic_ui::views::now_playing::QueueRow;
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
+use xui::xui_core::geometry::{Point, Rect};
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Fill, ListModel, ListView};
 
@@ -66,7 +66,8 @@ impl QueueList {
             .column("#", dip(NUMBER_WIDTH))
             .column("Title", Fill)
             .column("Artist", dip(ARTIST_WIDTH))
-            .on_activate(|row| Some(Msg::QueueActivate(row)));
+            .on_activate(|row| Some(Msg::QueueActivate(row)))
+            .on_context(|row, at| Some(Msg::QueueContext(row, at)));
         QueueList {
             ui: ui.clone(),
             list,
@@ -96,6 +97,13 @@ impl QueueList {
     /// The full queue entry index of preview `row`, if it exists.
     pub fn entry_index(&self, row: usize) -> Option<usize> {
         self.indices.as_slice().get(row).copied()
+    }
+
+    /// The list's top-left corner in window coordinates, so a context menu can
+    /// be anchored at the pointer's node-local position.
+    pub fn context_origin(&self) -> Point {
+        let bounds = self.ui.bounds(self.list.id());
+        Point::new(bounds.left, bounds.top)
     }
 
     /// Moves/resizes the list.

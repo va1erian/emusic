@@ -66,6 +66,10 @@ impl StatusBarView {
     }
 
     /// Moves/resizes the bar and places the visualizer strip at its right end.
+    ///
+    /// The strip overlaps the bar's right (progress/notice) cell while the
+    /// visualizer is on; the bar's own text is left-aligned, so it never shows
+    /// under the strip in practice.
     pub fn set_bounds(&self, bounds: Rect) {
         self.ui.apply_moves(&[(self.bar.id(), bounds)]);
         let dpi = self.ui.dpi();

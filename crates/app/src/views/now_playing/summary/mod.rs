@@ -38,6 +38,8 @@ pub enum SummaryEvent {
     ShowProperties,
     /// Open the tag editor for the playing track.
     EditTags,
+    /// Reveal the playing file in the OS file manager.
+    OpenFolder,
 }
 
 /// A clickable region of the summary, as laid out by the last paint.
@@ -46,6 +48,7 @@ pub(super) enum Hit {
     Star,
     Artist,
     Album,
+    Path,
     Properties,
     EditTags,
 }
@@ -56,6 +59,7 @@ impl Hit {
             Hit::Star => SummaryEvent::ToggleStar,
             Hit::Artist => SummaryEvent::GoToArtist,
             Hit::Album => SummaryEvent::GoToAlbum,
+            Hit::Path => SummaryEvent::OpenFolder,
             Hit::Properties => SummaryEvent::ShowProperties,
             Hit::EditTags => SummaryEvent::EditTags,
         }
@@ -144,6 +148,7 @@ impl Summary {
         let artwork = Rc::new(RefCell::new(None));
         let hits = Rc::new(RefCell::new(Vec::new()));
         let hot = Rc::new(Cell::new(None));
+        let pressed = Rc::new(Cell::new(None));
         {
             let data = Rc::clone(&data);
             let artwork = Rc::clone(&artwork);
@@ -166,9 +171,10 @@ impl Summary {
         {
             let hits = Rc::clone(&hits);
             let hot = Rc::clone(&hot);
+            let pressed = Rc::clone(&pressed);
             let event_ui = ui.clone();
             let id = control.id();
-            control.on_events(move |event| input(event, &event_ui, id, &hits, &hot));
+            control.on_events(move |event| input(event, &event_ui, id, &hits, &hot, &pressed));
         }
         Summary {
             ui: ui.clone(),
@@ -184,18 +190,17 @@ impl Summary {
         self.control.invalidate();
     }
 
-    /// Replaces the artwork, invalidating when it changed.
-    pub fn set_artwork(&mut self, image: Option<Image>) {
-        let changed = match (&*self.artwork.borrow(), &image) {
+    /// Replaces the artwork, cloning the pixels and invalidating only when the
+    /// image actually changed.
+    pub fn set_artwork(&mut self, image: Option<&Image>) {
+        let changed = match (&*self.artwork.borrow(), image) {
             (None, None) => false,
             (Some(previous), Some(next)) => previous.id() != next.id(),
             _ => true,
         };
         if changed {
-            *self.artwork.borrow_mut() = image;
+            *self.artwork.borrow_mut() = image.cloned();
             self.control.invalidate();
-        } else if image.is_some() {
-            *self.artwork.borrow_mut() = image;
         }
     }
 
@@ -218,13 +223,15 @@ fn hit(hits: &RefCell<Vec<(Rect, Hit)>>, x: i32, y: i32) -> Option<Hit> {
         .map(|(_, hit)| *hit)
 }
 
-/// Maps one pointer event to the app message it raises, tracking the hover.
+/// Maps one pointer event to the app message it raises, tracking the hover and
+/// firing a link only when the press and release land on the same region.
 fn input(
     event: &Event,
     ui: &Ui<Msg>,
     id: WidgetId,
     hits: &RefCell<Vec<(Rect, Hit)>>,
     hot: &Cell<Option<Hit>>,
+    pressed: &Cell<Option<Hit>>,
 ) -> Option<Msg> {
     match *event {
         Event::MouseMove { x, y, .. } => {
@@ -241,12 +248,29 @@ fn input(
             }
             None
         }
+        Event::MouseDown {
+            x,
+            y,
+            button: xui::xui_core::MouseButton::Left,
+            ..
+        } => {
+            pressed.set(hit(hits, x, y));
+            None
+        }
         Event::MouseUp {
             x,
             y,
             button: xui::xui_core::MouseButton::Left,
             ..
-        } => hit(hits, x, y).map(|hit| Msg::NowPlayingSummary(hit.event())),
+        } => {
+            let released = hit(hits, x, y);
+            let started = pressed.take();
+            if released.is_some() && released == started {
+                released.map(|hit| Msg::NowPlayingSummary(hit.event()))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

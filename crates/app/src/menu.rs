@@ -47,6 +47,8 @@ mod id {
     pub(super) const CTX_OPEN_LOCATION: MenuId = MenuId::new(35);
     pub(super) const CTX_PROPERTIES: MenuId = MenuId::new(36);
     pub(super) const CTX_EDIT_TAGS: MenuId = MenuId::new(37);
+
+    pub(super) const QUEUE_REMOVE: MenuId = MenuId::new(40);
 }
 
 /// Builds the File/View/Help menu bar at `bounds`, ticking the toggles that
@@ -150,6 +152,19 @@ pub fn track_context(ui: &Ui<Msg>) -> Menu<Msg> {
         m.item(id::CTX_PROPERTIES, "P&roperties");
         m.item(id::CTX_EDIT_TAGS, "&Edit tags...");
     })
+}
+
+/// The Now Playing queue's right-click menu (#247): remove the entry.
+#[must_use]
+pub fn queue_context(ui: &Ui<Msg>) -> Menu<Msg> {
+    Menu::context(ui)
+        .on_select(|menu_id| match menu_id {
+            id::QUEUE_REMOVE => Some(Msg::QueueRemove),
+            _ => None,
+        })
+        .build(|m| {
+            m.item(id::QUEUE_REMOVE, "&Remove from queue");
+        })
 }
 
 /// Maps a context entry to its [`ContextAction`].

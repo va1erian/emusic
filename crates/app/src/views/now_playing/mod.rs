@@ -18,7 +18,7 @@ use std::path::Path;
 use emusic_ui::views::now_playing::NowPlayingView as Model;
 use emusic_ui::waker::WakerHandle;
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
+use xui::xui_core::geometry::{Point, Rect};
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{HasText, Label};
 
@@ -97,16 +97,17 @@ impl NowPlayingView {
         let image = if request.path.is_empty() {
             None
         } else {
-            self.cache
-                .get_with_fallback(
-                    &mut artwork::ImageSinkImpl,
-                    &request.path,
-                    request.fallback_dir.as_deref().map(Path::new),
-                )
-                .cloned()
-                .flatten()
+            self.cache.get_with_fallback(
+                &mut artwork::ImageSinkImpl,
+                &request.path,
+                request.fallback_dir.as_deref().map(Path::new),
+            )
         };
-        self.summary.set_artwork(image);
+        // Borrow the cached image for the identity check; only a changed image
+        // is cloned into the summary, so this per-tick sync never copies the
+        // pixels.
+        self.summary
+            .set_artwork(image.and_then(|handle| handle.as_ref()));
 
         if model.revision() != self.applied_revision {
             self.applied_revision = model.revision();
@@ -120,5 +121,11 @@ impl NowPlayingView {
     /// [`Msg::QueueActivate`](crate::app::Msg::QueueActivate).
     pub fn entry_index(&self, row: usize) -> Option<usize> {
         self.queue.entry_index(row)
+    }
+
+    /// The queue list's top-left corner in window coordinates, for anchoring
+    /// its context menu.
+    pub fn context_origin(&self) -> Point {
+        self.queue.context_origin()
     }
 }
