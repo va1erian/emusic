@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use crate::library_api::{LibraryDataSource, TrackInfo};
-use crate::player_api::{ModuleInfo, NowPlayingInfo, PlayerApi, QueueEntry};
+use crate::player_api::{ModuleInfo, NowPlayingInfo, PlayerApi, QueueEntry, SubsongInfo};
 use crate::state::Command;
 use crate::views::Commands;
 
@@ -155,6 +155,11 @@ pub enum NowPlayingMsg {
     GoToArtist(String),
     /// Jump to the Albums view for `name`/`artist`.
     GoToAlbum { name: String, artist: String },
+    /// Step to the next subsong/subtune, wrapping to the first at the end.
+    NextSubsong,
+    /// Step to the previous subsong/subtune, wrapping to the last at the
+    /// start.
+    PrevSubsong,
 }
 
 /// The now-playing panel's model: the display data for the current track
@@ -174,6 +179,9 @@ pub struct NowPlayingView {
     queue_len: usize,
     /// The artwork request for the frontend's cache.
     artwork: ArtworkRequest,
+    /// The playing track's subsong/subtune state, when its format has one
+    /// (#65).
+    subsong: Option<SubsongInfo>,
     /// The revision counter, bumped whenever the displayed state changes.
     revision: u64,
 }
@@ -197,6 +205,7 @@ impl NowPlayingView {
             .and_then(|info| library.track_by_path(&info.path).cloned());
         let album_year = track.as_ref().and_then(|track| album_year(track, library));
         let module = player.module_info().cloned();
+        let subsong = player.subsong();
 
         let playing = np.is_some();
         let path = np
@@ -236,12 +245,14 @@ impl NowPlayingView {
             || playing != self.playing
             || queue != self.queue
             || queue_len != self.queue_len
-            || artwork != self.artwork;
+            || artwork != self.artwork
+            || subsong != self.subsong;
         self.current = current;
         self.playing = playing;
         self.queue = queue;
         self.queue_len = queue_len;
         self.artwork = artwork;
+        self.subsong = subsong;
         if changed {
             self.revision += 1;
         }
@@ -325,6 +336,12 @@ impl NowPlayingView {
         &self.artwork
     }
 
+    /// The playing track's subsong/subtune state, when its format has one
+    /// (#65). The selector is only shown when `count > 1`.
+    pub fn subsong(&self) -> Option<SubsongInfo> {
+        self.subsong
+    }
+
     /// The revision counter, bumped whenever the displayed state changes.
     pub fn revision(&self) -> u64 {
         self.revision
@@ -342,8 +359,31 @@ impl NowPlayingView {
             NowPlayingMsg::GoToAlbum { name, artist } => {
                 out.push(Command::GoToAlbum { name, artist })
             }
+            NowPlayingMsg::NextSubsong => {
+                if let Some(next) = self.subsong.and_then(|s| step_subsong(s, 1)) {
+                    out.push(Command::PlayerSelectSubsong(next));
+                }
+            }
+            NowPlayingMsg::PrevSubsong => {
+                if let Some(prev) = self.subsong.and_then(|s| step_subsong(s, -1)) {
+                    out.push(Command::PlayerSelectSubsong(prev));
+                }
+            }
         }
     }
+}
+
+/// The subsong `delta` steps from `state` (`+1` next, `-1` previous), wrapping
+/// at either end. `None` when the track has a single subsong (nothing to
+/// step to), so the selector never emits a no-op command.
+fn step_subsong(state: SubsongInfo, delta: i32) -> Option<u16> {
+    if state.count <= 1 {
+        return None;
+    }
+    let count = i32::from(state.count);
+    let current = i32::from(state.current).clamp(1, count);
+    let stepped = (current - 1 + delta).rem_euclid(count) + 1;
+    Some(stepped as u16)
 }
 
 /// Builds the queue preview rows (capped at [`QUEUE_PREVIEW_LIMIT`]).
@@ -508,6 +548,59 @@ mod tests {
                     artist: "A".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn step_subsong_wraps_at_both_ends() {
+        let state = |current, count| SubsongInfo { current, count };
+        assert_eq!(step_subsong(state(1, 3), 1), Some(2));
+        assert_eq!(step_subsong(state(3, 3), 1), Some(1));
+        assert_eq!(step_subsong(state(1, 3), -1), Some(3));
+        assert_eq!(step_subsong(state(2, 3), -1), Some(1));
+    }
+
+    #[test]
+    fn next_and_prev_subsong_emit_the_select_command_with_wrap() {
+        let mut view = NowPlayingView {
+            subsong: Some(SubsongInfo {
+                current: 2,
+                count: 3,
+            }),
+            ..NowPlayingView::default()
+        };
+        let mut out = Commands::new();
+        view.update(NowPlayingMsg::NextSubsong, &mut out);
+        view.update(NowPlayingMsg::PrevSubsong, &mut out);
+        assert_eq!(
+            out.into_vec(),
+            vec![
+                Command::PlayerSelectSubsong(3),
+                Command::PlayerSelectSubsong(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn subsong_messages_do_nothing_without_a_subsong() {
+        let mut view = NowPlayingView::default();
+        let mut out = Commands::new();
+        view.update(NowPlayingMsg::NextSubsong, &mut out);
+        view.update(NowPlayingMsg::PrevSubsong, &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn step_subsong_is_none_for_a_single_subsong() {
+        assert_eq!(
+            step_subsong(
+                SubsongInfo {
+                    current: 1,
+                    count: 1
+                },
+                1
+            ),
+            None
         );
     }
 

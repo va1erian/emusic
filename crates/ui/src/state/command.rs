@@ -52,6 +52,9 @@ pub enum Command {
     PlayerSetVolume(f32),
     PlayerToggleRepeat,
     PlayerToggleShuffle,
+    /// Switch the loaded track to another subsong/subtune (`1`-based),
+    /// restarting it. Emitted by the now-playing subtune selector (#65).
+    PlayerSelectSubsong(u16),
     /// Start playing `id`, replacing the queue with `context` (the ids of
     /// the view it was clicked from, in that view's current visible/sorted
     /// order) and starting at `id`'s position within it (#134). An empty

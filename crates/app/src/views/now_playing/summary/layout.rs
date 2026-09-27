@@ -4,7 +4,7 @@
 
 use win32ui::Rect;
 
-use super::{ARTWORK_EDGE, GAP, LINE, LINK_GAP, PAD, STAR, TITLE_LINE};
+use super::{ARTWORK_EDGE, GAP, LINE, LINK_GAP, PAD, STAR, SUBSONG_ARROW, TITLE_LINE};
 
 /// The rectangles the summary's parts occupy, in client coordinates.
 pub(super) struct SummaryLayout {
@@ -18,7 +18,17 @@ pub(super) struct SummaryLayout {
     pub(super) links: Rect,
     /// Gap between two links, in pixels.
     pub(super) link_gap: i32,
+    /// The subtune selector row, when the format has more than one subtune.
+    pub(super) subsong: Option<SubsongRects>,
     pub(super) module: Option<ModuleRects>,
+}
+
+/// The subtune selector's rectangles: the `Song N / M` label and the two
+/// clickable arrows.
+pub(super) struct SubsongRects {
+    pub(super) label: Rect,
+    pub(super) prev: Rect,
+    pub(super) next: Rect,
 }
 
 /// The tracker-module block's line rectangles.
@@ -32,7 +42,7 @@ pub(super) struct ModuleRects {
 }
 
 impl SummaryLayout {
-    pub(super) fn compute(bounds: Rect, dpi: u32, has_module: bool) -> Self {
+    pub(super) fn compute(bounds: Rect, dpi: u32, has_subsong: bool, has_module: bool) -> Self {
         let scale = dpi as f32 / 96.0;
         let px = |value: f32| (value * scale).round() as i32;
         let pad = px(PAD);
@@ -60,6 +70,22 @@ impl SummaryLayout {
         y += line;
         let links = Rect::new(left, y, right, y + line);
         y += line;
+        let subsong = has_subsong.then(|| {
+            y += px(GAP);
+            // The arrows use the title font, so this row is as tall as the
+            // title line rather than a regular one.
+            let row = px(TITLE_LINE);
+            let next = Rect::new(right - px(SUBSONG_ARROW), y, right, y + row);
+            let prev = Rect::new(
+                next.left - px(LINK_GAP) - px(SUBSONG_ARROW),
+                y,
+                next.left - px(LINK_GAP),
+                y + row,
+            );
+            let label = Rect::new(left, y, prev.left - px(LINK_GAP), y + row);
+            y += row;
+            SubsongRects { label, prev, next }
+        });
         let module = has_module.then(|| {
             y += px(GAP);
             let separator = Rect::new(left, y, right, y + 1);
@@ -93,6 +119,7 @@ impl SummaryLayout {
             path,
             links,
             link_gap: px(LINK_GAP),
+            subsong,
             module,
         }
     }
@@ -108,7 +135,7 @@ mod tests {
 
     #[test]
     fn artwork_is_a_square_within_the_panel() {
-        let layout = SummaryLayout::compute(bounds(), 96, false);
+        let layout = SummaryLayout::compute(bounds(), 96, false, false);
         assert_eq!(layout.artwork.width(), layout.artwork.height());
         assert!(layout.artwork.width() <= 280);
         assert_eq!(layout.artwork.left, (280 - layout.artwork.width()) / 2);
@@ -116,7 +143,7 @@ mod tests {
 
     #[test]
     fn lines_stack_without_overlapping() {
-        let layout = SummaryLayout::compute(bounds(), 96, true);
+        let layout = SummaryLayout::compute(bounds(), 96, true, true);
         let rows = [
             layout.star,
             layout.artist,
@@ -129,8 +156,10 @@ mod tests {
             assert!(pair[0].bottom <= pair[1].top, "rows must not overlap");
         }
         assert!(layout.artwork.bottom <= layout.star.top);
+        let subsong = layout.subsong.expect("subtune selector");
+        assert!(layout.links.bottom <= subsong.label.top);
         let module = layout.module.expect("module block");
-        assert!(layout.links.bottom <= module.separator.top);
+        assert!(subsong.label.bottom <= module.separator.top);
         assert!(module.separator.bottom <= module.header.top);
         assert!(module.header.bottom <= module.summary.top);
         assert!(module.summary.bottom <= module.order_row.top);
@@ -139,9 +168,20 @@ mod tests {
     }
 
     #[test]
+    fn the_subtune_selector_sits_between_the_links_and_the_arrows() {
+        let layout = SummaryLayout::compute(bounds(), 96, true, false);
+        let subsong = layout.subsong.expect("subtune selector");
+        assert!(layout.links.bottom <= subsong.label.top);
+        assert!(subsong.label.right <= subsong.prev.left);
+        assert!(subsong.prev.right <= subsong.next.left);
+        assert!(subsong.next.right <= bounds().right);
+        assert!(layout.module.is_none());
+    }
+
+    #[test]
     fn dpi_scales_the_lines() {
-        let normal = SummaryLayout::compute(bounds(), 96, false);
-        let scaled = SummaryLayout::compute(bounds(), 192, false);
+        let normal = SummaryLayout::compute(bounds(), 96, false, false);
+        let scaled = SummaryLayout::compute(bounds(), 192, false, false);
         assert!(scaled.artist.height() > normal.artist.height());
         assert_eq!(scaled.artist.height(), normal.artist.height() * 2);
     }

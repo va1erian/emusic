@@ -15,6 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::TrackInfo;
+use emusic_ui::player_api::SubsongInfo;
 use emusic_ui::state::Metrics;
 use emusic_ui::views::now_playing::{ModuleView, NowPlayingView as Model};
 use win32ui::d2d::{D2dCanvas, Font, FontSpec, ImageId, RectF, TextSystem};
@@ -28,9 +29,10 @@ use input::Hit;
 /// Artwork box edge, in device-independent pixels.
 pub(super) const ARTWORK_EDGE: f32 = 200.0;
 /// Height of the whole summary document, in device-independent pixels: enough
-/// for the artwork, the metadata lines and the tracker-module block, so the
-/// scrollbar (when the panel is short) reaches all of it.
-pub(super) const CONTENT_HEIGHT: f32 = ARTWORK_EDGE + 260.0;
+/// for the artwork, the metadata lines, the subtune selector and the
+/// tracker-module block, so the scrollbar (when the panel is short) reaches
+/// all of it.
+pub(super) const CONTENT_HEIGHT: f32 = ARTWORK_EDGE + 286.0;
 /// Padding around the panel content.
 const PAD: f32 = 8.0;
 /// Gap between blocks.
@@ -43,6 +45,8 @@ const TITLE_LINE: f32 = 22.0;
 const STAR: f32 = 20.0;
 /// Small gap between the star and the title, or between links.
 const LINK_GAP: f32 = 6.0;
+/// Width of each subtune selector arrow's hit box.
+const SUBSONG_ARROW: f32 = 26.0;
 
 /// What a click on the summary asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +63,10 @@ pub enum SummaryEvent {
     EditTags,
     /// Reveal the playing file in Explorer.
     OpenFolder,
+    /// Switch to the previous subtune/subsong.
+    SubsongPrev,
+    /// Switch to the next subtune/subsong.
+    SubsongNext,
 }
 
 /// The display snapshot the widget paints, rebuilt whenever the model's
@@ -77,6 +85,8 @@ struct SummaryData {
     path: String,
     starred: bool,
     module: Option<ModuleView>,
+    /// Subsong/subtune state, only drawn when it has more than one entry.
+    subsong: Option<SubsongInfo>,
 }
 
 impl SummaryData {
@@ -102,7 +112,14 @@ impl SummaryData {
             path,
             starred: track.is_some_and(|t| t.starred),
             module: model.module(),
+            subsong: model.subsong(),
         }
+    }
+
+    /// Whether the subtune selector should be shown: only when the format
+    /// carries more than one subtune/subsong.
+    fn has_subsong(&self) -> bool {
+        self.subsong.is_some_and(|state| state.count > 1)
     }
 }
 

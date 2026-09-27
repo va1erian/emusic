@@ -262,6 +262,25 @@ pub fn generate() -> GeneratedLibrary {
     }
 }
 
+/// Rewrites the very first generated track as a Commodore 64 SID tune, so the
+/// now-playing screenshot exercises the subtune selector (#65) against real
+/// mock metadata. Applied after generation so the seeded RNG sequence — and
+/// therefore every other track — stays byte-identical.
+pub fn seed_sid_demo_track(library: &mut GeneratedLibrary) {
+    let Some(first) = library.tracks.first_mut() else {
+        return;
+    };
+    if let Some((stem, _extension)) = first.path.rsplit_once('.') {
+        first.path = format!("{stem}.sid");
+    }
+    first.format = "sid".to_string();
+    first.codec = "SID".to_string();
+    first.bitrate = None;
+    first.sample_rate = Some(44_100);
+    first.bit_depth = None;
+    first.channels = None;
+}
+
 /// Builds the three "most played" rankings (all time / 30 days / year).
 ///
 /// The all-time list is the real ranking; the narrower windows scale the

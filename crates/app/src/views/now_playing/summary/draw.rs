@@ -29,8 +29,16 @@ pub(super) fn paint(
     }
     let scale = canvas.scale();
     let dpi = (scale * 96.0).round().max(1.0) as u32;
-    let has_module = widget.data.borrow().module.is_some();
-    let layout = SummaryLayout::compute(d2d_text::rect_to_px(bounds, scale), dpi, has_module);
+    let (has_subsong, has_module) = {
+        let data = widget.data.borrow();
+        (data.has_subsong(), data.module.is_some())
+    };
+    let layout = SummaryLayout::compute(
+        d2d_text::rect_to_px(bounds, scale),
+        dpi,
+        has_subsong,
+        has_module,
+    );
 
     let artwork_rect = d2d_text::rect_to_dip(layout.artwork, scale);
     canvas.fill_rect(artwork_rect, theme.input_background);
@@ -224,6 +232,39 @@ fn paint_summary(
             );
             hits.push((rect, hit));
             x += width + layout.link_gap;
+        }
+    }
+
+    // Subtune/subsong selector (`Song N / M`) with previous/next arrows.
+    if let Some(state) = data.subsong
+        && let Some(rects) = &layout.subsong
+    {
+        draw_text(
+            canvas,
+            fonts.body.as_ref(),
+            rects.label,
+            scale,
+            &format!("Song {} / {}", state.current, state.count),
+            theme.text,
+        );
+        for (rect, glyph, hit) in [
+            (rects.prev, "\u{2039}", Hit::SubsongPrev),
+            (rects.next, "\u{203A}", Hit::SubsongNext),
+        ] {
+            fill_hot(canvas, rect, widget.hot.get() == Some(hit), theme, scale);
+            // The title font makes the chevrons read as controls rather than
+            // metadata text.
+            if let Some(font) = fonts.title.as_ref() {
+                d2d_text::draw_line(
+                    canvas,
+                    font,
+                    d2d_text::rect_to_dip(rect, scale),
+                    glyph,
+                    theme.accent,
+                    Align::Center,
+                );
+            }
+            hits.push((rect, hit));
         }
     }
 

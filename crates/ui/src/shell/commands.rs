@@ -117,6 +117,7 @@ pub(super) fn apply_player_command(
         Command::PlayerToggleShuffle => player.set_shuffle(!player.shuffle()),
         Command::PlayerQueueJump(index) => player.queue_jump(*index),
         Command::PlayerQueueRemove(index) => player.queue_remove(*index),
+        Command::PlayerSelectSubsong(subsong) => player.select_subsong(*subsong),
         Command::PlayTrack { id, context } => {
             play_track_with_context(player, library, *id, context)
         }

@@ -12,7 +12,7 @@ use emusic_player::{
 
 use crate::library_api::TrackInfo;
 use crate::player_api::{
-    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode, SubsongInfo,
 };
 
 /// Derives a display title from a file path (its file stem), for the mock
@@ -60,6 +60,9 @@ pub struct MockPlayer {
     /// round-trip them (#214). Display-only demo entries have no path here.
     queue_paths: Vec<PathBuf>,
     module_info: Option<ModuleInfo>,
+    /// Fake subsong/subtune selector state (#65); `None` for formats without
+    /// the concept.
+    subsong: Option<SubsongInfo>,
     spectrum: [f32; SPECTRUM_BINS],
     samples: [f32; SCOPE_SAMPLES],
     /// Monotonically increasing phase used to animate the fake spectrum
@@ -89,6 +92,7 @@ impl MockPlayer {
             status: PlaybackStatus::Playing,
             position: Duration::from_secs(76).min(track.duration),
             module_info: tracker_module_info(&track.path, &track.title, Duration::ZERO),
+            subsong: mock_subsong(&track.path),
             queue: vec![
                 QueueEntry {
                     title: "Iron Garden".to_string(),
@@ -127,6 +131,7 @@ impl MockPlayer {
         };
         self.position = position;
         self.module_info = tracker_module_info(&path, &title, position);
+        self.subsong = mock_subsong(&path);
     }
 }
 
@@ -142,6 +147,7 @@ impl Default for MockPlayer {
             queue: Vec::new(),
             queue_paths: Vec::new(),
             module_info: None,
+            subsong: None,
             spectrum: [0.0; SPECTRUM_BINS],
             samples: [0.0; SCOPE_SAMPLES],
             phase: 0.0,
@@ -221,6 +227,16 @@ impl PlayerApi for MockPlayer {
         self.module_info.as_ref()
     }
 
+    fn subsong(&self) -> Option<SubsongInfo> {
+        self.subsong
+    }
+
+    fn select_subsong(&mut self, subsong: u16) {
+        if let Some(state) = &mut self.subsong {
+            state.current = subsong.clamp(1, state.count);
+        }
+    }
+
     fn fft(&self) -> Vec<f32> {
         self.spectrum.to_vec()
     }
@@ -256,6 +272,7 @@ impl PlayerApi for MockPlayer {
             }
             self.position = Duration::ZERO;
             self.module_info = None;
+            self.subsong = None;
         }
     }
 
@@ -323,6 +340,7 @@ impl PlayerApi for MockPlayer {
         }
         self.position = Duration::ZERO;
         self.module_info = None;
+        self.subsong = None;
     }
 
     fn queue_remove(&mut self, index: usize) {
@@ -434,6 +452,18 @@ impl PlayerApi for MockPlayer {
         self.queue.push(queue_entry(path));
         self.queue_paths.push(path.to_path_buf());
     }
+}
+
+/// Deterministic fake subsong/subtune state for a mock path: SID tunes report
+/// three subtunes (starting at the second, so both selector arrows are live in
+/// screenshots), every other format has none.
+fn mock_subsong(path: &str) -> Option<SubsongInfo> {
+    path.to_ascii_lowercase()
+        .ends_with(".sid")
+        .then_some(SubsongInfo {
+            current: 2,
+            count: 3,
+        })
 }
 
 /// Build deterministic fake tracker-module metadata when the current path

@@ -16,6 +16,8 @@ pub(super) enum Hit {
     Path,
     Properties,
     EditTags,
+    SubsongPrev,
+    SubsongNext,
 }
 
 impl Hit {
@@ -27,6 +29,8 @@ impl Hit {
             Hit::Path => SummaryEvent::OpenFolder,
             Hit::Properties => SummaryEvent::ShowProperties,
             Hit::EditTags => SummaryEvent::EditTags,
+            Hit::SubsongPrev => SummaryEvent::SubsongPrev,
+            Hit::SubsongNext => SummaryEvent::SubsongNext,
         }
     }
 }

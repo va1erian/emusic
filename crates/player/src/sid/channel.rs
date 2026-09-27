@@ -10,6 +10,7 @@
 use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +18,7 @@ use bass::{Attribute, Channel, FftSize, PushFlags, PushStream};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use emusic_sid::{SidHeader, SongLengths};
 
-use crate::backend::{BackendChannel, ChannelCapabilities, SeekSupport};
+use crate::backend::{BackendChannel, ChannelCapabilities, SeekSupport, Subsong};
 use crate::error::PlayerError;
 use crate::tracker::TrackerSettings;
 
@@ -48,6 +49,9 @@ enum FeederCommand {
     /// Reset the engine to the start of the current subtune and drop the
     /// already-queued PCM (seek-to-start).
     Restart,
+    /// Switch to this subtune (`1`-based, already clamped) and restart it,
+    /// dropping the already-queued PCM.
+    SelectSubtune(u16),
     /// Stop rendering and let the feeder thread exit.
     Stop,
 }
@@ -59,6 +63,11 @@ pub struct SidChannel {
     /// Whether the tune's real length (from the database) is known; drives
     /// [`ChannelCapabilities::duration_known`].
     duration_known: bool,
+    /// How many subtunes the tune contains (`>= 1`).
+    subtune_count: u16,
+    /// The subtune currently loaded, shared with the feeder so a switch is
+    /// reflected here as soon as the engine applies it.
+    current_subtune: Arc<AtomicU16>,
 }
 
 impl SidChannel {
@@ -79,20 +88,36 @@ impl SidChannel {
     ) -> Result<Self, PlayerError> {
         let data =
             std::fs::read(path).map_err(|error| PlayerError::ReadFailed(error.to_string()))?;
+        let header = SidHeader::parse(&data)?;
+
+        // The database, if any, is keyed by the whole file and lists every
+        // subtune's length. Resolve them all up front so the feeder can switch
+        // subtunes without touching the database (which lives on the UI side).
+        let subtune_lengths = resolve_subtune_lengths(&data, header.subtunes, lengths);
+        let length = subtune_lengths[usize::from(header.default_subtune - 1)];
 
         let stream = Arc::new(bass.open_push_stream(SID_SAMPLE_RATE, 1, PushFlags::FLOAT)?);
-        let length = tune_length(&data, lengths);
         if let Some(length) = length {
             stream.set_duration(length.as_secs_f64());
         }
-        let play_length = length.unwrap_or(fallback);
 
+        let current_subtune = Arc::new(AtomicU16::new(header.default_subtune));
         let (commands, command_rx) = unbounded();
         let (ready_tx, ready_rx) = bounded(1);
         let feeder_stream = Arc::clone(&stream);
+        let feeder_current = Arc::clone(&current_subtune);
         thread::Builder::new()
             .name("emusic-sid-feeder".to_string())
-            .spawn(move || run_feeder(feeder_stream, data, command_rx, ready_tx, play_length))
+            .spawn(move || {
+                run_feeder(
+                    feeder_stream,
+                    data,
+                    command_rx,
+                    ready_tx,
+                    SidFeeder::new(subtune_lengths, fallback),
+                    feeder_current,
+                );
+            })
             .map_err(|error| PlayerError::SpawnFailed(error.to_string()))?;
 
         match ready_rx.recv() {
@@ -100,6 +125,8 @@ impl SidChannel {
                 stream,
                 commands,
                 duration_known: length.is_some(),
+                subtune_count: header.subtunes,
+                current_subtune,
             }),
             Ok(Err(error)) => Err(error),
             Err(_) => Err(PlayerError::SpawnFailed(
@@ -109,12 +136,61 @@ impl SidChannel {
     }
 }
 
-/// The real length of `data`'s default subtune from `lengths`, or `None` when
-/// there is no database or the tune/subtune isn't in it.
-fn tune_length(data: &[u8], lengths: Option<&SongLengths>) -> Option<Duration> {
-    let lengths = lengths?;
-    let header = SidHeader::parse(data).ok()?;
-    lengths.subtune(data, header.default_subtune)
+/// Resolves each subtune's length from `lengths` (index `0` = subtune 1),
+/// `None` where there is no database or no entry for that subtune.
+fn resolve_subtune_lengths(
+    data: &[u8],
+    subtunes: u16,
+    lengths: Option<&SongLengths>,
+) -> Vec<Option<Duration>> {
+    (1..=subtunes)
+        .map(|n| lengths.and_then(|db| db.subtune(data, n)))
+        .collect()
+}
+
+/// Per-subtune play-length bookkeeping for the feeder: the resolved list (one
+/// entry per subtune, `None` when the database doesn't cover it) and the
+/// fallback used for those.
+struct SidFeeder {
+    subtune_lengths: Vec<Option<Duration>>,
+    fallback: Duration,
+}
+
+impl SidFeeder {
+    fn new(subtune_lengths: Vec<Option<Duration>>, fallback: Duration) -> Self {
+        debug_assert!(
+            !subtune_lengths.is_empty(),
+            "a parsed SID header always has at least one subtune"
+        );
+        Self {
+            subtune_lengths,
+            fallback,
+        }
+    }
+
+    /// The length `subtune` (`1`-based) actually plays for: its database entry
+    /// when known, otherwise the fallback so playback still stops.
+    fn play_length(&self, subtune: u16) -> Duration {
+        self.subtune_lengths
+            .get(usize::from(subtune.saturating_sub(1)))
+            .copied()
+            .flatten()
+            .unwrap_or(self.fallback)
+    }
+
+    /// The known length for `subtune`, or `None` when the database doesn't
+    /// cover it.
+    fn known_length(&self, subtune: u16) -> Option<Duration> {
+        self.subtune_lengths
+            .get(usize::from(subtune.saturating_sub(1)))
+            .copied()
+            .flatten()
+    }
+}
+
+/// The number of sample frames in `length` at [`SID_SAMPLE_RATE`].
+fn frames(length: Duration) -> u64 {
+    (length.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64
 }
 
 impl BackendChannel for SidChannel {
@@ -187,6 +263,24 @@ impl BackendChannel for SidChannel {
         Some(raw[..read].to_vec())
     }
 
+    /// A SID file carries one or more subtunes; report the current one and
+    /// the count so the now-playing panel can offer a selector.
+    fn subsong(&self) -> Option<Subsong> {
+        Some(Subsong {
+            current: self.current_subtune.load(Ordering::Relaxed),
+            count: self.subtune_count,
+        })
+    }
+
+    /// Switches to `subtune` (`1`-based, clamped to the valid range); the
+    /// feeder restarts the engine at its init routine and resets the queue.
+    fn select_subsong(&self, subtune: u16) -> Result<(), PlayerError> {
+        let subtune = subtune.clamp(1, self.subtune_count);
+        self.current_subtune.store(subtune, Ordering::Relaxed);
+        let _ = self.commands.send(FeederCommand::SelectSubtune(subtune));
+        Ok(())
+    }
+
     /// SID tunes can't be seeked within (only a restart to zero is honoured),
     /// so the slider is disabled rather than silently ignored. The length is
     /// only known when the HVSC database had the current subtune (#192).
@@ -212,7 +306,8 @@ fn run_feeder(
     data: Vec<u8>,
     commands: Receiver<FeederCommand>,
     ready: Sender<Result<(), PlayerError>>,
-    play_length: Duration,
+    feeder: SidFeeder,
+    current_subtune: Arc<AtomicU16>,
 ) {
     let mut decoder = match CrsidDecoder::from_bytes(data, SID_SAMPLE_RATE, Default::default()) {
         Ok(decoder) => {
@@ -225,7 +320,7 @@ fn run_feeder(
         }
     };
 
-    let total_frames = (play_length.as_secs_f64() * f64::from(SID_SAMPLE_RATE)) as u64;
+    let mut total_frames = frames(feeder.play_length(current_subtune.load(Ordering::Relaxed)));
     let mut remaining = total_frames;
     let mut pcm = vec![0i16; RENDER_CHUNK];
     let mut bytes = Vec::with_capacity(RENDER_CHUNK * size_of::<f32>());
@@ -238,7 +333,20 @@ fn run_feeder(
                     return;
                 }
                 remaining = total_frames;
-                // Clears the push stream's queue and resets its position.
+                // Clears the push stream's queue and resets the position.
+                let _ = stream.set_position_bytes(0);
+            }
+            Ok(FeederCommand::SelectSubtune(next)) => {
+                if decoder.select_subtune(next).is_err() {
+                    let _ = stream.end_of_stream();
+                    return;
+                }
+                current_subtune.store(next, Ordering::Relaxed);
+                if let Some(length) = feeder.known_length(next) {
+                    stream.set_duration(length.as_secs_f64());
+                }
+                total_frames = frames(feeder.play_length(next));
+                remaining = total_frames;
                 let _ = stream.set_position_bytes(0);
             }
             Ok(FeederCommand::Stop) | Err(TryRecvError::Disconnected) => return,
@@ -256,20 +364,20 @@ fn run_feeder(
             continue;
         }
 
-        let frames = RENDER_CHUNK.min(remaining as usize);
-        if decoder.render(&mut pcm[..frames]).is_err() {
+        let count = RENDER_CHUNK.min(remaining as usize);
+        if decoder.render(&mut pcm[..count]).is_err() {
             let _ = stream.end_of_stream();
             return;
         }
 
         bytes.clear();
-        for &sample in &pcm[..frames] {
+        for &sample in &pcm[..count] {
             bytes.extend_from_slice(&(f32::from(sample) / 32_768.0).to_le_bytes());
         }
         if stream.push_data(&bytes).is_err() {
             return;
         }
-        remaining -= frames as u64;
+        remaining -= count as u64;
     }
 }
 
@@ -298,20 +406,39 @@ mod tests {
     }
 
     #[test]
-    fn tune_length_uses_the_default_subtune_entry() {
+    fn resolve_subtune_lengths_reads_every_subtune_entry() {
         let data = psid(2);
         let db = database(&data, "1:00 2:30 3:00");
         assert_eq!(
-            tune_length(&data, Some(&db)),
-            Some(Duration::from_secs(150))
+            resolve_subtune_lengths(&data, 3, Some(&db)),
+            vec![
+                Some(Duration::from_secs(60)),
+                Some(Duration::from_secs(150)),
+                Some(Duration::from_secs(180)),
+            ]
         );
     }
 
     #[test]
-    fn tune_length_is_none_without_a_database_or_entry() {
+    fn resolve_subtune_lengths_is_none_without_a_database_or_entry() {
         let data = psid(1);
-        assert_eq!(tune_length(&data, None), None);
+        assert_eq!(resolve_subtune_lengths(&data, 3, None), vec![None; 3]);
         let other = database(b"a different tune", "1:00");
-        assert_eq!(tune_length(&data, Some(&other)), None);
+        assert_eq!(
+            resolve_subtune_lengths(&data, 3, Some(&other)),
+            vec![None; 3]
+        );
+    }
+
+    #[test]
+    fn the_feeder_prefers_a_known_length_and_falls_back_otherwise() {
+        let feeder = SidFeeder::new(
+            vec![Some(Duration::from_secs(60)), None],
+            Duration::from_secs(180),
+        );
+        assert_eq!(feeder.play_length(1), Duration::from_secs(60));
+        assert_eq!(feeder.play_length(2), Duration::from_secs(180));
+        assert_eq!(feeder.known_length(1), Some(Duration::from_secs(60)));
+        assert_eq!(feeder.known_length(2), None);
     }
 }

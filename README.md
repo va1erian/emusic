@@ -68,3 +68,7 @@ Each [GitHub release](https://github.com/va1erian/emusic/releases) ships two ass
 emusic's own code is MIT — see [LICENSE](LICENSE).
 
 Audio playback uses the third-party [BASS](https://www.un4seen.com) library by un4seen developments, which is **free for non-commercial use**. emusic is personal freeware, so it is covered by those terms; the BASS DLLs ship with the installer under that license and are never committed to git. emusic's MIT license does not change BASS's terms: a **commercial** fork or build would need its own BASS license from un4seen. See the `bass.txt` license files bundled with the BASS download.
+
+## Credits
+
+The bundled SID test tunes — their titles, composers and provenance (the [High Voltage SID Collection](https://hvsc.c64.org)) — are listed in [docs/test-fixtures.md](docs/test-fixtures.md). They remain © their composers and are included solely as test fixtures.

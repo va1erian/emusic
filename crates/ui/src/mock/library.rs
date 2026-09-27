@@ -28,8 +28,10 @@ pub struct MockLibrary {
 
 impl MockLibrary {
     pub fn new() -> Self {
+        let mut data = data::generate();
+        data::seed_sid_demo_track(&mut data);
         Self {
-            data: data::generate(),
+            data,
             scanning: false,
             status: None,
             tag_edit_results: Vec::new(),

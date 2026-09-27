@@ -48,6 +48,17 @@ impl Default for ChannelCapabilities {
     }
 }
 
+/// A track's subsong/subtune selection state, when its format carries more
+/// than one tune in a single file (SID subtunes, multi-song tracker modules,
+/// ...). `1`-based, matching both BASS's music order and the SID header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Subsong {
+    /// The subsong currently loaded/playing.
+    pub current: u16,
+    /// How many subsongs the track contains (`>= 1`).
+    pub count: u16,
+}
+
 /// Something that can open a playable channel for a file path.
 ///
 /// Implemented by [`BassBackend`] for real playback; tests use a mock.
@@ -122,6 +133,21 @@ pub trait BackendChannel: Send {
     /// channel.
     fn module_info(&self) -> Option<crate::tracker::ModuleInfo> {
         None
+    }
+
+    /// The current subsong/subtune and how many the loaded track has, or
+    /// `None` when the format has no such concept. Formats that only ever
+    /// carry one tune still report `Some` (with `count == 1`) so the caller
+    /// needn't special-case them; the selector only appears when `count > 1`.
+    fn subsong(&self) -> Option<Subsong> {
+        None
+    }
+
+    /// Switches to `subsong` (`1`-based, clamped to the valid range) and
+    /// restarts playback at its start. A format without subsongs ignores
+    /// this; the default is a no-op.
+    fn select_subsong(&self, _subsong: u16) -> Result<(), PlayerError> {
+        Ok(())
     }
 
     /// What this channel can do with duration and seeking (#192). Defaults to
