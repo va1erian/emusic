@@ -145,11 +145,17 @@ impl Win32App {
                 }
             }
             Msg::DatabaseInfo => {
+                // The canvas backend opens the dialog non-modally, so its
+                // Rescan reports back through `Msg::LibraryRescan` instead.
                 let choice = database_info::show(ui, self.shell.library.as_ref());
                 if choice == Some(DatabaseInfoChoice::Rescan) {
                     self.shell.dispatch(Command::LibraryRescan);
                     self.tick_inner();
                 }
+            }
+            Msg::LibraryRescan => {
+                self.shell.dispatch(Command::LibraryRescan);
+                self.tick_inner();
             }
             Msg::KeyboardShortcuts => self.show_shortcuts(ui),
             Msg::About => {

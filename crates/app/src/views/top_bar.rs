@@ -8,8 +8,9 @@
 //! [`AppState::search_query`](emusic_ui::state::AppState::search_query).
 //!
 //! The caption band above the transport band is a transparent drag region on
-//! platforms that draw their own chrome; on Windows the native extended title
-//! bar owns the strip, so the band node is kept hidden.
+//! the canvas backend, which draws no native chrome; on the native Win32
+//! backend the extended title bar owns the strip, so the band node is kept
+//! hidden.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -23,6 +24,7 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Edit, Glyph, HasText, Label, TopBar, TopBarId};
 
 use crate::app::Msg;
+use crate::backend::is_canvas;
 use crate::window::WindowChrome;
 
 /// Width of the search field, in device-independent pixels.
@@ -86,9 +88,10 @@ impl TopBarView {
         let search = Edit::new(ui, Rect::default(), "")
             .expect("create search box")
             .on_change(|text| Some(Msg::Dispatch(Command::SetSearchQuery(text.to_string()))));
-        // On Windows the native extended title bar owns the strip; elsewhere
-        // the band is the app's drag region.
-        ui.set_visible(caption.id(), !cfg!(windows));
+        // A backend that draws no native caption (the canvas backend, also when
+        // it runs on Windows) uses the band as the app's drag region; the
+        // native Win32 backend owns the strip and hides it.
+        ui.set_visible(caption.id(), is_canvas());
         ui.raise(bar.id());
         ui.raise(search.id());
         TopBarView {
@@ -204,11 +207,10 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
         .icon(SEARCH, Glyph::Search)
         .tooltip(SEARCH, "Search the library");
 
-    // A platform whose backend draws no native window buttons gets portable
-    // ones at the trailing edge.
-    let bar = if cfg!(windows) {
-        bar
-    } else {
+    // A backend that draws no native window buttons (the canvas backend, also
+    // when it runs on Windows) gets portable ones at the trailing edge; the
+    // native Win32 backend keeps its own.
+    let bar = if is_canvas() {
         bar.spacer()
             .icon(MINIMIZE, Glyph::Text(GLYPH_MINIMIZE))
             .tooltip(MINIMIZE, "Minimize")
@@ -216,6 +218,8 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
             .tooltip(MAXIMIZE, "Maximize")
             .icon(CLOSE, Glyph::Close)
             .tooltip(CLOSE, "Close")
+    } else {
+        bar
     };
 
     bar.on_click(move |id| {

@@ -40,6 +40,9 @@ pub enum Msg {
     ContextAction(ContextAction),
     /// Open File -> Database info.
     DatabaseInfo,
+    /// The Database info dialog asked to rescan everything; it reports this
+    /// through the app's queue when it runs non-modally (canvas backend).
+    LibraryRescan,
     /// Show Help -> Keyboard shortcuts.
     KeyboardShortcuts,
     /// Go to Help -> About (the Settings view's About page).
