@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use emusic_player::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport};
+use emusic_player::backend::{
+    AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport, Subsong,
+};
 use emusic_player::tracker::{EndBehavior, TrackerSettings};
 use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent, QueueSnapshot};
 
@@ -26,6 +28,8 @@ struct MockChannel {
     /// [`BackendChannel::apply_tracker_settings`], shared with the backend so
     /// a test can assert they reach each freshly opened channel.
     tracker_settings: Arc<Mutex<Option<TrackerSettings>>>,
+    /// Subsong/subtune state, when the mock is configured with one.
+    subsong: Mutex<Option<Subsong>>,
 }
 
 impl MockChannel {
@@ -38,6 +42,7 @@ impl MockChannel {
             end_callback: Mutex::new(None),
             volume: Mutex::new(1.0),
             tracker_settings: Arc::new(Mutex::new(None)),
+            subsong: Mutex::new(None),
         }
     }
 }
@@ -108,6 +113,17 @@ impl BackendChannel for MockChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         self.capabilities
     }
+
+    fn subsong(&self) -> Option<Subsong> {
+        *self.subsong.lock().unwrap()
+    }
+
+    fn select_subsong(&self, subsong: u16) -> Result<(), PlayerError> {
+        if let Some(state) = self.subsong.lock().unwrap().as_mut() {
+            state.current = subsong.clamp(1, state.count);
+        }
+        Ok(())
+    }
 }
 
 /// Mock backend: "opens" instantly (in-process, no real I/O), optionally
@@ -122,6 +138,7 @@ struct MockBackend {
     /// Shared with every channel this backend opens; records the last tracker
     /// settings applied, so a test can assert they reach new channels.
     tracker_settings: Arc<Mutex<Option<TrackerSettings>>>,
+    subsong: Option<Subsong>,
 }
 
 impl MockBackend {
@@ -129,6 +146,15 @@ impl MockBackend {
         Self {
             duration,
             capabilities: ChannelCapabilities::default(),
+            ..Default::default()
+        }
+    }
+
+    /// A backend whose channels report the given subsong/subtune state.
+    fn with_subsong(duration: Duration, subsong: Subsong) -> Self {
+        Self {
+            duration,
+            subsong: Some(subsong),
             ..Default::default()
         }
     }
@@ -201,6 +227,12 @@ impl BackendChannel for SharedChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         self.0.capabilities()
     }
+    fn subsong(&self) -> Option<Subsong> {
+        self.0.subsong()
+    }
+    fn select_subsong(&self, subsong: u16) -> Result<(), PlayerError> {
+        self.0.select_subsong(subsong)
+    }
 }
 
 impl AudioBackend for MockBackend {
@@ -216,6 +248,7 @@ impl AudioBackend for MockBackend {
         let mut channel = MockChannel::new(self.duration);
         channel.capabilities = self.capabilities;
         channel.tracker_settings = Arc::clone(&self.tracker_settings);
+        *channel.subsong.lock().unwrap() = self.subsong;
         let channel = Arc::new(channel);
         *self.last_opened.lock().unwrap() = Some(Arc::clone(&channel));
         Ok(Box::new(SharedChannel(channel)))
@@ -817,4 +850,45 @@ fn queue_snapshot_round_trips_a_scoped_shuffle() {
     wait_until(&mut restored, |p| {
         p.current_path() == Some(expected_next.as_path())
     });
+}
+
+#[test]
+fn subsong_is_exposed_and_selectable_on_the_current_channel() {
+    let backend = MockBackend::with_subsong(
+        Duration::from_secs(30),
+        Subsong {
+            current: 1,
+            count: 3,
+        },
+    );
+    let mut player = Player::new(Arc::new(backend));
+    player.replace_and_play(vec![PathBuf::from("tune.sid")], 0);
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+
+    assert_eq!(
+        player.subsong(),
+        Some(Subsong {
+            current: 1,
+            count: 3
+        })
+    );
+
+    player.select_subsong(2);
+    assert_eq!(
+        player.subsong(),
+        Some(Subsong {
+            current: 2,
+            count: 3
+        })
+    );
+
+    // Out-of-range switches clamp to the valid range.
+    player.select_subsong(9);
+    assert_eq!(
+        player.subsong(),
+        Some(Subsong {
+            current: 3,
+            count: 3
+        })
+    );
 }

@@ -20,7 +20,7 @@ use emusic_player::{
 
 use super::PlayMessage;
 use crate::player_api::{
-    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode, SubsongInfo,
 };
 
 pub struct PlayerAdapter {
@@ -30,6 +30,8 @@ pub struct PlayerAdapter {
     /// [`PlayerApi::tick`] (see [`PlayerAdapter::refresh_cache`]) so
     /// [`PlayerApi::module_info`] can return a borrow.
     module_info: Option<ModuleInfo>,
+    /// Cached subsong/subtune selector state (#65).
+    subsong: Option<SubsongInfo>,
     queue: Vec<QueueEntry>,
     /// Parallel to `queue`: each displayed entry's index into the player's
     /// original queue list, so `queue_jump`/`queue_remove` (indices over
@@ -54,6 +56,7 @@ impl PlayerAdapter {
             player,
             now_playing: None,
             module_info: None,
+            subsong: None,
             queue: Vec::new(),
             queue_item_indices: Vec::new(),
             play_record_tx,
@@ -78,6 +81,16 @@ impl PlayerAdapter {
         self.queue = upcoming.iter().map(|(_, path)| queue_entry(path)).collect();
         self.shuffle_scope = self.player.shuffle_scope().map(str::to_string);
         self.module_info = self.player.module_info().map(map_module_info);
+        self.subsong = self.player.subsong().map(map_subsong);
+    }
+}
+
+/// Converts the player crate's [`emusic_player::Subsong`] to the shell-facing
+/// [`SubsongInfo`].
+fn map_subsong(subsong: emusic_player::Subsong) -> SubsongInfo {
+    SubsongInfo {
+        current: subsong.current,
+        count: subsong.count,
     }
 }
 
@@ -250,6 +263,14 @@ impl PlayerApi for PlayerAdapter {
 
     fn module_info(&self) -> Option<&ModuleInfo> {
         self.module_info.as_ref()
+    }
+
+    fn subsong(&self) -> Option<SubsongInfo> {
+        self.subsong
+    }
+
+    fn select_subsong(&mut self, subsong: u16) {
+        self.player.select_subsong(subsong);
     }
 
     fn fft(&self) -> Vec<f32> {

@@ -1208,6 +1208,8 @@ impl Win32App {
                         }
                     })
                 }
+                SummaryEvent::SubsongPrev => Some(NowPlayingMsg::PrevSubsong),
+                SummaryEvent::SubsongNext => Some(NowPlayingMsg::NextSubsong),
                 SummaryEvent::OpenFolder => None,
             }
         };

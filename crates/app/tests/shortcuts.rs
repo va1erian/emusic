@@ -21,7 +21,7 @@ use emusic_player::tracker::TrackerSettings;
 use emusic_ui::config::Config;
 use emusic_ui::mock::{MockLibrary, MockPlayer};
 use emusic_ui::player_api::{
-    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode, SubsongInfo,
 };
 use emusic_ui::state::ShortcutAction;
 use emusic_ui::waker::WakerSlot;
@@ -119,6 +119,14 @@ impl PlayerApi for RecordingPlayer {
 
     fn module_info(&self) -> Option<&ModuleInfo> {
         self.inner.module_info()
+    }
+
+    fn subsong(&self) -> Option<SubsongInfo> {
+        self.inner.subsong()
+    }
+
+    fn select_subsong(&mut self, subsong: u16) {
+        self.inner.select_subsong(subsong);
     }
 
     fn fft(&self) -> Vec<f32> {

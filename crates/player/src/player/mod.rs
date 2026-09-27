@@ -11,6 +11,7 @@
 
 mod accounting;
 mod loading;
+mod subsong;
 mod tracker;
 mod transport;
 

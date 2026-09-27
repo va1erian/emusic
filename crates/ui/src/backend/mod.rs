@@ -18,7 +18,7 @@ use tracing::{info, warn};
 use crate::library_api::LibraryDataSource;
 use crate::mock;
 use crate::player_api::{
-    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode,
+    ModuleInfo, NowPlayingInfo, PlaybackStatus, PlayerApi, QueueEntry, RepeatMode, SubsongInfo,
 };
 use crate::waker::WakerHandle;
 use library::LibraryBackend;
@@ -183,6 +183,10 @@ impl PlayerApi for UnavailablePlayer {
     fn module_info(&self) -> Option<&ModuleInfo> {
         None
     }
+    fn subsong(&self) -> Option<SubsongInfo> {
+        None
+    }
+    fn select_subsong(&mut self, _subsong: u16) {}
     fn fft(&self) -> Vec<f32> {
         Vec::new()
     }

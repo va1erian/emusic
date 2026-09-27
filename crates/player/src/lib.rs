@@ -42,7 +42,7 @@ pub mod sid;
 pub mod tracker;
 pub mod volume;
 
-pub use backend::{AudioBackend, BackendChannel, BassBackend};
+pub use backend::{AudioBackend, BackendChannel, BassBackend, Subsong};
 pub use error::PlayerError;
 pub use events::{PlaybackState, PlayerEvent};
 pub use player::Player;

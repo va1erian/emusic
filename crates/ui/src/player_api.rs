@@ -77,6 +77,20 @@ pub struct ModuleInfo {
     pub samples: Vec<String>,
 }
 
+/// A track's subsong/subtune selector state, returned by
+/// [`PlayerApi::subsong`].
+///
+/// Only formats that carry more than one tune in a file expose this; the
+/// now-playing panel shows the selector only when `count > 1`. Formats that
+/// carry a single tune may still report `count == 1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubsongInfo {
+    /// The subsong/subtune currently playing (`1`-based).
+    pub current: u16,
+    /// How many the track contains (`>= 1`).
+    pub count: u16,
+}
+
 /// One entry in the upcoming queue, shown in the right panel.
 #[derive(Debug, Clone, Default)]
 pub struct QueueEntry {
@@ -110,6 +124,15 @@ pub trait PlayerApi {
 
     /// Live tracker-module metadata, if the current track is a module.
     fn module_info(&self) -> Option<&ModuleInfo>;
+
+    /// The current subsong/subtune of the loaded track and how many it has,
+    /// or `None` when the format has no such concept. Drives the now-playing
+    /// subtune selector (#65).
+    fn subsong(&self) -> Option<SubsongInfo>;
+
+    /// Switches the loaded track to `subsong` (`1`-based), restarting it. A
+    /// no-op when nothing is loaded or the format has no subsongs.
+    fn select_subsong(&mut self, subsong: u16);
 
     /// Raw FFT magnitude bins (positive frequencies) for the current track,
     /// for the visualizer's spectrum mode (#25); empty when nothing is
