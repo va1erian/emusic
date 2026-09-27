@@ -16,11 +16,16 @@ default = ["sid"]
 sid = ["dep:emusic-sid"]
 # Pure-Rust tracker modules (MOD/XM/S3M/IT), safe on every target.
 modules = ["dep:xmrs", "dep:xmrsplayer"]
+# Pure-Rust SID playback (MOS 6502 + sidera chip) for targets where cRSID
+# cannot build, such as Android.
+sid-sidera = ["dep:sidera", "dep:mos6502"]
 
 [dependencies]
 emusic-sid = { path = "../sid", optional = true }
 flacenc = "0.5"
 md-5 = "0.10"
+mos6502 = { version = "0.10", optional = true }
+sidera = { version = "1.1", optional = true, default-features = false }
 thiserror = "2"
 tracing = "0.1"
 xmrs = { version = "0.15", optional = true }

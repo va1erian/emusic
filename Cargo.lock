@@ -1045,6 +1045,8 @@ dependencies = [
  "emusic-sid",
  "flacenc",
  "md-5",
+ "mos6502",
+ "sidera",
  "tempfile",
  "thiserror 2.0.20",
  "tracing",
@@ -2010,6 +2012,16 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mos6502"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41602b70ecb904b5359a3be5d947dacde19b03316284f1fbf804576437546e4d"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
 ]
 
 [[package]]
