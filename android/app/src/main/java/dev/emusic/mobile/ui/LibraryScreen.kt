@@ -31,17 +31,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.emusic_mobile.MobileCore
@@ -50,10 +49,9 @@ import java.io.File
 
 /**
  * Connects to `url`, fetches the server's library, shows a summary plus the
- * track list, and streams the standard formats with Media3.
- *
- * Specialized formats (SID, tracker modules, MIDI) are not streamed here: they
- * need the server-side `/render` path and are tracked in #430.
+ * track list, and plays both standard audio (Media3 streaming) and specialized
+ * formats. Tracker modules (MOD/XM/S3M/IT) and SID render locally to a cached
+ * FLAC; anything else specialized is deferred to the server's `/render`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,13 +65,17 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var version by remember { mutableStateOf(0L) }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var nonce by remember { mutableStateOf(0) }
+    var formatFilter by remember { mutableStateOf<String?>(null) }
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
     var playbackMessage by remember { mutableStateOf<String?>(null) }
-    var formatFilter by remember { mutableStateOf<String?>(null) }
+    var queue by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var queueIndex by remember { mutableStateOf(-1) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
 
     LaunchedEffect(nonce) {
         loading = true
@@ -116,6 +118,11 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_ENDED) isPlaying = false
                 }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    playbackMessage = "playback failed: ${error.message}"
+                    isPlaying = false
+                }
             }
             active.addListener(listener)
             onDispose {
@@ -125,7 +132,18 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         }
     }
 
-    fun play(track: Track) {
+    // Poll the transport while a track is loaded.
+    LaunchedEffect(player, nowPlaying) {
+        val active = player ?: return@LaunchedEffect
+        while (nowPlaying != null) {
+            positionMs = active.currentPosition.coerceAtLeast(0)
+            durationMs = active.duration.coerceAtLeast(0)
+            delay(500)
+        }
+    }
+
+    /** Resolves and starts playback for one track. */
+    fun startTrack(track: Track) {
         val client = core
         val active = player
         if (client == null || active == null) {
@@ -133,18 +151,16 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
             return
         }
         playbackMessage = null
+        nowPlaying = track
 
         if (!track.specialized) {
-            nowPlaying = track
             active.setMediaItem(streamMediaItem(client.streamUrl(track.id)))
             active.prepare()
             active.play()
             return
         }
 
-        // Tracker modules (MOD/XM/S3M/IT) render locally to a cached FLAC.
         if (client.canRender(track.format)) {
-            nowPlaying = track
             preparing = true
             scope.launch {
                 val result = withContext(Dispatchers.IO) {
@@ -164,11 +180,23 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
             return
         }
 
-        // SID and anything else specialized: ask the server to render.
-        nowPlaying = track
+        // Anything else specialized: ask the server to render.
         active.setMediaItem(streamMediaItem(client.renderUrl(track.id, 0u)))
         active.prepare()
         active.play()
+    }
+
+    fun play(track: Track, list: List<Track>) {
+        queue = list
+        queueIndex = list.indexOfFirst { it.id == track.id }
+        startTrack(track)
+    }
+
+    fun playAt(index: Int) {
+        if (index in queue.indices) {
+            queueIndex = index
+            startTrack(queue[index])
+        }
     }
 
     Scaffold(
@@ -221,7 +249,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                     )
                     TrackList(
                         tracks = visibleTracks,
-                        onPlay = ::play,
+                        onPlay = { track -> play(track, visibleTracks) },
                         modifier = Modifier.weight(1f),
                     )
                     playbackMessage?.let { message ->
@@ -233,65 +261,26 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                         )
                     }
                     nowPlaying?.let { track ->
-                        NowPlayingBar(
+                        PlayerBar(
                             track = track,
                             isPlaying = isPlaying,
                             preparing = preparing,
+                            positionMs = positionMs,
+                            durationMs = durationMs,
+                            onSeek = { millis -> player?.seekTo(millis) },
                             onToggle = {
                                 player?.let { active ->
                                     if (isPlaying) active.pause() else active.play()
                                 }
                             },
+                            onPrevious = {
+                                if (queueIndex > 0) playAt(queueIndex - 1) else player?.seekTo(0)
+                            },
+                            onNext = { playAt(queueIndex + 1) },
                         )
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun NowPlayingBar(
-    track: Track,
-    isPlaying: Boolean,
-    preparing: Boolean,
-    onToggle: () -> Unit,
-) {
-    HorizontalDivider()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .testTag("now_playing"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.titleOrFileName(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text = if (preparing) {
-                    "Preparing…"
-                } else {
-                    listOfNotNull(track.artist, track.album)
-                        .filter { it.isNotBlank() }
-                        .joinToString(" · ")
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        TextButton(
-            onClick = onToggle,
-            enabled = !preparing,
-            modifier = Modifier.testTag("play_pause"),
-        ) {
-            Text(if (isPlaying) "Pause" else "Play")
         }
     }
 }
@@ -401,7 +390,7 @@ private fun TrackList(
                 modifier = Modifier
                     .clickable { onPlay(track) }
                     .testTag("track_row"),
-                headlineContent = { Text(track.titleOrFileName()) },
+                headlineContent = { Text(track.displayTitle()) },
                 supportingContent = {
                     val subtitle = listOfNotNull(track.artist, track.album)
                         .filter { it.isNotBlank() }
@@ -418,12 +407,6 @@ private fun TrackList(
         }
     }
 }
-
-/** Title to display: the tagged title, else the file name, else the id. */
-private fun Track.titleOrFileName(): String =
-    title?.takeIf { it.isNotBlank() }
-        ?: filename?.takeIf { it.isNotBlank() }
-        ?: id
 
 /** Formats seconds as `h:mm:ss` or `m:ss`. */
 private fun formatDuration(seconds: Double): String {

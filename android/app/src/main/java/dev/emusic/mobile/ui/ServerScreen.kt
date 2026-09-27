@@ -151,7 +151,7 @@ fun EmusicApp() {
                     CircularProgressIndicator()
                 }
             } else if (servers.isEmpty()) {
-                Text("No servers yet. Use Add to pair one.")
+                Onboarding(onStart = { adding = true })
             } else {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -179,6 +179,40 @@ private fun loadServers(dataDir: String): List<ServerView> =
             .getOrDefault(false)
         ServerView(entry, paired)
     }
+
+@Composable
+private fun Onboarding(onStart: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("onboarding"),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Welcome to emusic", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "Stream your homelab music server to this phone. The app " +
+                    "reads the library from the server — it never scans local files.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = "On the server, run `emusic-server pair` to get a 6-digit code, " +
+                    "then pair here.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Button(
+                onClick = onStart,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .testTag("onboarding_start"),
+            ) {
+                Text("Pair a server")
+            }
+        }
+    }
+}
 
 @Composable
 private fun ServerRow(
