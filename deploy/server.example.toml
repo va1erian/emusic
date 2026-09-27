@@ -30,3 +30,15 @@ paths = [
 ]
 hvsc_songlengths_path = "/media/hvsc_sid/DOCUMENTS/Songlengths.md5"
 scan_interval_secs = 3600
+
+[render]
+# Render specialized files (SID today) to FLAC for clients without native
+# engines. Off by default: it is CPU-heavy and needs a writable data_dir for
+# the rendition cache. A SID tune uses hvsc_songlengths_path above when set.
+enabled = false
+codec = "flac"
+sample_rate = 44100
+# SoundFont for the planned MIDI renderer; unused until that lands.
+# soundfont_path = "/media/soundfonts/GeneralUser.sf2"
+cache_max_bytes = 2147483648
+max_concurrent = 2

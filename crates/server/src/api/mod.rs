@@ -4,6 +4,7 @@ pub mod auth_routes;
 pub mod error;
 pub mod library_routes;
 pub mod range;
+pub mod render_routes;
 pub mod stream_routes;
 pub mod ws;
 
@@ -33,6 +34,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/library/sync", get(library_routes::sync))
         .route("/api/v1/tracks/{id}/meta", get(library_routes::track_meta))
         .route("/api/v1/tracks/{id}/stream", get(stream_routes::stream))
+        .route("/api/v1/tracks/{id}/render", get(render_routes::render))
         .route("/api/v1/albums/{id}/art", get(library_routes::album_art))
         .route("/api/v1/sid/songlengths", get(library_routes::songlengths))
         .route("/api/v1/ws", get(ws::ws))

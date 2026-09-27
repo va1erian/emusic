@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, Request, StatusCode, header};
 use emusic_server::auth::paseto::{
     generate_device_keypair, issue_refresh_proof, public_key_paserk, token_fingerprint,
 };
-use emusic_server::config::{Config, LibraryConfig, SecurityConfig, ServerConfig};
+use emusic_server::config::{Config, LibraryConfig, RenderConfig, SecurityConfig, ServerConfig};
 use emusic_server::db::models::NewTrack;
 use emusic_server::state::AppState;
 use emusic_server::util::unix_now;
@@ -30,6 +30,10 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::with_render(RenderConfig::default())
+    }
+
+    fn with_render(render: RenderConfig) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("library");
         std::fs::create_dir_all(&root).unwrap();
@@ -46,6 +50,7 @@ impl Harness {
                 hvsc_songlengths_path: None,
                 scan_interval_secs: 0,
             },
+            render,
         };
         let state = emusic_server::build_state(config).unwrap();
         Self {
@@ -146,6 +151,23 @@ fn write_wav(path: &Path, millis: u32) {
         buf.extend_from_slice(&sample.to_le_bytes());
     }
     std::fs::write(path, buf).unwrap();
+}
+
+/// Writes a minimal but valid PSID header advertising `subtunes` songs. No real
+/// renderer fixture is committed; this only exercises classification and
+/// metadata, not rendering.
+fn write_sid(harness: &Harness, name: &str, subtunes: u16) {
+    let mut sid = vec![0u8; 0x76];
+    sid[0..4].copy_from_slice(b"PSID");
+    sid[14..16].copy_from_slice(&subtunes.to_be_bytes());
+    std::fs::write(harness.root.join(name), sid).unwrap();
+}
+
+fn render_enabled() -> RenderConfig {
+    RenderConfig {
+        enabled: true,
+        ..RenderConfig::default()
+    }
 }
 
 fn track_row(id: &str, relative_path: &str, album_id: Option<&str>, has_art: bool) -> NewTrack {
@@ -626,4 +648,132 @@ async fn re_adding_a_track_clears_its_tombstone() {
     let value: serde_json::Value = serde_json::from_slice(&sync).unwrap();
     assert!(value["deleted"].as_array().unwrap().is_empty());
     assert_eq!(sync_tracks(&sync).len(), 2);
+}
+
+/// Finds the first synced track whose `format` equals `format`.
+fn find_by_format<'a>(tracks: &'a [serde_json::Value], format: &str) -> &'a serde_json::Value {
+    tracks
+        .iter()
+        .find(|track| track["format"] == format)
+        .unwrap_or_else(|| panic!("no {format} track"))
+}
+
+#[tokio::test]
+async fn render_is_not_found_and_not_renderable_when_disabled() {
+    let harness = Harness::new();
+    write_sid(&harness, "tune.sid", 3);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let tracks = sync_tracks(&sync);
+    let sid = find_by_format(&tracks, "sid");
+    assert_eq!(sid["specialized"], true);
+    assert_eq!(sid["renderable"], false);
+    assert!(sid["renditions"].as_array().unwrap().is_empty());
+
+    let id = sid["id"].as_str().unwrap();
+    let (status, _, _) = harness
+        .request(harness.authed("GET", &format!("/api/v1/tracks/{id}/render"), &token))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn render_metadata_marks_sid_tracks_when_enabled() {
+    let harness = Harness::with_render(render_enabled());
+    write_sid(&harness, "tune.sid", 3);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let tracks = sync_tracks(&sync);
+    let sid = find_by_format(&tracks, "sid");
+    assert_eq!(sid["specialized"], true);
+    assert_eq!(sid["renderable"], true);
+    assert_eq!(sid["renditions"], serde_json::json!(["flac"]));
+
+    // The single-track metadata endpoint agrees.
+    let id = sid["id"].as_str().unwrap();
+    let (status, _, body) = harness
+        .request(harness.authed("GET", &format!("/api/v1/tracks/{id}/meta"), &token))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let meta: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(meta["renderable"], true);
+    assert_eq!(meta["renditions"], serde_json::json!(["flac"]));
+}
+
+#[tokio::test]
+async fn render_rejects_an_unsupported_codec() {
+    let harness = Harness::with_render(render_enabled());
+    harness.write_wav("song.wav", 100);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let id = sync_tracks(&sync)[0]["id"].as_str().unwrap().to_string();
+
+    let (status, _, _) = harness
+        .request(harness.authed(
+            "GET",
+            &format!("/api/v1/tracks/{id}/render?codec=opus"),
+            &token,
+        ))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn render_is_not_found_for_formats_without_a_renderer() {
+    let harness = Harness::with_render(render_enabled());
+    harness.write_wav("song.wav", 100);
+    harness.scan().await;
+    let mut module = track_row("modtrack", "tune.mod", None, false);
+    module.format = "mod".into();
+    module.kind = "module".into();
+    harness.state.db.upsert_tracks(&[module]).unwrap();
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let tracks = sync_tracks(&sync);
+    let wav_id = find_by_format(&tracks, "wav")["id"].as_str().unwrap();
+    let mod_track = find_by_format(&tracks, "mod");
+    assert_eq!(mod_track["renderable"], false);
+    assert_eq!(mod_track["specialized"], true);
+
+    for id in [wav_id, mod_track["id"].as_str().unwrap()] {
+        let (status, _, _) = harness
+            .request(harness.authed("GET", &format!("/api/v1/tracks/{id}/render"), &token))
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "track {id}");
+    }
+}
+
+#[tokio::test]
+async fn render_rejects_an_invalid_subtune() {
+    let harness = Harness::with_render(render_enabled());
+    write_sid(&harness, "tune.sid", 3);
+    harness.scan().await;
+    let (token, _, _) = harness.pair().await;
+    let (_, _, sync) = harness
+        .request(harness.authed("GET", "/api/v1/library/sync?since_version=0", &token))
+        .await;
+    let tracks = sync_tracks(&sync);
+    let id = find_by_format(&tracks, "sid")["id"].as_str().unwrap();
+
+    for query in ["subtune=0", "subtune=4"] {
+        let (status, _, _) = harness
+            .request(harness.authed(
+                "GET",
+                &format!("/api/v1/tracks/{id}/render?{query}"),
+                &token,
+            ))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{query}");
+    }
 }

@@ -61,6 +61,12 @@ environment override, which makes container configuration file-free.
 | `library.paths` | `EMUSIC_SERVER_LIBRARY_PATHS` | required | Read-only roots. |
 | `library.hvsc_songlengths_path` | `EMUSIC_SERVER_HVSC_SONGLENGTHS` | none | HVSC `Songlengths.md5`. |
 | `library.scan_interval_secs` | `EMUSIC_SERVER_SCAN_INTERVAL` | `3600` | `0` disables periodic scans. |
+| `render.enabled` | `EMUSIC_SERVER_RENDER_ENABLED` | `false` | Enable server-side rendering. |
+| `render.codec` | `EMUSIC_SERVER_RENDER_CODEC` | `flac` | Output codec (only `flac`). |
+| `render.sample_rate` | `EMUSIC_SERVER_RENDER_SAMPLE_RATE` | `44100` | Rendering sample rate, Hz. |
+| `render.soundfont_path` | `EMUSIC_SERVER_RENDER_SOUNDFONT` | none | MIDI SoundFont (reserved). |
+| `render.cache_max_bytes` | `EMUSIC_SERVER_RENDER_CACHE_MAX_BYTES` | `2147483648` | Rendition cache cap. |
+| `render.max_concurrent` | `EMUSIC_SERVER_RENDER_MAX_CONCURRENT` | `2` | Concurrent renders. |
 
 ¹ `%LOCALAPPDATA%\emusic-server` on Windows.
 
@@ -157,6 +163,7 @@ All routes are under `/api/v1` and require a bearer token except `health` and
 | `GET /albums/{id}/art` | Cover art bytes. |
 | `GET /sid/songlengths` | HVSC `Songlengths.md5` text (parsed by the client's existing parser). |
 | `GET /tracks/{id}/stream` | Audio bytes, `Range` supported. |
+| `GET /tracks/{id}/render?subtune=N&codec=flac` | Server-rendered rendition of a specialized track. |
 | `GET /ws` | WebSocket: scan progress and library-version events. |
 
 `GET /library/sync` returns a monotonically increasing `version`; every row
@@ -180,6 +187,33 @@ selection, soundfont choice and visualisation. `subtunes` gives the count and
 `duration_secs` the tune's default (start) subtune; the full
 `Songlengths.md5` text is available from `GET /sid/songlengths` for
 per-subtune lengths.
+
+### Server-side rendering
+
+Clients that lack the desktop's native engines — notably Android — cannot play
+those raw formats. With `render.enabled = true` the server renders them to FLAC
+and serves the rendition from
+`GET /api/v1/tracks/{id}/render?subtune=N&codec=flac`:
+
+- **SID** is rendered by the in-repo cRSID engine, clamped to the tune's HVSC
+  song length when `library.hvsc_songlengths_path` is set (otherwise a bounded
+  default).
+- **Tracker modules and MIDI** are not renderable yet; their renderers are
+  follow-ups. Requests for them return `404`, exactly like an unsupported or
+  unknown track.
+- `subtune` is 1-based; omitting it renders the file's default subtune.
+- `codec` defaults to `render.codec`; any other value is a `400`.
+
+The first request for a rendition renders it, which can take seconds; subsequent
+requests are served from the cache with full `Range`/`ETag`/seek support.
+Renditions are written atomically to `<data_dir>/renditions/` and evicted LRU
+when `render.cache_max_bytes` is exceeded. Renders run on the blocking pool and
+are bounded by `render.max_concurrent`, so they never stall the async runtime.
+
+Every `TrackView` carries `renderable` and `renditions` (`["flac"]`) so a client
+can tell whether to call `/render` before trying. With `render.enabled = false`
+the endpoint returns `404` and no track is reported renderable; `specialized`
+is unchanged for the desktop's raw delivery path.
 
 ## Deployment
 

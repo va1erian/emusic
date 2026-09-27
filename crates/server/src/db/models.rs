@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::render::RenderCapabilities;
+
 /// A paired client device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Device {
@@ -154,6 +156,11 @@ pub struct TrackView {
     /// Whether the client should fetch the whole file and render it natively
     /// (SID, tracker module or MIDI) rather than stream it for seeking.
     pub specialized: bool,
+    /// Whether the server can render this track to a streamable codec.
+    pub renderable: bool,
+    /// Output codecs the server can render this track to (empty when not
+    /// renderable).
+    pub renditions: Vec<String>,
     /// Tagged title.
     pub title: Option<String>,
     /// Tagged artist.
@@ -190,14 +197,25 @@ pub struct TrackView {
     pub added_at: i64,
 }
 
-impl From<&TrackRecord> for TrackView {
-    fn from(track: &TrackRecord) -> Self {
+impl TrackView {
+    /// Projects a stored row, tagging it with the server's render capability.
+    ///
+    /// `capabilities` comes from the runtime render service, so disabling
+    /// `render` makes every track report `renderable = false` without a rescan.
+    pub fn from_record(track: &TrackRecord, capabilities: &RenderCapabilities) -> Self {
+        let renderable = capabilities.is_renderable(&track.format);
         Self {
             id: track.id.clone(),
             filename: file_name(&track.relative_path),
             format: track.format.clone(),
             kind: track.kind.clone(),
             specialized: is_specialized_format(&track.format),
+            renderable,
+            renditions: if renderable {
+                capabilities.renditions().to_vec()
+            } else {
+                Vec::new()
+            },
             title: track.title.clone(),
             artist: track.artist.clone(),
             album_artist: track.album_artist.clone(),
@@ -230,11 +248,16 @@ pub struct SyncDeltaView {
     pub deleted: Vec<String>,
 }
 
-impl From<SyncDelta> for SyncDeltaView {
-    fn from(delta: SyncDelta) -> Self {
+impl SyncDeltaView {
+    /// Projects a delta, tagging every track with the server's capability.
+    pub fn from_delta(delta: SyncDelta, capabilities: &RenderCapabilities) -> Self {
         Self {
             version: delta.version,
-            tracks: delta.tracks.iter().map(TrackView::from).collect(),
+            tracks: delta
+                .tracks
+                .iter()
+                .map(|track| TrackView::from_record(track, capabilities))
+                .collect(),
             deleted: delta.deleted,
         }
     }

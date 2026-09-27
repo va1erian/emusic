@@ -13,6 +13,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod render;
 pub mod scan;
 pub mod scanner;
 pub mod security;

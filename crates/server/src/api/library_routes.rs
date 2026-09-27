@@ -33,7 +33,7 @@ pub async fn sync(
     let delta = tokio::task::spawn_blocking(move || db.sync_since(since))
         .await
         .map_err(|_| ApiError::internal())??;
-    Ok(Json(delta.into()))
+    Ok(Json(SyncDeltaView::from_delta(delta, &state.render_caps)))
 }
 
 /// `GET /api/v1/tracks/{id}/meta`
@@ -47,7 +47,7 @@ pub async fn track_meta(
         .await
         .map_err(|_| ApiError::internal())??;
     track
-        .map(|track| Json(TrackView::from(&track)))
+        .map(|track| Json(TrackView::from_record(&track, &state.render_caps)))
         .ok_or_else(ApiError::not_found)
 }
 

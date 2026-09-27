@@ -167,3 +167,123 @@ fn empty_hvsc_path_becomes_none() {
         .expect("env");
     assert!(config.library.hvsc_songlengths_path.is_none());
 }
+
+#[test]
+fn render_defaults_are_disabled_flac() {
+    let config = Config::from_toml(MINIMAL).expect("parse");
+    assert!(!config.render.enabled);
+    assert_eq!(config.render.codec, RENDER_CODEC_FLAC);
+    assert_eq!(config.render.sample_rate, 44_100);
+    assert!(config.render.soundfont_path.is_none());
+    assert!(config.render.cache_max_bytes > 0);
+    assert!(config.render.max_concurrent > 0);
+    config.validate().expect("valid");
+}
+
+#[test]
+fn render_toml_round_trips() {
+    let text = r#"
+[library]
+paths = ["/media/music"]
+
+[render]
+enabled = true
+codec = "flac"
+sample_rate = 48000
+soundfont_path = "/media/soundfonts/GeneralUser.sf2"
+cache_max_bytes = 1048576
+max_concurrent = 4
+"#;
+    let config = Config::from_toml(text).expect("parse");
+    config.validate().expect("valid");
+    assert!(config.render.enabled);
+    assert_eq!(config.render.sample_rate, 48_000);
+    assert_eq!(config.render.max_concurrent, 4);
+    let encoded = toml::to_string(&config).expect("serialize");
+    let back = Config::from_toml(&encoded).expect("reparse");
+    assert_eq!(config, back);
+}
+
+#[test]
+fn render_env_overrides_are_applied() {
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config
+        .apply_env_with(env(&[
+            ("EMUSIC_SERVER_RENDER_ENABLED", "true"),
+            ("EMUSIC_SERVER_RENDER_CODEC", "FLAC"),
+            ("EMUSIC_SERVER_RENDER_SAMPLE_RATE", "48000"),
+            ("EMUSIC_SERVER_RENDER_SOUNDFONT", "/sf2/GeneralUser.sf2"),
+            ("EMUSIC_SERVER_RENDER_CACHE_MAX_BYTES", "1048576"),
+            ("EMUSIC_SERVER_RENDER_MAX_CONCURRENT", "3"),
+        ]))
+        .expect("env");
+    assert!(config.render.enabled);
+    assert_eq!(config.render.codec, "flac");
+    assert_eq!(config.render.sample_rate, 48_000);
+    assert_eq!(
+        config.render.soundfont_path.as_deref(),
+        Some(std::path::Path::new("/sf2/GeneralUser.sf2"))
+    );
+    assert_eq!(config.render.cache_max_bytes, 1_048_576);
+    assert_eq!(config.render.max_concurrent, 3);
+    config.validate().expect("valid");
+}
+
+#[test]
+fn empty_render_env_values_disable_and_clear() {
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config
+        .apply_env_with(env(&[
+            ("EMUSIC_SERVER_RENDER_ENABLED", "false"),
+            ("EMUSIC_SERVER_RENDER_SOUNDFONT", ""),
+        ]))
+        .expect("env");
+    assert!(!config.render.enabled);
+    assert!(config.render.soundfont_path.is_none());
+}
+
+#[test]
+fn unknown_render_fields_are_rejected() {
+    let text = r#"
+[render]
+enabled = true
+surprise = 1
+[library]
+paths = ["/x"]
+"#;
+    assert!(Config::from_toml(text).is_err());
+}
+
+#[test]
+fn unsupported_render_codec_is_rejected() {
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.codec = "opus".into();
+    assert!(config.validate().is_err());
+}
+
+#[test]
+fn out_of_range_render_values_are_rejected() {
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.sample_rate = 0;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.sample_rate = MAX_RENDER_SAMPLE_RATE + 1;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.cache_max_bytes = 0;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.cache_max_bytes = MAX_RENDER_CACHE_BYTES + 1;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.max_concurrent = 0;
+    assert!(config.validate().is_err());
+
+    let mut config = Config::from_toml(MINIMAL).expect("parse");
+    config.render.max_concurrent = MAX_RENDER_CONCURRENT + 1;
+    assert!(config.validate().is_err());
+}

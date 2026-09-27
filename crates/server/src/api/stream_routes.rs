@@ -6,7 +6,7 @@
 //! is resolved through the store and the path jail — a client can only name a
 //! track id.
 
-use std::path::PathBuf;
+use std::path::Path as FsPath;
 
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -60,11 +60,22 @@ pub async fn stream(
         .map(|info| info.mime)
         .unwrap_or("application/octet-stream");
     let etag = format!("\"{}\"", track.hash);
+    serve_with_range(&path, &headers, len, mime, &etag).await
+}
 
-    if headers.get(header::RANGE).is_none() && matches_etag(&headers, &etag) {
+/// Serves `path` honouring `Range` and `If-None-Match`, with `Accept-Ranges`,
+/// `Content-Range` and `ETag` set. Shared by `/stream` and `/render`.
+pub(crate) async fn serve_with_range(
+    path: &FsPath,
+    headers: &HeaderMap,
+    len: u64,
+    mime: &str,
+    etag: &str,
+) -> Result<Response, ApiError> {
+    if headers.get(header::RANGE).is_none() && matches_etag(headers, etag) {
         return Ok((
             StatusCode::NOT_MODIFIED,
-            [(header::ETAG, etag.as_str())],
+            [(header::ETAG, etag.to_string())],
             Body::empty(),
         )
             .into_response());
@@ -75,9 +86,9 @@ pub async fn stream(
         .map(|value| value.to_str().unwrap_or_default());
 
     match requested {
-        None => serve(&path, 0, len.saturating_sub(1), len, mime, &etag, false).await,
+        None => serve(path, 0, len.saturating_sub(1), len, mime, etag, false).await,
         Some(raw) => match parse_range(raw, len) {
-            Ok((start, end)) => serve(&path, start, end, len, mime, &etag, true).await,
+            Ok((start, end)) => serve(path, start, end, len, mime, etag, true).await,
             Err(RangeError::Unsatisfiable) => Ok(unsatisfiable(len)),
             Err(RangeError::Invalid) => Err(ApiError::bad_request("invalid range")),
         },
@@ -85,7 +96,7 @@ pub async fn stream(
 }
 
 async fn serve(
-    path: &PathBuf,
+    path: &FsPath,
     start: u64,
     end: u64,
     len: u64,

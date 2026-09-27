@@ -27,6 +27,18 @@ pub const MAX_PAIRING_CODE_TTL_SECS: u64 = 3600;
 /// Upper bound for `security.max_body_bytes` (1 MiB).
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
+/// Upper bound for `render.sample_rate` (192 kHz).
+pub const MAX_RENDER_SAMPLE_RATE: u32 = 192_000;
+
+/// Upper bound for `render.max_concurrent` renders.
+pub const MAX_RENDER_CONCURRENT: u32 = 64;
+
+/// Upper bound for `render.cache_max_bytes` (64 GiB).
+pub const MAX_RENDER_CACHE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+
+/// The only `render.codec` supported today.
+pub const RENDER_CODEC_FLAC: &str = "flac";
+
 /// Top-level configuration tree.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields, default)]
@@ -37,6 +49,8 @@ pub struct Config {
     pub security: SecurityConfig,
     /// Library roots and scan scheduling.
     pub library: LibraryConfig,
+    /// Server-side rendering of SID, module and MIDI files for Android.
+    pub render: RenderConfig,
 }
 
 /// `[server]` table.
@@ -114,6 +128,41 @@ impl Default for LibraryConfig {
             paths: Vec::new(),
             hvsc_songlengths_path: None,
             scan_interval_secs: 3600,
+        }
+    }
+}
+
+/// `[render]` table.
+///
+/// Rendering turns specialized files (SID today; tracker modules and MIDI when
+/// their renderers land) into a codec Android can decode. It is off by default
+/// because it is CPU-heavy and needs a writable cache.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct RenderConfig {
+    /// Whether the `/render` endpoint and `renderable` metadata are available.
+    pub enabled: bool,
+    /// Output codec. Only `flac` is supported today.
+    pub codec: String,
+    /// Rendering sample rate, in Hz.
+    pub sample_rate: u32,
+    /// SoundFont for MIDI rendering; unused until the MIDI renderer lands.
+    pub soundfont_path: Option<PathBuf>,
+    /// Upper bound on the rendition cache, in bytes.
+    pub cache_max_bytes: u64,
+    /// Maximum number of concurrent renders.
+    pub max_concurrent: u32,
+}
+
+impl Default for RenderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            codec: RENDER_CODEC_FLAC.to_string(),
+            sample_rate: 44_100,
+            soundfont_path: None,
+            cache_max_bytes: 2 * 1024 * 1024 * 1024,
+            max_concurrent: 2,
         }
     }
 }
@@ -199,6 +248,29 @@ impl Config {
         if let Some(value) = get("EMUSIC_SERVER_SCAN_INTERVAL") {
             self.library.scan_interval_secs = parse_env(&value, "EMUSIC_SERVER_SCAN_INTERVAL")?;
         }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_ENABLED") {
+            self.render.enabled = parse_env(&value, "EMUSIC_SERVER_RENDER_ENABLED")?;
+        }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_CODEC") {
+            self.render.codec = value.trim().to_ascii_lowercase();
+        }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_SAMPLE_RATE") {
+            self.render.sample_rate = parse_env(&value, "EMUSIC_SERVER_RENDER_SAMPLE_RATE")?;
+        }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_SOUNDFONT") {
+            self.render.soundfont_path = if value.trim().is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(value))
+            };
+        }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_CACHE_MAX_BYTES") {
+            self.render.cache_max_bytes =
+                parse_env(&value, "EMUSIC_SERVER_RENDER_CACHE_MAX_BYTES")?;
+        }
+        if let Some(value) = get("EMUSIC_SERVER_RENDER_MAX_CONCURRENT") {
+            self.render.max_concurrent = parse_env(&value, "EMUSIC_SERVER_RENDER_MAX_CONCURRENT")?;
+        }
         Ok(())
     }
 
@@ -261,6 +333,42 @@ impl Config {
         if self.security.max_body_bytes > MAX_BODY_BYTES {
             return Err(ServerError::Config(format!(
                 "security.max_body_bytes must not exceed {MAX_BODY_BYTES}"
+            )));
+        }
+
+        if !self.render.codec.eq_ignore_ascii_case(RENDER_CODEC_FLAC) {
+            return Err(ServerError::Config(format!(
+                "render.codec must be {RENDER_CODEC_FLAC:?}"
+            )));
+        }
+        if self.render.sample_rate == 0 {
+            return Err(ServerError::Config(
+                "render.sample_rate must be greater than 0".into(),
+            ));
+        }
+        if self.render.sample_rate > MAX_RENDER_SAMPLE_RATE {
+            return Err(ServerError::Config(format!(
+                "render.sample_rate must not exceed {MAX_RENDER_SAMPLE_RATE}"
+            )));
+        }
+        if self.render.cache_max_bytes == 0 {
+            return Err(ServerError::Config(
+                "render.cache_max_bytes must be greater than 0".into(),
+            ));
+        }
+        if self.render.cache_max_bytes > MAX_RENDER_CACHE_BYTES {
+            return Err(ServerError::Config(format!(
+                "render.cache_max_bytes must not exceed {MAX_RENDER_CACHE_BYTES}"
+            )));
+        }
+        if self.render.max_concurrent == 0 {
+            return Err(ServerError::Config(
+                "render.max_concurrent must be greater than 0".into(),
+            ));
+        }
+        if self.render.max_concurrent > MAX_RENDER_CONCURRENT {
+            return Err(ServerError::Config(format!(
+                "render.max_concurrent must not exceed {MAX_RENDER_CONCURRENT}"
             )));
         }
 

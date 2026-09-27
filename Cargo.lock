@@ -1065,6 +1065,7 @@ dependencies = [
  "axum-server",
  "clap",
  "dirs",
+ "emusic-render",
  "hex",
  "hmac",
  "http-body-util",

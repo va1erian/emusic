@@ -8,6 +8,7 @@ use crate::auth::ServerKey;
 use crate::config::Config;
 use crate::db::Db;
 use crate::error::Result;
+use crate::render::{RenderCapabilities, RenderService};
 use crate::scan::ScanCoordinator;
 use crate::scanner::{Scanner, SongLengths};
 use crate::security::{LibraryRoots, RateLimiter};
@@ -32,6 +33,10 @@ pub struct AppState {
     pub scan: ScanCoordinator,
     /// SID song-length table (may be empty).
     pub songlengths: Arc<SongLengths>,
+    /// Rendering service, or `None` when `render.enabled` is false.
+    pub render: Option<Arc<RenderService>>,
+    /// Capability metadata advertised with every track.
+    pub render_caps: RenderCapabilities,
     /// Server start time (Unix seconds).
     pub started_at: i64,
 }
@@ -41,6 +46,15 @@ impl AppState {
     /// server key. Non-fatal problems (e.g. a missing songlengths file) are
     /// logged and degrade gracefully.
     pub fn new(config: Config, db: Db, keys: ServerKey, songlengths: SongLengths) -> Result<Self> {
+        let render = RenderService::new(
+            &config.render,
+            &config.server.data_dir,
+            config.library.hvsc_songlengths_path.as_deref(),
+        )?;
+        let render_caps = match &render {
+            Some(service) => service.capabilities(),
+            None => RenderCapabilities::disabled(),
+        };
         let config = Arc::new(config);
         let roots = Arc::new(LibraryRoots::new(&config.library.paths));
         let trusted = Arc::new(config.trusted_proxy_nets()?);
@@ -55,6 +69,8 @@ impl AppState {
             trusted,
             scan: coordinator,
             songlengths: Arc::new(songlengths),
+            render: render.map(Arc::new),
+            render_caps,
             started_at: unix_now(),
         })
     }
