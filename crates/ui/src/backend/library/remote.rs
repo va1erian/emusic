@@ -313,6 +313,7 @@ mod tests {
         TrackView {
             id: "abc".into(),
             filename: Some("song.xm".into()),
+            directory: String::new(),
             format: "xm".into(),
             kind: "module".into(),
             specialized: true,
