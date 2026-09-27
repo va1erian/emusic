@@ -74,6 +74,14 @@ pub enum Msg {
     QueueContext(usize, Point),
     /// Remove the Now Playing queue entry the context menu was opened on.
     QueueRemove,
+    /// Activate a preview row of the right panel's next-tracks queue.
+    RightPanelQueueActivate(usize),
+    /// Open the right panel's next-tracks context menu on a row, at the
+    /// list-local point the right-click happened.
+    RightPanelQueueContext(usize, Point),
+    /// Remove the right panel's next-tracks entry the context menu was opened
+    /// on.
+    RightPanelQueueRemove,
     /// The preset browser's filter text changed.
     PresetFilter(String),
     /// The preset browser selected a visible row.

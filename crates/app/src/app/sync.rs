@@ -95,6 +95,10 @@ impl Win32App {
             .now_playing
             .refresh(self.shell.player.as_ref(), self.shell.library.as_ref());
         self.now_playing.sync(&self.shell.state.now_playing);
+        // The right panel is shown beside every central view (matching the
+        // pre-migration shell), so it is always synced; `sync` itself skips
+        // work the model's revision did not change.
+        self.right_panel.sync(&self.shell.state.now_playing);
         if view == View::Visualization {
             self.visualization.sync(&self.shell.state.projectm.settings);
         }
@@ -156,6 +160,10 @@ impl Win32App {
         self.visualization.set_visible(view == View::Visualization);
         self.navigator
             .set_visible(self.shell.state.panels.navigator);
+        let right_panel = self.shell.state.panels.right_panel;
+        self.right_panel.set_visible(right_panel);
+        self.right_panel
+            .set_queue_visible(right_panel && self.shell.state.panels.next_tracks);
         self.status_bar
             .set_visible(self.shell.state.panels.status_bar);
     }

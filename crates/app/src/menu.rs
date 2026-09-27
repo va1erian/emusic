@@ -154,12 +154,14 @@ pub fn track_context(ui: &Ui<Msg>) -> Menu<Msg> {
     })
 }
 
-/// The Now Playing queue's right-click menu (#247): remove the entry.
+/// The now-playing queue's right-click menu (#247, #451): remove the entry.
+/// `remove` builds the surface's own remove message, so the central view and
+/// the right panel can tell their two lists apart.
 #[must_use]
-pub fn queue_context(ui: &Ui<Msg>) -> Menu<Msg> {
+pub fn queue_context(ui: &Ui<Msg>, remove: fn() -> Msg) -> Menu<Msg> {
     Menu::context(ui)
-        .on_select(|menu_id| match menu_id {
-            id::QUEUE_REMOVE => Some(Msg::QueueRemove),
+        .on_select(move |menu_id| match menu_id {
+            id::QUEUE_REMOVE => Some(remove()),
             _ => None,
         })
         .build(|m| {

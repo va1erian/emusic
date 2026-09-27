@@ -4,8 +4,8 @@
 //! Rows and their entry indices come from the
 //! [`NowPlayingView`](emusic_ui::views::now_playing::NowPlayingView) model; this
 //! module only owns the native list. Double-clicking or pressing Enter on a row
-//! raises [`Msg::QueueActivate`] with the visible row, which the view maps back
-//! to the full queue entry index.
+//! raises the surface's activation message with the visible row, which the view
+//! maps back to the full queue entry index.
 
 use std::rc::Rc;
 
@@ -59,15 +59,21 @@ pub struct QueueList {
 }
 
 impl QueueList {
-    /// Creates the empty queue list.
-    pub fn new(ui: &Ui<Msg>) -> QueueList {
+    /// Creates the empty queue list, wiring row activation to `on_activate`
+    /// and a row's context menu to `on_context` so each surface routes its own
+    /// list independently.
+    pub fn new(
+        ui: &Ui<Msg>,
+        on_activate: impl Fn(usize) -> Option<Msg> + 'static,
+        on_context: impl Fn(usize, Point) -> Option<Msg> + 'static,
+    ) -> QueueList {
         let list = ListView::new(ui, Rect::default(), &[])
             .expect("create now-playing queue list")
             .column("#", dip(NUMBER_WIDTH))
             .column("Title", Fill)
             .column("Artist", dip(ARTIST_WIDTH))
-            .on_activate(|row| Some(Msg::QueueActivate(row)))
-            .on_context(|row, at| Some(Msg::QueueContext(row, at)));
+            .on_activate(on_activate)
+            .on_context(on_context);
         QueueList {
             ui: ui.clone(),
             list,

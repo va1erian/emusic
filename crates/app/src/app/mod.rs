@@ -36,7 +36,7 @@ use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
-use crate::views::now_playing::NowPlayingView;
+use crate::views::now_playing::{NowPlayingView, RightPanelView};
 use crate::views::settings::SettingsView;
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
@@ -75,6 +75,9 @@ pub struct Win32App {
     settings: SettingsView,
     /// The Now Playing central view (#371).
     now_playing: NowPlayingView,
+    /// The now-playing right panel (#451), shown beside every central view
+    /// while `panels.right_panel` is on.
+    right_panel: RightPanelView,
     /// The Visualization central view: the portable preset browser (#371).
     visualization: VisualizationView,
     /// The File/View/Help menu bar, with its ticks kept in step with the state.
@@ -83,6 +86,8 @@ pub struct Win32App {
     context_menu: Menu<Msg>,
     /// The Now Playing queue's right-click menu.
     queue_context: Menu<Msg>,
+    /// The right panel's queue right-click menu (#451).
+    right_panel_queue_context: Menu<Msg>,
     /// The window-level chrome (drag region, window buttons), attached by the
     /// binary once the backend exists; `None` in headless runs.
     chrome: Option<WindowChrome>,
@@ -108,6 +113,8 @@ pub struct Win32App {
     context_row: Option<usize>,
     /// The queue preview row the queue context menu was opened on.
     queue_context_row: Option<usize>,
+    /// The right panel's queue preview row its context menu was opened on.
+    right_panel_context_row: Option<usize>,
     /// The Help -> Keyboard shortcuts message dialog, while it is open.
     shortcuts_dialog: Option<Dialog<Msg>>,
     /// The History -> Clear confirmation, while it is open.
@@ -152,6 +159,7 @@ impl Win32App {
         let browser = ColumnBrowserView::new(ui);
         let settings = SettingsView::new(ui);
         let now_playing = NowPlayingView::new(ui, waker.handle());
+        let right_panel = RightPanelView::new(ui, waker.handle());
         let visualization = VisualizationView::new(ui, mock, waker.handle());
 
         waker.bind(UiWaker::new(ui.proxy()));
@@ -165,7 +173,8 @@ impl Win32App {
 
         let menu = menu::bar(ui, Rect::default(), &shell.state);
         let context_menu = menu::track_context(ui);
-        let queue_context = menu::queue_context(ui);
+        let queue_context = menu::queue_context(ui, || Msg::QueueRemove);
+        let right_panel_queue_context = menu::queue_context(ui, || Msg::RightPanelQueueRemove);
 
         // The portable runtime has no dedicated resize hook; a window-level
         // event mapper observes `Event::Resize` and relayouts.
@@ -197,10 +206,12 @@ impl Win32App {
             browser,
             settings,
             now_playing,
+            right_panel,
             visualization,
             menu,
             context_menu,
             queue_context,
+            right_panel_queue_context,
             chrome: None,
             shell_integration: Box::new(NullShell),
             timer: None,
@@ -212,6 +223,7 @@ impl Win32App {
             central_bounds: Rect::default(),
             context_row: None,
             queue_context_row: None,
+            right_panel_context_row: None,
             shortcuts_dialog: None,
             history_dialog: None,
             tag_editor: None,
