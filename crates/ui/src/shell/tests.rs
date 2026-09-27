@@ -79,6 +79,21 @@ fn visualizer_narrows_the_wake_interval() {
 }
 
 #[test]
+fn removing_a_library_folder_sticks() {
+    let mut shell = shell();
+    let path = PathBuf::from(&shell.library.folders()[0].path);
+    shell.state.library_folders = vec![path.clone()];
+
+    shell.dispatch(Command::LibraryRemoveFolder(path.clone()));
+    shell.tick(Instant::now());
+
+    assert!(
+        !shell.state.library_folders.contains(&path),
+        "a removed folder must not be re-added from the backend"
+    );
+}
+
+#[test]
 fn dispatch_toggle_theme_changes_theme() {
     let mut shell = shell();
     shell.dispatch(Command::ToggleTheme);

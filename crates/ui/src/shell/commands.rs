@@ -11,9 +11,7 @@ use crate::state::{AppState, Command};
 
 /// Applies a frame's queued library commands. `state.library_folders` is the
 /// already-updated folder list, so a batch of adds/removes results in a
-/// single [`LibraryDataSource::set_folders`] call (and one scan). Folders
-/// added from an off-thread picker (#69) are also appended to the state here,
-/// so they are persisted with the rest of the config.
+/// single [`LibraryDataSource::set_folders`] call (and one scan).
 pub(super) fn apply_library_commands(
     library: &mut dyn LibraryDataSource,
     state: &mut AppState,
@@ -49,14 +47,6 @@ pub(super) fn apply_library_commands(
             }
             Command::CancelAutoTag => cancel_auto_tag = true,
             _ => {}
-        }
-    }
-
-    for folder in library.folders() {
-        let path = PathBuf::from(&folder.path);
-        if !state.library_folders.contains(&path) {
-            state.library_folders.push(path);
-            folders_changed = true;
         }
     }
 
