@@ -16,8 +16,9 @@ uniffi::setup_scaffolding!();
 
 mod core;
 mod error;
+mod registry;
 mod types;
 
-pub use core::MobileCore;
+pub use core::{MobileCore, list_servers};
 pub use error::MobileError;
-pub use types::{AuthState, Health, SyncResult, Track};
+pub use types::{AuthState, Health, ServerEntry, SyncResult, Track};

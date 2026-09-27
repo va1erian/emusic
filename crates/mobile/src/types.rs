@@ -131,6 +131,21 @@ pub struct Health {
     pub started_at: i64,
 }
 
+/// A server this app has been configured with.
+///
+/// Credentials are stored per hashed endpoint id, which is not reversible to a
+/// URL; this side record keeps the URL and display name so the app can list and
+/// re-open servers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct ServerEntry {
+    /// Stable id derived from the URL (`ServerEndpoint::id`).
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Normalized base URL.
+    pub url: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
