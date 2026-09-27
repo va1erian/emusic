@@ -11,13 +11,17 @@
 //!
 //! Keeping the seam here, and not in `app`, is what lets the app run on the
 //! portable `xui_core` runtime on every target: `app` never sees `cfg(windows)`
-//! for an OS service. The Windows implementation lives under `win` and is
-//! compiled out entirely elsewhere, so this crate references no Windows-only
-//! symbol on a non-Windows build.
+//! for an OS service. The Windows implementation lives under `win` and the
+//! macOS one under `mac`; each is compiled out entirely elsewhere, so this
+//! crate references no platform-only symbol on the other builds.
 
+#[cfg(any(windows, target_os = "macos"))]
+mod media;
 mod shell;
 mod window;
 
+#[cfg(target_os = "macos")]
+mod mac;
 #[cfg(windows)]
 mod win;
 

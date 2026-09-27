@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>emusic</string>
+	<key>CFBundleExecutable</key>
+	<string>emusic</string>
+	<key>CFBundleIconFile</key>
+	<string>emusic</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.va1erian.emusic</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>emusic</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<!-- winit/cosmic-text need macOS 11 or newer. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Open audio files the same way the Windows installer registers them
+	     (crates/winshell/src/assoc/manager.rs). -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.midi-audio</string>
+				<!-- SID/PSID/RSID have no system UTI; the extension list covers
+				     them. -->
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mp3</string>
+				<string>mp2</string>
+				<string>m4a</string>
+				<string>aac</string>
+				<string>flac</string>
+				<string>ogg</string>
+				<string>oga</string>
+				<string>opus</string>
+				<string>wav</string>
+				<string>aiff</string>
+				<string>aif</string>
+				<string>wma</string>
+				<string>wv</string>
+				<string>ape</string>
+				<string>mpc</string>
+				<string>webm</string>
+				<string>mka</string>
+				<string>mod</string>
+				<string>s3m</string>
+				<string>xm</string>
+				<string>it</string>
+				<string>mtm</string>
+				<string>umx</string>
+				<string>mo3</string>
+				<string>mid</string>
+				<string>midi</string>
+				<string>sid</string>
+				<string>psid</string>
+				<string>rsid</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

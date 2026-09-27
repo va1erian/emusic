@@ -223,7 +223,9 @@ fn run_canvas(
             waker,
             mock,
         );
-        app.attach_shell(Box::new(emusic_platform::NullShell));
+        // The canvas backend has no native window handle; the platform picks
+        // the right shell (Windows SMTC, macOS Now Playing, or a no-op).
+        app.attach_shell(emusic_platform::shell(None, ui.proxy()));
         app
     })
     .map_err(|error| anyhow::anyhow!("xui: {error}"))
