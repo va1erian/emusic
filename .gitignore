@@ -29,3 +29,6 @@ debug
 #.idea/
 .agentloop
 .claude/
+
+# Built Android artifacts staged for sideloading.
+/dist/
