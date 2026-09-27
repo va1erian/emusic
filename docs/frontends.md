@@ -35,9 +35,9 @@ process is the primary instance), startup files, the worker `WakerSlot`, and the
   Windows shell integrations (SMTC, taskbar thumb-bar, taskbar preview). The
   crate is `#![cfg(windows)]` and compiles to an empty library elsewhere.
 - **`crates/frontend-portable`** — the cross-platform renderer built on the
-  `xui_core` widget layer: portable widgets for every view, and window chrome on
-  the native `win32` backend (Windows) or the software `canvas` backend
-  elsewhere.
+  `xui_core` widget layer: portable widgets for every view, running on `xui`'s
+  software `canvas` backend on every target, with its own window chrome
+  everywhere except macOS (native title bar and traffic lights).
 - **`crates/platform` (`emusic-platform`)** — the OS shell integrations both
   renderers share: the `ShellIntegration` seam, and its Windows (SMTC, taskbar
   thumb-bar, file associations) and macOS (Now Playing) implementations. The
@@ -55,13 +55,12 @@ Selection is by target, with a Windows-only override:
 
 ```powershell
 cargo run -p emusic                                     # native on Windows
-cargo run -p emusic --features portable                 # portable frontend
-$env:XUI_BACKEND = 'canvas'; cargo run -p emusic --features portable
+cargo run -p emusic --features portable                 # portable (canvas) frontend
 ```
 
-The `emusic/portable` feature is for development and backend comparison on
-Windows. Inside the portable frontend, `XUI_BACKEND=canvas` chooses the software
-backend over the native Win32 backend.
+The `emusic/portable` feature is for development, backend comparison, and the
+shipped canvas build on Windows (#369, #470). The portable frontend always runs
+on `xui`'s software `canvas` backend; it has no other backend to select.
 
 ## Screenshots
 

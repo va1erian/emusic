@@ -46,8 +46,8 @@ codesign --force --deep --sign - "$APP"
 open "$APP"
 ```
 
-`XUI_BACKEND=canvas` is accepted but unnecessary on macOS: the canvas backend
-is the only one there.
+The portable frontend always runs on `xui`'s software `canvas` backend, on
+every target, so there is nothing to select here.
 
 ## Icon
 

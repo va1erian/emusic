@@ -11,9 +11,9 @@
 //! ([`crate::backend::has_native_chrome()`]) the caption band above the
 //! transport band carries the app title and the portable
 //! minimize/maximize/close buttons at its trailing edge, and the band's empty
-//! area stays the window's drag region. The native Win32 backend and macOS
-//! (native title bar and traffic lights) provide their own chrome, so the band
-//! stays hidden and the transport bar is unchanged.
+//! area stays the window's drag region. macOS (native title bar and traffic
+//! lights) provides its own chrome, so there the band stays hidden and the
+//! transport bar is unchanged.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -109,9 +109,9 @@ impl TopBarView {
     }
 
     /// Builds the view, showing the portable caption chrome when `canvas` is
-    /// set. [`TopBarView::new`] passes [`is_canvas`]; a test passes the backend
-    /// it drives explicitly, so the chrome can be exercised without the
-    /// environment the real binary picks it from.
+    /// set. [`TopBarView::new`] passes `!`[`has_native_chrome()`]; a test
+    /// passes the backend it drives explicitly, so the chrome can be
+    /// exercised without the environment the real binary picks it from.
     fn new_with(ui: &Ui<Msg>, canvas: bool) -> TopBarView {
         let caption = build_caption(ui);
         // The buttons live in a host of their own, positioned at the caption
@@ -384,9 +384,8 @@ mod tests {
 /// A click on a caption window button must reach the button (#450), on a bar
 /// that sits away from the window origin. Drives the real [`TopBarView`] on the
 /// offscreen software backend (the production hit-testing path) and checks the
-/// message each button maps to. Built wherever the offscreen backend is: with
-/// the `canvas` feature on Windows, and on every non-Windows target.
-#[cfg(all(test, any(feature = "canvas", not(windows))))]
+/// message each button maps to.
+#[cfg(test)]
 mod caption_button_tests {
     use std::cell::Cell;
     use std::rc::Rc;

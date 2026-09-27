@@ -21,33 +21,33 @@ rfd = { version = "0.15", default-features = false }
 tracing = "0.1"
 clap = { version = "4", features = ["derive"], optional = true }
 png = { version = "0.18", optional = true }
+# The umbrella crate. Only its software `canvas` backend is used; the app
+# imports portable widgets from `xui::xui_core::widget` and names the backend
+# only in `run`.
+xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["canvas"] }
 
 [target.'cfg(windows)'.dependencies]
-# The umbrella crate. On Windows its default `win32` feature re-exports the
-# `xui-win32` backend, but the app imports portable widgets from
-# `xui::xui_core::widget` and names the backend only in `run`.
-xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["win32"] }
 # File associations are a Windows shell feature; the settings page reaches for
 # the registry helpers directly.
 winshell = { path = "../winshell" }
 
-[target.'cfg(not(windows))'.dependencies]
-# The portable software backend, so the crate structure stays cross-platform.
-xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["canvas"] }
-
 [features]
-default = []
-# Windows dev/compare: build the software backend too and pick it with
-# `XUI_BACKEND=canvas`, mirroring `xui`'s own gallery.
-canvas = ["xui/canvas"]
 # The headless canvas screenshot tool (`emusic-portable-shot`, #459). Off by
 # default so the PNG encoder and `clap` never enter the real `emusic`
-# dependency tree. Implies `canvas` so it builds standalone on Windows, where
-# the `xui-canvas` backend is otherwise opt-in.
-shot = ["dep:png", "dep:clap", "canvas"]
+# dependency tree.
+shot = ["dep:png", "dep:clap"]
 
 [build-dependencies]
 embed-resource = "3.0"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Test-only: `xui`'s native win32 backend, used by the `#[cfg(windows)]` tests
+# and test-only modules as a live-window host that a `#[test]` thread can
+# create (the shipped `canvas` backend's winit event loop must be built on the
+# process's main thread, which the test harness does not provide). Dropped
+# from the shipped binary itself in #470; a dev-dependency never links into
+# `cargo build`'s output.
+xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["win32"] }
