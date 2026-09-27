@@ -250,8 +250,16 @@ impl AudioBackend for BassBackend {
             // which BASS can neither report a module's duration nor seek it
             // (the transport bar's total and slider would stay dead, #362).
             // POSRESET stops sounding notes when a seek moves the position,
-            // so a jump doesn't leave a note hanging.
-            let flags = MusicFlags::FLOAT | MusicFlags::PRESCAN | MusicFlags::POSRESET;
+            // so a jump doesn't leave a note hanging. STOPBACK makes BASS
+            // stop when the module hits a backward jump: without it a looping
+            // module follows its own loop forever, `BASS_SYNC_END` never
+            // fires and the queue never advances (#403). The default
+            // `EndBehavior::StopAtEnd` relies on this; `Player` re-applies
+            // the user's resolved settings once the channel is open.
+            let flags = MusicFlags::FLOAT
+                | MusicFlags::PRESCAN
+                | MusicFlags::POSRESET
+                | MusicFlags::STOPBACK;
             BassChannel::Music(self.bass.open_music(path, flags, 0)?)
         } else if is_midi_file(path) {
             let stream = self.bass.open_stream(path, StreamFlags::FLOAT)?;

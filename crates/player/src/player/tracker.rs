@@ -9,9 +9,13 @@ impl Player {
     /// Applies `settings` to the current music channel (if any) and updates
     /// the global `BASS_CONFIG_SRC` resampler quality.
     ///
+    /// The settings are remembered and re-applied to every tracker channel
+    /// opened later (see [`super::loading`]), so they survive across tracks.
+    ///
     /// Errors are emitted as [`PlayerEvent::Error`] rather than returned,
     /// matching the other transport/setter methods.
     pub fn apply_tracker_settings(&mut self, settings: &TrackerSettings) {
+        self.tracker_settings = *settings;
         if let Err(error) = self
             .backend
             .set_tracker_resampling_quality(settings.resampling_quality)

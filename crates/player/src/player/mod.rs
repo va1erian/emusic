@@ -26,6 +26,7 @@ use crate::error::PlayerError;
 use crate::events::{PlaybackState, PlayerEvent};
 use crate::listen::ListenAccounting;
 use crate::queue::{Queue, QueueSnapshot, QueueSource, RepeatMode, ShuffleSource};
+use crate::tracker::TrackerSettings;
 
 /// Maximum number of upcoming tracks materialised for the queue panel. Keeps
 /// a 100k-track shuffle scope from ever building a full visible queue.
@@ -87,6 +88,12 @@ pub struct Player {
     /// Linear UI volume, `0.0..=1.0` (see [`crate::volume`] for the curve
     /// applied before it reaches the backend).
     volume: f32,
+    /// The tracker settings last applied by the UI, re-applied to every
+    /// tracker channel as it opens (see [`Player::apply_tracker_settings`])
+    /// so a configured `EndBehavior` and the rest aren't lost between tracks.
+    /// This is the one global profile; per-format/per-file resolution
+    /// ([`crate::tracker::TrackerConfig`]) isn't wired through here yet.
+    tracker_settings: TrackerSettings,
     current: Option<CurrentTrack>,
     pending_open: Option<Receiver<OpenMessage>>,
     /// Set by [`Player::replace_and_play_at`] and consumed once that open
@@ -114,6 +121,7 @@ impl Player {
             shuffle_scope: None,
             state: PlaybackState::Stopped,
             volume: 1.0,
+            tracker_settings: TrackerSettings::default(),
             current: None,
             pending_open: None,
             pending_resume: None,

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use emusic_player::backend::{AudioBackend, BackendChannel, ChannelCapabilities, SeekSupport};
-use emusic_player::tracker::TrackerSettings;
+use emusic_player::tracker::{EndBehavior, TrackerSettings};
 use emusic_player::{PlaybackState, Player, PlayerError, PlayerEvent, QueueSnapshot};
 
 /// A fake channel: position advances with real wall-clock time (like a real
@@ -22,6 +22,10 @@ struct MockChannel {
     paused_at: Mutex<Option<Duration>>,
     end_callback: Mutex<Option<Box<dyn Fn() + Send>>>,
     volume: Mutex<f32>,
+    /// Last tracker settings applied through
+    /// [`BackendChannel::apply_tracker_settings`], shared with the backend so
+    /// a test can assert they reach each freshly opened channel.
+    tracker_settings: Arc<Mutex<Option<TrackerSettings>>>,
 }
 
 impl MockChannel {
@@ -33,6 +37,7 @@ impl MockChannel {
             paused_at: Mutex::new(Some(Duration::ZERO)),
             end_callback: Mutex::new(None),
             volume: Mutex::new(1.0),
+            tracker_settings: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -90,7 +95,8 @@ impl BackendChannel for MockChannel {
         Ok(())
     }
 
-    fn apply_tracker_settings(&self, _settings: &TrackerSettings) -> Result<(), PlayerError> {
+    fn apply_tracker_settings(&self, settings: &TrackerSettings) -> Result<(), PlayerError> {
+        *self.tracker_settings.lock().unwrap() = Some(*settings);
         Ok(())
     }
 
@@ -113,6 +119,9 @@ struct MockBackend {
     capabilities: ChannelCapabilities,
     fail_paths: Arc<Mutex<Vec<PathBuf>>>,
     last_opened: Arc<Mutex<Option<Arc<MockChannel>>>>,
+    /// Shared with every channel this backend opens; records the last tracker
+    /// settings applied, so a test can assert they reach new channels.
+    tracker_settings: Arc<Mutex<Option<TrackerSettings>>>,
 }
 
 impl MockBackend {
@@ -135,6 +144,11 @@ impl MockBackend {
 
     fn fail_for(&self, path: impl Into<PathBuf>) {
         self.fail_paths.lock().unwrap().push(path.into());
+    }
+
+    /// The tracker settings last applied to a channel this backend opened.
+    fn last_tracker_settings(&self) -> Option<TrackerSettings> {
+        *self.tracker_settings.lock().unwrap()
     }
 
     /// Fires the end-of-track callback for the most recently opened
@@ -201,6 +215,7 @@ impl AudioBackend for MockBackend {
         }
         let mut channel = MockChannel::new(self.duration);
         channel.capabilities = self.capabilities;
+        channel.tracker_settings = Arc::clone(&self.tracker_settings);
         let channel = Arc::new(channel);
         *self.last_opened.lock().unwrap() = Some(Arc::clone(&channel));
         Ok(Box::new(SharedChannel(channel)))
@@ -654,6 +669,35 @@ fn approximate_seek_is_supported_with_a_known_duration() {
     assert!(
         player.seek_supported(),
         "an approximate seek must still enable the slider"
+    );
+}
+
+#[test]
+fn tracker_settings_are_reapplied_to_every_opened_track() {
+    let backend = MockBackend::new(Duration::from_secs(10));
+    let mock = backend.clone();
+    let mut player = Player::new(Arc::new(backend));
+
+    // Set before anything is loaded (as the app does at startup), then play
+    // two tracks: both must receive the settings, not just the first.
+    let follow = TrackerSettings {
+        end: EndBehavior::FollowLoops,
+        ..TrackerSettings::default()
+    };
+    player.apply_tracker_settings(&follow);
+
+    player.replace_and_play(vec![PathBuf::from("a.mod"), PathBuf::from("b.mod")], 0);
+    wait_until(&mut player, |p| p.state() == PlaybackState::Playing);
+    assert_eq!(mock.last_tracker_settings(), Some(follow));
+
+    player.next();
+    wait_until(&mut player, |p| {
+        p.current_path() == Some(Path::new("b.mod"))
+    });
+    assert_eq!(
+        mock.last_tracker_settings(),
+        Some(follow),
+        "settings must be re-applied to the next track, not only the first"
     );
 }
 
