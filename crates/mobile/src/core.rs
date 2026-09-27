@@ -24,6 +24,10 @@ const REFRESH_MARGIN_SECS: i64 = 24 * 3600;
 /// Sample rate mobile renderers produce.
 const RENDER_SAMPLE_RATE: u32 = 44_100;
 
+/// Bump when the on-device cache layout or renderer output changes, to
+/// invalidate previously rendered rendition files.
+const RENDITION_VERSION: u32 = 1;
+
 /// A client bound to one `emusic-server`.
 ///
 /// Constructed once per server from Kotlin with the app's private data
@@ -109,7 +113,6 @@ impl MobileCore {
         let client = RemoteClient::from_endpoint(&endpoint)?;
         let data_dir = PathBuf::from(data_dir);
         let store = CredentialStore::with_dir(data_dir.join("servers"));
-        registry::upsert(&data_dir, &entry_for(&endpoint))?;
         Ok(Arc::new(Self {
             endpoint,
             store,
@@ -152,6 +155,7 @@ impl MobileCore {
             since_version: 0,
         };
         self.store.save(&self.endpoint.id, &credentials)?;
+        registry::upsert(&self.data_dir, &entry_for(&self.endpoint))?;
         Ok(self.auth_state_from(Some(&credentials)))
     }
 
@@ -271,33 +275,38 @@ impl MobileCore {
         })?;
         let renditions = self.data_dir.join("renditions");
         std::fs::create_dir_all(&renditions)?;
-        let flac_path = renditions.join(format!("{id}.flac"));
+        let extension = safe_extension(&format);
+        let flac_path = renditions.join(format!("{id}.{extension}.v{RENDITION_VERSION}.flac"));
         if flac_path.is_file() {
             return Ok(flac_path.to_string_lossy().into_owned());
         }
 
         let (_, token) = self.fresh_token()?;
-        let raw_path = renditions.join(format!("{id}.{}", safe_extension(&format)));
+        let raw_path = renditions.join(format!("{id}.{extension}"));
         {
             let mut file = std::fs::File::create(&raw_path)?;
             self.client.download_to(&token, &track_id, &mut file)?;
         }
 
+        // Render and encode, always removing the raw download afterwards.
         let renderer =
             renderer_for(&format, RENDER_SAMPLE_RATE).ok_or_else(|| MobileError::Client {
                 message: format!("no local renderer for {format:?}"),
             })?;
-        let pcm = renderer
-            .render(&raw_path, &RenderOptions::default())
-            .map_err(|error| MobileError::Client {
-                message: format!("render failed: {error}"),
-            })?;
-        let bytes = flac::encode(&pcm).map_err(|error| MobileError::Client {
-            message: format!("encode failed: {error}"),
-        })?;
+        let encoded = (|| -> Result<Vec<u8>, MobileError> {
+            let pcm = renderer
+                .render(&raw_path, &RenderOptions::default())
+                .map_err(|error| MobileError::Client {
+                    message: format!("render failed: {error}"),
+                })?;
+            flac::encode(&pcm).map_err(|error| MobileError::Client {
+                message: format!("encode failed: {error}"),
+            })
+        })();
         let _ = std::fs::remove_file(&raw_path);
+        let bytes = encoded?;
 
-        let temporary = renditions.join(format!("{id}.flac.tmp"));
+        let temporary = flac_path.with_extension("flac.tmp");
         std::fs::write(&temporary, &bytes)?;
         if flac_path.exists() {
             let _ = std::fs::remove_file(&flac_path);
@@ -411,14 +420,11 @@ mod tests {
     }
 
     #[test]
-    fn registers_and_removes_servers() {
+    fn new_does_not_register_until_paired() {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().to_string_lossy().into_owned();
         let core = MobileCore::new("https://music.example.com".into(), data.clone()).unwrap();
-        let servers = list_servers(data.clone()).unwrap();
-        assert_eq!(servers.len(), 1);
-        assert_eq!(servers[0].url, "https://music.example.com");
-        assert_eq!(core.entry().id, servers[0].id);
+        assert!(list_servers(data.clone()).unwrap().is_empty());
         core.remove_server().unwrap();
         assert!(list_servers(data).unwrap().is_empty());
     }

@@ -25,10 +25,10 @@ pub const MODULE_EXTENSIONS: &[&str] = &["mod", "xm", "s3m", "it"];
 /// Bump when a change alters module output, to invalidate cached renditions.
 pub const MODULE_RENDERER_VERSION: u32 = 1;
 
-/// Safety cap so a pathological module cannot render forever. A normal tune
-/// stops after one loop via [`XmrsPlayer::set_max_loop_count`]; this only bounds
-/// the pathological case.
-const MAX_RENDER_SECONDS: u64 = 30 * 60;
+/// Safety cap so a pathological module cannot render forever or allocate an
+/// unbounded sample buffer. A normal tune stops after one loop via
+/// [`XmrsPlayer::set_max_loop_count`]; this only bounds the pathological case.
+const MAX_RENDER_SECONDS: u64 = 10 * 60;
 
 /// Renders tracker modules to interleaved stereo PCM.
 pub struct ModuleRenderer {

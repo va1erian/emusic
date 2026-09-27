@@ -62,10 +62,11 @@ fun foldersOf(tracks: List<Track>): List<FolderGroup> =
 
 /** Whether `directory` is `folder` itself or nested under it. */
 fun isInFolder(directory: String, folder: String, includeSubdirectories: Boolean): Boolean =
-    if (includeSubdirectories) {
-        directory == folder || directory.startsWith("$folder/")
-    } else {
-        directory == folder
+    when {
+        !includeSubdirectories -> directory == folder
+        // The root prefix is empty: everything is under it.
+        folder.isEmpty() -> true
+        else -> directory == folder || directory.startsWith("$folder/")
     }
 
 /** Tracks ordered by directory, then track number, then title. */

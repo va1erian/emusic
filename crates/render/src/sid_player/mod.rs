@@ -30,6 +30,10 @@ pub const SID_PLAYER_VERSION: u32 = 1;
 /// Default render length when no song length is known.
 const DEFAULT_MAX_DURATION: Duration = Duration::from_secs(180);
 
+/// Hard cap on a rendered tune, even if a caller asks for more, so a bogus
+/// duration cannot allocate an unbounded sample buffer.
+const MAX_RENDER_SECONDS: Duration = Duration::from_secs(600);
+
 /// Renders PSID/RSID tunes to mono PCM with the pure-Rust engine.
 pub struct SidPlayerRenderer {
     sample_rate: u32,
@@ -82,7 +86,10 @@ impl Renderer for SidPlayerRenderer {
         let song0 = u8::try_from(song1.saturating_sub(1)).unwrap_or(u8::MAX);
         let mut player = player::Player::new(&tune, song0, model, self.sample_rate, refresh);
 
-        let duration = options.max_duration.unwrap_or(DEFAULT_MAX_DURATION);
+        let duration = options
+            .max_duration
+            .unwrap_or(DEFAULT_MAX_DURATION)
+            .min(MAX_RENDER_SECONDS);
         let target = (duration.as_secs_f64() * f64::from(self.sample_rate)).max(0.0) as usize;
         let mut samples = Vec::with_capacity(target);
         while samples.len() < target {

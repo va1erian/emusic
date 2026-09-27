@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,11 +38,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,6 +79,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var folderFilter by remember { mutableStateOf<String?>(null) }
     var includeSubdirs by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
+    var renderJob by remember { mutableStateOf<Job?>(null) }
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
@@ -105,13 +110,12 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         loading = false
     }
 
-    // Build the player once a token is available, and release it on leave.
+    // Build the player once; the token is resolved per request so it refreshes.
     LaunchedEffect(core) {
         val client = core ?: return@LaunchedEffect
-        val token = withContext(Dispatchers.IO) {
+        player = createAuthenticatedPlayer(context) {
             runCatching { client.bearerToken() }.getOrNull()
         }
-        token?.let { player = createAuthenticatedPlayer(context, it) }
     }
 
     DisposableEffect(player) {
@@ -153,6 +157,11 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
 
     /** Resolves and starts playback for one track. */
     fun startTrack(track: Track) {
+        // A newer pick supersedes any render still in flight.
+        renderJob?.cancel()
+        renderJob = null
+        preparing = false
+
         val client = core
         val active = player
         if (client == null || active == null) {
@@ -171,10 +180,12 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
 
         if (client.canRender(track.format)) {
             preparing = true
-            scope.launch {
+            renderJob = scope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching { client.renderToFile(track.id, track.format) }
                 }
+                // The user may have picked another track while this rendered.
+                if (nowPlaying?.id != track.id) return@launch
                 preparing = false
                 result
                     .onSuccess { path ->
@@ -209,8 +220,21 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     }
 
     if (showInfo) {
-        InfoScreen(url = url, version = version, tracks = tracks, onBack = { showInfo = false })
-        return
+        // A full-screen dialog overlay, so the library (and its player) stays
+        // composed underneath and playback continues while info is open.
+        Dialog(
+            onDismissRequest = { showInfo = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                InfoScreen(
+                    url = url,
+                    version = version,
+                    tracks = tracks,
+                    onBack = { showInfo = false },
+                )
+            }
+        }
     }
 
     Scaffold(
