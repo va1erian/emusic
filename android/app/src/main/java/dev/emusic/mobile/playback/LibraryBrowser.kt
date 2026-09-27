@@ -54,18 +54,18 @@ class LibraryBrowser(
             folders.getOrPut(track.directory) { mutableListOf() } += id
         }
 
-        val albumIds = albums.entries.mapIndexed { index, (album, ids) ->
-            val id = "album:$index"
+        val albumIds = albums.entries.map { (album, ids) ->
+            val id = "album:$album"
             nodes[id] = Node(browsable(id, album, albumArt[album]), ids)
             id
         }
-        val artistIds = artists.entries.mapIndexed { index, (artist, ids) ->
-            val id = "artist:$index"
+        val artistIds = artists.entries.map { (artist, ids) ->
+            val id = "artist:$artist"
             nodes[id] = Node(browsable(id, artist, artistArt[artist]), ids)
             id
         }
-        val folderIds = folders.entries.mapIndexed { index, (path, ids) ->
-            val id = "folder:$index"
+        val folderIds = folders.entries.map { (path, ids) ->
+            val id = "folder:$path"
             nodes[id] = Node(browsable(id, path.ifEmpty { "/" }, null), ids)
             id
         }
@@ -82,6 +82,18 @@ class LibraryBrowser(
 
     /** The item for `id`, or `null` when unknown. */
     fun item(id: String): MediaItem? = nodes[id]?.item
+
+    /**
+     * The full track list rotated to start at `trackId`, used to give a car a
+     * real queue when it picks a track. Empty when `trackId` is unknown.
+     */
+    fun queueFrom(trackId: String): List<MediaItem> {
+        val all = nodes[TRACKS]?.childIds ?: return emptyList()
+        val start = all.indexOf(trackId)
+        if (start < 0) return emptyList()
+        val rotated = all.subList(start, all.size) + all.subList(0, start)
+        return rotated.mapNotNull { nodes[it]?.item }
+    }
 
     /** One page of `parentId`'s children, or `null` when `parentId` is unknown. */
     fun children(parentId: String, page: Int, pageSize: Int): List<MediaItem>? {

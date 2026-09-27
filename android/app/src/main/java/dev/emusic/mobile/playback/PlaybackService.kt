@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dev.emusic.mobile.MainActivity
 import uniffi.emusic_mobile.MobileCore
+import java.io.File
 
 /**
  * Foreground media service that owns the player and a **media library** session,
@@ -32,6 +33,7 @@ import uniffi.emusic_mobile.MobileCore
 class PlaybackService : MediaLibraryService() {
     private var librarySession: MediaLibraryService.MediaLibrarySession? = null
     private var browser: LibraryBrowser? = null
+    private var browserStamp: Long = Long.MIN_VALUE
 
     override fun onCreate() {
         super.onCreate()
@@ -67,10 +69,19 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
-    /** Builds (once) the browse tree from the cached library. */
+    /**
+     * The browse tree, rebuilt whenever the cached library file changes.
+     *
+     * A tree built without an active server or with no tracks is returned but
+     * not cached: it is transient (the app may not be paired/synced yet) and
+     * caching it would leave Android Auto stuck on an empty library.
+     */
     private fun library(): LibraryBrowser {
-        browser?.let { return it }
         val active = ActiveServer.get(this)
+        val snapshot = File(ActiveServer.dataDir(this), "library.json")
+        val stamp = if (active == null) Long.MIN_VALUE else snapshot.lastModified()
+        browser?.let { if (stamp == browserStamp) return it }
+
         val core = active?.let { runCatching { MobileCore(it, ActiveServer.dataDir(this)) }.getOrNull() }
         val tracks = core?.let { runCatching { it.cachedLibrary().tracks }.getOrNull() }.orEmpty()
         val built = LibraryBrowser(tracks) { track ->
@@ -85,7 +96,10 @@ class PlaybackService : MediaLibraryService() {
                 else -> TrackSource("", false)
             }
         }
-        browser = built
+        if (core != null && tracks.isNotEmpty()) {
+            browser = built
+            browserStamp = stamp
+        }
         return built
     }
 
@@ -100,25 +114,38 @@ class PlaybackService : MediaLibraryService() {
     /** Serves the browse tree to Android Auto and other media browsers. */
     private inner class LibraryCallback : MediaLibraryService.MediaLibrarySession.Callback {
         /**
-         * Resolves a browser-picked item into a playable one: the session strips
-         * `localConfiguration`, so the playable URI travels in
-         * `requestMetadata.mediaUri` and is restored here.
+         * Resolves a browser-picked item into a playable one, and expands a
+         * picked track into its queue.
+         *
+         * The session strips `localConfiguration`, so the playable URI travels
+         * in `requestMetadata.mediaUri` and is restored here. Expanding the
+         * whole track list (starting at the picked track) gives the car a real
+         * queue, so next/previous/repeat/shuffle work there too. The phone UI's
+         * items have no `track:` id and are passed through untouched.
          */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
-        ): ListenableFuture<List<MediaItem>> =
-            Futures.immediateFuture(
-                mediaItems.map { item ->
-                    val mediaUri = item.requestMetadata.mediaUri
-                    if (item.localConfiguration == null && mediaUri != null) {
-                        item.buildUpon().setUri(mediaUri).build()
+        ): ListenableFuture<List<MediaItem>> {
+            val resolved = ArrayList<MediaItem>(mediaItems.size)
+            for (item in mediaItems) {
+                val queue = if (item.mediaId.startsWith("track:")) {
+                    library().queueFrom(item.mediaId)
+                } else {
+                    emptyList()
+                }
+                for (candidate in queue.ifEmpty { listOf(item) }) {
+                    val mediaUri = candidate.requestMetadata.mediaUri
+                    resolved += if (candidate.localConfiguration == null && mediaUri != null) {
+                        candidate.buildUpon().setUri(mediaUri).build()
                     } else {
-                        item
+                        candidate
                     }
-                },
-            )
+                }
+            }
+            return Futures.immediateFuture(resolved)
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibraryService.MediaLibrarySession,
@@ -170,8 +197,11 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             query: String,
             params: MediaLibraryService.LibraryParams?,
-        ): ListenableFuture<LibraryResult<Void>> =
-            Futures.immediateFuture(LibraryResult.ofVoid(params))
+        ): ListenableFuture<LibraryResult<Void>> {
+            val results = library().search(query)
+            session.notifySearchResultChanged(browser, query, results.size, params)
+            return Futures.immediateFuture(LibraryResult.ofVoid(params))
+        }
 
         override fun onGetSearchResult(
             session: MediaLibraryService.MediaLibrarySession,

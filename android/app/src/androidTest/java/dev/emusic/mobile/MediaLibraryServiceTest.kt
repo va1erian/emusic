@@ -11,6 +11,7 @@ import dev.emusic.mobile.playback.PlaybackService
 import uniffi.emusic_mobile.MobileCore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +37,16 @@ class MediaLibraryServiceTest {
         context.getSharedPreferences("emusic_playback", Context.MODE_PRIVATE)
             .edit()
             .putString("server_url", "http://10.0.2.2:8080")
+            .commit()
+    }
+
+    @After
+    fun clearLibrary() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        File(File(context.filesDir, "emusic"), "library.json").delete()
+        context.getSharedPreferences("emusic_playback", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
             .commit()
     }
 

@@ -30,15 +30,17 @@ class MainActivityTest {
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)!!
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         context.startActivity(intent)
+        // Wait for the top-bar action itself, not just the title: the two render
+        // together and waiting on the title alone has raced on the emulator.
         assertTrue(
-            "the main screen should show the app title",
-            device.wait(Until.hasObject(By.text("emusic")), 10_000),
+            "the main screen should be ready",
+            device.wait(Until.hasObject(By.res("add_action")), 10_000),
         )
     }
 
     @Test
     fun opensAndFillsTheAddServerForm() {
-        device.findObject(By.text("Add")).click()
+        device.findObject(By.res("add_action")).click()
         assertTrue(
             "the server URL field should appear",
             device.wait(Until.hasObject(By.res("server_url")), 5_000),

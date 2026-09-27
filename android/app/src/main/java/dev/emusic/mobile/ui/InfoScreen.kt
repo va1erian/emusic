@@ -134,15 +134,3 @@ private fun CreditsCard() {
     }
 }
 
-/** Formats seconds as `h:mm:ss` or `m:ss`. */
-private fun formatDuration(seconds: Double): String {
-    val total = seconds.toLong().coerceAtLeast(0)
-    val hours = total / 3600
-    val minutes = (total % 3600) / 60
-    val secs = total % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, secs)
-    } else {
-        "%d:%02d".format(minutes, secs)
-    }
-}

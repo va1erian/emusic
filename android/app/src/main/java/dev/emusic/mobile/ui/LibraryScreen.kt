@@ -6,24 +6,17 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -123,6 +116,8 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                     version = cached.version
                     tracks = cached.tracks
                     loading = false
+                    // Let the playback service browse this server.
+                    ActiveServer.set(context, url)
                 }
             }
 
@@ -131,6 +126,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 version = refreshed.version
                 tracks = refreshed.tracks
                 error = null
+                ActiveServer.set(context, url)
             }
             .onFailure { failure ->
                 // Keep the cache when the refresh fails (for example offline).
@@ -461,90 +457,3 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     }
 }
 
-@Composable
-private fun FormatFilter(
-    tracks: List<Track>,
-    selected: String?,
-    onSelect: (String?) -> Unit,
-) {
-    val formats = tracks
-        .groupingBy { it.format }
-        .eachCount()
-        .entries
-        .sortedByDescending { it.value }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 4.dp)
-            .testTag("format_filter"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FilterChip(
-            selected = selected == null,
-            onClick = { onSelect(null) },
-            label = { Text("All ${tracks.size}") },
-        )
-        formats.forEach { (format, count) ->
-            FilterChip(
-                selected = selected == format,
-                onClick = { onSelect(format) },
-                label = { Text("$format $count") },
-            )
-        }
-    }
-}
-
-@Composable
-private fun TrackList(
-    tracks: List<Track>,
-    onPlay: (Track) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (tracks.isEmpty()) {
-        Text(
-            text = "The server library is empty.",
-            modifier = modifier.padding(vertical = 12.dp),
-        )
-        return
-    }
-    LazyColumn(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("track_list"),
-    ) {
-        items(tracks, key = { it.id }) { track ->
-            ListItem(
-                modifier = Modifier
-                    .clickable { onPlay(track) }
-                    .testTag("track_row"),
-                headlineContent = { Text(track.displayTitle()) },
-                supportingContent = {
-                    val subtitle = listOfNotNull(track.artist, track.album)
-                        .filter { it.isNotBlank() }
-                        .joinToString(" · ")
-                    Text(if (subtitle.isBlank()) track.format else subtitle)
-                },
-                trailingContent = {
-                    Text(
-                        text = track.durationSecs?.let { formatDuration(it) } ?: track.format,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                },
-            )
-        }
-    }
-}
-
-/** Formats seconds as `h:mm:ss` or `m:ss`. */
-private fun formatDuration(seconds: Double): String {
-    val total = seconds.toLong().coerceAtLeast(0)
-    val hours = total / 3600
-    val minutes = (total % 3600) / 60
-    val secs = total % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, secs)
-    } else {
-        "%d:%02d".format(minutes, secs)
-    }
-}

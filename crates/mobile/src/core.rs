@@ -9,15 +9,13 @@ use emusic_client::auth::{
 };
 use emusic_client::cache::safe_id;
 use emusic_client::{CredentialStore, Credentials, RemoteClient, ServerEndpoint, unix_now};
-use emusic_render::{
-    MODULE_EXTENSIONS, ModuleRenderer, RenderOptions, Renderer, SID_EXTENSIONS, SidPlayerRenderer,
-    flac,
-};
+use emusic_render::{MODULE_EXTENSIONS, RenderOptions, SID_EXTENSIONS, flac};
 
 use crate::error::MobileError;
 use crate::library_store;
 use crate::registry;
 use crate::types::{AuthState, Health, ServerEntry, SyncResult, Track};
+use crate::util::{encode_segment, renderer_for, safe_extension};
 
 /// Renew the access token when it expires within this margin.
 const REFRESH_MARGIN_SECS: i64 = 24 * 3600;
@@ -233,35 +231,17 @@ impl MobileCore {
         let (_, token) = self.fresh_token()?;
         let delta = self.client.sync(&token, snapshot.version)?;
 
-        let mut positions: std::collections::HashMap<String, usize> = snapshot
-            .tracks
-            .iter()
-            .enumerate()
-            .map(|(index, track)| (track.id.clone(), index))
-            .collect();
-        for view in delta.tracks {
-            let track = Track::from(view);
-            match positions.get(&track.id).copied() {
-                Some(index) => snapshot.tracks[index] = track,
-                None => {
-                    positions.insert(track.id.clone(), snapshot.tracks.len());
-                    snapshot.tracks.push(track);
-                }
-            }
-        }
-        let deleted: std::collections::HashSet<String> = delta.deleted.into_iter().collect();
-        if !deleted.is_empty() {
-            snapshot.tracks.retain(|track| !deleted.contains(&track.id));
-        }
-
+        let updates: Vec<Track> = delta.tracks.into_iter().map(Track::from).collect();
+        let deleted = delta.deleted;
         let version = delta.version;
+        merge_tracks(&mut snapshot.tracks, updates, &deleted);
         snapshot.version = version;
         library_store::save(&self.data_dir, &snapshot)?;
 
         Ok(SyncResult {
             version,
             tracks: snapshot.tracks,
-            deleted: deleted.into_iter().collect(),
+            deleted,
         })
     }
 
@@ -325,6 +305,12 @@ impl MobileCore {
         let id = safe_id(&track_id).ok_or_else(|| MobileError::Client {
             message: format!("unsafe track id {track_id:?}"),
         })?;
+        // Resolve the renderer first: an unsupported format must not download.
+        let renderer =
+            renderer_for(&format, RENDER_SAMPLE_RATE).ok_or_else(|| MobileError::Client {
+                message: format!("no local renderer for {format:?}"),
+            })?;
+
         let renditions = self.data_dir.join("renditions");
         std::fs::create_dir_all(&renditions)?;
         let extension = safe_extension(&format);
@@ -341,10 +327,6 @@ impl MobileCore {
         }
 
         // Render and encode, always removing the raw download afterwards.
-        let renderer =
-            renderer_for(&format, RENDER_SAMPLE_RATE).ok_or_else(|| MobileError::Client {
-                message: format!("no local renderer for {format:?}"),
-            })?;
         let encoded = (|| -> Result<Vec<u8>, MobileError> {
             let pcm = renderer
                 .render(&raw_path, &RenderOptions::default())
@@ -360,10 +342,7 @@ impl MobileCore {
 
         let temporary = flac_path.with_extension("flac.tmp");
         std::fs::write(&temporary, &bytes)?;
-        if flac_path.exists() {
-            let _ = std::fs::remove_file(&flac_path);
-        }
-        std::fs::rename(&temporary, &flac_path)?;
+        crate::util::replace_file(&temporary, &flac_path)?;
         Ok(flac_path.to_string_lossy().into_owned())
     }
 
@@ -382,55 +361,31 @@ impl MobileCore {
         let bytes = self.client.album_art(&token, &album_id)?;
         let temporary = art.join(format!("{id}.tmp"));
         std::fs::write(&temporary, &bytes)?;
-        if destination.exists() {
-            let _ = std::fs::remove_file(&destination);
-        }
-        std::fs::rename(&temporary, &destination)?;
+        crate::util::replace_file(&temporary, &destination)?;
         Ok(destination.to_string_lossy().into_owned())
     }
 }
 
-/// Maps a server format label to a safe file extension, falling back to `bin`.
-fn safe_extension(format: &str) -> String {
-    if !format.is_empty()
-        && format.len() <= 16
-        && format.bytes().all(|byte| byte.is_ascii_alphanumeric())
-    {
-        format.to_ascii_lowercase()
-    } else {
-        "bin".to_string()
-    }
-}
-
-/// The local renderer for a format, if one exists.
-fn renderer_for(format: &str, sample_rate: u32) -> Option<Box<dyn Renderer + Send>> {
-    if MODULE_EXTENSIONS
+/// Applies `updates` and `deleted` to `tracks` in place, preserving order.
+fn merge_tracks(tracks: &mut Vec<Track>, updates: Vec<Track>, deleted: &[String]) {
+    let mut positions: std::collections::HashMap<String, usize> = tracks
         .iter()
-        .any(|candidate| format.eq_ignore_ascii_case(candidate))
-    {
-        return Some(Box::new(ModuleRenderer::new(sample_rate)));
-    }
-    if SID_EXTENSIONS
-        .iter()
-        .any(|candidate| format.eq_ignore_ascii_case(candidate))
-    {
-        return Some(Box::new(SidPlayerRenderer::new(sample_rate)));
-    }
-    None
-}
-
-/// Percent-encodes a value for use as a single URL path segment.
-fn encode_segment(value: &str) -> String {
-    let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(byte as char);
-        } else {
-            encoded.push('%');
-            encoded.push_str(&format!("{byte:02X}"));
+        .enumerate()
+        .map(|(index, track)| (track.id.clone(), index))
+        .collect();
+    for track in updates {
+        match positions.get(&track.id).copied() {
+            Some(index) => tracks[index] = track,
+            None => {
+                positions.insert(track.id.clone(), tracks.len());
+                tracks.push(track);
+            }
         }
     }
-    encoded
+    if !deleted.is_empty() {
+        let removed: std::collections::HashSet<&str> = deleted.iter().map(String::as_str).collect();
+        tracks.retain(|track| !removed.contains(track.id.as_str()));
+    }
 }
 
 #[cfg(test)]
@@ -530,5 +485,54 @@ mod tests {
         let cached = core.cached_library().unwrap();
         assert_eq!(cached.version, 0);
         assert!(cached.tracks.is_empty());
+    }
+
+    fn track(id: &str, title: &str) -> Track {
+        Track {
+            id: id.into(),
+            filename: None,
+            directory: String::new(),
+            format: "mp3".into(),
+            kind: "stream".into(),
+            specialized: false,
+            title: Some(title.into()),
+            artist: None,
+            album_artist: None,
+            album: None,
+            album_id: None,
+            genre: None,
+            year: None,
+            track_no: None,
+            disc_no: None,
+            duration_secs: None,
+            subtunes: 1,
+            channels: None,
+            file_size: 0,
+            has_art: false,
+            sync_version: 0,
+            added_at: 0,
+        }
+    }
+
+    #[test]
+    fn merge_adds_updates_and_deletes() {
+        let mut tracks = vec![track("a", "A"), track("b", "B")];
+        // Update b, add c and delete a in one batch.
+        merge_tracks(
+            &mut tracks,
+            vec![track("b", "B2"), track("c", "C")],
+            &["a".to_string()],
+        );
+        let ids: Vec<&str> = tracks.iter().map(|entry| entry.id.as_str()).collect();
+        assert_eq!(ids, ["b", "c"]);
+        assert_eq!(tracks[0].title.as_deref(), Some("B2"));
+    }
+
+    #[test]
+    fn merge_is_idempotent() {
+        let mut tracks = vec![track("a", "A")];
+        merge_tracks(&mut tracks, vec![track("a", "A")], &[]);
+        merge_tracks(&mut tracks, vec![track("a", "A")], &[]);
+        assert_eq!(tracks.len(), 1);
     }
 }
