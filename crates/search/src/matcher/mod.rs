@@ -142,7 +142,9 @@ impl<'q> PreparedQuery<'q> {
             .iter()
             .map(|term| match &term.body {
                 TermBody::Text(text) => PreparedTerm::Text {
-                    needle: text.text(),
+                    // Pre-build the `Finder` once per query so candidate matching avoids
+                    // repeated finder setup on every track.
+                    finder: Box::new(memchr::memmem::Finder::new(text.text().as_bytes())),
                     field: None,
                     negated: term.negated,
                 },
@@ -150,7 +152,7 @@ impl<'q> PreparedQuery<'q> {
                     field,
                     value: FieldValue::Text(text),
                 } => PreparedTerm::Text {
-                    needle: text.text(),
+                    finder: Box::new(memchr::memmem::Finder::new(text.text().as_bytes())),
                     field: Some(*field),
                     negated: term.negated,
                 },
@@ -174,7 +176,8 @@ impl<'q> PreparedQuery<'q> {
 #[derive(Debug)]
 enum PreparedTerm<'q> {
     Text {
-        needle: &'q str,
+        // Boxed to keep `PreparedTerm` enum size small for clippy `large_enum_variant`.
+        finder: Box<memchr::memmem::Finder<'q>>,
         field: Option<Field>,
         negated: bool,
     },
@@ -205,19 +208,20 @@ fn track_matches<S: PlayStats>(
     for term in prepared {
         let (matched, negated) = match term {
             PreparedTerm::Text {
-                needle,
+                finder,
                 field: None,
                 negated,
             } => (
-                memchr::memmem::find(entry.haystack.full().as_bytes(), needle.as_bytes()).is_some(),
+                finder.find(entry.haystack.full().as_bytes()).is_some(),
                 *negated,
             ),
             PreparedTerm::Text {
-                needle,
+                finder,
                 field: Some(field),
                 negated,
             } => (
-                memchr::memmem::find(entry.haystack.field(*field).as_bytes(), needle.as_bytes())
+                finder
+                    .find(entry.haystack.field(*field).as_bytes())
                     .is_some(),
                 *negated,
             ),
