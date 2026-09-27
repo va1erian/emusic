@@ -77,6 +77,12 @@ cargo run -p emusic --features shot --bin emusic-shot -- --view music --theme li
 
 It runs the real `Win32App` against deterministic mock data (`emusic --mock` runs the same data interactively) and captures the window with `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/frontend-win32/docs/screenshots/` are the reference set: for **any** change touching the native frontend's UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
 
+For the portable frontend (`crates/frontend-portable`), use `emusic-portable-shot` (#459) the same way, against the software `canvas` backend:
+
+```
+cargo run -p emusic-frontend-portable --features shot --bin emusic-portable-shot -- --all --theme dark --out crates/frontend-portable/docs/screenshots/dark
+```
+
 ## Behaviour changes: verify with UI Automation
 
 The app exposes a UI Automation tree, so you can click, type and read state in the real app instead of guessing from screenshots. See [docs/win32-uia.md](docs/win32-uia.md) and `scripts/win32-uia.ps1`. Prefer it for any change that depends on input handling (clicks, keys, focus, menus); use real input (`Click-Uia`, `Send-Key`) rather than direct invokes for those, and always stop the process you start.

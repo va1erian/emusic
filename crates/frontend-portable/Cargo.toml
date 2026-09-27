@@ -7,6 +7,11 @@ publish = false
 description = "emusic's portable frontend (xui_core): the cross-platform view layer over emusic-ui"
 build = "build.rs"
 
+[[bin]]
+name = "emusic-portable-shot"
+path = "src/bin/portable_shot.rs"
+required-features = ["shot"]
+
 [dependencies]
 anyhow = "1"
 emusic-platform = { path = "../platform" }
@@ -14,6 +19,8 @@ emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
 rfd = { version = "0.15", default-features = false }
 tracing = "0.1"
+clap = { version = "4", features = ["derive"], optional = true }
+png = { version = "0.18", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 # The umbrella crate. On Windows its default `win32` feature re-exports the
@@ -33,6 +40,11 @@ default = []
 # Windows dev/compare: build the software backend too and pick it with
 # `XUI_BACKEND=canvas`, mirroring `xui`'s own gallery.
 canvas = ["xui/canvas"]
+# The headless canvas screenshot tool (`emusic-portable-shot`, #459). Off by
+# default so the PNG encoder and `clap` never enter the real `emusic`
+# dependency tree. Implies `canvas` so it builds standalone on Windows, where
+# the `xui-canvas` backend is otherwise opt-in.
+shot = ["dep:png", "dep:clap", "canvas"]
 
 [build-dependencies]
 embed-resource = "3.0"

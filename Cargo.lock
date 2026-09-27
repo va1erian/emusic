@@ -1200,10 +1200,12 @@ name = "emusic-frontend-portable"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "embed-resource",
  "emusic-platform",
  "emusic-player",
  "emusic-ui",
+ "png 0.18.1",
  "rfd",
  "tracing",
  "tracing-subscriber",

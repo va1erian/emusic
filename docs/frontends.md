@@ -63,6 +63,20 @@ The `emusic/portable` feature is for development and backend comparison on
 Windows. Inside the portable frontend, `XUI_BACKEND=canvas` chooses the software
 backend over the native Win32 backend.
 
+## Screenshots
+
+`crates/app`'s `emusic-shot` (#118) only covers the native Win32 frontend. The
+portable frontend has its own headless tool, `emusic-portable-shot`
+(`crates/frontend-portable/src/bin/portable_shot.rs`, #459), which runs on the
+software `canvas` backend so it works on macOS/Linux CI and any dev box, not
+just Windows:
+
+```
+cargo run -p emusic-frontend-portable --features shot --bin emusic-portable-shot -- --all --theme dark --out crates/frontend-portable/docs/screenshots/dark
+```
+
+See AGENTS.md's "UI changes" section for the full screenshot workflow.
+
 ## Adding a frontend
 
 1. Create a crate exposing `pub fn run(Startup) -> anyhow::Result<()>`, driving
