@@ -93,6 +93,8 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var includeSubdirs by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
     var renderJob by remember { mutableStateOf<Job?>(null) }
+    var repeatMode by remember { mutableStateOf(RepeatMode.Off) }
+    var shuffle by remember { mutableStateOf(false) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
@@ -146,30 +148,6 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         onDispose {
             controller = null
             MediaController.releaseFuture(future)
-        }
-    }
-
-    DisposableEffect(controller) {
-        val active = controller
-        if (active == null) {
-            onDispose { }
-        } else {
-            val listener = object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    isPlaying = playing
-                }
-
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) isPlaying = false
-                }
-
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    playbackMessage = "playback failed: ${error.message}"
-                    isPlaying = false
-                }
-            }
-            active.addListener(listener)
-            onDispose { active.removeListener(listener) }
         }
     }
 
@@ -256,6 +234,54 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         if (index in queue.indices) {
             queueIndex = index
             startTrack(queue[index])
+        }
+    }
+
+    /** Moves to the next track in the queue (used by the Next button). */
+    fun advance() {
+        if (queue.isEmpty()) return
+        when {
+            shuffle -> playAt(queue.indices.random())
+            queueIndex + 1 < queue.size -> playAt(queueIndex + 1)
+            repeatMode == RepeatMode.All -> playAt(0)
+            else -> isPlaying = false
+        }
+    }
+
+    /** Reacts to a track finishing according to the repeat mode. */
+    fun onEnded() {
+        if (repeatMode == RepeatMode.One && queueIndex in queue.indices) {
+            playAt(queueIndex)
+        } else {
+            advance()
+        }
+    }
+
+    fun previous() {
+        if (queueIndex > 0) playAt(queueIndex - 1) else controller?.seekTo(0)
+    }
+
+    DisposableEffect(controller) {
+        val active = controller
+        if (active == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) onEnded()
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    playbackMessage = "playback failed: ${error.message}"
+                    isPlaying = false
+                }
+            }
+            active.addListener(listener)
+            onDispose { active.removeListener(listener) }
         }
     }
 
@@ -409,16 +435,24 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                             preparing = preparing,
                             positionMs = positionMs,
                             durationMs = durationMs,
+                            repeatMode = repeatMode,
+                            shuffle = shuffle,
                             onSeek = { millis -> controller?.seekTo(millis) },
                             onToggle = {
                                 controller?.let { active ->
                                     if (isPlaying) active.pause() else active.play()
                                 }
                             },
-                            onPrevious = {
-                                if (queueIndex > 0) playAt(queueIndex - 1) else controller?.seekTo(0)
+                            onPrevious = { previous() },
+                            onNext = { advance() },
+                            onCycleRepeat = {
+                                repeatMode = when (repeatMode) {
+                                    RepeatMode.Off -> RepeatMode.All
+                                    RepeatMode.All -> RepeatMode.One
+                                    RepeatMode.One -> RepeatMode.Off
+                                }
                             },
-                            onNext = { playAt(queueIndex + 1) },
+                            onToggleShuffle = { shuffle = !shuffle },
                         )
                     }
                 }
