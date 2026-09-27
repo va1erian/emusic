@@ -40,8 +40,18 @@ pub(crate) struct Snapshot {
 impl Snapshot {
     /// Builds a snapshot from every track in `store`, plus the configured
     /// `folders` and their per-folder track counts.
-    pub(crate) fn from_store(store: &Store, folders: &[Folder]) -> anyhow::Result<Self> {
-        let tracks = store.load_all_tracks()?;
+    ///
+    /// When `only_root` is set, only tracks whose path is under it are kept —
+    /// used by server-only mode to show just the remote cache (#391).
+    pub(crate) fn from_store(
+        store: &Store,
+        folders: &[Folder],
+        only_root: Option<&std::path::Path>,
+    ) -> anyhow::Result<Self> {
+        let mut tracks = store.load_all_tracks()?;
+        if let Some(root) = only_root {
+            tracks.retain(|track| track.path.starts_with(root));
+        }
         let stats = stats::load_all(store, &tracks)?;
         let index = LibraryIndex::build(tracks);
         Ok(Self::from_index(index, folders, &stats, store))

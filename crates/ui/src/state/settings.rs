@@ -19,17 +19,20 @@ pub enum SettingsTab {
     /// Playback options: session resume (#190) and tracker module settings
     /// (interpolation, ramping, emulation, ...).
     Playback,
+    /// Pair with a remote `emusic-server` and sync its library (#391).
+    Server,
     /// Version, revision and credits (#188).
     About,
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Library,
         Self::Appearance,
         Self::Visualization,
         Self::Associations,
         Self::Playback,
+        Self::Server,
         Self::About,
     ];
 
@@ -41,6 +44,7 @@ impl SettingsTab {
             Self::Visualization => "Visualization",
             Self::Associations => "File associations",
             Self::Playback => "Playback",
+            Self::Server => "Server",
             Self::About => "About",
         }
     }
@@ -53,6 +57,7 @@ impl SettingsTab {
             Self::Visualization => "visualization",
             Self::Associations => "associations",
             Self::Playback => "playback",
+            Self::Server => "server",
             Self::About => "about",
         }
     }

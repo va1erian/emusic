@@ -1,0 +1,44 @@
+# emusic-server configuration.
+#
+# Copy to /etc/emusic-server/server.toml and edit. Every key can also be set
+# with an EMUSIC_SERVER_* environment variable (see docs/server.md).
+
+[server]
+# Bind on all interfaces only inside a trusted container network; otherwise
+# use 127.0.0.1.
+host = "0.0.0.0"
+port = 8080
+data_dir = "/var/lib/emusic-server"
+# Addresses whose X-Forwarded-* headers are trusted. Cosmos Cloud's bridge
+# subnet, plus loopback. Anything else is treated as the direct client.
+trusted_proxies = ["172.16.0.0/12", "127.0.0.1"]
+
+[security]
+# Leave empty when a reverse proxy terminates TLS. Set both for direct TLS.
+tls_cert = ""
+tls_key = ""
+token_ttl_hours = 168
+max_pairing_attempts_per_min = 3
+pairing_code_ttl_secs = 600
+max_body_bytes = 65536
+
+[library]
+paths = [
+    "/media/music",
+    "/media/tracker_modules",
+    "/media/hvsc_sid",
+]
+hvsc_songlengths_path = "/media/hvsc_sid/DOCUMENTS/Songlengths.md5"
+scan_interval_secs = 3600
+
+[render]
+# Render specialized files (SID today) to FLAC for clients without native
+# engines. Off by default: it is CPU-heavy and needs a writable data_dir for
+# the rendition cache. A SID tune uses hvsc_songlengths_path above when set.
+enabled = false
+codec = "flac"
+sample_rate = 44100
+# SoundFont for the planned MIDI renderer; unused until that lands.
+# soundfont_path = "/media/soundfonts/GeneralUser.sf2"
+cache_max_bytes = 2147483648
+max_concurrent = 2

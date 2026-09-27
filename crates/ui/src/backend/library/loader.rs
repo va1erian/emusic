@@ -8,6 +8,7 @@
 //! scan via [`super::scan`]. Opening the private connection happens first,
 //! so the first snapshot also never contends with the UI's own reads (#69).
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -26,6 +27,7 @@ pub(crate) fn spawn(
     updates: Updates,
     scan: Option<ScanHandle>,
     bass: Option<Arc<bass::Bass>>,
+    only_root: Option<PathBuf>,
 ) {
     thread::spawn(move || {
         let private = {
@@ -40,7 +42,7 @@ pub(crate) fn spawn(
                 }
             }
         };
-        if let Err(err) = run(&store, private, &folders, &updates, scan, bass) {
+        if let Err(err) = run(&store, private, &folders, &updates, scan, bass, only_root) {
             warn!(%err, "library startup load failed");
         }
     });
@@ -53,12 +55,13 @@ fn run(
     updates: &Updates,
     scan: Option<ScanHandle>,
     bass: Option<Arc<bass::Bass>>,
+    only_root: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     match private {
-        Some(private) => send_initial_snapshot(&private, folders, updates)?,
+        Some(private) => send_initial_snapshot(&private, folders, updates, only_root.as_deref())?,
         // In-memory stores cannot be reopened (unit tests); fall back to the
         // shared connection for the startup snapshot only.
-        None => send_shared_snapshot(store, folders, updates)?,
+        None => send_shared_snapshot(store, folders, updates, only_root.as_deref())?,
     }
 
     let Some(handle) = scan else {
@@ -66,15 +69,25 @@ fn run(
         return Ok(());
     };
     let roots = enabled_roots(folders);
-    scan::run(store, folders, &roots, updates, &handle, &[], bass)
+    scan::run(
+        store,
+        folders,
+        &roots,
+        updates,
+        &handle,
+        &[],
+        bass,
+        only_root,
+    )
 }
 
 fn send_initial_snapshot(
     store: &Store,
     folders: &[Folder],
     updates: &Updates,
+    only_root: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
-    let snapshot = Snapshot::from_store(store, folders)?;
+    let snapshot = Snapshot::from_store(store, folders, only_root)?;
     let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     Ok(())
 }
@@ -83,9 +96,10 @@ fn send_shared_snapshot(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
     updates: &Updates,
+    only_root: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     let store = store
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    send_initial_snapshot(&store, folders, updates)
+    send_initial_snapshot(&store, folders, updates, only_root)
 }

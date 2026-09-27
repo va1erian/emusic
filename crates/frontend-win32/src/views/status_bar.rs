@@ -67,8 +67,10 @@ impl StatusBarView {
     /// priority over the model's progress line (it is shell state, not part of
     /// the status-bar model).
     pub fn sync(&mut self, model: &StatusBarModel, notice: Option<&str>) {
-        let progress = notice
+        let progress = model
+            .network()
             .map(str::to_owned)
+            .or_else(|| notice.map(str::to_owned))
             .or_else(|| model.scan().map(str::to_owned))
             .or_else(|| model.auto_tag().map(str::to_owned))
             .or_else(|| model.status_message().map(str::to_owned))

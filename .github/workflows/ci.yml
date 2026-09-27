@@ -62,6 +62,20 @@ jobs:
 
       - run: cargo test --workspace --features emusic/shot
 
+  # The server is deployed on Linux and the client is cross-platform; the
+  # Windows job above only proves cross-compilation. This runs the server and
+  # client crate tests (including their `#[cfg(unix)]` paths) on Linux.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo test -p emusic-server -p emusic-client
+
   # macOS: the portable canvas backend, selected by default off Windows. GNU
   # GCC is required for the vendored cRSID engine, whose nested functions
   # Apple clang does not implement. The BASS/projectM dylibs are absent, so the
@@ -145,12 +159,13 @@ jobs:
   # does not change while the work itself runs in parallel.
   ci:
     if: ${{ always() }}
-    needs: [lint, test, macos]
+    needs: [lint, test, linux, macos]
     runs-on: ubuntu-latest
     steps:
-      - name: Require lint, test and macos to succeed
+      - name: Require lint, test, linux and macos to succeed
         run: |
-          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} macos=${{ needs.macos.result }}"
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} linux=${{ needs.linux.result }} macos=${{ needs.macos.result }}"
           test "${{ needs.lint.result }}" = success
           test "${{ needs.test.result }}" = success
+          test "${{ needs.linux.result }}" = success
           test "${{ needs.macos.result }}" = success

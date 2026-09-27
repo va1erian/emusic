@@ -38,6 +38,7 @@ impl LibraryBackend {
                 self.update_tx.clone(),
                 scan,
                 self.bass.clone(),
+                self.only_root(),
             );
         } else if roots != self.scanned_roots || !removed.is_empty() {
             let handle = self.begin_scan();
@@ -49,6 +50,7 @@ impl LibraryBackend {
                 handle,
                 removed,
                 self.bass.clone(),
+                self.only_root(),
             );
         }
         self.scanned_roots = roots;

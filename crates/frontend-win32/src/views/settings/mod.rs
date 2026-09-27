@@ -1,8 +1,8 @@
 //! Win32 Settings view (#115).
 //!
 //! A view struct per the #106 pattern: a native tab strip (`win32ui`'s
-//! [`Tabs`](win32ui::Tabs) control) over six pages — Library folders,
-//! Appearance, Visualization, File associations, Playback
+//! [`Tabs`](win32ui::Tabs) control) over seven pages — Library folders,
+//! Appearance, Visualization, File associations, Playback, Server
 //! and About. Each page owns standard win32ui controls and only reads and
 //! writes the shared `emusic-ui` state, emitting [`Command`]s for the shell to
 //! apply; it never duplicates sorting, filtering or formatting.
@@ -23,6 +23,7 @@ mod associations;
 mod library;
 mod playback;
 mod scroll_form;
+mod server;
 mod visualization;
 
 use scroll_form::{FormRow, ScrollPanel};
@@ -31,6 +32,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 
 use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::remote::RemoteServer;
 use emusic_ui::state::{
     Accent, AppState, Density, FontSize, SettingsTab, Theme as UiTheme, VisualizerMode,
 };
@@ -133,9 +135,21 @@ pub enum SettingsMsg {
     SidClear,
     /// The SID fallback play length slider moved.
     SidFallback(u32),
+    /// The Server page asked to pair with the entered URL/code (#391).
+    ServerPair,
+    /// The background pairing finished: the server entry plus a success
+    /// message, or an error.
+    ServerPaired(std::result::Result<(RemoteServer, String), String>),
+    /// The Server page asked to sync every configured server.
+    ServerSync,
+    /// The Server page asked to unpair the selected server.
+    ServerUnpair,
+    /// The Server page toggled "server only" mode (#391): ignore the local
+    /// library and show only remote tracks.
+    ServerOnly(bool),
 }
 
-/// The Settings central area: the six pages (the tab strip is built fresh by
+/// The Settings central area: the seven pages (the tab strip is built fresh by
 /// [`SettingsView::tabs`] whenever the window layout is installed).
 pub struct SettingsView {
     library: library::LibraryPage,
@@ -143,6 +157,7 @@ pub struct SettingsView {
     visualization: visualization::VisualizationPage,
     associations: associations::AssociationsPage,
     playback: playback::PlaybackPage,
+    server: server::ServerPage,
     about: about::AboutPage,
     /// Whether the whole view is currently shown; the selected page is only
     /// visible when this is set too.
@@ -161,7 +176,8 @@ impl SettingsView {
         let appearance = appearance::AppearancePage::new(ui, visualizer_enabled)?;
         let visualization = visualization::VisualizationPage::new(ui)?;
         let associations = associations::AssociationsPage::new(ui)?;
-        let playback = playback::PlaybackPage::new(ui, proxy)?;
+        let playback = playback::PlaybackPage::new(ui, proxy.clone())?;
+        let server = server::ServerPage::new(ui, proxy)?;
         let about = about::AboutPage::new(ui)?;
 
         let view = Self {
@@ -170,6 +186,7 @@ impl SettingsView {
             visualization,
             associations,
             playback,
+            server,
             about,
             visible: Cell::new(false),
             applied_tab: SettingsTab::Library,
@@ -194,6 +211,7 @@ impl SettingsView {
             )
             .page(SettingsTab::Associations.label(), self.associations.page())
             .page(SettingsTab::Playback.label(), self.playback.page())
+            .page(SettingsTab::Server.label(), self.server.page())
             .page(SettingsTab::About.label(), self.about.page())
             .initial(
                 SettingsTab::ALL
@@ -220,7 +238,7 @@ impl SettingsView {
         self.library.apply_appearance();
     }
 
-    /// Mirrors the active tab onto the six pages, leaving only the selected
+    /// Mirrors the active tab onto the seven pages, leaving only the selected
     /// one visible (when the view itself is shown).
     fn refresh_tab_visibility(&self) {
         let shown = self.visible.get();
@@ -235,6 +253,7 @@ impl SettingsView {
             .set_visible(shown && tab == SettingsTab::Associations);
         self.playback
             .set_visible(shown && tab == SettingsTab::Playback);
+        self.server.set_visible(shown && tab == SettingsTab::Server);
         self.about.set_visible(shown && tab == SettingsTab::About);
     }
 
@@ -259,6 +278,7 @@ impl SettingsView {
         self.visualization.sync(ui, state);
         self.associations.sync();
         self.playback.sync(state);
+        self.server.sync(state, library);
         tab_changed
     }
 
@@ -287,6 +307,9 @@ impl SettingsView {
             return;
         }
         if self.associations.update(&msg) {
+            return;
+        }
+        if self.server.update(&msg, out) {
             return;
         }
         self.playback.update(&msg, state, out);

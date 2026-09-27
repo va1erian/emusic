@@ -117,7 +117,11 @@ impl Shell {
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
         config.apply_to_player(player.as_mut());
+        // Server-only mode is a snapshot filter; set it before the first load
+        // so the initial snapshot already excludes local tracks.
+        library.set_server_only(config.server_only);
         library.set_folders(&config.library_folders);
+        library.set_remote_servers(&config.remote_servers);
         // The session was just applied to the player; drop it from the
         // baseline so the per-tick settings compare doesn't treat the
         // (now-consumed) session as a pending change. It is written again on

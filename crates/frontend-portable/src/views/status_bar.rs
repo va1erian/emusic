@@ -107,11 +107,13 @@ impl StatusBarView {
 
     /// Pushes the model's part texts, skipping the update when nothing changed.
     ///
-    /// `notice` is the shell's one-line startup/backend notice; it takes
-    /// priority over the model's progress line.
+    /// `notice` is the shell's one-line startup/backend notice. Remote network
+    /// activity takes priority over it, matching the win32 frontend.
     pub fn sync(&mut self, model: &StatusBarModel, notice: Option<&str>) {
-        let progress = notice
+        let progress = model
+            .network()
             .map(str::to_owned)
+            .or_else(|| notice.map(str::to_owned))
             .or_else(|| model.scan().map(str::to_owned))
             .or_else(|| model.auto_tag().map(str::to_owned))
             .or_else(|| model.status_message().map(str::to_owned))

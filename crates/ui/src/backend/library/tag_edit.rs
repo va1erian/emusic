@@ -23,9 +23,10 @@ pub(crate) fn spawn(
     folders: Vec<Folder>,
     requests: Vec<EditRequest>,
     updates: Updates,
+    only_root: Option<std::path::PathBuf>,
 ) {
     std::thread::spawn(move || {
-        let outcomes = run(&store, &folders, &requests, &updates);
+        let outcomes = run(&store, &folders, &requests, &updates, only_root);
         let _ = updates.send(Update::TagEdits(outcomes));
     });
 }
@@ -40,6 +41,7 @@ fn run(
     folders: &[Folder],
     requests: &[EditRequest],
     updates: &Updates,
+    only_root: Option<std::path::PathBuf>,
 ) -> Vec<EditOutcome> {
     let outcomes = match private_store(store) {
         Some(mut private) => edit_tags(&mut private, requests),
@@ -52,7 +54,7 @@ fn run(
     };
 
     if outcomes.iter().any(|outcome| outcome.result.is_ok())
-        && let Err(err) = send_snapshot(store, folders, updates)
+        && let Err(err) = send_snapshot(store, folders, updates, only_root)
     {
         warn!(%err, "failed to refresh the snapshot after tag edits");
     }
@@ -64,12 +66,13 @@ fn send_snapshot(
     store: &Arc<Mutex<Store>>,
     folders: &[Folder],
     updates: &Updates,
+    only_root: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
     let snapshot = {
         let store = store
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        Snapshot::from_store(&store, folders)?
+        Snapshot::from_store(&store, folders, only_root.as_deref())?
     };
     let _ = updates.send(Update::Snapshot(Box::new(snapshot)));
     Ok(())

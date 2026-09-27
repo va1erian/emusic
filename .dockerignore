@@ -1,0 +1,8 @@
+# Docker build context is the repository root; keep the context small.
+target/
+.git/
+.github/
+assets/
+crates/app/docs/screenshots/
+*.log
+oc-issue-*.log

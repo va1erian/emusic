@@ -18,6 +18,9 @@ pub(super) fn apply_library_commands(
     commands: &[Command],
 ) {
     let mut folders_changed = false;
+    let mut remote_changed = false;
+    let mut sync_remote = false;
+    let mut server_only_changed = false;
     let mut rescan = false;
     let mut cancel = false;
     let mut remove_history = None;
@@ -34,6 +37,9 @@ pub(super) fn apply_library_commands(
             }
             Command::LibraryRescan => rescan = true,
             Command::LibraryCancelScan => cancel = true,
+            Command::AddRemoteServer(_) | Command::RemoveRemoteServer(_) => remote_changed = true,
+            Command::SyncRemote => sync_remote = true,
+            Command::SetServerOnly(_) => server_only_changed = true,
             Command::HistoryRemove(id) => remove_history = Some(*id),
             Command::HistoryClear => clear_history = true,
             Command::ToggleStarred(id) => toggle_starred.push(*id),
@@ -52,6 +58,16 @@ pub(super) fn apply_library_commands(
 
     if folders_changed {
         library.set_folders(&state.library_folders);
+    }
+    if server_only_changed {
+        // A view filter over the same store; local rows are kept.
+        library.set_server_only(state.server_only);
+    }
+    if remote_changed {
+        library.set_remote_servers(&state.remote_servers);
+    }
+    if sync_remote {
+        library.sync_remote();
     }
     if rescan {
         library.rescan();
