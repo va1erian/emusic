@@ -99,6 +99,12 @@ impl Player {
                 if let Err(error) = channel.set_volume(perceptual_to_gain(self.volume)) {
                     self.emit(PlayerEvent::Error(error));
                 }
+                // Re-apply the user's tracker settings, so a configured
+                // end behaviour (and the rest) takes effect on every module
+                // rather than only the one that was playing when it changed.
+                if let Err(error) = channel.apply_tracker_settings(&self.tracker_settings) {
+                    self.emit(PlayerEvent::Error(error));
+                }
                 if position > Duration::ZERO
                     && let Err(error) = channel.seek(position)
                 {

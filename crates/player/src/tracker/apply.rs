@@ -37,9 +37,22 @@ impl TrackerSettings {
         }
 
         match self.end {
-            EndBehavior::StopAtEnd | EndBehavior::FollowLoops => {}
+            // `STOPBACK` makes BASS stop when the module jumps backwards
+            // instead of following the loop forever; without it a looping
+            // module never ends, so `BASS_SYNC_END` never fires and the
+            // queue never advances.
+            EndBehavior::StopAtEnd => flags |= MusicFlags::STOPBACK,
+            // Follow the module's own loop/backward-jump commands: neither
+            // `STOPBACK` (would stop at the loop) nor `LOOP` (would restart
+            // at the end of the order list).
+            EndBehavior::FollowLoops => {}
+            // BASS only supports on/off looping, so a positive count just
+            // sets `LOOP` (counting exact repeats is a documented follow-up);
+            // no `STOPBACK`, so a module with its own loop still follows it
+            // rather than stopping at the first backward jump.
             EndBehavior::LoopTimes(n) if n > 0 => flags |= MusicFlags::LOOP,
-            EndBehavior::LoopTimes(_) => {}
+            // A zero count means "don't loop", i.e. stop at the end.
+            EndBehavior::LoopTimes(_) => flags |= MusicFlags::STOPBACK,
         }
 
         flags
@@ -207,42 +220,44 @@ mod tests {
     }
 
     #[test]
-    fn end_behavior_maps_to_loop_flag() {
-        assert!(
-            !TrackerSettings {
-                end: EndBehavior::StopAtEnd,
-                ..TrackerSettings::default()
-            }
-            .music_flags()
-            .contains(MusicFlags::LOOP)
-        );
+    fn end_behavior_maps_to_loop_and_stopback_flags() {
+        // Stop-at-end is the default: stop on a backward jump so a looping
+        // module actually ends.
+        let stop = TrackerSettings {
+            end: EndBehavior::StopAtEnd,
+            ..TrackerSettings::default()
+        }
+        .music_flags();
+        assert!(stop.contains(MusicFlags::STOPBACK));
+        assert!(!stop.contains(MusicFlags::LOOP));
 
-        assert!(
-            !TrackerSettings {
-                end: EndBehavior::FollowLoops,
-                ..TrackerSettings::default()
-            }
-            .music_flags()
-            .contains(MusicFlags::LOOP)
-        );
+        // Following the module's own loops means neither flag.
+        let follow = TrackerSettings {
+            end: EndBehavior::FollowLoops,
+            ..TrackerSettings::default()
+        }
+        .music_flags();
+        assert!(!follow.contains(MusicFlags::STOPBACK));
+        assert!(!follow.contains(MusicFlags::LOOP));
 
-        assert!(
-            TrackerSettings {
-                end: EndBehavior::LoopTimes(3),
-                ..TrackerSettings::default()
-            }
-            .music_flags()
-            .contains(MusicFlags::LOOP)
-        );
+        // A positive loop count loops the whole module; `STOPBACK` would
+        // stop it before the loop could restart, so it must not be set.
+        let looping = TrackerSettings {
+            end: EndBehavior::LoopTimes(3),
+            ..TrackerSettings::default()
+        }
+        .music_flags();
+        assert!(looping.contains(MusicFlags::LOOP));
+        assert!(!looping.contains(MusicFlags::STOPBACK));
 
-        assert!(
-            !TrackerSettings {
-                end: EndBehavior::LoopTimes(0),
-                ..TrackerSettings::default()
-            }
-            .music_flags()
-            .contains(MusicFlags::LOOP)
-        );
+        // Zero loops is effectively stop-at-end.
+        let none = TrackerSettings {
+            end: EndBehavior::LoopTimes(0),
+            ..TrackerSettings::default()
+        }
+        .music_flags();
+        assert!(none.contains(MusicFlags::STOPBACK));
+        assert!(!none.contains(MusicFlags::LOOP));
     }
 
     #[test]
@@ -294,5 +309,7 @@ mod tests {
                 | MusicFlags::PT1MOD
                 | MusicFlags::LOOP
         ));
+        // The default `StopAtEnd` still relies on `STOPBACK`.
+        assert!(default.music_flags().contains(MusicFlags::STOPBACK));
     }
 }
