@@ -187,20 +187,30 @@ fn update_watched_roots(
 }
 
 fn paths_equal(a: &Path, b: &Path) -> bool {
-    normalize_key(a) == normalize_key(b)
+    match_key(a) == match_key(b)
 }
 
 fn root_for_path(roots: &[PathBuf], path: &Path) -> Option<PathBuf> {
-    let key = normalize_key(path);
+    let key = match_key(path);
     roots
         .iter()
         .filter(|root| !is_remote_root(root))
         .find(|root| {
-            let root_key = normalize_key(root);
+            let root_key = match_key(root);
             key == root_key
                 || key
                     .strip_prefix(&root_key)
                     .is_some_and(|rest| rest.starts_with('/'))
         })
         .cloned()
+}
+
+/// A comparison key that resolves symlinks when the path exists, so `notify`'s
+/// canonical event paths match the configured root (on macOS a temp root under
+/// `/var` arrives as `/private/var`). Non-existent paths (e.g. remote roots)
+/// fall back to the lexical [`normalize_key`].
+fn match_key(path: &Path) -> String {
+    std::fs::canonicalize(path)
+        .map(|real| normalize_key(&real))
+        .unwrap_or_else(|_| normalize_key(path))
 }
