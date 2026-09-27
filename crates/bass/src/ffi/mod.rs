@@ -24,7 +24,7 @@ use libloading::Library;
 use crate::error::BassError;
 use raw::RawBindings;
 
-/// The loaded `bass.dll` plus its resolved function table.
+/// The loaded core BASS library plus its resolved function table.
 ///
 /// Kept alive for as long as any [`crate::Bass`], [`crate::Stream`] or
 /// [`crate::Music`] handle exists, since `raw`'s function pointers point
@@ -48,10 +48,10 @@ unsafe impl Send for BassLib {}
 unsafe impl Sync for BassLib {}
 
 impl BassLib {
-    /// Loads `bass.dll` from [`loader::bass_dir`] and resolves every symbol
-    /// this crate uses.
+    /// Loads the core BASS library from [`loader::bass_dir`] and resolves
+    /// every symbol this crate uses.
     pub(crate) fn open() -> Result<Self, BassError> {
-        let library = loader::load_dll("bass.dll")?;
+        let library = loader::load_dll(loader::CORE_LIBRARY)?;
         let raw = RawBindings::load(&library)?;
         Ok(Self {
             _library: library,
@@ -73,17 +73,17 @@ impl BassLib {
     }
 }
 
-/// `bassmidi.dll` loaded a second time (independently of the
+/// The `bassmidi` add-on loaded a second time (independently of the
 /// `BASS_PluginLoad` registration [`crate::Bass::load_plugins`] does), to
 /// reach its own exports — needed for [`crate::midi::Midi::set_channel_font`]
 /// to change an already-open MIDI channel's soundfont live.
 ///
-/// Windows refcounts `LoadLibrary`, so loading a DLL that's already mapped
-/// (as a `BASS_PluginLoad`-registered plugin) just returns the same base
-/// address rather than mapping it twice.
+/// Windows refcounts `LoadLibrary`, so loading a library that's already
+/// mapped (as a `BASS_PluginLoad`-registered plugin) just returns the same
+/// base address rather than mapping it twice.
 pub struct MidiLib {
-    /// Shares `bass.dll`'s error state: BASS's last-error code is
-    /// process-global regardless of which loaded DLL set it.
+    /// Shares the core library's error state: BASS's last-error code is
+    /// process-global regardless of which loaded library set it.
     bass: Arc<BassLib>,
     /// Kept only to keep the DLL mapped; never read directly.
     _library: Library,
@@ -98,10 +98,10 @@ unsafe impl Send for MidiLib {}
 unsafe impl Sync for MidiLib {}
 
 impl MidiLib {
-    /// Loads `bassmidi.dll` from `dir` and resolves the symbols
+    /// Loads the `bassmidi` add-on from `dir` and resolves the symbols
     /// [`crate::midi`] needs.
     pub(crate) fn open(bass: Arc<BassLib>, dir: &Path) -> Result<Self, BassError> {
-        let library = loader::load_dll_from(dir, "bassmidi.dll")?;
+        let library = loader::load_dll_from(dir, loader::MIDI_LIBRARY)?;
         let raw = raw::MidiRawBindings::load(&library)?;
         Ok(Self {
             bass,

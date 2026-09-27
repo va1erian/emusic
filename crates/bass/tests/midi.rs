@@ -1,7 +1,7 @@
 //! MIDI playback through the `bassmidi` add-on plugin.
 //!
-//! Skips (rather than fails) when `bass.dll` or `bassmidi.dll` is missing.
-//! The soundfont is generated on the fly (see [`sf2`]), so no external
+//! Skips (rather than fails) when the BASS core or `bassmidi` add-on is
+//! missing. The soundfont is generated on the fly (see [`sf2`]), so no external
 //! soundfont is needed to prove that BASSMIDI renders real audio.
 
 mod sf2;
@@ -9,10 +9,10 @@ mod silent;
 
 use std::path::Path;
 
-use bass::{Bass, Channel, StreamFlags};
+use bass::{Bass, Channel, MIDI_LIBRARY, StreamFlags};
 
-/// Locates `bassmidi.dll` the same way [`load_midi_plugin`] does, so a test
-/// can also load its own exports via [`Bass::load_midi`].
+/// Locates the `bassmidi` add-on the same way [`load_midi_plugin`] does, so a
+/// test can also load its own exports via [`Bass::load_midi`].
 fn bass_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var_os("EMUSIC_BASS_DIR").unwrap_or_default())
 }
@@ -34,8 +34,8 @@ fn two_second_midi() -> Vec<u8> {
     bytes
 }
 
-/// Loads the plugins from `EMUSIC_BASS_DIR`; false when `bassmidi.dll` isn't
-/// among the ones that loaded.
+/// Loads the plugins from `EMUSIC_BASS_DIR`; false when the `bassmidi` add-on
+/// isn't among the ones that loaded.
 fn load_midi_plugin(bass: &Bass) -> bool {
     let dir = std::env::var_os("EMUSIC_BASS_DIR").unwrap_or_default();
     bass.load_plugins(dir).iter().any(|plugin| {
@@ -43,7 +43,7 @@ fn load_midi_plugin(bass: &Bass) -> bool {
             && plugin
                 .path
                 .file_name()
-                .is_some_and(|name| name.eq_ignore_ascii_case("bassmidi.dll"))
+                .is_some_and(|name| name.eq_ignore_ascii_case(MIDI_LIBRARY))
     })
 }
 
@@ -67,7 +67,7 @@ fn midi_is_silent_without_a_soundfont_and_audible_with_one() {
         return;
     };
     if !load_midi_plugin(&bass) {
-        eprintln!("skipping: bassmidi.dll not available");
+        eprintln!("skipping: bassmidi add-on not available");
         return;
     }
     let dir = std::env::temp_dir().join(format!("emusic-midi-{}", std::process::id()));
@@ -121,11 +121,11 @@ fn switching_soundfonts_mid_stream_applies_live() {
         return;
     };
     if !load_midi_plugin(&bass) {
-        eprintln!("skipping: bassmidi.dll not available");
+        eprintln!("skipping: bassmidi add-on not available");
         return;
     }
     let Some(midi) = bass.load_midi(bass_dir()) else {
-        eprintln!("skipping: bassmidi.dll's own exports not available");
+        eprintln!("skipping: the bassmidi add-on's own exports not available");
         return;
     };
 

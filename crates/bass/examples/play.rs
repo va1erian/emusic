@@ -5,7 +5,7 @@
 //! cargo run -p bass --example play -- tune.xm
 //! ```
 //!
-//! Requires `bass.dll` (and, for tracker formats, nothing extra — MOD/XM/S3M
+//! Requires the BASS library (and, for tracker formats, nothing extra — MOD/XM/S3M
 //! etc are natively supported) in `EMUSIC_BASS_DIR` or `<exe dir>/bass/`.
 
 use std::error::Error;

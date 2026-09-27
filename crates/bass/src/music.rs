@@ -1,16 +1,15 @@
 //! Tracker module music (`BASS_MusicLoad`): MOD/XM/S3M/IT and friends.
 
-use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::channel::Channel;
 use crate::error::BassError;
+use crate::ffi::BassLib;
 use crate::ffi::types::{Dword, HMusic};
-use crate::ffi::{BassLib, consts as c};
 use crate::flags::MusicFlags;
 use crate::tags::{MusicTags, read_music_tags};
-use crate::util::path_to_utf16;
+use crate::util::BassPath;
 
 /// A loaded tracker module, created with `BASS_MusicLoad`.
 ///
@@ -31,15 +30,12 @@ impl Music {
         flags: MusicFlags,
         freq: u32,
     ) -> Result<Self, BassError> {
-        let wide = path_to_utf16(path.as_ref())?;
-        let raw_flags = flags.bits() | c::BASS_UNICODE;
-        // SAFETY: `wide` is a live, NUL-terminated UTF-16 buffer for the
-        // duration of this call; `mem = FALSE` matches the filename
-        // pointer we're passing, and `length` is ignored by BASS for
-        // file-based loads.
-        let handle = unsafe {
-            (lib.raw.bass_music_load)(0, wide.as_ptr() as *const c_void, 0, 0, raw_flags, freq)
-        };
+        let path = BassPath::new(path.as_ref())?;
+        let raw_flags = flags.bits() | path.flag();
+        // SAFETY: `path` is a live, NUL-terminated buffer for the duration of
+        // this call; `mem = FALSE` matches the filename pointer we're passing,
+        // and `length` is ignored by BASS for file-based loads.
+        let handle = unsafe { (lib.raw.bass_music_load)(0, path.as_ptr(), 0, 0, raw_flags, freq) };
         if handle == 0 {
             return Err(lib.last_error());
         }

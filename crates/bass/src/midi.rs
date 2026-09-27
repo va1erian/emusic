@@ -1,5 +1,5 @@
 //! Per-channel soundfont control via BASSMIDI's own exports
-//! (`bassmidi.dll`), on top of the plugin [`crate::Bass::load_plugins`]
+//! (the `bassmidi` add-on), on top of the plugin [`crate::Bass::load_plugins`]
 //! already registers for MIDI decoding.
 //!
 //! [`crate::config::Config::set_midi_default_font`]
@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::error::BassError;
 use crate::ffi::MidiLib;
 use crate::ffi::types::{BassMidiFont, Dword, HSoundFont};
-use crate::util::path_to_utf16;
+use crate::util::BassPath;
 
 /// A soundfont (`.sf2`/`.sf3`/`.sfz`) loaded via `BASS_MIDI_FontInit`.
 ///
@@ -29,13 +29,11 @@ pub struct SoundFont {
 
 impl SoundFont {
     fn load(midi: Arc<MidiLib>, path: &Path) -> Result<Self, BassError> {
-        let wide = path_to_utf16(path)?;
-        // SAFETY: `wide` is a live, NUL-terminated UTF-16 buffer for the
-        // duration of this call, matching the `BASS_UNICODE` flag; BASS
-        // reads the font from disk rather than keeping the pointer.
-        let handle = unsafe {
-            (midi.raw.bass_midi_font_init)(wide.as_ptr().cast(), crate::ffi::consts::BASS_UNICODE)
-        };
+        let path = BassPath::new(path)?;
+        // SAFETY: `path` is a live, NUL-terminated buffer for the duration of
+        // this call, matching the flag `BassPath::flag` reports; BASS reads
+        // the font from disk rather than keeping the pointer.
+        let handle = unsafe { (midi.raw.bass_midi_font_init)(path.as_ptr(), path.flag()) };
         if handle == 0 {
             return Err(midi.last_error());
         }
@@ -52,7 +50,7 @@ impl Drop for SoundFont {
     }
 }
 
-/// Handle to `bassmidi.dll`'s own exports, for per-channel soundfont
+/// Handle to the `bassmidi` add-on's own exports, for per-channel soundfont
 /// control. Obtained via [`crate::Bass::load_midi`].
 #[derive(Clone)]
 pub struct Midi {
@@ -102,7 +100,7 @@ impl Midi {
 
 #[cfg(test)]
 mod tests {
-    // `Midi`/`SoundFont` always talk to a loaded `bassmidi.dll`, so their
+    // `Midi`/`SoundFont` always talk to a loaded `bassmidi` add-on, so their
     // behaviour is only exercised by the DLL-gated integration tests
     // (`tests/`). Nothing here is pure enough to unit test without it.
 }
