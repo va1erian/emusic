@@ -9,6 +9,7 @@
 //! names no backend type outside `main` and `window`.
 
 pub mod app;
+pub mod backend;
 pub mod dialogs;
 pub mod menu;
 pub mod theme;

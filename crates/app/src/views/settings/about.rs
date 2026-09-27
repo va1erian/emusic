@@ -23,12 +23,14 @@ pub fn build(ui: &Ui<Msg>, bounds: Rect) -> FlowText<Msg> {
             open_url(REPOSITORY);
             None
         }))
-        .run(Run::weak(
+        .run(Run::weak(format!(
             "\n\nAudio playback: BASS by Un4seen Developments\n\
              SID emulation: cRSID by Hermit\n\
              Interface: xui\n\
+             Rendering backend: {}\n\
              Licensed under the MIT license.",
-        ))
+            crate::backend::label()
+        )))
 }
 
 /// Opens `url` in the default browser (a `FlowText` link cannot carry a
