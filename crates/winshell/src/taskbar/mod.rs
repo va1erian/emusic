@@ -78,8 +78,8 @@ pub enum ProgressState {
 /// otherwise, so a live-preview request still reaches `DefWindowProc`.
 pub fn msg_hook(msg: *const c_void) -> bool {
     // SAFETY: `msg` is the caller's pointer to the `MSG` it is about to
-    // dispatch (and so is aligned and valid for this call). Our `MSG` and
-    // win32ui's are both `#[repr(C)]` with identical fields, so the
+    // dispatch (and so is aligned and valid for this call). The caller's
+    // `MSG` and ours are both `#[repr(C)]` with identical fields, so the
     // reinterpretation is layout-compatible. We only read it.
     let msg = unsafe { &*msg.cast::<MSG>() };
     if msg.message != WM_DWMSENDICONICTHUMBNAIL {

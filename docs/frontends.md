@@ -35,9 +35,14 @@ process is the primary instance), startup files, the worker `WakerSlot`, and the
   Windows shell integrations (SMTC, taskbar thumb-bar, taskbar preview). The
   crate is `#![cfg(windows)]` and compiles to an empty library elsewhere.
 - **`crates/frontend-portable`** — the cross-platform renderer built on the
-  `xui_core` widget layer. **It is a placeholder today**: the real renderer lands
-  with emusic's migration to portable xui (branch `migration/xui`), so `run`
-  currently returns an error.
+  `xui_core` widget layer: portable widgets for every view, and window chrome on
+  the native `win32` backend (Windows) or the software `canvas` backend
+  elsewhere.
+- **`crates/platform` (`emusic-platform`)** — the OS shell integrations both
+  renderers share: the `ShellIntegration` seam, and its Windows (SMTC, taskbar
+  thumb-bar, file associations) and macOS (Now Playing) implementations. The
+  portable renderer talks to the OS only through this crate, so no view names a
+  platform type.
 
 ## Selecting a frontend
 

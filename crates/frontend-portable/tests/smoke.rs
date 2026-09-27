@@ -1,0 +1,195 @@
+//! Headless smoke test for the portable app (#106): builds the real
+//! [`Win32App`] against the mock backends, lets it tick, and quits. Skips
+//! (prints and returns) if the session cannot create windows.
+
+#![cfg(windows)]
+
+use std::cell::Cell;
+use std::rc::Rc;
+
+use emusic_frontend_portable::app::{Msg, Win32App};
+use emusic_frontend_portable::views::album_grid::AlbumMsg;
+use emusic_ui::config::Config;
+use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::mock::{MockLibrary, MockPlayer};
+use emusic_ui::state::View;
+use emusic_ui::views::album_grid::models::AlbumSort;
+use emusic_ui::waker::WakerSlot;
+use xui::xui_core::app::Ui;
+use xui::xui_core::backend::{Backend, Result as BackendResult};
+
+/// Runs the portable app on the native backend with `make`.
+fn run_ui(make: impl FnOnce(&mut Ui<Msg>) -> Win32App + 'static) -> BackendResult<()> {
+    let backend: Rc<dyn Backend> = Rc::new(xui::xui_win32::Win32Backend::new());
+    xui::xui_core::run_app(
+        backend,
+        emusic_frontend_portable::window::window_spec(1000.0, 700.0),
+        make,
+    )
+}
+
+/// Constructs the app, emits `msg`, then quits.
+fn smoke(extra: Option<Msg>) -> bool {
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+            true,
+        );
+        if let Some(msg) = extra {
+            ui.emit(msg);
+        }
+        constructed_for_make.set(true);
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return false;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+    true
+}
+
+#[test]
+fn app_constructs_ticks_and_quits() {
+    smoke(None);
+}
+
+/// Navigating to each central view builds its view (its list/grid/canvas) and
+/// ticks without panicking.
+#[test]
+fn every_view_builds_and_quits() {
+    for view in View::ALL {
+        smoke(Some(Msg::Navigate(view)));
+    }
+}
+
+/// A playing mock track populates the Music view's model and the shell's
+/// now-playing path.
+#[test]
+fn music_view_builds_with_a_playing_track() {
+    let constructed = Rc::new(Cell::new(false));
+    let constructed_for_make = Rc::clone(&constructed);
+    let result = run_ui(move |ui| {
+        let library = MockLibrary::new();
+        let track = library.tracks().first().cloned().unwrap_or_default();
+        let player = MockPlayer::playing_demo(&track);
+        let app = Win32App::new(
+            ui,
+            Box::new(library),
+            Box::new(player),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+            true,
+        );
+        constructed_for_make.set(true);
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    assert!(constructed.get(), "the app was never constructed");
+}
+
+/// The Music view's row activation and sort hooks run the whole dispatch path
+/// without panicking.
+#[test]
+fn music_view_commands_dispatch() {
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+            true,
+        );
+        ui.emit(Msg::PlayRow(0));
+        ui.emit(Msg::SortColumn(2));
+        ui.emit(Msg::MusicShuffleAll);
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
+}
+
+/// The Folders view's tree selection, subfolder toggle and table actions run
+/// the whole dispatch path (navigator -> model -> table) without panicking.
+#[test]
+fn folders_view_commands_dispatch() {
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+            true,
+        );
+        ui.emit(Msg::Navigate(View::Folders));
+        ui.emit(Msg::FoldersSubfolders(false));
+        ui.emit(Msg::FoldersSelect(r"C:\music".to_string()));
+        ui.emit(Msg::PlayRow(0));
+        ui.emit(Msg::SortColumn(2));
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
+}
+
+/// The Albums view's grid and toolbar intents run the whole dispatch path
+/// (navigate -> model -> grid/track list) without panicking.
+#[test]
+fn albums_view_commands_dispatch() {
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+            true,
+        );
+        ui.emit(Msg::Navigate(View::Albums));
+        ui.emit(Msg::Album(AlbumMsg::SetSort(AlbumSort::Album)));
+        ui.emit(Msg::Album(AlbumMsg::SetTileSize(180.0)));
+        ui.emit(Msg::Album(AlbumMsg::Select(0)));
+        ui.emit(Msg::Album(AlbumMsg::Activate(0)));
+        ui.emit(Msg::Album(AlbumMsg::Shuffle));
+        ui.emit(Msg::Album(AlbumMsg::CloseAlbum));
+        ui.emit(Msg::PlayRow(0));
+        ui.emit(Msg::SortColumn(2));
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
+}

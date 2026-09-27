@@ -14,7 +14,7 @@ static SERIALIZE: Mutex<()> = Mutex::new(());
 /// Acquires the serialization lock and initializes BASS on device `0`, the
 /// "no sound" device, at 44100 Hz.
 ///
-/// Returns `None` (after printing why) when `bass.dll` is absent — the
+/// Returns `None` (after printing why) when the BASS library is absent — the
 /// expected case on machines without a BASS install — so callers can skip
 /// themselves instead of failing. Other initialization errors panic, since
 /// they signal a real problem rather than a missing DLL.
@@ -27,7 +27,7 @@ pub fn init_silent() -> Option<(MutexGuard<'static, ()>, Bass)> {
     match Bass::init(0, 44100) {
         Ok(bass) => Some((guard, bass)),
         Err(BassError::DllNotFound(detail)) => {
-            eprintln!("skipping: bass.dll not available ({detail})");
+            eprintln!("skipping: the BASS library not available ({detail})");
             None
         }
         Err(other) => panic!("unexpected error initializing BASS: {other}"),

@@ -219,6 +219,9 @@ mod tests {
         assert!(view.matches(&track(r"D:\other\b.flac")));
     }
 
+    // The matching below walks native path components, so these Windows-path
+    // assertions only hold on Windows (macOS-port follow-up).
+    #[cfg(windows)]
     #[test]
     fn including_subfolders_matches_descendants() {
         let view = FoldersView {
@@ -231,6 +234,7 @@ mod tests {
         assert!(!view.matches(&track(r"C:\other\c.flac")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn excluding_subfolders_matches_only_direct_tracks() {
         let view = FoldersView {
@@ -242,6 +246,7 @@ mod tests {
         assert!(!view.matches(&track(r"C:\music\Album\b.flac")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn prefix_is_matched_by_path_component_not_substring() {
         let view = FoldersView {

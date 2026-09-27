@@ -39,6 +39,8 @@ fn emits_scan_request_after_file_change() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+// A UNC root is only remote on Windows; elsewhere it is treated as local.
+#[cfg(windows)]
 #[test]
 fn polling_remote_root_emits_scan_request() {
     // Use a UNC path as a remote root; no real share is needed because

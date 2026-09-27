@@ -1,4 +1,4 @@
-//! Integration tests that exercise a real `bass.dll`.
+//! Integration tests that exercise a real BASS library.
 //!
 //! BASS DLLs are never committed to this repo (see `AGENTS.md`), so every
 //! test here must degrade gracefully — skipping with a message rather than

@@ -1,5 +1,9 @@
 # Visualizer strip
 
+> **Note:** the `crates/app` paths below predate the frontend split. The native
+> strip now lives in `crates/frontend-win32`; the portable frontend
+> (`crates/frontend-portable`) paints its strip on the Canvas (#371).
+
 The top-bar visualizer strip renders `VisualizerMode` (spectrum, oscilloscope,
 and — later — Milkdrop/projectM). The spectrum and oscilloscope are implemented
 in `crates/app/src/views/visualizer.rs` as a `win32ui` `CustomWidget` hosted by
