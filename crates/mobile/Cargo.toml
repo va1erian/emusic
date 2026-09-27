@@ -1,0 +1,29 @@
+[package]
+name = "emusic-mobile"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Mobile (Android) bindings over emusic-client, exposed through uniffi"
+
+[lib]
+name = "emusic_mobile"
+path = "src/lib.rs"
+crate-type = ["cdylib", "lib"]
+
+# Generates the Kotlin/Swift bindings. Only built with `--features cli`; the
+# shipped library must not pull the bindgen CLI into the Android package.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["uniffi/cli"]
+
+[dependencies]
+emusic-client = { path = "../client" }
+thiserror = "2"
+uniffi = { version = "0.32" }
+
+[dev-dependencies]
+tempfile = "3"
