@@ -13,6 +13,8 @@ pub struct Track {
     pub id: String,
     /// File name (final path component), for display fallback.
     pub filename: Option<String>,
+    /// The parent directory's relative path, `/`-separated (empty at the root).
+    pub directory: String,
     /// Lowercase format label (`flac`, `mp3`, `sid`, `xm`, ...).
     pub format: String,
     /// Either `stream` or `module`.
@@ -56,6 +58,7 @@ impl From<TrackView> for Track {
         Self {
             id: track.id,
             filename: track.filename,
+            directory: track.directory,
             format: track.format,
             kind: track.kind,
             specialized: track.specialized,
@@ -155,6 +158,7 @@ mod tests {
         let mut track = Track {
             id: "abc".into(),
             filename: Some("song.flac".into()),
+            directory: String::new(),
             format: "flac".into(),
             kind: "stream".into(),
             specialized: false,
