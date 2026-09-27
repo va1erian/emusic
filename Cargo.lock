@@ -1006,6 +1006,7 @@ name = "emusic-mobile"
 version = "0.1.0"
 dependencies = [
  "emusic-client",
+ "emusic-render",
  "serde",
  "serde_json",
  "tempfile",
@@ -1044,8 +1045,11 @@ dependencies = [
  "emusic-sid",
  "flacenc",
  "md-5",
+ "tempfile",
  "thiserror 2.0.20",
  "tracing",
+ "xmrs",
+ "xmrsplayer",
 ]
 
 [[package]]
@@ -2165,6 +2169,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
+name = "oplon"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0df1044d4a29bc6db30e653b263b80599bcb4f15c0c0e2c61f9ac32f71d58de3"
+
+[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2827,6 +2837,12 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "sidera"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b043512b891bdb03ad21b0205723dabb88ada23e3043c21f6a7f88b26defba35"
 
 [[package]]
 name = "signal-hook-registry"
@@ -4273,6 +4289,27 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xmrs"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28f2177dbaa7894cdba1ca410dd20944dee4db1058c73698b895d532c2e552ff"
+dependencies = [
+ "ciborium",
+ "oplon",
+ "serde",
+ "sidera",
+]
+
+[[package]]
+name = "xmrsplayer"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "169a698f959736b2a837375ff299b8b4ecf177d9d38780e1788e7c857bf71087"
+dependencies = [
+ "xmrs",
+]
 
 [[package]]
 name = "yoke"

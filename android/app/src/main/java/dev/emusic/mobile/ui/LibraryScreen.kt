@@ -1,6 +1,7 @@
 package dev.emusic.mobile.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,9 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.emusic_mobile.MobileCore
 import uniffi.emusic_mobile.Track
+import java.io.File
 
 /**
  * Connects to `url`, fetches the server's library, shows a summary plus the
@@ -53,6 +59,7 @@ import uniffi.emusic_mobile.Track
 @Composable
 fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val core = remember { runCatching { MobileCore(url, dataDir) }.getOrNull() }
 
     var loading by remember { mutableStateOf(true) }
@@ -64,7 +71,9 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
+    var preparing by remember { mutableStateOf(false) }
     var playbackMessage by remember { mutableStateOf<String?>(null) }
+    var formatFilter by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(nonce) {
         loading = true
@@ -117,20 +126,47 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     }
 
     fun play(track: Track) {
-        val active = player
         val client = core
-        if (active == null || client == null) {
+        val active = player
+        if (client == null || active == null) {
             playbackMessage = "not connected yet"
             return
         }
-        if (track.specialized) {
-            playbackMessage =
-                "Specialized formats (SID / modules / MIDI) play via server render (#430)"
+        playbackMessage = null
+
+        if (!track.specialized) {
+            nowPlaying = track
+            active.setMediaItem(streamMediaItem(client.streamUrl(track.id)))
+            active.prepare()
+            active.play()
             return
         }
-        playbackMessage = null
+
+        // Tracker modules (MOD/XM/S3M/IT) render locally to a cached FLAC.
+        if (client.canRender(track.format)) {
+            nowPlaying = track
+            preparing = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { client.renderToFile(track.id, track.format) }
+                }
+                preparing = false
+                result
+                    .onSuccess { path ->
+                        player?.run {
+                            setMediaItem(streamMediaItem(File(path).toURI().toString()))
+                            prepare()
+                            play()
+                        }
+                    }
+                    .onFailure { playbackMessage = "render failed: ${it.message}" }
+            }
+            return
+        }
+
+        // SID and anything else specialized: ask the server to render.
         nowPlaying = track
-        active.setMediaItem(streamMediaItem(client.streamUrl(track.id)))
+        active.setMediaItem(streamMediaItem(client.renderUrl(track.id, 0u)))
         active.prepare()
         active.play()
     }
@@ -173,10 +209,18 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 }
 
                 else -> {
+                    val visibleTracks = formatFilter
+                        ?.let { filter -> tracks.filter { it.format == filter } }
+                        ?: tracks
                     LibrarySummary(url = url, version = version, tracks = tracks)
                     HorizontalDivider()
-                    TrackList(
+                    FormatFilter(
                         tracks = tracks,
+                        selected = formatFilter,
+                        onSelect = { formatFilter = it },
+                    )
+                    TrackList(
+                        tracks = visibleTracks,
                         onPlay = ::play,
                         modifier = Modifier.weight(1f),
                     )
@@ -192,6 +236,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                         NowPlayingBar(
                             track = track,
                             isPlaying = isPlaying,
+                            preparing = preparing,
                             onToggle = {
                                 player?.let { active ->
                                     if (isPlaying) active.pause() else active.play()
@@ -206,7 +251,12 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun NowPlayingBar(track: Track, isPlaying: Boolean, onToggle: () -> Unit) {
+private fun NowPlayingBar(
+    track: Track,
+    isPlaying: Boolean,
+    preparing: Boolean,
+    onToggle: () -> Unit,
+) {
     HorizontalDivider()
     Row(
         modifier = Modifier
@@ -224,15 +274,23 @@ private fun NowPlayingBar(track: Track, isPlaying: Boolean, onToggle: () -> Unit
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
-                text = listOfNotNull(track.artist, track.album)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" · "),
+                text = if (preparing) {
+                    "Preparing…"
+                } else {
+                    listOfNotNull(track.artist, track.album)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · ")
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        TextButton(onClick = onToggle, modifier = Modifier.testTag("play_pause")) {
+        TextButton(
+            onClick = onToggle,
+            enabled = !preparing,
+            modifier = Modifier.testTag("play_pause"),
+        ) {
             Text(if (isPlaying) "Pause" else "Play")
         }
     }
@@ -282,6 +340,40 @@ private fun LibrarySummary(url: String, version: Long, tracks: List<Track>) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun FormatFilter(
+    tracks: List<Track>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+) {
+    val formats = tracks
+        .groupingBy { it.format }
+        .eachCount()
+        .entries
+        .sortedByDescending { it.value }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp)
+            .testTag("format_filter"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text("All ${tracks.size}") },
+        )
+        formats.forEach { (format, count) ->
+            FilterChip(
+                selected = selected == format,
+                onClick = { onSelect(format) },
+                label = { Text("$format $count") },
+            )
         }
     }
 }

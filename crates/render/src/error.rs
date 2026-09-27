@@ -22,11 +22,17 @@ pub enum RenderError {
     #[error("no renderer supports {0}")]
     Unsupported(String),
     /// The SID engine rejected or could not render the tune.
+    #[cfg(feature = "sid")]
     #[error("SID rendering failed: {0}")]
     Sid(#[from] emusic_sid::SidError),
     /// The HVSC Songlengths database could not be read.
+    #[cfg(feature = "sid")]
     #[error("songlengths database error: {0}")]
     SongLengths(#[from] emusic_sid::SongLengthsError),
+    /// A tracker module could not be parsed or rendered.
+    #[cfg(feature = "modules")]
+    #[error("module rendering failed: {0}")]
+    Module(String),
     /// A [`crate::PcmBuffer`] was constructed with inconsistent shape.
     #[error("invalid PCM buffer: {0}")]
     InvalidPcm(String),
