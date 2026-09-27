@@ -14,3 +14,8 @@ tracing = "0.1"
 # The Windows shell integrations live here and are compiled away elsewhere.
 souvlaki = "0.8"
 winshell = { path = "../winshell" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS uses the same `souvlaki` media-controls API for the Now Playing
+# overlay and hardware media keys.
+souvlaki = "0.8"

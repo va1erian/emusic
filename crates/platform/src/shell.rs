@@ -5,11 +5,11 @@
 //! An OS shell service (the media overlay, the taskbar progress bar, the
 //! thumbnail toolbar) has no shared model across desktops, so xui does not
 //! host it. The app instead defines this small trait, implements it per
-//! target, and picks one at startup. Nothing here names a Win32 type, so the
-//! no-op [`NullShell`] compiles on every target and the Windows implementation
-//! is the only code that disappears.
+//! target, and picks one at startup. Nothing here names a Win32 or Cocoa
+//! type, so the no-op [`NullShell`] compiles on every target and each
+//! platform implementation disappears on the others.
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -127,7 +127,11 @@ where
     {
         crate::win::WinShell::build(handle, proxy)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::mac::MacShell::build(handle, proxy)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (handle, proxy);
         Box::new(NullShell)
@@ -135,14 +139,14 @@ where
 }
 
 /// A shared proxy wrapper so implementations can post actions without naming
-/// the message type in the trait. Windows-only; the other targets have no
-/// shell service that posts actions.
-#[cfg(windows)]
+/// the message type in the trait. Used by the Windows and macOS shells; a
+/// target with no shell service never builds one.
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) struct ActionSink<M> {
     proxy: Proxy<M>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl<M> ActionSink<M>
 where
     M: From<ShellAction> + Send + 'static,
