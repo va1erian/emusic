@@ -290,7 +290,7 @@ fn is_specialized_format(format: &str) -> bool {
 /// The final component of a stored relative path (forward slashes).
 fn file_name(relative_path: &str) -> String {
     relative_path
-        .rsplit('/')
+        .rsplit(['/', '\\'])
         .next()
         .unwrap_or(relative_path)
         .to_string()
