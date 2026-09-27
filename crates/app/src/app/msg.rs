@@ -6,6 +6,7 @@ use emusic_ui::state::{Accent, Command, ShortcutAction, View};
 use emusic_ui::views::column_browser::Pane;
 use xui::xui_core::geometry::Point;
 
+use crate::views::album_grid::AlbumMsg;
 use crate::views::settings::SettingsMsg;
 use crate::views::track_table::ContextAction;
 
@@ -46,6 +47,8 @@ pub enum Msg {
     SetAccent(Accent),
     /// An intent from the Settings view's pages (#400).
     Settings(SettingsMsg),
+    /// An intent from the Albums view's toolbar or grid (#374).
+    Album(AlbumMsg),
     /// The tag editor left a save request in its bridge (#376).
     TagEditorApply,
     /// Start a shuffled playback over the Music view's currently visible

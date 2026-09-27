@@ -28,6 +28,7 @@ use xui::xui_core::widget::{Dialog, Menu};
 
 use crate::menu;
 use crate::theme::app_theme;
+use crate::views::album_grid::AlbumGridView;
 use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
 use crate::views::folders::FoldersView;
@@ -63,6 +64,7 @@ pub struct Win32App {
     status_bar: StatusBarView,
     music: MusicView,
     folders: FoldersView,
+    albums: AlbumGridView,
     artists: ArtistsView,
     genres: GenresView,
     starred: StarredView,
@@ -133,6 +135,7 @@ impl Win32App {
         let status_bar = StatusBarView::new(ui);
         let music = MusicView::new(ui);
         let folders = FoldersView::new(ui);
+        let albums = AlbumGridView::new(ui, waker.handle()).expect("create albums view");
         let artists = ArtistsView::new(ui);
         let genres = GenresView::new(ui);
         let starred = StarredView::new(ui);
@@ -175,6 +178,7 @@ impl Win32App {
             status_bar,
             music,
             folders,
+            albums,
             artists,
             genres,
             starred,

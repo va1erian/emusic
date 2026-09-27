@@ -49,6 +49,15 @@ impl Win32App {
                     playing_id,
                 );
             }
+            View::Albums => {
+                if self.albums.sync(
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                ) {
+                    self.relayout();
+                }
+            }
             View::Artists => self
                 .artists
                 .sync(&mut self.shell.state, self.shell.library.as_ref()),
@@ -112,6 +121,7 @@ impl Win32App {
         let settings = view == View::Settings;
         self.music.set_visible(music);
         self.folders.set_visible(folders);
+        self.albums.set_visible(view == View::Albums);
         self.artists.set_visible(view == View::Artists);
         self.genres.set_visible(view == View::Genres);
         self.starred.set_visible(view == View::Starred);
@@ -124,6 +134,7 @@ impl Win32App {
             view,
             View::Music
                 | View::Folders
+                | View::Albums
                 | View::Artists
                 | View::Genres
                 | View::Starred
@@ -188,7 +199,7 @@ impl Win32App {
 }
 
 /// The library id of the player's current track, matched by path.
-fn playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
+pub(super) fn playing_id(library: &dyn LibraryDataSource, player: &dyn PlayerApi) -> Option<u64> {
     let now_playing = player.now_playing()?;
     library
         .track_by_path(&now_playing.path)

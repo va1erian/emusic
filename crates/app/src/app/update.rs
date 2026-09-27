@@ -7,6 +7,7 @@ use xui::xui_core::app::{App, Ui};
 
 use super::Win32App;
 use super::msg::{Msg, shell_command};
+use super::sync::playing_id;
 use crate::dialogs::{database_info, database_info::DatabaseInfoChoice, properties};
 use crate::views::column_browser;
 use crate::views::track_table::{self, ContextAction};
@@ -39,6 +40,7 @@ impl Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.activate(row),
                     View::Folders => self.folders.activate(row),
+                    View::Albums => self.albums.activate(row),
                     View::Starred => self.starred.activate(row),
                     View::MostPlayed => self.most_played.activate(row),
                     View::History => self.history.activate(row),
@@ -53,6 +55,7 @@ impl Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.toggle_star(row),
                     View::Folders => self.folders.toggle_star(row),
+                    View::Albums => self.albums.toggle_star(row),
                     View::Starred => self.starred.toggle_star(row),
                     View::MostPlayed => self.most_played.toggle_star(row),
                     _ => None,
@@ -80,6 +83,11 @@ impl Win32App {
                         self.folders
                             .resort(&self.shell.state.folders, self.shell.library.as_ref());
                     }
+                    View::Albums => {
+                        self.shell.state.album_grid.table.sort.toggle(id);
+                        self.albums
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
                     View::Starred => {
                         self.shell.state.starred.table.sort.toggle(id);
                         self.starred
@@ -101,6 +109,7 @@ impl Win32App {
                 let origin = match self.shell.state.view {
                     View::Music => self.music.context_origin(),
                     View::Folders => self.folders.context_origin(),
+                    View::Albums => self.albums.context_origin(),
                     View::Starred => self.starred.context_origin(),
                     View::MostPlayed => self.most_played.context_origin(),
                     _ => xui::xui_core::geometry::Point::new(0, 0),
@@ -115,6 +124,7 @@ impl Win32App {
                 let track = match self.shell.state.view {
                     View::Music => self.music.track(row),
                     View::Folders => self.folders.track(row),
+                    View::Albums => self.albums.track(row),
                     View::Starred => self.starred.track(row),
                     View::MostPlayed => self.most_played.track(row),
                     _ => None,
@@ -166,6 +176,22 @@ impl Win32App {
                     self.shell.dispatch(Command::RequestTagEdits(vec![request]));
                     self.tick_inner();
                 }
+            }
+            Msg::Album(msg) => {
+                let playing_id =
+                    playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+                let mut out = Commands::new();
+                self.albums.update(
+                    msg,
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                    &mut out,
+                );
+                for command in out.into_vec() {
+                    self.shell.dispatch(command);
+                }
+                self.tick_inner();
             }
             Msg::FoldersSelect(path) => {
                 self.apply_folders(FoldersMsg::SelectNode(path));

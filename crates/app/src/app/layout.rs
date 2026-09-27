@@ -85,6 +85,7 @@ impl Win32App {
                 ));
             }
             View::Folders => self.folders.set_bounds(central),
+            View::Albums => self.albums.set_bounds(central),
             View::Artists => self.artists.set_bounds(central),
             View::Genres => self.genres.set_bounds(central),
             View::Starred => self.starred.set_bounds(central),
