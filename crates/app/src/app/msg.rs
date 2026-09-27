@@ -6,6 +6,7 @@ use emusic_ui::state::{Accent, Command, ShortcutAction, View};
 use emusic_ui::views::column_browser::Pane;
 use xui::xui_core::geometry::Point;
 
+use crate::views::settings::SettingsMsg;
 use crate::views::track_table::ContextAction;
 
 /// Everything the window can ask the app to do.
@@ -43,6 +44,8 @@ pub enum Msg {
     About,
     /// Pick a new accent colour from the Settings page (#40).
     SetAccent(Accent),
+    /// An intent from the Settings view's pages (#400).
+    Settings(SettingsMsg),
     /// The tag editor left a save request in its bridge (#376).
     TagEditorApply,
     /// Start a shuffled playback over the Music view's currently visible

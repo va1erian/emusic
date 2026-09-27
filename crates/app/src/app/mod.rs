@@ -124,6 +124,9 @@ impl Win32App {
     ) -> Self {
         let look = (config.theme, config.accent);
         ui.set_theme(app_theme(look.0, look.1));
+        // The Library settings page adds folders through the off-thread picker;
+        // installing its result channel once is a no-op after the first call.
+        emusic_ui::folder_picker::init();
 
         let navigator = NavigatorView::new(ui);
         let top_bar = TopBarView::new(ui);

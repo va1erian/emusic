@@ -1,152 +1,257 @@
-//! The Settings view (#376): the appearance and About pages ported to the
-//! portable widget layer. The full tabbed Settings surface (library folders,
-//! playback, associations, visualization) is a follow-up; this view exists so
-//! the accent [`ColorPicker`](accent_swatches) and the About
-//! [`FlowText`](about) have a real home and the `View::Settings` route works.
+//! The Settings view (#115, #400): a portable [`Tabs`] strip over the six
+//! pages the Win32 build had — Library folders, Appearance, Visualization,
+//! File associations, Playback and About.
 //!
-//! The accent picker maps straight onto [`Command::SetAccent`]; the theme
-//! button maps onto [`Command::ToggleTheme`].
+//! Each page owns its portable widgets and only reads and writes the shared
+//! `emusic-ui` state, emitting [`Command`]s for the shell to apply; this module
+//! wires them into the tab strip and routes the page [`SettingsMsg`]s. Every
+//! page scrolls with its own [`ScrollView`](form::FormPage), so a form taller
+//! than the window scrolls instead of being cut off.
+//!
+//! The tab strip itself owns page visibility: only the selected page's child is
+//! shown. `SettingsView` mirrors the shared [`SettingsTab`] onto it and re-lays
+//! the selected page's form after the strip has positioned it.
 
 pub mod about;
 pub mod accent_swatches;
+mod appearance;
+mod associations;
+mod form;
+mod library;
+mod playback;
+mod visualization;
 
-use emusic_ui::state::{Accent, Command, Theme};
+use std::cell::Cell;
+use std::path::PathBuf;
+
+use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::state::{AppState, Density, FontSize, SettingsTab, Theme, VisualizerMode};
+use emusic_ui::views::Commands;
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
-use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Button, ColorPicker, FlowText, Label, Tooltip};
+use xui::xui_core::widget::Tabs;
 
 use crate::app::Msg;
-use about::FLOW_HEIGHT;
-use accent_swatches::{STRIP_HEIGHT, color};
 
-/// Outer margin of the page, in design units.
-const MARGIN: f32 = 24.0;
-/// Gap between blocks, in design units.
-const GAP: f32 = 12.0;
-/// Height of a section heading, in design units.
-const HEADING_HEIGHT: f32 = 24.0;
-/// Height of the theme button row, in design units.
-const BUTTON_HEIGHT: f32 = 28.0;
-/// Width of the theme button, in design units.
-const BUTTON_WIDTH: f32 = 240.0;
+pub use playback::{TrackerEdit, TrackerPreset};
+pub use visualization::VisualizationEdit;
 
-/// The Settings view: appearance controls and the About text.
+/// Everything the Settings controls can raise, mapped onto the shared state and
+/// [`Command`](emusic_ui::state::Command)s.
+pub enum SettingsMsg {
+    /// The tab strip selected another page.
+    SelectTab(SettingsTab),
+    /// The Library page's folder list selection changed (drives Remove).
+    LibrarySelect,
+    /// Open the folder picker to add a library folder.
+    AddFolder,
+    /// Remove the folder selected in the list.
+    RemoveFolder,
+    /// Rescan every configured folder.
+    Rescan,
+    /// Stop the running scan.
+    CancelScan,
+    /// The Appearance page picked a colour scheme.
+    SetTheme(Theme),
+    /// The Appearance page toggled the window accent tint (#355).
+    SetAccentTint(bool),
+    /// The Appearance page changed the accent tint strength (#355).
+    SetAccentTintStrength(u8),
+    /// The Appearance page toggled the status-bar visualizer.
+    ToggleVisualizer(bool),
+    /// The Appearance page picked a visualizer mode.
+    SetVisualizerMode(VisualizerMode),
+    /// The Appearance page picked a UI font size (#309).
+    SetFontSize(FontSize),
+    /// The Appearance page picked a list density (#309).
+    SetDensity(Density),
+    /// The Appearance page toggled zebra striping (#309).
+    ToggleZebra(bool),
+    /// The Visualization page changed a settings field (#306).
+    Viz(VisualizationEdit),
+    /// The Visualization page toggled a preset pack (#306).
+    VizPack(String, bool),
+    /// Launch the preset-setup helper (#306).
+    VizGetPresets,
+    /// Open the folder picker for the user preset folder (#306).
+    VizBrowse,
+    /// The user preset folder picker returned (#306).
+    VizPicked(Option<PathBuf>),
+    /// Commit the user preset path typed into the field (#306).
+    VizCommitUserDir,
+    /// Clear the user preset folder (#306).
+    VizClearUserDir,
+    /// The background preset-pack count finished (#306).
+    VizPackCounts(Vec<(String, usize)>),
+    /// The Associations page toggled one extension's checkbox.
+    AssocToggle(usize, bool),
+    /// The Associations page selected or cleared every checkbox.
+    AssocSelect(bool),
+    /// Register the selected extensions and open Windows Default apps.
+    AssocRegister,
+    /// Remove every registered extension.
+    AssocUnregister,
+    /// Open Windows' own Default apps settings page.
+    AssocOpenSettings,
+    /// The Playback page toggled session resume.
+    ResumePlayback(bool),
+    /// The Playback page toggled autoplay-on-restore.
+    AutoplayOnRestore(bool),
+    /// The Playback page changed one tracker setting.
+    Tracker(TrackerEdit),
+    /// The Playback page applied a tracker preset.
+    TrackerPreset(TrackerPreset),
+    /// Open the soundfont file picker.
+    MidiBrowse,
+    /// The soundfont picker returned.
+    MidiPicked(Option<PathBuf>),
+    /// Commit the soundfont path typed into the field.
+    MidiCommit,
+    /// Clear the MIDI soundfont.
+    MidiClear,
+    /// Open the file picker for the Songlengths database.
+    SidBrowseFile,
+    /// Open the folder picker for an HVSC root.
+    SidBrowseFolder,
+    /// The Songlengths picker returned.
+    SidPicked(Option<PathBuf>),
+    /// Commit the Songlengths path typed into the field.
+    SidCommit,
+    /// Clear the Songlengths database path.
+    SidClear,
+    /// The SID fallback play length slider moved.
+    SidFallback(u32),
+}
+
+/// The Settings central area: a tab strip over the six pages.
 pub struct SettingsView {
     ui: Ui<Msg>,
-    appearance_heading: Label<Msg>,
-    theme: Button<Msg>,
-    picker: ColorPicker<Msg>,
-    about_heading: Label<Msg>,
-    flow: FlowText<Msg>,
-    // Kept alive so the hover tooltips keep working.
-    _theme_tip: Tooltip<Msg>,
-    _picker_tip: Tooltip<Msg>,
-    /// The bounds the About flow was last built at. `FlowText` wraps to the
-    /// size it was *created* with (a moved child gets no resize event), so it
-    /// is rebuilt whenever its width would change.
-    flow_bounds: Rect,
-    /// Whether the whole page is shown, so a rebuilt flow inherits it.
-    visible: bool,
-    bounds: Rect,
+    tabs: Tabs<Msg>,
+    library: library::LibraryPage,
+    appearance: appearance::AppearancePage,
+    visualization: visualization::VisualizationPage,
+    associations: associations::AssociationsPage,
+    playback: playback::PlaybackPage,
+    about: xui::xui_core::widget::FlowText<Msg>,
+    /// Whether the whole view is shown; the selected page is only visible when
+    /// this is set too.
+    visible: Cell<bool>,
 }
 
 impl SettingsView {
-    /// Builds the view; call [`SettingsView::set_bounds`] to place it.
+    /// Builds every page and the tab strip over them.
     pub fn new(ui: &Ui<Msg>) -> SettingsView {
-        let appearance_heading =
-            Label::new(ui, Rect::default(), "Appearance").expect("create appearance heading");
-        let theme = Button::new(ui, Rect::default(), "Toggle dark / light theme")
-            .expect("create theme button")
-            .on_click(|| Some(Msg::Dispatch(Command::ToggleTheme)));
-        let picker = accent_swatches::create(ui, Rect::default());
-        let about_heading = Label::new(ui, Rect::default(), "About").expect("create about heading");
-        let flow = about::build(ui, Rect::default());
-
-        let theme_tip = Tooltip::attach(ui, theme.id(), "Switch between dark and light theme")
-            .expect("attach theme tooltip");
-        let picker_tip = Tooltip::attach(ui, picker.id(), "Choose the accent colour")
-            .expect("attach picker tooltip");
+        let tabs = Tabs::new(ui, Rect::default()).expect("create settings tab strip");
+        let inner = tabs.ui().clone();
+        let library = library::LibraryPage::new(&inner);
+        let appearance = appearance::AppearancePage::new(&inner);
+        let visualization = visualization::VisualizationPage::new(&inner);
+        let associations = associations::AssociationsPage::new(&inner);
+        let playback = playback::PlaybackPage::new(&inner);
+        let about = about::build(&inner, Rect::default());
+        let tabs = tabs
+            .page(SettingsTab::Library.label(), &[library.id()])
+            .page(SettingsTab::Appearance.label(), &[appearance.id()])
+            .page(SettingsTab::Visualization.label(), &[visualization.id()])
+            .page(SettingsTab::Associations.label(), &[associations.id()])
+            .page(SettingsTab::Playback.label(), &[playback.id()])
+            .page(SettingsTab::About.label(), &[about.id()])
+            .on_change(|index| {
+                SettingsTab::ALL
+                    .get(index)
+                    .copied()
+                    .map(|tab| Msg::Settings(SettingsMsg::SelectTab(tab)))
+            });
 
         SettingsView {
             ui: ui.clone(),
-            appearance_heading,
-            theme,
-            picker,
-            about_heading,
-            flow,
-            _theme_tip: theme_tip,
-            _picker_tip: picker_tip,
-            flow_bounds: Rect::default(),
-            visible: true,
-            bounds: Rect::default(),
+            tabs,
+            library,
+            appearance,
+            visualization,
+            associations,
+            playback,
+            about,
+            visible: Cell::new(false),
         }
     }
 
-    /// Positions the page's controls inside `rect`.
-    pub fn set_bounds(&mut self, rect: Rect) {
-        self.bounds = rect;
-        self.relayout();
+    /// Moves/resizes the view and re-lays the selected page's form.
+    pub fn set_bounds(&self, rect: Rect) {
+        self.tabs.set_bounds(rect);
+        self.relayout_pages();
     }
 
-    fn relayout(&mut self) {
-        let rect = self.bounds;
-        let dpi = self.ui.dpi();
-        let margin = dip(MARGIN).to_px(dpi).value();
-        let gap = dip(GAP).to_px(dpi).value();
-        let heading = dip(HEADING_HEIGHT).to_px(dpi).value();
-        let button_h = dip(BUTTON_HEIGHT).to_px(dpi).value();
-        let button_w = dip(BUTTON_WIDTH).to_px(dpi).value();
-        let strip_h = dip(STRIP_HEIGHT).to_px(dpi).value();
-        let flow_h = dip(FLOW_HEIGHT).to_px(dpi).value();
-        let left = rect.left + margin;
-        let right = rect.right - margin;
+    /// Shows or hides the whole view (every page).
+    pub fn set_visible(&self, visible: bool) {
+        self.visible.set(visible);
+        self.tabs.set_visible(visible);
+        self.apply_page_visibility();
+    }
 
-        let mut y = rect.top + margin;
-        let mut moves = Vec::new();
-        moves.push((
-            self.appearance_heading.id(),
-            Rect::new(left, y, right, y + heading),
-        ));
-        y += heading + gap;
-        moves.push((
-            self.theme.id(),
-            Rect::new(left, y, (left + button_w).min(right), y + button_h),
-        ));
-        y += button_h + gap;
-        moves.push((self.picker.id(), Rect::new(left, y, right, y + strip_h)));
-        y += strip_h + 2 * gap;
-        moves.push((
-            self.about_heading.id(),
-            Rect::new(left, y, right, y + heading),
-        ));
-        y += heading + gap;
-        let flow_rect = Rect::new(left, y, right, y + flow_h);
-        if flow_rect.width() != self.flow_bounds.width() {
-            self.flow_bounds = flow_rect;
-            self.flow = about::build(&self.ui, flow_rect);
-            self.ui.set_visible(self.flow.id(), self.visible);
+    /// Pushes the shell state into the pages, selecting the shared tab and
+    /// re-laying the page when it changed.
+    pub fn sync(&mut self, state: &AppState, library: &dyn LibraryDataSource) {
+        let index = SettingsTab::ALL
+            .iter()
+            .position(|tab| *tab == state.settings_tab)
+            .unwrap_or(0);
+        if index != self.tabs.selected() {
+            self.tabs.select(index);
+            self.relayout_pages();
+            self.apply_page_visibility();
         }
-        moves.push((self.flow.id(), flow_rect));
-        self.ui.apply_moves(&moves);
+        self.library.sync(state, library);
+        self.appearance.sync(state);
+        self.visualization.sync(state);
+        self.associations.sync();
+        self.playback.sync(state);
     }
 
-    /// Shows or hides the whole page.
-    pub fn set_visible(&mut self, visible: bool) {
-        self.visible = visible;
-        for id in [
-            self.appearance_heading.id(),
-            self.theme.id(),
-            self.picker.id(),
-            self.about_heading.id(),
-            self.flow.id(),
-        ] {
-            self.ui.set_visible(id, visible);
+    /// Applies one control intent, queueing the [`Command`]s it raises.
+    pub fn update(&mut self, msg: SettingsMsg, state: &mut AppState, out: &mut Commands) {
+        if let SettingsMsg::SelectTab(tab) = msg {
+            state.settings_tab = tab;
+            return;
         }
+        if self.library.update(&msg, out) {
+            return;
+        }
+        if self.appearance.update(&msg, state, out) {
+            return;
+        }
+        if self.visualization.update(&msg, state, out) {
+            return;
+        }
+        if self.associations.update(&msg) {
+            return;
+        }
+        self.playback.update(&msg, state, out);
     }
 
-    /// Mirrors the shell's accent and theme into the controls.
-    pub fn sync(&self, accent: Accent, _theme: Theme) {
-        self.picker.select(color(accent.rgb()));
+    /// Re-lays every page's form from the bounds the tab strip gave it.
+    fn relayout_pages(&self) {
+        self.library.relayout();
+        self.appearance.relayout();
+        self.visualization.relayout();
+        self.associations.relayout();
+        self.playback.relayout();
+    }
+
+    /// Shows only the selected page, and only while the view is shown.
+    ///
+    /// The tab strip already applies this on its own re-layouts, but the
+    /// portable backends do not hide a hidden parent's children, so re-apply it
+    /// here (the order matches [`SettingsTab::ALL`]).
+    fn apply_page_visibility(&self) {
+        let shown = self.visible.get();
+        let selected = self.tabs.selected();
+        let vis = |index: usize| shown && index == selected;
+        self.library.set_visible(vis(0));
+        self.appearance.set_visible(vis(1));
+        self.visualization.set_visible(vis(2));
+        self.associations.set_visible(vis(3));
+        self.playback.set_visible(vis(4));
+        self.ui.set_visible(self.about.id(), vis(5));
     }
 }

@@ -32,7 +32,7 @@ use xui_win32::capture::capture_hwnd;
 
 use emusic_ui::config::Config;
 use emusic_ui::library_api::TrackInfo;
-use emusic_ui::state::{Accent, Theme, View};
+use emusic_ui::state::{Accent, SettingsTab, Theme, View};
 use emusic_ui::tag_editor::{Status, TagEditorState};
 use emusic_ui::waker::WakerSlot;
 
@@ -41,7 +41,7 @@ use emusic::dialogs::{database_info, properties, tag_editor};
 use emusic::window::window_spec;
 
 /// How long the window is left to settle before the capture.
-const SETTLE: Duration = Duration::from_millis(350);
+const SETTLE: Duration = Duration::from_millis(1200);
 /// The tool's own tick interval, so it keeps driving while the shell is idle.
 const TICK_MS: u32 = 40;
 
@@ -51,6 +51,10 @@ struct Cli {
     /// View to show, e.g. `music`. Ignored with `--all`.
     #[arg(long)]
     view: Option<String>,
+
+    /// Settings sub-page to show with `--view settings`, e.g. `visualization`.
+    #[arg(long)]
+    settings_tab: Option<String>,
 
     /// Render every view into `--out`'s directory, one fresh process each.
     #[arg(long)]
@@ -128,7 +132,19 @@ fn main() -> anyhow::Result<()> {
         Some(slug) => parse_view(slug)?,
         None => View::Music,
     };
-    render_one(view, cli.theme, cli.accent, width, height, &cli.out)
+    let settings_tab = match cli.settings_tab.as_deref() {
+        Some(slug) => Some(parse_settings_tab(slug)?),
+        None => None,
+    };
+    render_one(
+        view,
+        settings_tab,
+        cli.theme,
+        cli.accent,
+        width,
+        height,
+        &cli.out,
+    )
 }
 
 /// Renders every view by re-invoking this binary once per view, so each gets a
@@ -155,6 +171,32 @@ fn run_all(cli: &Cli) -> anyhow::Result<()> {
             .with_context(|| format!("spawn {}", exe.display()))?;
         if !status.success() {
             anyhow::bail!("emusic-shot: rendering {} failed ({status})", view.slug());
+        }
+    }
+    // The Settings view has one page per tab; capture each so all six get a
+    // reference screenshot (`settings-<slug>.png`).
+    for tab in SettingsTab::ALL {
+        let out = dir.join(format!("settings-{}.png", tab.slug()));
+        let status = Command::new(&exe)
+            .arg("--view")
+            .arg("settings")
+            .arg("--settings-tab")
+            .arg(tab.slug())
+            .arg("--theme")
+            .arg(cli.theme.slug())
+            .arg("--accent")
+            .arg(cli.accent.to_config_str())
+            .arg("--size")
+            .arg(&cli.size)
+            .arg("--out")
+            .arg(&out)
+            .status()
+            .with_context(|| format!("spawn {}", exe.display()))?;
+        if !status.success() {
+            anyhow::bail!(
+                "emusic-shot: rendering settings-{} failed ({status})",
+                tab.slug()
+            );
         }
     }
     Ok(())
@@ -196,9 +238,21 @@ fn parse_view(slug: &str) -> anyhow::Result<View> {
     })
 }
 
+/// Resolves a `--settings-tab` slug, listing the known ones on error.
+fn parse_settings_tab(slug: &str) -> anyhow::Result<SettingsTab> {
+    SettingsTab::from_slug(slug).ok_or_else(|| {
+        let known: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.slug()).collect();
+        anyhow!(
+            "unknown --settings-tab {slug:?}; expected one of: {}",
+            known.join(", ")
+        )
+    })
+}
+
 /// Runs the app for one view and writes its capture to `out`.
 fn render_one(
     view: View,
+    settings_tab: Option<SettingsTab>,
     theme: ThemeArg,
     accent: Accent,
     width: f32,
@@ -237,6 +291,8 @@ fn render_one(
             app,
             hwnd,
             out: out.clone(),
+            settings_tab,
+            applied_tab: false,
             timer: Some(timer),
             deadline: Instant::now() + SETTLE,
             done: false,
@@ -251,6 +307,10 @@ struct ShotApp {
     app: Win32App,
     hwnd: Option<Hwnd>,
     out: PathBuf,
+    /// The Settings sub-page to select before the capture, if any.
+    settings_tab: Option<SettingsTab>,
+    /// Whether that sub-page has been applied yet.
+    applied_tab: bool,
     timer: Option<TimerId>,
     deadline: Instant,
     done: bool,
@@ -260,6 +320,15 @@ impl App for ShotApp {
     type Msg = Msg;
 
     fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        if !self.applied_tab {
+            self.applied_tab = true;
+            if let Some(tab) = self.settings_tab {
+                self.app.update(
+                    Msg::Settings(emusic::views::settings::SettingsMsg::SelectTab(tab)),
+                    ui,
+                );
+            }
+        }
         self.app.update(msg, ui);
         if self.done || Instant::now() < self.deadline {
             return;

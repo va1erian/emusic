@@ -10,8 +10,6 @@ use crate::app::Msg;
 
 /// Short repository URL shown in the credits.
 pub const REPOSITORY: &str = "https://github.com/va1erian/emusic";
-/// Height reserved for the wrapped flow line, in design units.
-pub const FLOW_HEIGHT: f32 = 150.0;
 
 /// Builds the About flow line: name, version, repository link and credits.
 pub fn build(ui: &Ui<Msg>, bounds: Rect) -> FlowText<Msg> {
