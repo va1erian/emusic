@@ -58,14 +58,14 @@ It builds on the host, stages each binary with its crate's `tests\` folder and t
 
 ## UI changes: use `emusic-shot`
 
-`crates/app` has the screenshot tool (see #118) for looking at the shell without a display:
+`crates/frontend-win32` has the screenshot tool (see #118) for looking at the shell without a display:
 
 ```
-cargo run -p emusic --features shot --bin emusic-shot -- --all --theme dark --out crates/app/docs/screenshots/dark
-cargo run -p emusic --features shot --bin emusic-shot -- --view music --theme light --out crates/app/docs/screenshots/light/music.png
+cargo run -p emusic --features shot --bin emusic-shot -- --all --theme dark --out crates/frontend-win32/docs/screenshots/dark
+cargo run -p emusic --features shot --bin emusic-shot -- --view music --theme light --out crates/frontend-win32/docs/screenshots/light/music.png
 ```
 
-It runs the real `Win32App` against deterministic mock data (`emusic --mock` runs the same data interactively) and captures the window with `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/app/docs/screenshots/` are the reference set: for **any** change touching `crates/app` UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
+It runs the real `Win32App` against deterministic mock data (`emusic --mock` runs the same data interactively) and captures the window with `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/frontend-win32/docs/screenshots/` are the reference set: for **any** change touching the native frontend's UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
 
 ## Behaviour changes: verify with UI Automation
 
