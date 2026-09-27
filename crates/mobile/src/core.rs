@@ -10,7 +10,8 @@ use emusic_client::auth::{
 use emusic_client::{CredentialStore, Credentials, RemoteClient, ServerEndpoint, unix_now};
 
 use crate::error::MobileError;
-use crate::types::{AuthState, Health, SyncResult, Track};
+use crate::registry;
+use crate::types::{AuthState, Health, ServerEntry, SyncResult, Track};
 
 /// Renew the access token when it expires within this margin.
 const REFRESH_MARGIN_SECS: i64 = 24 * 3600;
@@ -24,6 +25,7 @@ pub struct MobileCore {
     endpoint: ServerEndpoint,
     store: CredentialStore,
     client: RemoteClient,
+    data_dir: PathBuf,
 }
 
 impl MobileCore {
@@ -66,6 +68,21 @@ impl MobileCore {
     }
 }
 
+/// The registry entry describing an endpoint.
+fn entry_for(endpoint: &ServerEndpoint) -> ServerEntry {
+    ServerEntry {
+        id: endpoint.id.clone(),
+        name: endpoint.name.clone(),
+        url: endpoint.url.clone(),
+    }
+}
+
+/// Lists the servers this app has been configured with.
+#[uniffi::export]
+pub fn list_servers(data_dir: String) -> Result<Vec<ServerEntry>, MobileError> {
+    registry::load(&PathBuf::from(data_dir))
+}
+
 #[uniffi::export]
 impl MobileCore {
     /// Builds a core for `base_url`, storing credentials under `data_dir`.
@@ -73,12 +90,20 @@ impl MobileCore {
     pub fn new(base_url: String, data_dir: String) -> Result<Arc<Self>, MobileError> {
         let endpoint = ServerEndpoint::new("server", &base_url)?;
         let client = RemoteClient::from_endpoint(&endpoint)?;
-        let store = CredentialStore::with_dir(PathBuf::from(data_dir).join("servers"));
+        let data_dir = PathBuf::from(data_dir);
+        let store = CredentialStore::with_dir(data_dir.join("servers"));
+        registry::upsert(&data_dir, &entry_for(&endpoint))?;
         Ok(Arc::new(Self {
             endpoint,
             store,
             client,
+            data_dir,
         }))
+    }
+
+    /// The registry entry for this server.
+    pub fn entry(&self) -> ServerEntry {
+        entry_for(&self.endpoint)
     }
 
     /// The normalized base URL this core is bound to.
@@ -122,6 +147,21 @@ impl MobileCore {
     /// Forgets this device's credentials.
     pub fn disconnect(&self) -> Result<(), MobileError> {
         self.store.remove(&self.endpoint.id)?;
+        Ok(())
+    }
+
+    /// Revokes this device on the server, then forgets its credentials.
+    pub fn revoke(&self) -> Result<(), MobileError> {
+        let (credentials, token) = self.fresh_token()?;
+        self.client.revoke_device(&token, &credentials.device_id)?;
+        self.store.remove(&self.endpoint.id)?;
+        Ok(())
+    }
+
+    /// Forgets the credentials and removes the server from the registry.
+    pub fn remove_server(&self) -> Result<(), MobileError> {
+        self.store.remove(&self.endpoint.id)?;
+        registry::remove(&self.data_dir, &self.endpoint.id)?;
         Ok(())
     }
 
@@ -250,5 +290,18 @@ mod tests {
     fn encode_segment_escapes_reserved_bytes() {
         assert_eq!(encode_segment("abc123"), "abc123");
         assert_eq!(encode_segment("a b#c"), "a%20b%23c");
+    }
+
+    #[test]
+    fn registers_and_removes_servers() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().to_string_lossy().into_owned();
+        let core = MobileCore::new("https://music.example.com".into(), data.clone()).unwrap();
+        let servers = list_servers(data.clone()).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].url, "https://music.example.com");
+        assert_eq!(core.entry().id, servers[0].id);
+        core.remove_server().unwrap();
+        assert!(list_servers(data).unwrap().is_empty());
     }
 }

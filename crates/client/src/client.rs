@@ -193,6 +193,27 @@ impl RemoteClient {
         let copied = std::io::copy(&mut reader, writer)?;
         Ok(copied)
     }
+
+    /// `DELETE /api/v1/devices/{id}`: revoke a device (typically this one).
+    ///
+    /// The server answers `204 No Content` on success.
+    pub fn revoke_device(&self, token: &str, device_id: &str) -> Result<()> {
+        let url = self.url(&format!("/api/v1/devices/{}", encode_segment(device_id)));
+        let response = Self::bearer(self.agent.delete(url), token)
+            .call()
+            .map_err(map_transport)?;
+        let status = response.status().as_u16();
+        if status == 401 {
+            return Err(ClientError::Unauthorized);
+        }
+        if !(200..300).contains(&status) {
+            return Err(ClientError::Http {
+                status,
+                message: error_message(response),
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Reads at most `max` bytes of a response body.
