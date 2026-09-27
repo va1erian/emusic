@@ -138,10 +138,10 @@ pub enum BassError {
     #[error("BASS: already initialized in this process (create at most one `Bass`)")]
     AlreadyInitialized,
 
-    /// `bass.dll` (or a plugin) could not be found or loaded.
-    #[error("BASS DLL not found or couldn't be loaded: {0}")]
+    /// The BASS library (or a plugin) could not be found or loaded.
+    #[error("BASS library not found or couldn't be loaded: {0}")]
     DllNotFound(String),
-    /// A required entry point was missing from `bass.dll`.
+    /// A required entry point was missing from the BASS library.
     #[error("BASS symbol not found: {0}")]
     SymbolNotFound(String),
     /// A path could not be represented as BASS expects (e.g. contains an

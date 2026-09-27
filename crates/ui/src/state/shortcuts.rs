@@ -101,8 +101,10 @@ pub struct Shortcut {
     pub action: ShortcutAction,
     /// The key that triggers it.
     pub key: ShortcutKey,
-    /// Whether Ctrl is held with the key.
-    pub ctrl: bool,
+    /// Whether the platform's primary modifier is held with the key: Control
+    /// on Windows, Command on macOS. The frontend maps it to the right native
+    /// accelerator.
+    pub primary: bool,
     /// Whether Shift is held with the key.
     pub shift: bool,
     /// Whether Alt is held with the key.
@@ -112,14 +114,15 @@ pub struct Shortcut {
 }
 
 impl Shortcut {
-    /// The binding's display text, e.g. `"Ctrl+Right"` or `"Space"`.
+    /// The binding's display text, e.g. `"Ctrl+Right"` (Windows) or
+    /// `"Cmd+Right"` (macOS), or `"Space"`.
     ///
-    /// Modifiers render in a fixed order (Ctrl, Shift, Alt) followed by the
-    /// key name.
+    /// Modifiers render in a fixed order (primary, Shift, Alt) followed by the
+    /// key name; the primary modifier is named for the platform.
     pub fn display(&self) -> String {
         let mut text = String::new();
-        if self.ctrl {
-            text.push_str("Ctrl+");
+        if self.primary {
+            text.push_str(primary_modifier_label());
         }
         if self.shift {
             text.push_str("Shift+");
@@ -129,6 +132,15 @@ impl Shortcut {
         }
         text.push_str(self.key.name());
         text
+    }
+}
+
+/// The primary modifier's display label on this platform.
+fn primary_modifier_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd+"
+    } else {
+        "Ctrl+"
     }
 }
 
@@ -200,7 +212,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PlayPause,
         key: ShortcutKey::Space,
-        ctrl: false,
+        primary: false,
         shift: false,
         alt: false,
         description: "Play or pause",
@@ -208,7 +220,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::NextTrack,
         key: ShortcutKey::Right,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: false,
         description: "Next track",
@@ -216,7 +228,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PreviousTrack,
         key: ShortcutKey::Left,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: false,
         description: "Previous track",
@@ -224,7 +236,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::SeekForward,
         key: ShortcutKey::Right,
-        ctrl: false,
+        primary: false,
         shift: false,
         alt: false,
         description: "Seek forward 5 seconds",
@@ -232,7 +244,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::SeekBackward,
         key: ShortcutKey::Left,
-        ctrl: false,
+        primary: false,
         shift: false,
         alt: false,
         description: "Seek backward 5 seconds",
@@ -240,7 +252,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::VolumeUp,
         key: ShortcutKey::Up,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: false,
         description: "Increase volume",
@@ -248,7 +260,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::VolumeDown,
         key: ShortcutKey::Down,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: false,
         description: "Decrease volume",
@@ -256,7 +268,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::Search,
         key: ShortcutKey::F,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: false,
         description: "Focus the search box",
@@ -264,7 +276,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::Rescan,
         key: ShortcutKey::F5,
-        ctrl: false,
+        primary: false,
         shift: false,
         alt: false,
         description: "Rescan the library",
@@ -272,7 +284,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PresetNext,
         key: ShortcutKey::Right,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: true,
         description: "Next preset",
@@ -280,7 +292,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PresetPrevious,
         key: ShortcutKey::Left,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: true,
         description: "Previous preset",
@@ -288,7 +300,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PresetRandom,
         key: ShortcutKey::R,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: true,
         description: "Random preset",
@@ -296,7 +308,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         action: ShortcutAction::PresetLock,
         key: ShortcutKey::L,
-        ctrl: true,
+        primary: true,
         shift: false,
         alt: true,
         description: "Lock the current preset",
@@ -427,17 +439,35 @@ mod tests {
                 .find(|shortcut| shortcut.action == action)
                 .expect("binding exists")
         };
+        // The primary modifier is platform-named: Ctrl on Windows, Cmd on macOS.
+        let p = if cfg!(target_os = "macos") {
+            "Cmd+"
+        } else {
+            "Ctrl+"
+        };
         assert_eq!(find(ShortcutAction::PlayPause).display(), "Space");
-        assert_eq!(find(ShortcutAction::NextTrack).display(), "Ctrl+Right");
-        assert_eq!(find(ShortcutAction::VolumeUp).display(), "Ctrl+Up");
-        assert_eq!(find(ShortcutAction::Search).display(), "Ctrl+F");
+        assert_eq!(
+            find(ShortcutAction::NextTrack).display(),
+            format!("{p}Right")
+        );
+        assert_eq!(find(ShortcutAction::VolumeUp).display(), format!("{p}Up"));
+        assert_eq!(find(ShortcutAction::Search).display(), format!("{p}F"));
         assert_eq!(find(ShortcutAction::Rescan).display(), "F5");
-        assert_eq!(find(ShortcutAction::PresetNext).display(), "Ctrl+Alt+Right");
+        assert_eq!(
+            find(ShortcutAction::PresetNext).display(),
+            format!("{p}Alt+Right")
+        );
         assert_eq!(
             find(ShortcutAction::PresetPrevious).display(),
-            "Ctrl+Alt+Left"
+            format!("{p}Alt+Left")
         );
-        assert_eq!(find(ShortcutAction::PresetRandom).display(), "Ctrl+Alt+R");
-        assert_eq!(find(ShortcutAction::PresetLock).display(), "Ctrl+Alt+L");
+        assert_eq!(
+            find(ShortcutAction::PresetRandom).display(),
+            format!("{p}Alt+R")
+        );
+        assert_eq!(
+            find(ShortcutAction::PresetLock).display(),
+            format!("{p}Alt+L")
+        );
     }
 }

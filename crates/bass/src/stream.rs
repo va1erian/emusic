@@ -1,16 +1,15 @@
 //! Sample streams (`BASS_StreamCreateFile`): plain audio files (MP3, FLAC,
 //! WAV, Opus via plugin, ...).
 
-use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::channel::Channel;
 use crate::error::BassError;
+use crate::ffi::BassLib;
 use crate::ffi::types::{Dword, HStream};
-use crate::ffi::{BassLib, consts as c};
 use crate::flags::StreamFlags;
-use crate::util::path_to_utf16;
+use crate::util::BassPath;
 
 /// A playable audio file stream, created with `BASS_StreamCreateFile`.
 ///
@@ -27,15 +26,14 @@ impl Stream {
         path: impl AsRef<Path>,
         flags: StreamFlags,
     ) -> Result<Self, BassError> {
-        let wide = path_to_utf16(path.as_ref())?;
-        let raw_flags = flags.bits() | c::BASS_UNICODE;
-        // SAFETY: `wide` is a live, NUL-terminated UTF-16 buffer for the
-        // duration of this call; `mem = FALSE` tells BASS to treat the
-        // pointer as a filename rather than an in-memory buffer, matching
-        // what we're passing.
-        let handle = unsafe {
-            (lib.raw.bass_stream_create_file)(0, wide.as_ptr() as *const c_void, 0, 0, raw_flags)
-        };
+        let path = BassPath::new(path.as_ref())?;
+        let raw_flags = flags.bits() | path.flag();
+        // SAFETY: `path` is a live, NUL-terminated buffer for the duration of
+        // this call; `mem = FALSE` tells BASS to treat the pointer as a
+        // filename rather than an in-memory buffer, matching what we're
+        // passing.
+        let handle =
+            unsafe { (lib.raw.bass_stream_create_file)(0, path.as_ptr(), 0, 0, raw_flags) };
         if handle == 0 {
             return Err(lib.last_error());
         }
