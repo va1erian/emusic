@@ -174,7 +174,7 @@ impl Shell {
     /// Applies one request from the CLI or from a secondary instance (#11):
     /// stop and replace the queue with the message's files (or append them),
     /// resolved against its working directory.
-    pub fn handle_ipc_message(&mut self, message: winshell::IpcMessage) {
+    pub fn handle_ipc_message(&mut self, message: ipc::IpcMessage) {
         self.focus_requested = true;
         let paths = ipc::resolve_paths(&message);
         if paths.is_empty() {

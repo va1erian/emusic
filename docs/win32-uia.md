@@ -1,5 +1,9 @@
 # Driving the app with UI Automation
 
+> **Note:** after the frontend split this describes the native renderer, now
+> `crates/frontend-win32`. The portable frontend (`crates/frontend-portable`)
+> renders through `xui` and does not use these `win32ui` providers.
+
 The app (`crates/app`) exposes its controls to Windows UI
 Automation (UIA) through `win32ui`'s accessibility providers. Screen readers use
 the same tree, and so can agents and tests: read state, click, type and select

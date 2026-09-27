@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 //! Integration tests for file association registration.
 //!
 //! Every test writes under its own throwaway registry namespace

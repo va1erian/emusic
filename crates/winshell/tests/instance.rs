@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 //! Integration tests for single-instance detection and IPC batching.
 //!
 //! Every test uses a unique `app_id` (pipe name), so tests never collide

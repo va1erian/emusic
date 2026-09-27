@@ -3,7 +3,7 @@
 //! Keyboard-focus queries used to keep bare-key shortcuts from stealing keys
 //! from the controls that need them (#28).
 //!
-//! `win32ui` registers accelerators on the window itself and exposes no focus
+//! The native window registers accelerators on itself and exposes no focus
 //! query, so the app asks here before acting on a bare-key binding: a focused
 //! text field or navigation control consumes `Space`, the arrow keys, `Delete`
 //! and friends on its own.

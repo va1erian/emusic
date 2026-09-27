@@ -4,8 +4,38 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "Placeholder for emusic's portable frontend (filled in by the xui migration)"
+description = "emusic's portable frontend (xui_core): the cross-platform view layer over emusic-ui"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1"
+emusic-platform = { path = "../platform" }
+emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
+rfd = { version = "0.15", default-features = false }
+tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+# The umbrella crate. On Windows its default `win32` feature re-exports the
+# `xui-win32` backend, but the app imports portable widgets from
+# `xui::xui_core::widget` and names the backend only in `run`.
+xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["win32"] }
+# File associations are a Windows shell feature; the settings page reaches for
+# the registry helpers directly.
+winshell = { path = "../winshell" }
+
+[target.'cfg(not(windows))'.dependencies]
+# The portable software backend, so the crate structure stays cross-platform.
+xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["canvas"] }
+
+[features]
+default = []
+# Windows dev/compare: build the software backend too and pick it with
+# `XUI_BACKEND=canvas`, mirroring `xui`'s own gallery.
+canvas = ["xui/canvas"]
+
+[build-dependencies]
+embed-resource = "3.0"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

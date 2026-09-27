@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::error::BassError;
 use crate::ffi::{BassLib, consts as c};
-use crate::util::path_to_utf16;
+use crate::util::BassPath;
 
 /// Global BASS configuration knobs exposed by this crate.
 ///
@@ -66,17 +66,17 @@ impl Config {
     }
 
     /// Sets the default soundfont (`.sf2`/`.sf3`/`.dls`) BASSMIDI plays MIDI
-    /// files with. Needs `bassmidi.dll` loaded as a plugin; without it BASS
+    /// files with. Needs the `bassmidi` add-on loaded as a plugin; without it BASS
     /// ignores the option and this returns an error.
     pub fn set_midi_default_font(&self, path: &Path) -> Result<(), BassError> {
-        let wide = path_to_utf16(path)?;
-        // SAFETY: `wide` is a live NUL-terminated UTF-16 buffer for the
-        // duration of the call, matching the `BASS_UNICODE` flag; BASS copies
+        let path = BassPath::new(path)?;
+        // SAFETY: `path` is a live, NUL-terminated buffer for the duration of
+        // the call, matching the flag `BassPath::flag` reports; BASS copies
         // the string rather than keeping the pointer.
         let ok = unsafe {
             (self.lib.raw.bass_set_config_ptr)(
-                c::BASS_CONFIG_MIDI_DEFFONT | c::BASS_UNICODE,
-                wide.as_ptr().cast(),
+                c::BASS_CONFIG_MIDI_DEFFONT | path.flag(),
+                path.as_ptr(),
             )
         } != 0;
         self.lib.check(ok)

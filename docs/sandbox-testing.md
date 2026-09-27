@@ -98,8 +98,9 @@ scripts\sandbox\run.ps1 -Build `
 - **Working directory.** Some tests read files relative to their crate root.
   The script stages `tests\` and runs each binary from its crate root, so those
   tests really run.
-- **Name collisions.** `emusic` and `win32ui-demo` both build `smoke.exe`; a
-  single `bin\` folder would overwrite one. Each gets a unique name.
+- **Name collisions.** Several crates build a `smoke.exe` (e.g.
+  `emusic-frontend-win32` and `emusic-frontend-portable`); a single `bin\`
+  folder would overwrite one. Each gets a unique name.
 - **Runtime.** A static CRT makes the binaries self-contained (no
   `vcruntime140.dll` in the sandbox image).
 

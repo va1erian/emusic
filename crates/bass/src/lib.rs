@@ -1,8 +1,8 @@
 //! Safe, runtime-loaded wrapper over the [BASS 2.4](https://www.un4seen.com/)
 //! audio library.
 //!
-//! `bass.dll` (and any add-on plugins) are **not** linked at build time and
-//! are **not** shipped in this repository. They're loaded dynamically at
+//! The BASS library (and its add-on plugins) is **not** linked at build time
+//! and is **not** shipped in this repository. It's loaded dynamically at
 //! runtime with [`libloading`], from the `EMUSIC_BASS_DIR` environment
 //! variable if set, otherwise a `bass/` folder next to the running
 //! executable. This means:
@@ -73,6 +73,9 @@ pub use error::BassError;
 pub use flags::{
     Attribute, FftSize, MusicFlags, PlaybackState, PositionMode, PushFlags, StreamFlags,
 };
+// The BASS binary file names for this platform, for deployments that stage
+// the libraries and for tests that locate them.
+pub use ffi::loader::{CORE_LIBRARY, MIDI_LIBRARY};
 pub use midi::{Midi, SoundFont};
 pub use music::Music;
 pub use push::PushStream;
@@ -80,7 +83,7 @@ pub use stream::Stream;
 pub use sync::ChannelSync;
 pub use tags::MusicTags;
 
-use ffi::{BassLib, consts as c, loader};
+use ffi::{BassLib, loader};
 
 /// `true` while a live [`Bass`] exists in this process.
 ///
@@ -111,7 +114,7 @@ pub struct Bass {
 }
 
 impl Bass {
-    /// Loads `bass.dll` and initializes an output device.
+    /// Loads the BASS library and initializes an output device.
     ///
     /// `device` is a zero-based device index, or `-1` for the system's
     /// default device. `freq` is the output sample rate in Hz (e.g.
@@ -201,9 +204,9 @@ impl Bass {
         PushStream::create(Arc::clone(&self.lib), freq, channels, flags)
     }
 
-    /// Loads every `bass*.dll` plugin (decoder add-on) found in `dir`,
-    /// skipping `bass.dll` itself. Returns one result per file attempted,
-    /// so callers can report which plugins loaded and which didn't.
+    /// Loads every BASS plugin (decoder add-on) found in `dir`, skipping the
+    /// core library itself. Returns one result per file attempted, so callers
+    /// can report which plugins loaded and which didn't.
     pub fn load_plugins(&self, dir: impl AsRef<Path>) -> Vec<PluginLoadResult> {
         loader::list_plugin_files(dir.as_ref())
             .into_iter()
@@ -214,13 +217,13 @@ impl Bass {
             .collect()
     }
 
-    /// Loads `bassmidi.dll`'s own exports from `dir` (separately from the
-    /// generic decoder registration [`Bass::load_plugins`] does via
+    /// Loads the `bassmidi` add-on's own exports from `dir` (separately from
+    /// the generic decoder registration [`Bass::load_plugins`] does via
     /// `BASS_PluginLoad`), needed for per-channel soundfont control
     /// ([`midi::Midi::set_channel_font`]) — changing an already-open MIDI
     /// channel's soundfont live, not just the one new streams start with.
     ///
-    /// Returns `None` if `bassmidi.dll` isn't present/loadable there; MIDI
+    /// Returns `None` if `bassmidi` isn't present/loadable there; MIDI
     /// playback still works via [`Bass::load_plugins`] and
     /// [`config::Config::set_midi_default_font`], just without live
     /// per-channel switching.
@@ -231,11 +234,10 @@ impl Bass {
     }
 
     fn load_plugin(&self, path: &Path) -> Result<(), BassError> {
-        let wide = util::path_to_utf16(path)?;
-        // SAFETY: `wide` is a live, NUL-terminated UTF-16 buffer for the
-        // duration of this call.
-        let handle =
-            unsafe { (self.lib.raw.bass_plugin_load)(wide.as_ptr().cast(), c::BASS_UNICODE) };
+        let encoded = util::BassPath::new(path)?;
+        // SAFETY: `encoded` is a live, NUL-terminated buffer for the duration
+        // of this call.
+        let handle = unsafe { (self.lib.raw.bass_plugin_load)(encoded.as_ptr(), encoded.flag()) };
         if handle == 0 {
             Err(self.lib.last_error())
         } else {

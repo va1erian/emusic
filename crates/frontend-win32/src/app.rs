@@ -330,7 +330,7 @@ impl Win32App {
             shell.attach_ipc(ipc);
         }
         if let Some(message) = startup {
-            shell.handle_ipc_message(message);
+            shell.handle_ipc_message(message.into());
         }
 
         // Restore the window geometry saved on the previous exit (#214); the
@@ -1738,7 +1738,9 @@ fn win32_shortcut(shortcut: &emusic_ui::state::Shortcut) -> win32ui::Shortcut {
         ShortcutKey::L => Key::L,
     };
     let mut accelerator = win32ui::Shortcut::key(key);
-    if shortcut.ctrl {
+    // `primary` is Control on Windows (Command on macOS); the Win32 frontend
+    // maps it to the Control accelerator.
+    if shortcut.primary {
         accelerator = accelerator.with_ctrl();
     }
     if shortcut.shift {

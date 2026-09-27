@@ -10,12 +10,33 @@ use std::path::Path;
 /// with `notify`.
 ///
 /// UNC paths and mapped drives that Windows reports as `DRIVE_REMOTE` are
-/// considered remote. Local paths and unrecognised prefixes are not.
+/// considered remote. Local paths and unrecognised prefixes are not. Other
+/// platforms have no Windows drive-type concept yet, so every root is treated
+/// as local (a future macOS/Linux build could inspect network mounts).
+#[cfg(windows)]
 pub fn is_remote_root(path: &Path) -> bool {
     winshell::is_remote_drive(path)
 }
 
-#[cfg(test)]
+/// Non-Windows fallback: no drive types, so nothing is remote yet.
+#[cfg(not(windows))]
+pub fn is_remote_root(_path: &Path) -> bool {
+    false
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn everything_is_local_off_windows() {
+        assert!(!is_remote_root(Path::new("/mnt/music")));
+        assert!(!is_remote_root(Path::new("/Volumes/library")));
+    }
+}
+
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

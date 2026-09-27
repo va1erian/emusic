@@ -1,0 +1,439 @@
+//! The [`App`] implementation: message dispatch and post-update bookkeeping.
+
+use emusic_ui::state::{Command, View, VizCommand};
+use emusic_ui::views::Commands;
+use emusic_ui::views::folders::FoldersMsg;
+use emusic_ui::views::now_playing::NowPlayingMsg;
+use xui::xui_core::app::{App, Ui};
+
+use super::Win32App;
+use super::msg::{Msg, shell_command};
+use super::sync::playing_id;
+use crate::dialogs::{database_info, database_info::DatabaseInfoChoice, properties};
+use crate::views::column_browser;
+use crate::views::now_playing::SummaryEvent;
+use crate::views::track_table::{self, ContextAction};
+use crate::views::visualization;
+
+impl App for Win32App {
+    type Msg = Msg;
+
+    fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        self.handle(msg, ui);
+        self.after_update(ui);
+    }
+}
+
+impl Win32App {
+    /// Applies one message. Each arm runs the shell and syncs the views; the
+    /// dialog bookkeeping runs afterwards in [`Win32App::after_update`].
+    fn handle(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        match msg {
+            Msg::Wake | Msg::Timer => self.tick_inner(),
+            Msg::Resize => self.relayout(),
+            Msg::Dispatch(command) => {
+                self.shell.dispatch(command);
+                self.tick_inner();
+            }
+            Msg::Navigate(view) => {
+                self.shell.dispatch(Command::SetView(view));
+                self.tick_inner();
+            }
+            Msg::PlayRow(row) => {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.activate(row),
+                    View::Folders => self.folders.activate(row),
+                    View::Albums => self.albums.activate(row),
+                    View::Starred => self.starred.activate(row),
+                    View::MostPlayed => self.most_played.activate(row),
+                    View::History => self.history.activate(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
+                    self.shell.dispatch(command);
+                    self.tick_inner();
+                }
+            }
+            Msg::ToggleStarRow(row) => {
+                let command = match self.shell.state.view {
+                    View::Music => self.music.toggle_star(row),
+                    View::Folders => self.folders.toggle_star(row),
+                    View::Starred => self.starred.toggle_star(row),
+                    View::MostPlayed => self.most_played.toggle_star(row),
+                    _ => None,
+                };
+                if let Some(command) = command {
+                    self.shell.dispatch(command);
+                    self.tick_inner();
+                }
+            }
+            Msg::SortColumn(column) => {
+                let Some(id) = track_table::column_id(column) else {
+                    return;
+                };
+                match self.shell.state.view {
+                    View::Music => {
+                        self.shell.state.music.table.sort.toggle(id);
+                        self.music.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            &self.shell.search,
+                        );
+                    }
+                    View::Folders => {
+                        self.shell.state.folders.table.sort.toggle(id);
+                        self.folders
+                            .resort(&self.shell.state.folders, self.shell.library.as_ref());
+                    }
+                    View::Albums => {
+                        self.shell.state.album_grid.table.sort.toggle(id);
+                        self.albums
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
+                    View::Starred => {
+                        self.shell.state.starred.table.sort.toggle(id);
+                        self.starred
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
+                    View::MostPlayed => {
+                        self.shell.state.most_played.table.sort.toggle(id);
+                        self.most_played
+                            .resort(&self.shell.state, self.shell.library.as_ref());
+                    }
+                    _ => return,
+                }
+                self.tick_inner();
+            }
+            Msg::ContextRow(row, at) => {
+                self.context_row = Some(row);
+                // The list reports the node-local pointer; offset it by the
+                // view's list origin to anchor the popup under the pointer.
+                let origin = match self.shell.state.view {
+                    View::Music => self.music.context_origin(),
+                    View::Folders => self.folders.context_origin(),
+                    View::Albums => self.albums.context_origin(),
+                    View::Starred => self.starred.context_origin(),
+                    View::MostPlayed => self.most_played.context_origin(),
+                    _ => xui::xui_core::geometry::Point::new(0, 0),
+                };
+                self.context_menu
+                    .show_context(origin.x + at.x, origin.y + at.y);
+            }
+            Msg::ContextAction(action) => {
+                let Some(row) = self.context_row else {
+                    return;
+                };
+                let track = match self.shell.state.view {
+                    View::Music => self.music.track(row),
+                    View::Folders => self.folders.track(row),
+                    View::Albums => self.albums.track(row),
+                    View::Starred => self.starred.track(row),
+                    View::MostPlayed => self.most_played.track(row),
+                    _ => None,
+                };
+                let Some(track) = track else {
+                    return;
+                };
+                if action == ContextAction::Properties {
+                    properties::show(ui, &track);
+                    return;
+                }
+                let command = track_table::run_context_action(action, &track);
+                if let Some(command) = command {
+                    self.shell.dispatch(command);
+                    self.tick_inner();
+                }
+            }
+            Msg::DatabaseInfo => {
+                // The canvas backend opens the dialog non-modally, so its
+                // Rescan reports back through `Msg::LibraryRescan` instead.
+                let choice = database_info::show(ui, self.shell.library.as_ref());
+                if choice == Some(DatabaseInfoChoice::Rescan) {
+                    self.shell.dispatch(Command::LibraryRescan);
+                    self.tick_inner();
+                }
+            }
+            Msg::LibraryRescan => {
+                self.shell.dispatch(Command::LibraryRescan);
+                self.tick_inner();
+            }
+            Msg::KeyboardShortcuts => self.show_shortcuts(ui),
+            Msg::About => {
+                self.shell.dispatch(Command::SetView(View::Settings));
+                self.tick_inner();
+            }
+            Msg::SetAccent(accent) => {
+                self.shell.dispatch(Command::SetAccent(accent));
+                self.tick_inner();
+            }
+            Msg::Settings(message) => {
+                let mut out = Commands::new();
+                self.settings
+                    .update(message, &mut self.shell.state, &mut out);
+                for command in out.into_vec() {
+                    self.shell.dispatch(command);
+                }
+                self.tick_inner();
+            }
+            Msg::TagEditorApply => {
+                let Some(session) = &self.tag_editor else {
+                    return;
+                };
+                let request = session.bridge.borrow_mut().apply.take();
+                if let Some(request) = request {
+                    self.shell.dispatch(Command::RequestTagEdits(vec![request]));
+                    self.tick_inner();
+                }
+            }
+            Msg::Album(msg) => {
+                let playing_id =
+                    playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+                let mut out = Commands::new();
+                self.albums.update(
+                    msg,
+                    &mut self.shell.state,
+                    self.shell.library.as_ref(),
+                    playing_id,
+                    &mut out,
+                );
+                for command in out.into_vec() {
+                    self.shell.dispatch(command);
+                }
+                self.tick_inner();
+            }
+            Msg::FoldersSelect(path) => {
+                self.apply_folders(FoldersMsg::SelectNode(path));
+                self.tick_inner();
+            }
+            Msg::FoldersSubfolders(include) => {
+                self.apply_folders(FoldersMsg::SetIncludeSubfolders(include));
+                self.tick_inner();
+            }
+            Msg::MusicShuffleAll => {
+                let command = self.music.shuffle_all(
+                    &self.shell.state,
+                    self.shell.library.as_ref(),
+                    &self.shell.search,
+                );
+                self.shell.dispatch(command);
+                self.tick_inner();
+            }
+            Msg::BrowserRow { pane, rows } => {
+                if column_browser::apply_selection(&mut self.shell.state.music.browser, pane, &rows)
+                {
+                    self.tick_inner();
+                }
+            }
+            Msg::NameCountShuffle(row) => {
+                let commands = match self.shell.state.view {
+                    View::Artists => self.artists.shuffle(
+                        row,
+                        &mut self.shell.state,
+                        self.shell.library.as_ref(),
+                    ),
+                    View::Genres => {
+                        self.genres
+                            .shuffle(row, &mut self.shell.state, self.shell.library.as_ref())
+                    }
+                    _ => Vec::new(),
+                };
+                for command in commands {
+                    self.shell.dispatch(command);
+                }
+                self.tick_inner();
+            }
+            Msg::MostPlayed(window) => {
+                self.shell.state.most_played.window = window;
+                self.tick_inner();
+            }
+            Msg::CycleVisualizer => {
+                self.shell.dispatch(Command::CycleVisualizer);
+                self.tick_inner();
+            }
+            Msg::NowPlayingSummary(event) => {
+                self.handle_summary(event, ui);
+            }
+            Msg::QueueActivate(row) => {
+                if let Some(index) = self.now_playing.entry_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::QueueContext(row, at) => {
+                self.queue_context_row = Some(row);
+                let origin = self.now_playing.context_origin();
+                self.queue_context
+                    .show_context(origin.x + at.x, origin.y + at.y);
+            }
+            Msg::QueueRemove => {
+                if let Some(row) = self.queue_context_row.take()
+                    && let Some(index) = self.now_playing.entry_index(row)
+                {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::RightPanelQueueActivate(row) => {
+                if let Some(index) = self.right_panel.entry_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::RightPanelQueueContext(row, at) => {
+                self.right_panel_context_row = Some(row);
+                let origin = self.right_panel.context_origin();
+                self.right_panel_queue_context
+                    .show_context(origin.x + at.x, origin.y + at.y);
+            }
+            Msg::RightPanelQueueRemove => {
+                if let Some(row) = self.right_panel_context_row.take()
+                    && let Some(index) = self.right_panel.entry_index(row)
+                {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::PresetFilter(text) => {
+                self.visualization.set_filter(&text);
+                self.tick_inner();
+            }
+            Msg::PresetSelect(row) => {
+                self.visualization.select(row);
+                self.tick_inner();
+            }
+            Msg::PresetPlay(row) => {
+                if let Some(index) = self.visualization.playlist_index(row) {
+                    for command in visualization::play_commands(index) {
+                        self.shell.dispatch(command);
+                    }
+                    self.tick_inner();
+                }
+            }
+            Msg::PresetToggleLock => {
+                self.shell
+                    .dispatch(Command::Viz(VizCommand::TogglePresetLock));
+                self.tick_inner();
+            }
+            Msg::HistoryClear => self.show_history_clear(ui),
+            Msg::HistoryClearConfirmed => {
+                self.shell.dispatch(Command::HistoryClear);
+                self.tick_inner();
+            }
+            Msg::Shortcut(action) => {
+                self.handle_shortcut(action);
+                self.tick_inner();
+            }
+            Msg::Shell(action) => {
+                if let Some(command) = shell_command(action) {
+                    self.shell.dispatch(command);
+                    self.tick_inner();
+                }
+            }
+            Msg::Minimize => {
+                if let Some(chrome) = &self.chrome {
+                    chrome.minimize();
+                }
+            }
+            Msg::ToggleMaximize => {
+                if let Some(chrome) = &self.chrome {
+                    chrome.toggle_maximize();
+                }
+            }
+            Msg::Quit => {
+                self.shell.save_on_exit();
+                ui.close();
+                // The app owns the close decision (`on_close` returns
+                // `Some(Msg::Quit)`), so nothing else ends the event loop.
+                ui.quit();
+            }
+        }
+    }
+
+    /// Turns a summary click into a now-playing intent, if it carries one.
+    fn handle_summary(&mut self, event: SummaryEvent, ui: &Ui<Msg>) {
+        let message = {
+            let model = &self.shell.state.now_playing;
+            match event {
+                SummaryEvent::ToggleStar => model
+                    .track()
+                    .map(|track| NowPlayingMsg::ToggleStar(track.id)),
+                SummaryEvent::EditTags => {
+                    model.track().map(|track| NowPlayingMsg::EditTags(track.id))
+                }
+                // The Properties dialog is frontend-owned (the model keeps only
+                // the intent), so it is opened directly, as the track table does.
+                SummaryEvent::ShowProperties => {
+                    if let Some(track) = model.track() {
+                        properties::show(ui, track);
+                    }
+                    None
+                }
+                // Reveal-in-file-manager is not ported yet; it goes through the
+                // same logged stub the track table's context menu uses.
+                SummaryEvent::OpenFolder => {
+                    if let Some(track) = model.track() {
+                        let _ =
+                            track_table::run_context_action(ContextAction::OpenFileLocation, track);
+                    }
+                    None
+                }
+                SummaryEvent::GoToArtist => model
+                    .now_playing()
+                    .filter(|np| !np.artist.is_empty())
+                    .map(|np| NowPlayingMsg::GoToArtist(np.artist.clone())),
+                SummaryEvent::GoToAlbum => {
+                    model.track().filter(|t| !t.album.is_empty()).map(|track| {
+                        NowPlayingMsg::GoToAlbum {
+                            name: track.album.clone(),
+                            artist: track.artist.clone(),
+                        }
+                    })
+                }
+            }
+        };
+        if let Some(message) = message {
+            self.apply_now_playing(message);
+            self.tick_inner();
+        }
+    }
+
+    /// Applies a now-playing intent through the shared model and dispatches the
+    /// commands it queued.
+    fn apply_now_playing(&mut self, message: NowPlayingMsg) {
+        let mut out = Commands::new();
+        self.shell.state.now_playing.update(message, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
+        }
+    }
+
+    /// Runs the dialog bookkeeping after a message: reaps a closed tag editor,
+    /// opens a pending one, mirrors its status, and drops a closed message
+    /// dialog.
+    fn after_update(&mut self, ui: &Ui<Msg>) {
+        let closed = self
+            .tag_editor
+            .as_ref()
+            .is_some_and(|session| !session.window.is_open());
+        if closed {
+            self.tag_editor = None;
+            self.shell.state.tag_editor = None;
+        }
+        self.maybe_open_tag_editor(ui);
+        self.mirror_tag_editor_status();
+        if self
+            .shortcuts_dialog
+            .as_ref()
+            .is_some_and(|dialog| !dialog.is_open())
+        {
+            self.shortcuts_dialog = None;
+        }
+        if self
+            .history_dialog
+            .as_ref()
+            .is_some_and(|dialog| !dialog.is_open())
+        {
+            self.history_dialog = None;
+        }
+    }
+}

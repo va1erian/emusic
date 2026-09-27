@@ -5,11 +5,9 @@
 //!
 //! It is fed the same ordered file list that was added to the projectM
 //! playlist, so a row's index into [`PresetBrowser::entries`] is exactly the
-//! playlist index to play. Rendering (a virtualized [`ListView`] in the app)
-//! stays in the frontend; everything here is plain data and rules, unit-tested
-//! without a window.
-//!
-//! [`ListView`]: win32ui::ListView
+//! playlist index to play. Rendering (a virtualized list in the app) stays in
+//! the frontend; everything here is plain data and rules, unit-tested without a
+//! window.
 
 use std::path::{Path, PathBuf};
 
