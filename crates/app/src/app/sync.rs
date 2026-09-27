@@ -54,6 +54,7 @@ impl Win32App {
                     &mut self.shell.state,
                     self.shell.library.as_ref(),
                     playing_id,
+                    changes,
                 ) {
                     self.relayout();
                 }

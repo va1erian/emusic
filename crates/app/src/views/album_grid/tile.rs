@@ -14,7 +14,7 @@ use std::rc::Rc;
 use emusic_ui::views::album_grid::models::AlbumKey;
 use xui::xui_core::backend::{Canvas, TextStyle};
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{GridModel, Tile, TilePaint};
+use xui::xui_core::widget::{GridModel, Tile, TilePaint, TileSize};
 use xui::xui_core::{Color, Dip, Rect};
 
 use super::thumbs::ThumbState;
@@ -23,6 +23,11 @@ use super::thumbs::ThumbState;
 pub(super) const CAPTION_DIP: f32 = 42.0;
 /// Gap between tiles, in design units.
 pub(super) const GAP_DIP: f32 = 12.0;
+
+/// The tile size for a cover `edge`, reserving the caption strip below it.
+pub(super) fn tile_size(edge: f32) -> TileSize {
+    TileSize::new(dip(edge), dip(edge + CAPTION_DIP)).gap(dip(GAP_DIP))
+}
 
 /// Caption font sizes, in design units.
 const NAME_SIZE: f32 = 12.0;

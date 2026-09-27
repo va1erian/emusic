@@ -2,50 +2,41 @@
 //!
 //! All state and logic live in the shared [`AlbumGrid`] model (`emusic-ui`):
 //! sorting, identity, the album list and the selected album's track table.
-//! This module owns the sort/size toolbar, the virtual [`GridView`] and the
-//! selected album's track list, and turns their events into [`AlbumMsg`]s.
+//! This module owns the virtual [`GridView`], the selected album's track list
+//! and the view layout, and turns their events into [`AlbumMsg`]s. The toolbar
+//! lives in [`toolbar`].
 //!
-//! The tile painter draws covers through the portable [`Canvas`](xui::xui_core::backend::Canvas),
-//! so the same view renders on the Win32 and canvas backends.
+//! The tile painter draws covers through the portable
+//! [`Canvas`](xui::xui_core::backend::Canvas), so the same view renders on the
+//! Win32 and canvas backends.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::shell::Changes;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
-use emusic_ui::views::album_grid::{
-    self, AlbumGrid, AlbumGridMsg, DEFAULT_TILE_SIZE, MAX_TILE_SIZE, MIN_TILE_SIZE,
-};
+use emusic_ui::views::album_grid::{self, AlbumGrid, AlbumGridMsg, DEFAULT_TILE_SIZE};
 use emusic_ui::views::{Commands, Ctx};
 use emusic_ui::waker::WakerHandle;
 use xui::xui_core::app::Ui;
 use xui::xui_core::backend::Result;
 use xui::xui_core::geometry::{Point, Rect};
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Button, ComboBox, GridView, HasText, Label, Slider, TileSize};
+use xui::xui_core::widget::GridView;
 
 use crate::app::Msg;
 use crate::views::track_table::TrackView;
 
 use self::thumbs::ThumbState;
-use self::tile::{AlbumCell, CAPTION_DIP, GAP_DIP, TileModel, content};
+use self::tile::{AlbumCell, TileModel, content, tile_size};
+use self::toolbar::Toolbar;
 
 mod thumbs;
 mod tile;
+mod toolbar;
 
-/// The toolbar band height, in design units.
-const TOOLBAR_HEIGHT: f32 = 34.0;
-/// Fixed toolbar control widths, in design units.
-const COUNT_WIDTH: f32 = 92.0;
-const SORT_LABEL_WIDTH: f32 = 34.0;
-const SORT_WIDTH: f32 = 150.0;
-const SIZE_LABEL_WIDTH: f32 = 34.0;
-const SHUFFLE_WIDTH: f32 = 88.0;
-const CLOSE_WIDTH: f32 = 104.0;
-/// Toolbar horizontal gaps and the band inset, in design units.
-const GAP: f32 = 6.0;
-const INSET: f32 = 8.0;
 /// Gap between the toolbar, the grid and the track list, in design units.
 const BAND_GAP: f32 = 4.0;
 
@@ -69,13 +60,7 @@ pub enum AlbumMsg {
 /// album's track list.
 pub struct AlbumGridView {
     ui: Ui<Msg>,
-    count: Label<Msg>,
-    sort_label: Label<Msg>,
-    sort: ComboBox<Msg>,
-    size_label: Label<Msg>,
-    size: Slider<Msg>,
-    shuffle: Button<Msg>,
-    close: Button<Msg>,
+    toolbar: Toolbar,
     grid: GridView<Msg>,
     tracks: TrackView,
     /// The albums currently in the grid, shared with the tile painter so it
@@ -83,6 +68,8 @@ pub struct AlbumGridView {
     cells: Rc<RefCell<Rc<Vec<AlbumCell>>>>,
     /// The shared cover cache the painter reads.
     thumbs: Rc<RefCell<ThumbState>>,
+    /// The waker a rebuilt cover cache hands its workers.
+    waker: WakerHandle,
     /// The album-list revision the grid model was last built from.
     grid_revision: Cell<u64>,
     /// The tile size last applied to the grid.
@@ -102,7 +89,7 @@ impl AlbumGridView {
     /// `waker` lets the cover decoders repaint the grid when one finishes.
     pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> Result<Self> {
         let cells = Rc::new(RefCell::new(Rc::new(Vec::new())));
-        let thumbs = Rc::new(RefCell::new(ThumbState::new(waker)));
+        let thumbs = Rc::new(RefCell::new(ThumbState::new(waker.clone())));
 
         let grid = GridView::with_model(
             ui,
@@ -116,37 +103,14 @@ impl AlbumGridView {
         .on_activate(|index| Some(Msg::Album(AlbumMsg::Activate(index))))
         .on_paint_tile(content(Rc::clone(&cells), Rc::clone(&thumbs)));
 
-        let sort = ComboBox::new(ui, Rect::default(), &sort_labels())?
-            .on_select(|index| Some(Msg::Album(AlbumMsg::SetSort(AlbumSort::ALL[index]))));
-        sort.select(sort_index(AlbumSort::default()));
-
-        let size = Slider::new(
-            ui,
-            Rect::default(),
-            f64::from(MIN_TILE_SIZE),
-            f64::from(MAX_TILE_SIZE),
-        )?
-        .on_change(|value| Some(Msg::Album(AlbumMsg::SetTileSize(value as f32))));
-        size.set_value(f64::from(DEFAULT_TILE_SIZE));
-
-        let shuffle = Button::new(ui, Rect::default(), "Shuffle")?
-            .on_click(|| Some(Msg::Album(AlbumMsg::Shuffle)));
-        let close = Button::new(ui, Rect::default(), "Close album")?
-            .on_click(|| Some(Msg::Album(AlbumMsg::CloseAlbum)));
-
         let view = Self {
             ui: ui.clone(),
-            count: Label::new(ui, Rect::default(), "0 albums")?,
-            sort_label: Label::new(ui, Rect::default(), "Sort")?,
-            sort,
-            size_label: Label::new(ui, Rect::default(), "Size")?,
-            size,
-            shuffle,
-            close,
+            toolbar: Toolbar::new(ui)?,
             grid,
             tracks: TrackView::new(ui),
             cells,
             thumbs,
+            waker,
             grid_revision: Cell::new(u64::MAX),
             applied_tile_size: Cell::new(DEFAULT_TILE_SIZE),
             applied_selection_revision: Cell::new(u64::MAX),
@@ -159,74 +123,42 @@ impl AlbumGridView {
     }
 
     /// Shows or hides the whole view (central-area routing).
+    ///
+    /// Hiding drops the cover cache: browsing another view must not keep a
+    /// gallery's decoded artwork resident. The cover cache's LRU is bounded,
+    /// but a hidden view's covers are dead weight until it is shown again.
     pub fn set_visible(&self, visible: bool) {
         if self.active.get() != visible {
             self.active.set(visible);
+            if !visible {
+                self.release_covers();
+            }
             self.apply_visibility();
         }
+    }
+
+    /// Drops the decoded covers and the grid's uploaded-image handles. The
+    /// portable [`Canvas`](xui::xui_core::backend::Canvas) has no per-image
+    /// release hook, but the Win32 backend keeps its uploaded bitmaps in a
+    /// byte-bounded LRU and evicts the least recently used covers on its own.
+    /// Clearing the cache here releases the decoded RGBA and the `Rc<Image>`
+    /// handles, so showing the view again decodes only the tiles it paints.
+    fn release_covers(&self) {
+        *self.thumbs.borrow_mut() = ThumbState::new(self.waker.clone());
     }
 
     /// Moves and sizes the toolbar, the grid and the selected album's track
     /// list inside `bounds`. The track list only takes the lower half when an
     /// album is selected.
     pub fn set_bounds(&self, bounds: Rect) {
-        let dpi = self.ui.dpi();
-        let px = |value: f32| dip(value).to_px(dpi).value();
-        let top = bounds.top;
-        let band_right = bounds.right - px(INSET);
-        let gap = px(GAP);
-
-        let mut x = bounds.left + px(INSET);
-        let count = Rect::new(x, top, x + px(COUNT_WIDTH), top + px(TOOLBAR_HEIGHT));
-        x += px(COUNT_WIDTH) + gap;
-        let sort_label = Rect::new(x, top, x + px(SORT_LABEL_WIDTH), top + px(TOOLBAR_HEIGHT));
-        x += px(SORT_LABEL_WIDTH) + gap;
-        let sort = Rect::new(x, top, x + px(SORT_WIDTH), top + px(TOOLBAR_HEIGHT));
-        x += px(SORT_WIDTH) + gap;
-        let size_label = Rect::new(x, top, x + px(SIZE_LABEL_WIDTH), top + px(TOOLBAR_HEIGHT));
-        x += px(SIZE_LABEL_WIDTH) + gap;
-
-        let close = Rect::new(
-            band_right - px(CLOSE_WIDTH),
-            top,
-            band_right,
-            top + px(TOOLBAR_HEIGHT),
-        );
-        let shuffle = Rect::new(
-            close.left - gap - px(SHUFFLE_WIDTH),
-            top,
-            close.left - gap,
-            top + px(TOOLBAR_HEIGHT),
-        );
-        let size = Rect::new(x, top, shuffle.left - gap, top + px(TOOLBAR_HEIGHT));
-
-        self.ui.apply_moves(&[
-            (self.count.id(), count),
-            (self.sort_label.id(), sort_label),
-            (self.sort.id(), sort),
-            (self.size_label.id(), size_label),
-            (self.size.id(), size),
-            (self.shuffle.id(), shuffle),
-            (self.close.id(), close),
-        ]);
-
-        let content = Rect::new(
-            bounds.left,
-            top + px(TOOLBAR_HEIGHT) + px(BAND_GAP),
-            bounds.right,
-            bounds.bottom,
-        );
+        let content = self.toolbar.set_bounds(bounds);
+        let gap = dip(BAND_GAP).to_px(self.ui.dpi()).value();
         let split = self.active.get() && self.tracks_visible.get() && content.height() > 0;
         let (grid, tracks) = if split {
             let middle = content.top + content.height() / 2;
             (
                 Rect::new(content.left, content.top, content.right, middle),
-                Rect::new(
-                    content.left,
-                    middle + px(BAND_GAP),
-                    content.right,
-                    content.bottom,
-                ),
+                Rect::new(content.left, middle + gap, content.right, content.bottom),
             )
         } else {
             (content, Rect::default())
@@ -238,11 +170,16 @@ impl AlbumGridView {
     /// Refreshes the shared model and mirrors it into the grid and the track
     /// list. Returns whether the layout must be recomputed (the track list was
     /// shown or hidden).
+    ///
+    /// `changes` lets the track list be rebuilt when the library changed even
+    /// though the selected album did not (e.g. a track was starred elsewhere),
+    /// so its star glyphs stay current.
     pub fn sync(
         &mut self,
         state: &mut AppState,
         library: &dyn LibraryDataSource,
         playing_id: Option<u64>,
+        changes: Changes,
     ) -> bool {
         let uploaded = self.thumbs.borrow_mut().drain();
         {
@@ -250,18 +187,8 @@ impl AlbumGridView {
             state.album_grid.refresh(&cx);
         }
 
-        self.count
-            .set_text(&format!("{} albums", state.album_grid.len()));
-        let index = sort_index(state.album_grid.sort);
-        if self.sort.selected() != index {
-            self.sort.select(index);
-        }
-        let size = f64::from(state.album_grid.tile_size);
-        if (self.size.value() - size).abs() > f64::EPSILON {
-            self.size.set_value(size);
-        }
+        self.toolbar.sync(&state.album_grid);
         let selected = state.album_grid.selected_key().is_some();
-        self.shuffle.set_enabled(selected);
         let selection_changed = self.selected.replace(selected) != selected;
 
         let list_revision = state.album_grid.list_revision();
@@ -284,23 +211,21 @@ impl AlbumGridView {
         }
 
         let selection_revision = state.album_grid.selection_revision();
-        let tracks_changed = if selection_revision != self.applied_selection_revision.get() {
+        let stale = changes.intersects(Changes::LIBRARY)
+            || selection_revision != self.applied_selection_revision.get();
+        let tracks_changed = if stale {
             self.applied_selection_revision.set(selection_revision);
             let tracks = self.selected_tracks(&state.album_grid, library);
             self.tracks.set_rows(&tracks, state.album_grid.table.sort);
             self.tracks.sync_playing(playing_id);
             let visible = !tracks.is_empty();
-            let changed = self.tracks_visible.replace(visible) != visible;
-            if selection_changed || changed {
-                self.apply_visibility();
-            }
-            changed
+            self.tracks_visible.replace(visible) != visible
         } else {
             self.tracks.sync_playing(playing_id);
             false
         };
 
-        if selected_index.is_none() && selection_changed {
+        if selection_changed || tracks_changed {
             self.apply_visibility();
         }
         if uploaded {
@@ -357,20 +282,6 @@ impl AlbumGridView {
         }
     }
 
-    /// Applies the "Shuffle play" action for the currently selected album, as
-    /// the toolbar's shuffle button would.
-    pub fn shuffle(&self, state: &mut AppState, library: &dyn LibraryDataSource) -> Vec<Command> {
-        let Some(key) = state.album_grid.selected_key().cloned() else {
-            return Vec::new();
-        };
-        let cx = Ctx::with_library(&[], None, library);
-        let mut out = Commands::new();
-        state
-            .album_grid
-            .update(AlbumGridMsg::Shuffle(key), &cx, &mut out);
-        out.into_vec()
-    }
-
     /// Rebuilds the track list after a header click, preserving the new sort.
     pub fn resort(&mut self, state: &AppState, library: &dyn LibraryDataSource) {
         let tracks = self.selected_tracks(&state.album_grid, library);
@@ -380,11 +291,6 @@ impl AlbumGridView {
     /// The command to play `index` in the context of the selected album.
     pub fn activate(&self, index: usize) -> Option<Command> {
         self.tracks.activate(index)
-    }
-
-    /// The command to toggle the star of `index`.
-    pub fn toggle_star(&self, index: usize) -> Option<Command> {
-        self.tracks.toggle_star(index)
     }
 
     /// The track at `index`, for a context action.
@@ -401,14 +307,7 @@ impl AlbumGridView {
     /// hidden view never shows a stray control.
     fn apply_visibility(&self) {
         let active = self.active.get();
-        self.ui.set_visible(self.count.id(), active);
-        self.ui.set_visible(self.sort_label.id(), active);
-        self.ui.set_visible(self.sort.id(), active);
-        self.ui.set_visible(self.size_label.id(), active);
-        self.ui.set_visible(self.size.id(), active);
-        self.ui.set_visible(self.shuffle.id(), active);
-        self.ui
-            .set_visible(self.close.id(), active && self.selected.get());
+        self.toolbar.set_visible(active, self.selected.get());
         self.ui.set_visible(self.grid.id(), active);
         self.tracks.set_visible(active && self.tracks_visible.get());
     }
@@ -461,22 +360,4 @@ impl AlbumGridView {
     fn cell_index(&self, key: &AlbumKey) -> Option<usize> {
         self.cells.borrow().iter().position(|cell| &cell.key == key)
     }
-}
-
-/// The tile size for a cover edge, reserving the caption strip below it.
-fn tile_size(edge: f32) -> TileSize {
-    TileSize::new(dip(edge), dip(edge + CAPTION_DIP)).gap(dip(GAP_DIP))
-}
-
-/// The sort combo's item labels, in [`AlbumSort::ALL`] order.
-fn sort_labels() -> [&'static str; 4] {
-    AlbumSort::ALL.map(|sort| sort.label())
-}
-
-/// The combo index of `sort`, or 0 when absent.
-fn sort_index(sort: AlbumSort) -> usize {
-    AlbumSort::ALL
-        .iter()
-        .position(|candidate| *candidate == sort)
-        .unwrap_or(0)
 }
