@@ -7,13 +7,13 @@
 //! search box is a portable [`Edit`] whose text mirrors
 //! [`AppState::search_query`](emusic_ui::state::AppState::search_query).
 //!
-//! When the active backend provides no native window buttons
-//! ([`crate::backend::is_canvas()`]) the caption band above the transport band
-//! carries the app title and the portable minimize/maximize/close buttons at
-//! its trailing edge, and the band's empty area stays the window's drag region.
-//! The native Win32 backend provides its own chrome (the extended title bar
-//! owns the strip and the native caption buttons own minimize/maximize/close),
-//! so the band stays hidden and the transport bar is unchanged.
+//! When the active backend provides no native window chrome
+//! ([`crate::backend::has_native_chrome()`]) the caption band above the
+//! transport band carries the app title and the portable
+//! minimize/maximize/close buttons at its trailing edge, and the band's empty
+//! area stays the window's drag region. The native Win32 backend and macOS
+//! (native title bar and traffic lights) provide their own chrome, so the band
+//! stays hidden and the transport bar is unchanged.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -27,7 +27,7 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Edit, Glyph, HasText, TopBar, TopBarId};
 
 use crate::app::Msg;
-use crate::backend::is_canvas;
+use crate::backend::has_native_chrome;
 use crate::window::WindowChrome;
 
 /// Width of the search field, in device-independent pixels.
@@ -92,6 +92,9 @@ pub struct TopBarView {
     duration: Rc<Cell<f64>>,
     caption_bounds: Rect,
     bar_bounds: Rect,
+    /// Whether this backend has no native chrome, so the view draws (and makes
+    /// draggable) the custom caption band.
+    custom_caption: bool,
 }
 
 impl TopBarView {
@@ -107,12 +110,12 @@ impl TopBarView {
         let search = Edit::new(ui, Rect::default(), "")
             .expect("create search box")
             .on_change(|text| Some(Msg::Dispatch(Command::SetSearchQuery(text.to_string()))));
-        // A backend that draws no native caption (the canvas backend, also when
-        // it runs on Windows) shows the caption band and its buttons; the
-        // native Win32 backend owns the strip and hides them.
-        let canvas = is_canvas();
-        ui.set_visible(caption.id(), canvas);
-        ui.set_visible(caption_buttons.id(), canvas);
+        // A backend with no native chrome (the canvas backend on Windows/Linux)
+        // shows the caption band and its buttons and drags the window from the
+        // band; the native Win32 backend and macOS own the strip and hide them.
+        let custom_caption = !has_native_chrome();
+        ui.set_visible(caption.id(), custom_caption);
+        ui.set_visible(caption_buttons.id(), custom_caption);
         ui.raise(bar.id());
         ui.raise(search.id());
         ui.raise(caption_buttons.id());
@@ -127,13 +130,18 @@ impl TopBarView {
             duration,
             caption_bounds: Rect::default(),
             bar_bounds: Rect::default(),
+            custom_caption,
         }
     }
 
-    /// Marks the caption band as the window's drag region. The trailing window
-    /// buttons are a separate node above it, so they still receive their clicks.
+    /// Marks the caption band as the window's drag region when the view draws
+    /// it. The trailing window buttons are a separate node above it, so they
+    /// still receive their clicks. With native chrome the system title bar
+    /// already drags the window, so nothing is marked.
     pub fn apply_chrome(&self, chrome: &WindowChrome) {
-        chrome.set_drag_region(self.caption.id(), true);
+        if self.custom_caption {
+            chrome.set_drag_region(self.caption.id(), true);
+        }
     }
 
     /// Positions the caption band, the transport band and the search box.

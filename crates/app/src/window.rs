@@ -8,26 +8,36 @@
 use std::rc::Rc;
 
 use xui::xui_core::Dip;
-use xui::xui_core::backend::{Backdrop, Backend, Decorations, PlatformSpec, WidgetId, WindowId};
+#[cfg(not(target_os = "macos"))]
+use xui::xui_core::backend::{Backdrop, Decorations};
+use xui::xui_core::backend::{Backend, PlatformSpec, WidgetId, WindowId};
 use xui::xui_core::dip;
 
 /// The height of the custom caption band reserved at the top of the client
-/// area, in device-independent pixels.
+/// area, in device-independent pixels. Windows only.
 pub const CAPTION_HEIGHT: f32 = 36.0;
 
-/// Builds the main window spec: no system title bar (the shell reserves a
-/// caption band and drags from it), with the Acrylic backdrop. The theme is
-/// applied separately with `Ui::set_theme`, since the portable spec carries no
-/// accent tint or menu strip (see the migration notes).
+/// Builds the main window spec.
+///
+/// On Windows the shell reserves a caption band, hides the system title bar
+/// and draws its own chrome (the native Win32 backend keeps the native buttons
+/// through the extended title bar), with the Acrylic backdrop. On macOS the
+/// system title bar and its traffic lights are the only chrome, so the spec
+/// keeps the default `Decorations::System`, reserves no caption and uses the
+/// opaque backdrop (the canvas backend has no blur yet). The theme is applied
+/// separately with `Ui::set_theme`, since the portable spec carries no accent
+/// tint or menu strip (see the migration notes).
 ///
 /// `width` and `height` are in device-independent pixels.
 #[must_use]
 pub fn window_spec(width: f32, height: f32) -> PlatformSpec {
-    PlatformSpec::new("emusic")
-        .size(dip(width), dip(height))
+    let spec = PlatformSpec::new("emusic").size(dip(width), dip(height));
+    #[cfg(not(target_os = "macos"))]
+    let spec = spec
         .backdrop(Backdrop::Acrylic)
         .decorations(Decorations::None)
-        .caption_inset(dip(CAPTION_HEIGHT))
+        .caption_inset(dip(CAPTION_HEIGHT));
+    spec
 }
 
 /// The window-level operations the portable widget layer does not expose: the

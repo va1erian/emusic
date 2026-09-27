@@ -24,6 +24,16 @@ pub fn is_canvas() -> bool {
     requested
 }
 
+/// Whether the window backend draws its own caption and window buttons, so
+/// the app must not draw the custom caption band.
+///
+/// True for the native Win32 backend and for every macOS window (system
+/// decorations, per the macOS port); false for the software canvas backend on
+/// Windows/Linux, which has no native chrome and so needs the app's own.
+pub fn has_native_chrome() -> bool {
+    cfg!(target_os = "macos") || !is_canvas()
+}
+
 /// A short human-readable name for the active backend, for the About page.
 pub fn label() -> &'static str {
     if is_canvas() {
