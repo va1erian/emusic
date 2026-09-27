@@ -96,26 +96,11 @@ fn run_ui(
     let spec = window_spec(1100.0, 720.0);
 
     #[cfg(windows)]
-    if !wants_canvas() {
+    if !emusic::backend::is_canvas() {
         return run_native(spec, config, config_path, ipc, startup, waker, mock);
     }
 
     run_canvas(spec, config, config_path, ipc, startup, waker, mock)
-}
-
-/// Whether the user asked for the software backend via `XUI_BACKEND=canvas`.
-///
-/// On a build without the `canvas` feature the request cannot be honoured, so
-/// it is ignored with a warning and the native backend is used.
-fn wants_canvas() -> bool {
-    let requested = std::env::var("XUI_BACKEND").as_deref() == Ok("canvas");
-    if requested && !cfg!(feature = "canvas") {
-        tracing::warn!(
-            "XUI_BACKEND=canvas but this build has no `canvas` feature; using the native backend"
-        );
-        return false;
-    }
-    requested
 }
 
 /// Builds the app's backends (real or mock) and constructs the shell around
