@@ -41,7 +41,7 @@ use emusic::dialogs::{database_info, properties, tag_editor};
 use emusic::window::window_spec;
 
 /// How long the window is left to settle before the capture.
-const SETTLE: Duration = Duration::from_millis(1200);
+const SETTLE: Duration = Duration::from_millis(350);
 /// The tool's own tick interval, so it keeps driving while the shell is idle.
 const TICK_MS: u32 = 40;
 
@@ -173,9 +173,10 @@ fn run_all(cli: &Cli) -> anyhow::Result<()> {
             anyhow::bail!("emusic-shot: rendering {} failed ({status})", view.slug());
         }
     }
-    // The Settings view has one page per tab; capture each so all six get a
-    // reference screenshot (`settings-<slug>.png`).
-    for tab in SettingsTab::ALL {
+    // The Settings view has one page per tab; capture each so every page gets a
+    // reference screenshot (`settings-<slug>.png`). The default tab is already
+    // `settings.png` from the view loop above, so it is not written twice.
+    for tab in SettingsTab::ALL.into_iter().skip(1) {
         let out = dir.join(format!("settings-{}.png", tab.slug()));
         let status = Command::new(&exe)
             .arg("--view")

@@ -12,6 +12,8 @@ use crate::app::Msg;
 
 /// The session-resume section's controls.
 pub(super) struct SessionSection {
+    /// Held so the heading's node stays alive (dropping a widget destroys it).
+    _heading: xui::xui_core::widget::Label<Msg>,
     resume: CheckBox<Msg>,
     autoplay: CheckBox<Msg>,
 }
@@ -33,7 +35,11 @@ impl SessionSection {
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::AutoplayOnRestore(on))));
         form.add_full(autoplay.id(), ROW_HEIGHT);
 
-        SessionSection { resume, autoplay }
+        SessionSection {
+            _heading: heading,
+            resume,
+            autoplay,
+        }
     }
 
     /// Mirrors the shared state onto the checkboxes.

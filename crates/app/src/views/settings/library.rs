@@ -31,8 +31,8 @@ const ACTION_WIDTH: f32 = 130.0;
 
 /// The Library settings page's controls.
 ///
-/// Widgets that are not read after construction (headings, hints, buttons other
-/// than Remove) are still owned here: dropping a widget destroys its node.
+/// Widgets that are not read after construction (headings, hints, the Add and
+/// Rescan buttons) are still owned here: dropping a widget destroys its node.
 pub(super) struct LibraryPage {
     form: FormPage,
     _heading: Label<Msg>,
@@ -40,7 +40,7 @@ pub(super) struct LibraryPage {
     _add: Button<Msg>,
     remove: Button<Msg>,
     _rescan: Button<Msg>,
-    _cancel: Button<Msg>,
+    cancel: Button<Msg>,
     list: ListView<Msg>,
     status: Label<Msg>,
     /// The folders the list was last built from, so it is only rebuilt when the
@@ -90,7 +90,12 @@ impl LibraryPage {
             .on_select(|_| Some(Msg::Settings(SettingsMsg::LibrarySelect)));
         form.add_full(list.id(), dip(LIST_HEIGHT));
 
-        let status = Label::new(form.ui(), Rect::default(), "").expect("create library status");
+        let status = Label::new(
+            form.ui(),
+            Rect::default(),
+            "No folders yet. Add one to start scanning.",
+        )
+        .expect("create library status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         LibraryPage {
@@ -100,7 +105,7 @@ impl LibraryPage {
             _add: add,
             remove,
             _rescan: rescan,
-            _cancel: cancel,
+            cancel,
             list,
             status,
             applied_folders: Vec::new(),
@@ -142,7 +147,7 @@ impl LibraryPage {
             });
         }
         self.remove.set_enabled(self.list.selected().is_some());
-        self._cancel.set_enabled(library.is_scanning());
+        self.cancel.set_enabled(library.is_scanning());
     }
 
     /// Handles the Library page's messages; returns whether `msg` was one.
