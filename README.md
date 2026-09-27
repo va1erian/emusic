@@ -55,10 +55,6 @@ embedded into `emusic.exe` at build time (via `crates/app/build.rs` and
 and back the file-association `DefaultIcon` entries. The installer packages
 them — see [docs/installer.md](docs/installer.md).
 
-### Fonts
-
-The app ships **no bundled fonts**: it uses the fonts already installed on the machine (`C:\Windows\Fonts`), with Segoe UI as the primary UI font and the CJK/symbol/emoji fonts as fallbacks. If none of them are found it logs a warning and uses the system default GUI font.
-
 ## Packaging (Windows installer)
 
 A per-user installer is built from `installer/emusic.iss` with [Inno Setup 7](https://jrsoftware.org/isdl.php): `cargo build --release`, place the BASS x64 DLLs in `target\release\bass\` (a required input — the compile fails without them), then compile the script with `ISCC.exe`. See [docs/installer.md](docs/installer.md) for the full steps.
@@ -72,7 +68,3 @@ Each [GitHub release](https://github.com/va1erian/emusic/releases) ships two ass
 emusic's own code is MIT — see [LICENSE](LICENSE).
 
 Audio playback uses the third-party [BASS](https://www.un4seen.com) library by un4seen developments, which is **free for non-commercial use**. emusic is personal freeware, so it is covered by those terms; the BASS DLLs ship with the installer under that license and are never committed to git. emusic's MIT license does not change BASS's terms: a **commercial** fork or build would need its own BASS license from un4seen. See the `bass.txt` license files bundled with the BASS download.
-
-## How this project is built
-
-Almost all of emusic is written by AI agents working from GitHub issues, one issue per PR. The process and the dispatch/landing scripts are documented in [docs/agent-workflow.md](docs/agent-workflow.md); the rules agents must follow are in [AGENTS.md](AGENTS.md).
