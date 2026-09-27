@@ -1,5 +1,9 @@
 # Visualizer strip
 
+> **Note:** written for the pre-migration `win32ui` shell; the strip is now
+> painted on the portable Canvas (#371). The projectM/GL plan below may still
+> apply but the `win32ui` `CustomWidget` details do not.
+
 The top-bar visualizer strip renders `VisualizerMode` (spectrum, oscilloscope,
 and — later — Milkdrop/projectM). The spectrum and oscilloscope are implemented
 in `crates/app/src/views/visualizer.rs` as a `win32ui` `CustomWidget` hosted by

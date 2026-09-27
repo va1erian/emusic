@@ -11,8 +11,7 @@ emusic is a Windows music player & library in Rust with a native Win32 UI, audio
 ## Unsafe
 - **Avoid `unsafe`.** Every crate except `bass`, `winshell`, `sid` and `projectm` must have `#![forbid(unsafe_code)]` in its `lib.rs`/`main.rs`.
 - In `bass`, `winshell`, `sid` and `projectm`, `unsafe` lives only in a small dedicated module (`ffi`/`sys`) wrapped by a safe API. Every `unsafe` block gets a `// SAFETY:` comment. In `sid` and `projectm`, every module outside `ffi` starts with `#![forbid(unsafe_code)]`. Prefer safe crates where they exist (e.g. `windows-registry` for the registry, `interprocess` for named pipes).
-- `win32ui` (the safe Win32/common-controls wrapper the app is built on) lives in its own repo, [va1erian/win32ui](https://github.com/va1erian/win32ui), and is pulled in as a git dependency — its `unsafe` is reviewed and tested there, not here. `crates/win32ui-demo` consumes it and holds the workspace's example + smoke test.
-- To pick up new win32ui commits, run `scripts/bump-win32ui.sh [<commit>]` — **not** `cargo update -p win32ui`, which re-resolves the shared `windows` crates and can break the build.
+- The UI is built on **xui** ([va1erian/xui](https://github.com/va1erian/xui)), pulled in as a git dependency — its `unsafe` is reviewed and tested there, not here. The portable UI lives in `crates/app`/`crates/ui` on `xui_core`; Windows runs the `xui-win32` backend, other platforms the canvas backend. The former `win32ui` wrapper and `crates/win32ui-demo` were removed in the xui migration (#369).
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.
@@ -65,7 +64,7 @@ cargo run -p emusic --features shot --bin emusic-shot -- --all --theme dark --ou
 cargo run -p emusic --features shot --bin emusic-shot -- --view music --theme light --out crates/app/docs/screenshots/light/music.png
 ```
 
-It runs the real `Win32App` against deterministic mock data (`emusic --mock` runs the same data interactively) and captures the window with `win32ui`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/app/docs/screenshots/` are the reference set: for **any** change touching `crates/app` UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
+It runs the real `Win32App` against deterministic mock data (`emusic --mock` runs the same data interactively) and captures the window with `xui-win32`'s occlusion-proof `Windows.Graphics.Capture` path (frame, caption buttons and backdrop material included; `PrintWindow` fallback). It renders one fresh process per view, so `--all` is consistent. The committed dark/light shots under `crates/app/docs/screenshots/` are the reference set: for **any** change touching `crates/app` UI code, regenerate the shots for the views you touched, in both themes, and **look at the PNGs** before submitting. Describe or attach the relevant screenshots in the PR.
 
 ## Behaviour changes: verify with UI Automation
 

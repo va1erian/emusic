@@ -2,9 +2,8 @@
 //! the mock backends, exercising the `Msg::Shortcut` dispatch path end to end.
 //!
 //! The portable `xui_core` runtime has no accelerator table yet (that is part
-//! of the #[375/#376] window-chrome work), so the raw-key injection test of the
-//! win32ui version is a documented follow-up; the message path below is the
-//! behaviour that survives.
+//! of the #[375/#376] window-chrome work), so raw-key injection is a documented
+//! follow-up; the message path below is the behaviour that survives.
 //!
 //! The app owns its player behind a `Box<dyn PlayerApi>`, so the test wraps the
 //! mock player in a recording adapter that keeps a shared log of the calls the

@@ -20,4 +20,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2"
 tracing = "0.1"
 walkdir = "2"
+
+[target.'cfg(windows)'.dependencies]
+# Remote-drive detection (`is_remote_root`) is Windows-only; other platforms
+# treat every root as local (see `watch::remote`).
 winshell = { path = "../winshell" }

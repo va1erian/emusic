@@ -25,4 +25,8 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "1"
 tracing = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+# Single-instance/IPC (named pipes) is Windows-only; non-Windows builds use an
+# inert `IpcBridge` (see `backend::ipc`).
 winshell = { path = "../winshell" }
