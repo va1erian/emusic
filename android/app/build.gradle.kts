@@ -128,6 +128,7 @@ dependencies {
             type = "aar"
         }
     }
+    implementation(libs.lucide.icons)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

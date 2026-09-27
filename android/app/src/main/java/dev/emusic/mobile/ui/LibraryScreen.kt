@@ -12,11 +12,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -39,6 +39,8 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.composables.icons.lucide.Info
+import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -70,6 +72,9 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var albumFilter by remember { mutableStateOf<String?>(null) }
     var artistFilter by remember { mutableStateOf<String?>(null) }
+    var folderFilter by remember { mutableStateOf<String?>(null) }
+    var includeSubdirs by remember { mutableStateOf(true) }
+    var showInfo by remember { mutableStateOf(false) }
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
@@ -203,13 +208,26 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         }
     }
 
+    if (showInfo) {
+        InfoScreen(url = url, version = version, tracks = tracks, onBack = { showInfo = false })
+        return
+    }
+
     Scaffold(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
         topBar = {
             TopAppBar(
                 title = { Text("Library") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
-                actions = { TextButton(onClick = { nonce++ }) { Text("Refresh") } },
+                actions = {
+                    IconButton(
+                        onClick = { showInfo = true },
+                        modifier = Modifier.testTag("info_action"),
+                    ) {
+                        Icon(Lucide.Info, contentDescription = "Server info")
+                    }
+                    TextButton(onClick = { nonce++ }) { Text("Refresh") }
+                },
             )
         },
     ) { insets ->
@@ -241,13 +259,17 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 }
 
                 else -> {
+                    val folder = folderFilter
                     val searched = searchTracks(tracks, query)
-                    val visibleTracks = searched
-                        .filter { formatFilter == null || it.format == formatFilter }
-                        .filter { albumFilter == null || it.album == albumFilter }
-                        .filter { artistFilter == null || it.artist == artistFilter }
-                    LibrarySummary(url = url, version = version, tracks = tracks)
-                    HorizontalDivider()
+                    val visibleTracks = sortTracksByDirectory(
+                        searched
+                            .filter { formatFilter == null || it.format == formatFilter }
+                            .filter { albumFilter == null || it.album == albumFilter }
+                            .filter { artistFilter == null || it.artist == artistFilter }
+                            .filter {
+                                folder == null || isInFolder(it.directory, folder, includeSubdirs)
+                            },
+                    )
                     SearchField(query = query, onQueryChange = { query = it })
                     BrowseTabs(mode = browseMode, onSelect = { browseMode = it })
                     val activeLabel = albumFilter ?: artistFilter
@@ -256,6 +278,14 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                             albumFilter = null
                             artistFilter = null
                         })
+                    }
+                    if (folder != null) {
+                        FolderFilterBanner(
+                            folder = folder,
+                            includeSubdirectories = includeSubdirs,
+                            onToggleSubdirectories = { includeSubdirs = it },
+                            onClear = { folderFilter = null },
+                        )
                     }
                     when (browseMode) {
                         BrowseMode.Albums -> AlbumList(
@@ -273,6 +303,15 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                             onSelect = { group ->
                                 artistFilter = group.artist
                                 albumFilter = null
+                                browseMode = BrowseMode.Tracks
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+
+                        BrowseMode.Folders -> FolderList(
+                            folders = foldersOf(searched),
+                            onSelect = { group ->
+                                folderFilter = group.path
                                 browseMode = BrowseMode.Tracks
                             },
                             modifier = Modifier.weight(1f),
@@ -319,54 +358,6 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LibrarySummary(url: String, version: Long, tracks: List<Track>) {
-    val distinctAlbums = tracks.mapNotNull { it.album }.filter { it.isNotBlank() }.distinct().size
-    val distinctArtists = tracks.mapNotNull { it.artist }.filter { it.isNotBlank() }.distinct().size
-    val totalSeconds = tracks.sumOf { it.durationSecs ?: 0.0 }
-    val formats = tracks
-        .groupingBy { it.format }
-        .eachCount()
-        .entries
-        .sortedByDescending { it.value }
-    val special = tracks.count { it.specialized }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp)
-            .testTag("library_summary"),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(url, style = MaterialTheme.typography.titleMedium)
-            Text("Version $version", style = MaterialTheme.typography.bodySmall)
-            Text(
-                text = "${tracks.size} tracks · $distinctAlbums albums · $distinctArtists artists",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "${formatDuration(totalSeconds)} total · $special specialized",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            if (formats.isNotEmpty()) {
-                Text(
-                    text = formats.joinToString("  ") { "${it.key} ${it.value}" },
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            if (distinctAlbums == 0 && distinctArtists == 0) {
-                Text(
-                    text = "No tagged albums or artists on the server.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
         }
     }

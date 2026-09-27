@@ -13,6 +13,10 @@ pub struct TrackView {
     /// The file's name (final path component), for display fallback.
     #[serde(default)]
     pub filename: Option<String>,
+    /// The parent directory's relative path, `/`-separated with no leading or
+    /// trailing slash (empty at the library root). Absent from older servers.
+    #[serde(default)]
+    pub directory: String,
     /// Lowercase format label (`flac`, `mp3`, `sid`, `xm`, `mid`, ...).
     pub format: String,
     /// Either `stream` or `module`.

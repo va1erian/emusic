@@ -141,14 +141,18 @@ pub struct SyncDelta {
 
 /// Track metadata as sent to clients: everything except the internal
 /// `root_index` and `relative_path`, which are not disclosed. `filename` is
-/// the path's final component only, so clients can show it when a file has no
-/// title tag without revealing the library layout.
+/// the path's final component only and `directory` its parent, so clients can
+/// show the file name and browse by folder without revealing the absolute
+/// library root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TrackView {
     /// Opaque track identifier.
     pub id: String,
     /// The file's name (final path component), for display fallback.
     pub filename: String,
+    /// The parent directory's relative path, `/`-separated with no leading or
+    /// trailing slash (empty for a file at the library root).
+    pub directory: String,
     /// Lowercase format label.
     pub format: String,
     /// Either `stream` or `module`.
@@ -207,6 +211,7 @@ impl TrackView {
         Self {
             id: track.id.clone(),
             filename: file_name(&track.relative_path),
+            directory: directory_of(&track.relative_path),
             format: track.format.clone(),
             kind: track.kind.clone(),
             specialized: is_specialized_format(&track.format),
@@ -291,6 +296,15 @@ fn file_name(relative_path: &str) -> String {
         .to_string()
 }
 
+/// The parent directory of a stored relative path, `/`-separated with no
+/// leading or trailing slash, or empty when the file is at the library root.
+fn directory_of(relative_path: &str) -> String {
+    match relative_path.rsplit_once(['/', '\\']) {
+        Some((parent, _)) => parent.replace('\\', "/").trim_matches('/').to_string(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +323,12 @@ mod tests {
         assert_eq!(file_name("Album/Disc 1/01 - Song.flac"), "01 - Song.flac");
         assert_eq!(file_name("song.mp3"), "song.mp3");
         assert_eq!(file_name(""), "");
+    }
+
+    #[test]
+    fn directory_is_the_parent_path() {
+        assert_eq!(directory_of("Album/Disc 1/01 - Song.flac"), "Album/Disc 1");
+        assert_eq!(directory_of("song.mp3"), "");
+        assert_eq!(directory_of("a\\b\\c.mod"), "a/b");
     }
 }

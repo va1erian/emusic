@@ -231,6 +231,7 @@ mod tests {
         TrackView {
             id: id.into(),
             filename: None,
+            directory: String::new(),
             format: format.into(),
             kind: "stream".into(),
             specialized: false,

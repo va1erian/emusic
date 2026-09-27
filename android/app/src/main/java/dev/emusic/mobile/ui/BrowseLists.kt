@@ -20,10 +20,13 @@ import androidx.compose.ui.unit.dp
 import uniffi.emusic_mobile.Track
 
 /** The top-level way the library is presented. */
-enum class BrowseMode { Tracks, Albums, Artists }
+enum class BrowseMode { Tracks, Albums, Artists, Folders }
 
 /** Tracks grouped under one album. */
 data class AlbumGroup(val album: String, val artist: String, val tracks: List<Track>)
+
+/** Tracks that share a directory. */
+data class FolderGroup(val path: String, val tracks: List<Track>)
 
 /** Tracks grouped under one artist. */
 data class ArtistGroup(val artist: String, val tracks: List<Track>)
@@ -49,6 +52,31 @@ fun artistsOf(tracks: List<Track>): List<ArtistGroup> =
         .groupBy { it.artist!! }
         .map { (artist, list) -> ArtistGroup(artist, list) }
         .sortedBy { it.artist.lowercase() }
+
+/** Groups tracks by directory, alphabetically (root first). */
+fun foldersOf(tracks: List<Track>): List<FolderGroup> =
+    tracks
+        .groupBy { it.directory }
+        .map { (path, list) -> FolderGroup(path, list) }
+        .sortedBy { it.path.lowercase() }
+
+/** Whether `directory` is `folder` itself or nested under it. */
+fun isInFolder(directory: String, folder: String, includeSubdirectories: Boolean): Boolean =
+    if (includeSubdirectories) {
+        directory == folder || directory.startsWith("$folder/")
+    } else {
+        directory == folder
+    }
+
+/** Tracks ordered by directory, then track number, then title. */
+fun sortTracksByDirectory(tracks: List<Track>): List<Track> =
+    tracks.sortedWith(
+        compareBy(
+            { it.directory.lowercase() },
+            { it.trackNo ?: 0u },
+            { it.displayTitle().lowercase() },
+        ),
+    )
 
 /** Free-text filter over title, artist and album. */
 fun searchTracks(tracks: List<Track>, query: String): List<Track> {
@@ -119,6 +147,21 @@ fun ArtistList(artists: List<ArtistGroup>, onSelect: (ArtistGroup) -> Unit, modi
 }
 
 @Composable
+fun FolderList(folders: List<FolderGroup>, onSelect: (FolderGroup) -> Unit, modifier: Modifier = Modifier) {
+    LazyColumn(modifier = modifier.fillMaxWidth().testTag("folder_list")) {
+        items(folders, key = { it.path }) { group ->
+            ListItem(
+                modifier = Modifier.clickable { onSelect(group) }.testTag("folder_row"),
+                headlineContent = {
+                    Text(group.path.ifEmpty { "/" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                supportingContent = { Text("${group.tracks.size} tracks") },
+            )
+        }
+    }
+}
+
+@Composable
 fun BrowseTabs(mode: BrowseMode, onSelect: (BrowseMode) -> Unit, modifier: Modifier = Modifier) {
     androidx.compose.foundation.layout.Row(
         modifier = modifier
@@ -145,6 +188,39 @@ fun FilterBanner(label: String, onClear: () -> Unit, modifier: Modifier = Modifi
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text("Filtered by $label", style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.TextButton(onClick = onClear) { Text("Clear") }
+    }
+}
+
+/** The active folder filter, with an include-subdirectories toggle and clear. */
+@Composable
+fun FolderFilterBanner(
+    folder: String,
+    includeSubdirectories: Boolean,
+    onToggleSubdirectories: (Boolean) -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.layout.Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("folder_filter"),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Text(
+            text = folder.ifEmpty { "/" },
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        androidx.compose.material3.FilterChip(
+            selected = includeSubdirectories,
+            onClick = { onToggleSubdirectories(!includeSubdirectories) },
+            label = { Text("Subfolders") },
+            modifier = Modifier.testTag("subfolders_toggle"),
+        )
         androidx.compose.material3.TextButton(onClick = onClear) { Text("Clear") }
     }
 }
