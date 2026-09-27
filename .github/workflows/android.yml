@@ -16,6 +16,8 @@ on:
       - "crates/client/**"
       - "crates/render/**"
       - ".github/workflows/android.yml"
+  schedule:
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -68,6 +70,10 @@ jobs:
           if-no-files-found: error
 
   instrumentation:
+    # The hosted emulator is slow (its boot alone took ~15 min); run this
+    # nightly or on demand instead of on every PR. Contributors run it locally
+    # before submitting — see AGENTS.md.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
