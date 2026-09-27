@@ -7,10 +7,13 @@
 //! search box is a portable [`Edit`] whose text mirrors
 //! [`AppState::search_query`](emusic_ui::state::AppState::search_query).
 //!
-//! The caption band above the transport band is a transparent drag region on
-//! the canvas backend, which draws no native chrome; on the native Win32
-//! backend the extended title bar owns the strip, so the band node is kept
-//! hidden.
+//! When the active backend provides no native window buttons
+//! ([`crate::backend::is_canvas()`]) the caption band above the transport band
+//! is shown as a transparent drag region and portable window buttons are added
+//! to the bar. The native Win32 backend provides its own chrome (the extended
+//! title bar owns the strip and the native caption buttons own minimize/
+//! maximize/close), so the band node stays hidden and no portable buttons are
+//! added.
 
 use std::cell::Cell;
 use std::rc::Rc;

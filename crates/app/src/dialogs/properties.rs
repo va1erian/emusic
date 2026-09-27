@@ -172,7 +172,7 @@ impl App for PropertiesDialog {
 ///
 /// The native Win32 backend runs it as a true modal (its nested loop is
 /// supported). The canvas backend cannot run one on the `winit` event-loop
-/// thread, so there it opens the same dialog as an owned, non-modal window.
+/// thread, so there it opens the same dialog as a non-modal secondary window.
 pub fn show<M: 'static>(ui: &Ui<M>, track: &TrackInfo) {
     if crate::backend::is_canvas() {
         if let Err(error) = open(ui, track) {
@@ -185,8 +185,8 @@ pub fn show<M: 'static>(ui: &Ui<M>, track: &TrackInfo) {
     }
 }
 
-/// Opens the dialog as a non-modal owned window and returns its handle, for the
-/// screenshot tool.
+/// Opens the dialog as a non-modal secondary window and returns its handle, for
+/// the screenshot tool.
 pub fn open<M: 'static>(ui: &Ui<M>, track: &TrackInfo) -> Result<WindowHandle<Msg>> {
     let spec = spec(track);
     let track = track.clone();

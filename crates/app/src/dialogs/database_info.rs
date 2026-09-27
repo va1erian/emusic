@@ -4,7 +4,8 @@
 //!
 //! [`show`] runs it as a real modal window on the native Win32 backend and
 //! returns the user's choice; on the canvas backend (which cannot run a modal
-//! loop on its event-loop thread) it opens the same dialog non-modally instead.
+//! loop on its event-loop thread) it opens the same dialog as a non-modal
+//! secondary window instead.
 //! [`open`] opens it non-modally for the screenshot tool (a modal's nested loop
 //! would block the tool's own capture tick).
 
@@ -174,7 +175,7 @@ impl App for DatabaseInfoDialog {
 /// The native Win32 backend runs it as a true modal and returns the user's
 /// choice (`None` when it was dismissed with the window's close button). The
 /// canvas backend cannot run a modal loop on its event-loop thread, so there it
-/// opens the same dialog non-modally: Rescan reports back as
+/// opens the same dialog as a non-modal secondary window: Rescan reports back as
 /// [`Msg::LibraryRescan`](crate::app::Msg::LibraryRescan) and this returns
 /// `None`.
 pub fn show(ui: &Ui<AppMsg>, library: &dyn LibraryDataSource) -> Option<DatabaseInfoChoice> {
