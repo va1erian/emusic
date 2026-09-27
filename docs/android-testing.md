@@ -74,8 +74,32 @@ cd android
 .\gradlew :app:connectedDebugAndroidTest
 ```
 
-CI runs the same on a hardware-accelerated emulator; see
-`.github/workflows/android.yml`.
+CI runs the same on a hardware-accelerated emulator, but the hosted emulator is
+too slow to boot for every PR, so the `instrumentation` job runs **nightly** (and
+on `workflow_dispatch`) — see `.github/workflows/android.yml`. Run it locally
+before submitting a change that touches the app or its connector crates.
+
+## Android Auto
+
+The player is a Media3 `MediaLibraryService`, so it is browsable by Android Auto
+(albums / artists / folders / tracks, from the cached library). The
+`MediaLibraryServiceTest` instrumentation test connects a `MediaBrowser` and
+walks the tree — run it like any other instrumentation test and prefer it over
+manual checks.
+
+To drive the real **Desktop Head Unit** (DHU):
+
+```powershell
+sdkmanager "extras;google;auto"                 # installs desktop-head-unit.exe
+adb forward tcp:5277 tcp:5277
+& "$env:ANDROID_HOME\extras\google\auto\desktop-head-unit.exe" --adb=5277
+```
+
+The emulator must run a Google APIs image with Android Auto
+(`com.google.android.projection.gearhead`) and have its **head-unit server**
+enabled (Android Auto → Settings → Start head unit server); without that the DHU
+connects at the transport level but never starts projection. Pass `-h` to run the
+DHU headless.
 
 ## Limitations
 

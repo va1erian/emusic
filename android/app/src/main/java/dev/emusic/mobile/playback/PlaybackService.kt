@@ -4,23 +4,34 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.MediaItem
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionError
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import dev.emusic.mobile.MainActivity
 import uniffi.emusic_mobile.MobileCore
 
 /**
- * Foreground media service that owns the player and its media session, so
- * playback keeps running when the UI is backgrounded or destroyed. The UI
- * drives it through a [androidx.media3.session.MediaController].
+ * Foreground media service that owns the player and a **media library** session,
+ * so playback keeps running when the UI is backgrounded or destroyed, and the
+ * library can be browsed from Android Auto and other media browsers.
+ *
+ * The UI drives it through a `MediaController`; Android Auto browses it through
+ * a `MediaBrowser`. The browse tree comes from the cached library
+ * ([LibraryBrowser]), so it works offline.
  */
-class PlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var librarySession: MediaLibraryService.MediaLibrarySession? = null
+    private var browser: LibraryBrowser? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -29,30 +40,42 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setMediaSourceFactory(DefaultMediaSourceFactory(authenticatedSourceFactory(this)))
             .build()
-        mediaSession = MediaSession.Builder(this, player)
+        librarySession = MediaLibraryService.MediaLibrarySession.Builder(this, player, LibraryCallback())
             .setSessionActivity(openAppIntent())
             .build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        mediaSession
+    override fun onGetSession(
+        controllerInfo: MediaSession.ControllerInfo,
+    ): MediaLibraryService.MediaLibrarySession? = librarySession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Keep playing when the task is swiped away, but do not linger once
         // playback has stopped.
-        val player = mediaSession?.player
+        val player = librarySession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
-        mediaSession?.run {
+        librarySession?.run {
             player.release()
             release()
         }
-        mediaSession = null
+        librarySession = null
         super.onDestroy()
+    }
+
+    /** Builds (once) the browse tree from the cached library. */
+    private fun library(): LibraryBrowser {
+        browser?.let { return it }
+        val active = ActiveServer.get(this)
+        val core = active?.let { runCatching { MobileCore(it, ActiveServer.dataDir(this)) }.getOrNull() }
+        val tracks = core?.let { runCatching { it.cachedLibrary().tracks }.getOrNull() }.orEmpty()
+        val built = LibraryBrowser(tracks) { trackId -> core?.streamUrl(trackId).orEmpty() }
+        browser = built
+        return built
     }
 
     private fun openAppIntent(): PendingIntent =
@@ -62,6 +85,72 @@ class PlaybackService : MediaSessionService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+
+    /** Serves the browse tree to Android Auto and other media browsers. */
+    private inner class LibraryCallback : MediaLibraryService.MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.immediateFuture(LibraryResult.ofItem(library().root(), params))
+
+        override fun onGetItem(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val item = library().item(mediaId)
+                ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            return Futures.immediateFuture(LibraryResult.ofItem(item, null))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val children = library().children(parentId, page, pageSize)
+                ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            return Futures.immediateFuture(LibraryResult.ofItemList(children, params))
+        }
+
+        override fun onSubscribe(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> =
+            Futures.immediateFuture(LibraryResult.ofVoid(params))
+
+        override fun onUnsubscribe(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+        ): ListenableFuture<LibraryResult<Void>> =
+            Futures.immediateFuture(LibraryResult.ofVoid())
+
+        override fun onSearch(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> =
+            Futures.immediateFuture(LibraryResult.ofVoid(params))
+
+        override fun onGetSearchResult(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            Futures.immediateFuture(LibraryResult.ofItemList(library().search(query), params))
+    }
 }
 
 /**
