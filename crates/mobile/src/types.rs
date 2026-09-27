@@ -29,6 +29,8 @@ pub struct Track {
     pub album_artist: Option<String>,
     /// Tagged album.
     pub album: Option<String>,
+    /// Opaque album identifier, for artwork.
+    pub album_id: Option<String>,
     /// Tagged genre.
     pub genre: Option<String>,
     /// Tagged year.
@@ -66,6 +68,7 @@ impl From<TrackView> for Track {
             artist: track.artist,
             album_artist: track.album_artist,
             album: track.album,
+            album_id: track.album_id,
             genre: track.genre,
             year: track.year,
             track_no: track.track_no,
@@ -166,6 +169,7 @@ mod tests {
             artist: None,
             album_artist: None,
             album: None,
+            album_id: None,
             genre: None,
             year: None,
             track_no: None,

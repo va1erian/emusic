@@ -1,8 +1,12 @@
 package dev.emusic.mobile.playback
 
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import uniffi.emusic_mobile.Track
+
+/** How a track should be played: a URI and whether it is playable at all. */
+data class TrackSource(val uri: String, val playable: Boolean)
 
 /**
  * Builds an Android Auto / Media3 browse tree from a synced library.
@@ -11,12 +15,14 @@ import uniffi.emusic_mobile.Track
  * `album:<n>`, `artist:<n>`, `folder:<n>` and `track:<id>`. The tree is built
  * once from the cached library and held in memory.
  *
- * Artwork is not attached yet (the art endpoint needs the bearer token, which
- * the Media3 bitmap loader cannot send); a content provider will add it later.
+ * [source] resolves a track to its playable URI (a `/stream` URL, or a
+ * `content://` render URI for specialized formats) and whether it can play.
+ * Albums/artists/tracks with `has_art` get a `content://` artwork URI from
+ * [MediaContentProvider].
  */
 class LibraryBrowser(
     tracks: List<Track>,
-    private val streamUrl: (String) -> String,
+    private val source: (Track) -> TrackSource,
 ) {
     private data class Node(val item: MediaItem, val childIds: List<String>)
 
@@ -24,45 +30,50 @@ class LibraryBrowser(
     private val root: MediaItem
 
     init {
-        root = browsable(ROOT, "emusic")
+        root = browsable(ROOT, "emusic", null)
         val albums = LinkedHashMap<String, MutableList<String>>()
         val artists = LinkedHashMap<String, MutableList<String>>()
         val folders = LinkedHashMap<String, MutableList<String>>()
+        val albumArt = HashMap<String, String>()
+        val artistArt = HashMap<String, String>()
 
         val trackIds = ArrayList<String>(tracks.size)
         for (track in tracks) {
             val id = "track:${track.id}"
             nodes[id] = Node(playable(id, track), emptyList())
             trackIds += id
-            track.album?.takeIf { it.isNotBlank() }?.let {
-                albums.getOrPut(it) { mutableListOf() } += id
+            val artId = track.albumId?.takeIf { track.hasArt && it.isNotBlank() }
+            track.album?.takeIf { it.isNotBlank() }?.let { album ->
+                albums.getOrPut(album) { mutableListOf() } += id
+                if (artId != null) albumArt.putIfAbsent(album, artId)
             }
-            track.artist?.takeIf { it.isNotBlank() }?.let {
-                artists.getOrPut(it) { mutableListOf() } += id
+            track.artist?.takeIf { it.isNotBlank() }?.let { artist ->
+                artists.getOrPut(artist) { mutableListOf() } += id
+                if (artId != null) artistArt.putIfAbsent(artist, artId)
             }
             folders.getOrPut(track.directory) { mutableListOf() } += id
         }
 
         val albumIds = albums.entries.mapIndexed { index, (album, ids) ->
             val id = "album:$index"
-            nodes[id] = Node(browsable(id, album), ids)
+            nodes[id] = Node(browsable(id, album, albumArt[album]), ids)
             id
         }
         val artistIds = artists.entries.mapIndexed { index, (artist, ids) ->
             val id = "artist:$index"
-            nodes[id] = Node(browsable(id, artist), ids)
+            nodes[id] = Node(browsable(id, artist, artistArt[artist]), ids)
             id
         }
         val folderIds = folders.entries.mapIndexed { index, (path, ids) ->
             val id = "folder:$index"
-            nodes[id] = Node(browsable(id, path.ifEmpty { "/" }), ids)
+            nodes[id] = Node(browsable(id, path.ifEmpty { "/" }, null), ids)
             id
         }
 
-        nodes[ALBUMS] = Node(browsable(ALBUMS, "Albums"), albumIds)
-        nodes[ARTISTS] = Node(browsable(ARTISTS, "Artists"), artistIds)
-        nodes[FOLDERS] = Node(browsable(FOLDERS, "Folders"), folderIds)
-        nodes[TRACKS] = Node(browsable(TRACKS, "All tracks"), trackIds)
+        nodes[ALBUMS] = Node(browsable(ALBUMS, "Albums", null), albumIds)
+        nodes[ARTISTS] = Node(browsable(ARTISTS, "Artists", null), artistIds)
+        nodes[FOLDERS] = Node(browsable(FOLDERS, "Folders", null), folderIds)
+        nodes[TRACKS] = Node(browsable(TRACKS, "All tracks", null), trackIds)
         nodes[ROOT] = Node(root, listOf(ALBUMS, ARTISTS, FOLDERS, TRACKS))
     }
 
@@ -99,32 +110,41 @@ class LibraryBrowser(
             .toList()
     }
 
-    private fun browsable(id: String, title: String): MediaItem =
-        MediaItem.Builder()
+    private fun browsable(id: String, title: String, artwork: String?): MediaItem {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(title)
+            .setIsBrowsable(true)
+            .setIsPlayable(false)
+        if (artwork != null) metadata.setArtworkUri(MediaContentProvider.artUri(artwork))
+        return MediaItem.Builder()
             .setMediaId(id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .build(),
-            )
+            .setMediaMetadata(metadata.build())
             .build()
+    }
 
-    private fun playable(id: String, track: Track): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(id)
-            .setUri(streamUrl(track.id))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(titleOf(track))
-                    .setArtist(track.artist)
-                    .setAlbumTitle(track.album)
-                    .setIsPlayable(true)
-                    .setIsBrowsable(false)
-                    .build(),
+    private fun playable(id: String, track: Track): MediaItem {
+        val resolved = source(track)
+        val metadata = MediaMetadata.Builder()
+            .setTitle(titleOf(track))
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+            .setIsPlayable(resolved.playable)
+            .setIsBrowsable(false)
+        track.albumId?.takeIf { track.hasArt && it.isNotBlank() }?.let {
+            metadata.setArtworkUri(MediaContentProvider.artUri(it))
+        }
+        val builder = MediaItem.Builder().setMediaId(id).setMediaMetadata(metadata.build())
+        if (resolved.uri.isNotEmpty()) {
+            // The session strips `localConfiguration` from library items, so the
+            // playable URI must travel in the request metadata; the session's
+            // `onAddMediaItems` resolves it back into a local item.
+            builder.setUri(resolved.uri)
+            builder.setRequestMetadata(
+                MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(resolved.uri)).build(),
             )
-            .build()
+        }
+        return builder.build()
+    }
 
     /** Title to display: the tagged title, else the file name, else the id. */
     private fun titleOf(track: Track): String =

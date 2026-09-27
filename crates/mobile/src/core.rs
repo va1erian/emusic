@@ -366,6 +366,28 @@ impl MobileCore {
         std::fs::rename(&temporary, &flac_path)?;
         Ok(flac_path.to_string_lossy().into_owned())
     }
+
+    /// Downloads and caches an album's cover art, returning the local path.
+    pub fn album_art_file(&self, album_id: String) -> Result<String, MobileError> {
+        let id = safe_id(&album_id).ok_or_else(|| MobileError::Client {
+            message: format!("unsafe album id {album_id:?}"),
+        })?;
+        let art = self.data_dir.join("art");
+        std::fs::create_dir_all(&art)?;
+        let destination = art.join(id);
+        if destination.is_file() {
+            return Ok(destination.to_string_lossy().into_owned());
+        }
+        let (_, token) = self.fresh_token()?;
+        let bytes = self.client.album_art(&token, &album_id)?;
+        let temporary = art.join(format!("{id}.tmp"));
+        std::fs::write(&temporary, &bytes)?;
+        if destination.exists() {
+            let _ = std::fs::remove_file(&destination);
+        }
+        std::fs::rename(&temporary, &destination)?;
+        Ok(destination.to_string_lossy().into_owned())
+    }
 }
 
 /// Maps a server format label to a safe file extension, falling back to `bin`.
