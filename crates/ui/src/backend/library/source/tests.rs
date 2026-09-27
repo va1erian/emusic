@@ -38,6 +38,9 @@ fn sample_track(path: &str) -> Track {
     }
 }
 
+// Folder/dir matching uses native path components, so these Windows-path
+// assertions only hold on Windows (macOS-port follow-up).
+#[cfg(windows)]
 #[test]
 fn from_store_builds_track_info() {
     let mut store = Store::open_in_memory().unwrap();
@@ -64,6 +67,7 @@ fn from_store_builds_track_info() {
     assert_eq!(snapshot.folders[0].track_count, 1);
 }
 
+#[cfg(windows)]
 #[test]
 fn from_store_builds_dir_tree_with_counts() {
     let mut store = Store::open_in_memory().unwrap();
