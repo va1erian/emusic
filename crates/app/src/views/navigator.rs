@@ -34,6 +34,8 @@ fn glyph(view: View) -> Glyph {
         View::History => Glyph::History,
         View::NowPlaying => Glyph::Play,
         View::Visualization => Glyph::Monitor,
+        // Settings is unreachable from the navigator tree (it is menu-only),
+        // but it keeps its Win32 glyph so this mapping stays total over `View`.
         View::Settings => Glyph::Settings,
     }
 }
@@ -150,20 +152,20 @@ mod tests {
     }
 
     #[test]
-    fn every_view_has_a_distinct_vector_icon() {
-        let mut icons = Vec::new();
-        for view in View::ALL {
-            let icon = glyph(view);
-            assert!(
-                !matches!(icon, Glyph::Text(_)),
-                "{view:?} must use a vector glyph, not a text placeholder"
-            );
-            assert!(
-                icons.iter().all(|&other| other != icon),
-                "{view:?} shares its icon with another view"
-            );
-            icons.push(icon);
-        }
-        assert_eq!(icons.len(), View::ALL.len());
+    fn every_view_has_its_win32_icon() {
+        // The Win32 Segoe Fluent glyph each portable icon stands in for, and
+        // the portable glyph that mirrors it. Locked down per view so a
+        // rotated-but-distinct mapping cannot pass.
+        assert_eq!(glyph(View::Music), Glyph::Audio);
+        assert_eq!(glyph(View::Albums), Glyph::Album);
+        assert_eq!(glyph(View::Artists), Glyph::People);
+        assert_eq!(glyph(View::Genres), Glyph::Tag);
+        assert_eq!(glyph(View::Folders), Glyph::Folder);
+        assert_eq!(glyph(View::Starred), Glyph::Star);
+        assert_eq!(glyph(View::MostPlayed), Glyph::StarFilled);
+        assert_eq!(glyph(View::History), Glyph::History);
+        assert_eq!(glyph(View::NowPlaying), Glyph::Play);
+        assert_eq!(glyph(View::Visualization), Glyph::Monitor);
+        assert_eq!(glyph(View::Settings), Glyph::Settings);
     }
 }
