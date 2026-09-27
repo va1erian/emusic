@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+#[cfg(windows)]
 use std::time::Duration;
 
 use emusic_library::stats::StatsWindow;
