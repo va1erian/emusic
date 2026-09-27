@@ -129,6 +129,9 @@ impl Win32App {
         if look != self.applied_look {
             self.applied_look = look;
             self.ui.set_theme(app_theme(look.0, look.1));
+            // Rasterized row icons paint in their own colours, so the
+            // navigator re-tints them when the light/dark theme flips.
+            self.navigator.set_dark(self.ui.theme().is_dark);
         }
     }
 

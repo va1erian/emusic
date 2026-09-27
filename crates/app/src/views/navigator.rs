@@ -1,6 +1,6 @@
 //! The left navigator (#104), ported to the portable [`TreeView`]: the shared
 //! view [`SECTIONS`] as collapsible headings, each view a selectable row,
-//! marked with a per-view [`Glyph`] icon (#399), that switches the central
+//! marked with a rasterized Lucide icon (#442), that switches the central
 //! view.
 //!
 //! Sections start expanded; collapsing a heading hides its views through the
@@ -15,29 +15,32 @@ use emusic_ui::panels::navigator::SECTIONS;
 use emusic_ui::state::View;
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
-use xui::xui_core::widget::{Glyph, TreeRow, TreeView};
+use xui::xui_core::widget::{TreeRow, TreeView};
 
+use super::navigator_icons;
 use crate::app::Msg;
 
-/// The portable icon for a view, matching the Win32 build's Segoe Fluent
-/// glyphs (#399). [`View::Starred`] keeps the outlined [`Glyph::Star`] and
-/// [`View::MostPlayed`] the filled [`Glyph::StarFilled`], as in Win32.
-fn glyph(view: View) -> Glyph {
-    match view {
-        View::Music => Glyph::Audio,
-        View::Albums => Glyph::Album,
-        View::Artists => Glyph::People,
-        View::Genres => Glyph::Tag,
-        View::Folders => Glyph::Folder,
-        View::Starred => Glyph::Star,
-        View::MostPlayed => Glyph::StarFilled,
-        View::History => Glyph::History,
-        View::NowPlaying => Glyph::Play,
-        View::Visualization => Glyph::Monitor,
-        // Settings is unreachable from the navigator tree (it is menu-only),
-        // but it keeps its Win32 glyph so this mapping stays total over `View`.
-        View::Settings => Glyph::Settings,
+/// The navigator's rows, paired with the view each selects (`None` for a
+/// section heading), so a click and the highlight resolve through one map.
+///
+/// Row icons are theme-tinted rasters ([`navigator_icons`]); the rows are
+/// rebuilt when the theme flips so the icons stay legible.
+fn build_rows(dark: bool) -> (Vec<TreeRow>, Vec<Option<View>>) {
+    let mut rows = Vec::new();
+    let mut views = Vec::new();
+    for section in SECTIONS {
+        rows.push(
+            TreeRow::new(section.heading, 0)
+                .expandable(true)
+                .expanded(true),
+        );
+        views.push(None);
+        for &view in section.views {
+            rows.push(TreeRow::new(view.label(), 1).icon(navigator_icons::image(view, dark)));
+            views.push(Some(view));
+        }
     }
+    (rows, views)
 }
 
 /// The left navigator: the collapsible central-view switcher.
@@ -49,26 +52,19 @@ pub struct NavigatorView {
     views: Rc<Vec<Option<View>>>,
     /// The active view, so clicking a heading keeps its highlight.
     current: Rc<Cell<View>>,
+    /// Whether the rows were built for the dark theme, so [`set_dark`] can
+    /// skip a rebuild when the theme is unchanged.
+    ///
+    /// [`set_dark`]: NavigatorView::set_dark
+    dark: Cell<bool>,
 }
 
 impl NavigatorView {
     /// Creates the navigator: a collapsible heading per section, then one row
     /// per view.
     pub fn new(ui: &Ui<Msg>) -> NavigatorView {
-        let mut rows = Vec::new();
-        let mut views = Vec::new();
-        for section in SECTIONS {
-            rows.push(
-                TreeRow::new(section.heading, 0)
-                    .expandable(true)
-                    .expanded(true),
-            );
-            views.push(None);
-            for &view in section.views {
-                rows.push(TreeRow::new(view.label(), 1).icon(glyph(view)));
-                views.push(Some(view));
-            }
-        }
+        let dark = ui.theme().is_dark;
+        let (rows, views) = build_rows(dark);
 
         let views = Rc::new(views);
         let current = Rc::new(Cell::new(View::default()));
@@ -87,7 +83,21 @@ impl NavigatorView {
             tree,
             views,
             current,
+            dark: Cell::new(dark),
         }
+    }
+
+    /// Re-tints the row icons for the light or dark theme, rebuilding the rows
+    /// only when the theme actually changed. An image paints in its own
+    /// colours, so unlike a vector glyph it cannot follow the row's text
+    /// colour and carries a themed raster instead.
+    pub fn set_dark(&self, dark: bool) {
+        if self.dark.get() == dark {
+            return;
+        }
+        self.dark.set(dark);
+        let (rows, _) = build_rows(dark);
+        self.tree.set_rows(&rows);
     }
 
     /// Moves/resizes the navigator.
@@ -111,18 +121,12 @@ impl NavigatorView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xui::xui_core::widget::RowIcon;
 
     /// The navigator's row map, without a window: headings map to `None`, view
     /// rows to their view, and every view appears exactly once.
     fn row_map() -> Vec<Option<View>> {
-        let mut views = Vec::new();
-        for section in SECTIONS {
-            views.push(None);
-            for &view in section.views {
-                views.push(Some(view));
-            }
-        }
-        views
+        build_rows(false).1
     }
 
     #[test]
@@ -152,20 +156,18 @@ mod tests {
     }
 
     #[test]
-    fn every_view_has_its_win32_icon() {
-        // The Win32 Segoe Fluent glyph each portable icon stands in for, and
-        // the portable glyph that mirrors it. Locked down per view so a
-        // rotated-but-distinct mapping cannot pass.
-        assert_eq!(glyph(View::Music), Glyph::Audio);
-        assert_eq!(glyph(View::Albums), Glyph::Album);
-        assert_eq!(glyph(View::Artists), Glyph::People);
-        assert_eq!(glyph(View::Genres), Glyph::Tag);
-        assert_eq!(glyph(View::Folders), Glyph::Folder);
-        assert_eq!(glyph(View::Starred), Glyph::Star);
-        assert_eq!(glyph(View::MostPlayed), Glyph::StarFilled);
-        assert_eq!(glyph(View::History), Glyph::History);
-        assert_eq!(glyph(View::NowPlaying), Glyph::Play);
-        assert_eq!(glyph(View::Visualization), Glyph::Monitor);
-        assert_eq!(glyph(View::Settings), Glyph::Settings);
+    fn every_view_row_carries_a_rasterized_icon() {
+        // Headings are plain, every view row an `Image` (not a `Glyph`), so a
+        // regression back to the hand-drawn set fails here.
+        let (rows, views) = build_rows(false);
+        for (row, view) in rows.iter().zip(&views) {
+            match view {
+                Some(view) => assert!(
+                    matches!(row.icon, Some(RowIcon::Image(_))),
+                    "{view:?} carries a rasterized icon"
+                ),
+                None => assert!(row.icon.is_none(), "a heading has no icon"),
+            }
+        }
     }
 }

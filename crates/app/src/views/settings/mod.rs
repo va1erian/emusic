@@ -29,12 +29,17 @@ use emusic_ui::state::{AppState, Density, FontSize, SettingsTab, Theme, Visualiz
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
+use xui::xui_core::units::dip;
 use xui::xui_core::widget::Tabs;
 
 use crate::app::Msg;
 
 pub use playback::{TrackerEdit, TrackerPreset};
 pub use visualization::VisualizationEdit;
+
+/// Outer margin around each settings page's content, in design units, matching
+/// the app's other view insets.
+const PAGE_MARGIN: f32 = 8.0;
 
 /// Everything the Settings controls can raise, mapped onto the shared state and
 /// [`Command`](emusic_ui::state::Command)s.
@@ -242,11 +247,44 @@ impl SettingsView {
 
     /// Re-lays every page's form from the bounds the tab strip gave it.
     fn relayout_pages(&self) {
+        // Re-run the strip's own layout so the selected page is back at its
+        // full page rect before [`Self::inset_selected_page`] applies the
+        // margin; otherwise a repeated re-layout would inset an already-inset
+        // page and shrink it a little more every time.
+        self.tabs.relayout();
+        self.inset_selected_page();
         self.library.relayout();
         self.appearance.relayout();
         self.visualization.relayout();
         self.associations.relayout();
         self.playback.relayout();
+    }
+
+    /// Insets the selected page's content by [`PAGE_MARGIN`] on every side, so
+    /// it does not sit flush against the tab strip or the panel border.
+    fn inset_selected_page(&self) {
+        let id = match SettingsTab::ALL.get(self.tabs.selected()).copied() {
+            Some(SettingsTab::Library) => self.library.id(),
+            Some(SettingsTab::Appearance) => self.appearance.id(),
+            Some(SettingsTab::Visualization) => self.visualization.id(),
+            Some(SettingsTab::Associations) => self.associations.id(),
+            Some(SettingsTab::Playback) => self.playback.id(),
+            Some(SettingsTab::About) => self.about.id(),
+            None => return,
+        };
+        let margin = dip(PAGE_MARGIN).to_px(self.ui.dpi()).value();
+        let bounds = self.ui.bounds(id);
+        if bounds.width() > 2 * margin && bounds.height() > 2 * margin {
+            self.ui.apply_moves(&[(
+                id,
+                Rect::new(
+                    bounds.left + margin,
+                    bounds.top + margin,
+                    bounds.right - margin,
+                    bounds.bottom - margin,
+                ),
+            )]);
+        }
     }
 
     /// Shows only the selected page, and only while the view is shown.

@@ -4,6 +4,19 @@ emusic is MIT-licensed (see [LICENSE](LICENSE)). It also ships or downloads
 third-party components; this file records their licenses and sources. The
 DLLs themselves are never committed to git.
 
+## Lucide
+
+- **Component:** the navigator's row icons, rasterized from the Lucide icon set
+  (#442) and embedded in the app binary.
+- **Version:** [`lucide-static` 1.48.0](https://www.npmjs.com/package/lucide-static/v/1.48.0)
+  (the vendored SVGs carry the release's `@license` header).
+- **Source:** <https://github.com/lucide-icons/lucide/tree/1.48.0> (also
+  vendored under `crates/app/assets/navigator/svg/`).
+- **License:** ISC — see the project's [LICENSE](https://github.com/lucide-icons/lucide/blob/1.48.0/LICENSE).
+- **Distribution:** the PNGs under `crates/app/assets/navigator/` are committed
+  and embedded with `include_bytes!`; `scripts/gen-navigator-icons.mjs`
+  regenerates them from the vendored SVGs.
+
 ## libprojectM
 
 - **Component:** `projectM-4.dll`, `projectM-4-playlist.dll` (MilkDrop visualization engine)
