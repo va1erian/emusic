@@ -19,8 +19,10 @@ required-features = ["shot"]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 emusic-platform = { path = "../platform" }
+emusic-player = { path = "../player" }
 emusic-ui = { path = "../ui" }
 png = { version = "0.18", optional = true }
+rfd = { version = "0.15", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

@@ -80,7 +80,7 @@ impl Win32App {
         menu::sync(&self.menu, &self.shell.state);
         if view == View::Settings {
             self.settings
-                .sync(self.shell.state.accent, self.shell.state.theme);
+                .sync(&self.shell.state, self.shell.library.as_ref());
         }
 
         // The transport and status models are shell state, synced from the

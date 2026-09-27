@@ -1,6 +1,7 @@
 //! The [`App`] implementation: message dispatch and post-update bookkeeping.
 
 use emusic_ui::state::{Command, View};
+use emusic_ui::views::Commands;
 use emusic_ui::views::folders::FoldersMsg;
 use xui::xui_core::app::{App, Ui};
 
@@ -145,6 +146,15 @@ impl Win32App {
             }
             Msg::SetAccent(accent) => {
                 self.shell.dispatch(Command::SetAccent(accent));
+                self.tick_inner();
+            }
+            Msg::Settings(message) => {
+                let mut out = Commands::new();
+                self.settings
+                    .update(message, &mut self.shell.state, &mut out);
+                for command in out.into_vec() {
+                    self.shell.dispatch(command);
+                }
                 self.tick_inner();
             }
             Msg::TagEditorApply => {
