@@ -1,0 +1,20 @@
+[package]
+name = "emusic-render"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Render specialized audio (SID, modules, MIDI) to PCM and encode it to FLAC"
+
+[lib]
+name = "emusic_render"
+path = "src/lib.rs"
+
+[dependencies]
+emusic-sid = { path = "../sid" }
+flacenc = "0.5"
+md-5 = "0.10"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+claxon = "0.4"
