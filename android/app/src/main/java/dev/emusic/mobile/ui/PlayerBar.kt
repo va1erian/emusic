@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -20,11 +21,17 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Pause
 import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.Repeat
+import com.composables.icons.lucide.Repeat1
+import com.composables.icons.lucide.Shuffle
 import com.composables.icons.lucide.SkipBack
 import com.composables.icons.lucide.SkipForward
 import uniffi.emusic_mobile.Track
 
-/** The bottom transport: title, previous/play-pause/next and a seek bar. */
+/** How the queue repeats. */
+enum class RepeatMode { Off, All, One }
+
+/** The bottom transport: title, shuffle/prev/play-pause/next/repeat and a seek bar. */
 @Composable
 fun PlayerBar(
     track: Track,
@@ -32,10 +39,14 @@ fun PlayerBar(
     preparing: Boolean,
     positionMs: Long,
     durationMs: Long,
+    repeatMode: RepeatMode,
+    shuffle: Boolean,
     onSeek: (Long) -> Unit,
     onToggle: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    onToggleShuffle: () -> Unit,
 ) {
     HorizontalDivider()
     Column(
@@ -70,6 +81,21 @@ fun PlayerBar(
                 )
             }
             IconButton(
+                onClick = onToggleShuffle,
+                enabled = !preparing,
+                modifier = Modifier.testTag("shuffle"),
+            ) {
+                Icon(
+                    imageVector = Lucide.Shuffle,
+                    contentDescription = if (shuffle) "Shuffle on" else "Shuffle off",
+                    tint = if (shuffle) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        LocalContentColor.current
+                    },
+                )
+            }
+            IconButton(
                 onClick = onPrevious,
                 enabled = !preparing,
                 modifier = Modifier.testTag("previous"),
@@ -92,6 +118,25 @@ fun PlayerBar(
                 modifier = Modifier.testTag("next"),
             ) {
                 Icon(Lucide.SkipForward, contentDescription = "Next")
+            }
+            IconButton(
+                onClick = onCycleRepeat,
+                enabled = !preparing,
+                modifier = Modifier.testTag("repeat"),
+            ) {
+                Icon(
+                    imageVector = if (repeatMode == RepeatMode.One) Lucide.Repeat1 else Lucide.Repeat,
+                    contentDescription = when (repeatMode) {
+                        RepeatMode.Off -> "Repeat off"
+                        RepeatMode.All -> "Repeat all"
+                        RepeatMode.One -> "Repeat one"
+                    },
+                    tint = if (repeatMode == RepeatMode.Off) {
+                        LocalContentColor.current
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
             }
         }
         Slider(
