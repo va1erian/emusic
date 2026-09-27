@@ -145,6 +145,7 @@ fn parse_remote_path(path: &Path, root: &Path) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
     use super::*;
 
     // The literals below use Windows separators, which `Path` only splits on
