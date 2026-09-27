@@ -9,6 +9,7 @@
 //! no-op [`NullShell`] compiles on every target and the Windows implementation
 //! is the only code that disappears.
 
+#[cfg(windows)]
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -134,11 +135,14 @@ where
 }
 
 /// A shared proxy wrapper so implementations can post actions without naming
-/// the message type in the trait.
+/// the message type in the trait. Windows-only; the other targets have no
+/// shell service that posts actions.
+#[cfg(windows)]
 pub(crate) struct ActionSink<M> {
     proxy: Proxy<M>,
 }
 
+#[cfg(windows)]
 impl<M> ActionSink<M>
 where
     M: From<ShellAction> + Send + 'static,
