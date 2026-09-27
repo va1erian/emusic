@@ -60,9 +60,10 @@ enum FeederCommand {
 pub struct SidChannel {
     stream: Arc<PushStream>,
     commands: Sender<FeederCommand>,
-    /// Whether the tune's real length (from the database) is known; drives
-    /// [`ChannelCapabilities::duration_known`].
-    duration_known: bool,
+    /// Each subtune's real length from the database (index 0 = subtune 1,
+    /// `None` when unknown); shared with the feeder and read by
+    /// [`SidChannel::capabilities`] for the currently loaded subtune.
+    subtune_lengths: Arc<Vec<Option<Duration>>>,
     /// How many subtunes the tune contains (`>= 1`).
     subtune_count: u16,
     /// The subtune currently loaded, shared with the feeder so a switch is
@@ -93,7 +94,7 @@ impl SidChannel {
         // The database, if any, is keyed by the whole file and lists every
         // subtune's length. Resolve them all up front so the feeder can switch
         // subtunes without touching the database (which lives on the UI side).
-        let subtune_lengths = resolve_subtune_lengths(&data, header.subtunes, lengths);
+        let subtune_lengths = Arc::new(resolve_subtune_lengths(&data, header.subtunes, lengths));
         let length = subtune_lengths[usize::from(header.default_subtune - 1)];
 
         let stream = Arc::new(bass.open_push_stream(SID_SAMPLE_RATE, 1, PushFlags::FLOAT)?);
@@ -106,6 +107,7 @@ impl SidChannel {
         let (ready_tx, ready_rx) = bounded(1);
         let feeder_stream = Arc::clone(&stream);
         let feeder_current = Arc::clone(&current_subtune);
+        let feeder_lengths = Arc::clone(&subtune_lengths);
         thread::Builder::new()
             .name("emusic-sid-feeder".to_string())
             .spawn(move || {
@@ -114,7 +116,7 @@ impl SidChannel {
                     data,
                     command_rx,
                     ready_tx,
-                    SidFeeder::new(subtune_lengths, fallback),
+                    SidFeeder::new(feeder_lengths, fallback),
                     feeder_current,
                 );
             })
@@ -124,7 +126,7 @@ impl SidChannel {
             Ok(Ok(())) => Ok(Self {
                 stream,
                 commands,
-                duration_known: length.is_some(),
+                subtune_lengths,
                 subtune_count: header.subtunes,
                 current_subtune,
             }),
@@ -143,8 +145,14 @@ fn resolve_subtune_lengths(
     subtunes: u16,
     lengths: Option<&SongLengths>,
 ) -> Vec<Option<Duration>> {
+    // Hash the tune once, then index the resolved list per subtune.
+    let entries = lengths.and_then(|db| db.subtunes(data));
     (1..=subtunes)
-        .map(|n| lengths.and_then(|db| db.subtune(data, n)))
+        .map(|n| {
+            entries
+                .and_then(|entries| entries.get(usize::from(n - 1)))
+                .copied()
+        })
         .collect()
 }
 
@@ -152,12 +160,12 @@ fn resolve_subtune_lengths(
 /// entry per subtune, `None` when the database doesn't cover it) and the
 /// fallback used for those.
 struct SidFeeder {
-    subtune_lengths: Vec<Option<Duration>>,
+    subtune_lengths: Arc<Vec<Option<Duration>>>,
     fallback: Duration,
 }
 
 impl SidFeeder {
-    fn new(subtune_lengths: Vec<Option<Duration>>, fallback: Duration) -> Self {
+    fn new(subtune_lengths: Arc<Vec<Option<Duration>>>, fallback: Duration) -> Self {
         debug_assert!(
             !subtune_lengths.is_empty(),
             "a parsed SID header always has at least one subtune"
@@ -274,19 +282,34 @@ impl BackendChannel for SidChannel {
 
     /// Switches to `subtune` (`1`-based, clamped to the valid range); the
     /// feeder restarts the engine at its init routine and resets the queue.
+    ///
+    /// The feeder is the only writer of the current subtune, so this does not
+    /// update it optimistically: `subsong()` only reflects a switch once the
+    /// engine has actually applied it.
     fn select_subsong(&self, subtune: u16) -> Result<(), PlayerError> {
         let subtune = subtune.clamp(1, self.subtune_count);
-        self.current_subtune.store(subtune, Ordering::Relaxed);
         let _ = self.commands.send(FeederCommand::SelectSubtune(subtune));
         Ok(())
     }
 
     /// SID tunes can't be seeked within (only a restart to zero is honoured),
-    /// so the slider is disabled rather than silently ignored. The length is
-    /// only known when the HVSC database had the current subtune (#192).
+    /// so the slider is disabled rather than silently ignored. Whether the
+    /// length is known depends on the *current* subtune's HVSC entry (#192),
+    /// so it is re-evaluated here rather than fixed at load.
     fn capabilities(&self) -> ChannelCapabilities {
+        let current = usize::from(
+            self.current_subtune
+                .load(Ordering::Relaxed)
+                .saturating_sub(1),
+        );
+        let duration_known = self
+            .subtune_lengths
+            .get(current)
+            .copied()
+            .flatten()
+            .is_some();
         ChannelCapabilities {
-            duration_known: self.duration_known,
+            duration_known,
             seek: SeekSupport::Unsupported,
         }
     }
@@ -433,7 +456,7 @@ mod tests {
     #[test]
     fn the_feeder_prefers_a_known_length_and_falls_back_otherwise() {
         let feeder = SidFeeder::new(
-            vec![Some(Duration::from_secs(60)), None],
+            Arc::new(vec![Some(Duration::from_secs(60)), None]),
             Duration::from_secs(180),
         );
         assert_eq!(feeder.play_length(1), Duration::from_secs(60));
