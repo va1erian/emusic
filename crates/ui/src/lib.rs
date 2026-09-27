@@ -9,9 +9,11 @@
 //! [`state`], [`config`] and view-model pieces the app renders with its own
 //! widgets, and the [`shell::Shell`] application controller that drives them.
 //!
-//! The application (`crates/app`) depends on this crate: it renders the shared
-//! state and view models with native Win32 controls. The toolkit-bound pieces
-//! (`backend::{smtc, thumbbar}`, theme/fonts) live there.
+//! The binary (`crates/app`) depends on this crate and dispatches to a
+//! frontend at build time: `emusic-frontend-win32` renders the shared state and
+//! view models with native Win32 controls, and `emusic-frontend-portable` is
+//! the cross-platform renderer. The toolkit-bound pieces (theme/fonts, the OS
+//! shell integrations) live in the frontend crates.
 
 pub mod auto_tag;
 pub mod backend;

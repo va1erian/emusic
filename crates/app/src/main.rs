@@ -14,12 +14,20 @@ use std::env;
 use clap::Parser;
 use emusic_ui::cli::Cli;
 use emusic_ui::config::{self, Config};
+use emusic_ui::startup::{RunFn, Startup};
 use emusic_ui::waker::WakerSlot;
 
-#[cfg(not(windows))]
+// Frontend selection is exhaustive by construction: the native renderer on
+// Windows (unless the `portable` feature opts into the portable one) and the
+// portable renderer everywhere else. The `FRONTEND` constant below is a
+// compile-time check that whichever was selected matches the contract.
+#[cfg(any(not(windows), feature = "portable"))]
 use emusic_frontend_portable as frontend;
-#[cfg(windows)]
+#[cfg(all(windows, not(feature = "portable")))]
 use emusic_frontend_win32 as frontend;
+
+/// The selected frontend's entry point, checked against the shared contract.
+const FRONTEND: RunFn = frontend::run;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -61,7 +69,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         SingleInstance::Primary(listener) => {
             let ipc = ipc::IpcBridge::primary(listener);
-            frontend::run(build_startup(cli, Some(ipc), waker))
+            FRONTEND(build_startup(cli, Some(ipc), waker))
         }
     }
 }
@@ -70,7 +78,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 /// portable frontend directly.
 #[cfg(not(windows))]
 fn run(cli: Cli) -> anyhow::Result<()> {
-    frontend::run(build_startup(cli, None, WakerSlot::new()))
+    FRONTEND(build_startup(cli, None, WakerSlot::new()))
 }
 
 /// Resolves the configuration and packages the session for the frontend.
@@ -78,7 +86,7 @@ fn build_startup(
     cli: Cli,
     ipc: Option<emusic_ui::backend::ipc::IpcBridge>,
     waker: WakerSlot,
-) -> emusic_ui::startup::Startup {
+) -> Startup {
     let mock = cli.mock;
     // A `--mock` run never touches the real user's config (#135).
     let config_path = if mock { None } else { config::config_path() };

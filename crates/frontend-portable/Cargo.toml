@@ -3,6 +3,7 @@ name = "emusic-frontend-portable"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+publish = false
 description = "Placeholder for emusic's portable frontend (filled in by the xui migration)"
 
 [dependencies]

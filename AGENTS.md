@@ -16,6 +16,7 @@ emusic is a Windows music player & library in Rust with a native Win32 UI, audio
 
 ## Workspace rules
 - Edition 2024, `members = ["crates/*"]`. Declare dependencies in **your crate's own** `Cargo.toml`; do not edit `[workspace.dependencies]` or other crates' manifests unless the issue says so.
+- The binary dispatches to a **frontend** crate at build time (native `frontend-win32` on Windows, portable `frontend-portable` elsewhere); logic and state live in `emusic-ui`. See [docs/frontends.md](docs/frontends.md).
 - BASS DLLs are never committed. Loaded at runtime from `<exe dir>/bass/` (override: env `EMUSIC_BASS_DIR`). Tests that need BASS must skip gracefully when the DLLs are absent.
 - The same goes for the projectM DLLs (LGPL-2.1, #297): never committed, loaded at runtime from `<exe dir>/projectm/` (override: env `EMUSIC_PROJECTM_DIR`), and tests that need them skip when absent.
 - `crates/sid` vendors the cRSID C engine and builds it with a MinGW-w64 GCC via the `cc` crate (cRSID uses GCC nested functions, which MSVC/clang reject); `EMUSIC_SID_CC` overrides the compiler. The vendored sources are unmodified — do not patch them for one toolchain.
