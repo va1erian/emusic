@@ -105,9 +105,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: |
-            cd android
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
 
       - uses: actions/upload-artifact@v4
         if: always()
