@@ -44,6 +44,15 @@ cargo test --workspace
 
 Do not submit work with failing or skipped checks. PR bodies must contain `Closes #<issue>`.
 
+When the change touches `android/` or the Rust connector it builds on (`crates/mobile`, `crates/client`, `crates/render`), also run the Android instrumentation test locally, because the Android workflow's `instrumentation` job only runs nightly (the hosted emulator is too slow for every PR):
+
+```powershell
+cd android
+.\gradlew :app:connectedDebugAndroidTest --no-daemon   # needs a booted emulator or device
+```
+
+See [docs/android-testing.md](docs/android-testing.md), which also covers the `scripts\android\android.ps1` driver for screenshots and UI control.
+
 ## Running tests on a shared desktop: use the Windows Sandbox
 
 The UI tests create real top-level windows, move focus and send synthetic input, and render Direct2D frames. On your own (or another agent's) desktop that steals focus and makes runs flaky, so run the test suite inside Windows Sandbox:
