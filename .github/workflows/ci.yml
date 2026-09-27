@@ -100,9 +100,10 @@ jobs:
           EMUSIC_SMOKE_EXIT_MS: "4000"
 
   # A portable Windows build with the software (canvas) backend compiled in
-  # (#369), packaged as a zip with a launcher that selects it — no installer.
-  # This is an artifact, not a gate, so it is deliberately not part of the
-  # required `ci` check; download it from the run's Artifacts section.
+  # (#369), published as a standalone `emusic-canvas.exe` plus a launcher zip
+  # that sets `XUI_BACKEND=canvas` — no installer. This is an artifact, not a
+  # gate, so it is deliberately not part of the required `ci` check; download
+  # it from the run's Artifacts section.
   canvas:
     runs-on: windows-latest
     steps:
@@ -112,27 +113,31 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build the canvas binary
+      - name: Build the canvas executable
         run: cargo build --release -p emusic --features "portable,emusic-frontend-portable/canvas"
 
-      - name: Package the canvas zip
+      - name: Stage the canvas executable
         shell: pwsh
         run: |
           $stage = "emusic-canvas"
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item target/release/emusic.exe $stage/
+          # A distinct name so it is never confused with the native win32
+          # `emusic.exe`; both backends are in this binary, `XUI_BACKEND` picks.
+          Copy-Item target/release/emusic.exe "$stage/emusic-canvas.exe"
           @(
             '@echo off',
             'rem Launch emusic on the portable canvas (software) backend.',
             'set XUI_BACKEND=canvas',
-            'start "" "%~dp0emusic.exe" %*'
+            'start "" "%~dp0emusic-canvas.exe" %*'
           ) | Set-Content "$stage/run-canvas.cmd" -Encoding ascii
           Compress-Archive -Path "$stage/*" -DestinationPath emusic-canvas-windows.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
           name: emusic-canvas-windows
-          path: emusic-canvas-windows.zip
+          path: |
+            emusic-canvas-windows.zip
+            emusic-canvas/emusic-canvas.exe
           if-no-files-found: error
 
   # Aggregator that preserves the branch-protection required check named
