@@ -108,10 +108,38 @@ jobs:
           cp COPYING-LGPL-2.1.txt "$stage/projectm/"
           7z a "emusic-$version-portable.zip" "$stage"
 
+      # The portable/canvas frontend (#369): rebuild `emusic.exe` with the
+      # xui canvas backend compiled in, then ship it as `emusic-canvas.exe`
+      # with the same BASS/icons payload as the native zip. Must come after the
+      # installer and the native portable zip, since both read
+      # `target/release/emusic.exe` before this rebuild replaces it.
+      - name: Build the canvas binary
+        run: cargo build --release -p emusic --features "portable,emusic-frontend-portable/canvas"
+
+      - name: Package canvas zip
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v',''
+          $stage = "emusic-canvas"
+          New-Item -ItemType Directory -Force "$stage/bass","$stage/icons","$stage/projectm" | Out-Null
+          Copy-Item target/release/emusic.exe "$stage/emusic-canvas.exe"
+          Copy-Item target/release/bass/*.dll "$stage/bass/"
+          Copy-Item assets/ico/*.ico "$stage/icons/"
+          Copy-Item target/release/projectm/*.dll "$stage/projectm/"
+          Copy-Item COPYING-LGPL-2.1.txt "$stage/projectm/"
+          @(
+            '@echo off',
+            'rem Launch emusic on the portable canvas (software) backend.',
+            'set XUI_BACKEND=canvas',
+            'start "" "%~dp0emusic-canvas.exe" %*'
+          ) | Set-Content "$stage/run-canvas.cmd" -Encoding ascii
+          Compress-Archive -Path "$stage/*" -DestinationPath "emusic-$version-canvas.zip" -Force
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             installer/Output/emusic-*-setup.exe
             emusic-*-portable.zip
+            emusic-*-canvas.zip
           generate_release_notes: true
