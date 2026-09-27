@@ -170,18 +170,11 @@ impl App for PropertiesDialog {
 
 /// Shows the dialog over `ui`'s window.
 ///
-/// The native Win32 backend runs it as a true modal (its nested loop is
-/// supported). The canvas backend cannot run one on the `winit` event-loop
-/// thread, so there it opens the same dialog as a non-modal secondary window.
+/// The canvas backend cannot run a modal loop on the `winit` event-loop
+/// thread, so this opens the dialog as a non-modal secondary window.
 pub fn show<M: 'static>(ui: &Ui<M>, track: &TrackInfo) {
-    if crate::backend::is_canvas() {
-        if let Err(error) = open(ui, track) {
-            tracing::warn!(%error, "could not open the properties window");
-        }
-    } else {
-        let spec = spec(track);
-        let track = track.clone();
-        ui.open_modal::<PropertiesDialog, _, ()>(spec, move |ui| PropertiesDialog::new(ui, &track));
+    if let Err(error) = open(ui, track) {
+        tracing::warn!(%error, "could not open the properties window");
     }
 }
 

@@ -9,7 +9,7 @@ use xui::xui_core::app::{App, Ui};
 use super::Win32App;
 use super::msg::{Msg, shell_command};
 use super::sync::playing_id;
-use crate::dialogs::{database_info, database_info::DatabaseInfoChoice, properties};
+use crate::dialogs::{database_info, properties};
 use crate::views::column_browser;
 use crate::views::now_playing::SummaryEvent;
 use crate::views::track_table::{self, ContextAction};
@@ -145,13 +145,9 @@ impl Win32App {
                 }
             }
             Msg::DatabaseInfo => {
-                // The canvas backend opens the dialog non-modally, so its
-                // Rescan reports back through `Msg::LibraryRescan` instead.
-                let choice = database_info::show(ui, self.shell.library.as_ref());
-                if choice == Some(DatabaseInfoChoice::Rescan) {
-                    self.shell.dispatch(Command::LibraryRescan);
-                    self.tick_inner();
-                }
+                // The dialog opens non-modally; Rescan reports back through
+                // `Msg::LibraryRescan` instead of a returned choice.
+                database_info::show(ui, self.shell.library.as_ref());
             }
             Msg::LibraryRescan => {
                 self.shell.dispatch(Command::LibraryRescan);

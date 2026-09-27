@@ -2,12 +2,10 @@
 //! details from [`emusic_ui::panels::database_info`] in a secondary window,
 //! with a "Rescan everything" button.
 //!
-//! [`show`] runs it as a real modal window on the native Win32 backend and
-//! returns the user's choice; on the canvas backend (which cannot run a modal
-//! loop on its event-loop thread) it opens the same dialog as a non-modal
-//! secondary window instead.
-//! [`open`] opens it non-modally for the screenshot tool (a modal's nested loop
-//! would block the tool's own capture tick).
+//! The canvas backend cannot run a modal loop on its event-loop thread, so
+//! [`show`] opens the dialog as a non-modal secondary window: Rescan reports
+//! back as [`Msg::LibraryRescan`](crate::app::Msg::LibraryRescan).
+//! [`open`] opens it non-modally for the screenshot tool.
 
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::panels::database_info::fields;
@@ -172,26 +170,16 @@ impl App for DatabaseInfoDialog {
 
 /// Shows the dialog over `ui`'s window.
 ///
-/// The native Win32 backend runs it as a true modal and returns the user's
-/// choice (`None` when it was dismissed with the window's close button). The
-/// canvas backend cannot run a modal loop on its event-loop thread, so there it
-/// opens the same dialog as a non-modal secondary window: Rescan reports back as
-/// [`Msg::LibraryRescan`](crate::app::Msg::LibraryRescan) and this returns
-/// `None`.
-pub fn show(ui: &Ui<AppMsg>, library: &dyn LibraryDataSource) -> Option<DatabaseInfoChoice> {
+/// The canvas backend cannot run a modal loop on its event-loop thread, so
+/// this opens the dialog as a non-modal secondary window: Rescan reports back
+/// as [`Msg::LibraryRescan`](crate::app::Msg::LibraryRescan).
+pub fn show(ui: &Ui<AppMsg>, library: &dyn LibraryDataSource) {
     let (spec, fields, scanning) = prepare(library);
-    if crate::backend::is_canvas() {
-        let rescan_sink = ui.proxy();
-        if let Err(error) = ui.open_window(spec, move |ui| {
-            DatabaseInfoDialog::new(ui, &fields, scanning, Some(rescan_sink))
-        }) {
-            tracing::warn!(%error, "could not open the database info window");
-        }
-        None
-    } else {
-        ui.open_modal::<DatabaseInfoDialog, _, DatabaseInfoChoice>(spec, move |ui| {
-            DatabaseInfoDialog::new(ui, &fields, scanning, None)
-        })
+    let rescan_sink = ui.proxy();
+    if let Err(error) = ui.open_window(spec, move |ui| {
+        DatabaseInfoDialog::new(ui, &fields, scanning, Some(rescan_sink))
+    }) {
+        tracing::warn!(%error, "could not open the database info window");
     }
 }
 

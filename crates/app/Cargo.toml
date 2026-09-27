@@ -38,8 +38,9 @@ winshell = { path = "../winshell" }
 emusic-frontend-portable = { path = "../frontend-portable" }
 
 [features]
-# Windows dev/compare: build the portable frontend and run it instead of the
-# native one (pair with `XUI_BACKEND=canvas` for the software backend).
+# Windows dev/compare and the shipped canvas build (#369, #470): build the
+# portable frontend (xui's software canvas backend) and run it instead of the
+# native one.
 portable = ["dep:emusic-frontend-portable"]
 # The headless screenshot tool (`emusic-shot`, #118). Off by default so the PNG
 # encoder and the WinRT capture bindings never enter the real binary's tree.

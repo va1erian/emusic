@@ -2,11 +2,9 @@
 //! [`Win32App`](crate::app::Win32App).
 //!
 //! The binary owns the CLI, file associations and the single-instance
-//! handshake; it hands a [`Startup`] here. This module picks the backend —
-//! the native `win32` one on Windows by default, or the software `canvas`
-//! backend when [`is_canvas`](crate::backend::is_canvas) requests it — and runs
-//! the shared app on it. The backend is named only here; every view names only
-//! portable widgets.
+//! handshake; it hands a [`Startup`] here. This module runs the shared app on
+//! `xui`'s software `canvas` backend. The backend is named only here; every
+//! view names only portable widgets.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -21,7 +19,7 @@ use xui::xui_core::backend::{Backend, PlatformSpec};
 use crate::app::{Msg, Win32App};
 use crate::window::{WindowChrome, window_spec};
 
-/// Opens the main window on the selected backend and runs until it closes.
+/// Opens the main window on the canvas backend and runs until it closes.
 pub fn run(startup: Startup) -> anyhow::Result<()> {
     let Startup {
         config,
@@ -39,11 +37,6 @@ pub fn run(startup: Startup) -> anyhow::Result<()> {
     emusic_platform::prepare();
 
     let spec = window_spec(1100.0, 720.0);
-
-    #[cfg(windows)]
-    if !crate::backend::is_canvas() {
-        return run_native(spec, config, config_path, ipc, files, waker, mock);
-    }
 
     run_canvas(spec, config, config_path, ipc, files, waker, mock)
 }
@@ -105,47 +98,8 @@ fn schedule_smoke_exit(ui: &Ui<Msg>) {
     });
 }
 
-/// Runs on the native Win32 backend, attaching the Windows shell integration
-/// with the window's handle.
-#[cfg(windows)]
-fn run_native(
-    spec: PlatformSpec,
-    config: Config,
-    config_path: Option<PathBuf>,
-    ipc: Option<IpcBridge>,
-    startup: Vec<PathBuf>,
-    waker: WakerSlot,
-    mock: bool,
-) -> anyhow::Result<()> {
-    use emusic_platform::NativeHandle;
-
-    let backend = Rc::new(xui::xui_win32::Win32Backend::new());
-    let handle_backend = Rc::clone(&backend);
-    let backend: Rc<dyn Backend> = backend;
-    let chrome_backend = Rc::clone(&backend);
-    xui::xui_core::run_app(backend, spec, move |ui| {
-        let handle = handle_backend
-            .window_hwnd(ui.window())
-            .map(|hwnd| NativeHandle::from_raw(hwnd.raw() as isize));
-        let mut app = build_app(
-            ui,
-            chrome_backend,
-            config,
-            config_path,
-            ipc,
-            startup,
-            waker,
-            mock,
-        );
-        app.attach_shell(emusic_platform::shell(handle, ui.proxy()));
-        app
-    })
-    .map_err(|error| anyhow::anyhow!("xui: {error}"))
-}
-
 /// Runs on the software/canvas backend, with no native window and so a no-op
 /// shell integration.
-#[cfg(any(not(windows), feature = "canvas"))]
 fn run_canvas(
     spec: PlatformSpec,
     config: Config,
@@ -174,17 +128,4 @@ fn run_canvas(
         app
     })
     .map_err(|error| anyhow::anyhow!("xui: {error}"))
-}
-
-#[cfg(all(windows, not(feature = "canvas")))]
-fn run_canvas(
-    _spec: PlatformSpec,
-    _config: Config,
-    _config_path: Option<PathBuf>,
-    _ipc: Option<IpcBridge>,
-    _startup: Vec<PathBuf>,
-    _waker: WakerSlot,
-    _mock: bool,
-) -> anyhow::Result<()> {
-    anyhow::bail!("this build has no `canvas` feature; rebuild with --features canvas")
 }
