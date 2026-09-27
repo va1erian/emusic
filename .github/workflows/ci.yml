@@ -91,7 +91,7 @@ jobs:
       # Start the real shell on the canvas backend against mock data and let
       # `EMUSIC_SMOKE_EXIT_MS` close it, so the run cannot hang CI.
       - name: Canvas smoke run
-        run: cargo run -p emusic --features canvas -- --mock
+        run: cargo run -p emusic --features canvas --bin emusic -- --mock
         env:
           EMUSIC_SMOKE_EXIT_MS: "4000"
 
