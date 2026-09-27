@@ -38,6 +38,7 @@ fn smoke(extra: Option<Msg>) -> bool {
             None,
             Vec::new(),
             WakerSlot::new(),
+            true,
         );
         if let Some(msg) = extra {
             ui.emit(msg);
@@ -87,6 +88,7 @@ fn music_view_builds_with_a_playing_track() {
             None,
             Vec::new(),
             WakerSlot::new(),
+            true,
         );
         constructed_for_make.set(true);
         ui.emit(Msg::Quit);
@@ -113,6 +115,7 @@ fn music_view_commands_dispatch() {
             None,
             Vec::new(),
             WakerSlot::new(),
+            true,
         );
         ui.emit(Msg::PlayRow(0));
         ui.emit(Msg::SortColumn(2));
@@ -139,6 +142,7 @@ fn folders_view_commands_dispatch() {
             None,
             Vec::new(),
             WakerSlot::new(),
+            true,
         );
         ui.emit(Msg::Navigate(View::Folders));
         ui.emit(Msg::FoldersSubfolders(false));

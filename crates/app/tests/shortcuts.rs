@@ -224,6 +224,7 @@ fn build_app(ui: &mut Ui<Msg>, player: MockPlayer) -> (Win32App, Rc<RefCell<Call
         None,
         Vec::new(),
         WakerSlot::new(),
+        true,
     );
     (app, calls)
 }

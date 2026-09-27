@@ -260,12 +260,19 @@ fn render_one(
     height: f32,
     out: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let config = Config {
+    let mut config = Config {
         theme: theme.shell(),
         accent,
         last_view: view,
         ..Config::default()
     };
+    if view == View::Visualization {
+        // Mark a placeholder preset as the one showing, so the browser shot
+        // shows its current-preset selection (#338).
+        config.projectm.last_preset = Some(PathBuf::from(
+            "visualizations/presets/cream-of-the-crop/Dancer.milk",
+        ));
+    }
     let out = out.to_path_buf();
     let backend = Rc::new(xui_win32::Win32Backend::new());
     let handle_backend = Rc::clone(&backend);
@@ -283,6 +290,7 @@ fn render_one(
             None,
             Vec::new(),
             waker,
+            true,
         );
         if let Some(notice) = backends.notice {
             app.set_backend_notice(notice);

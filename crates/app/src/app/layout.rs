@@ -92,7 +92,8 @@ impl Win32App {
             View::MostPlayed => self.most_played.set_bounds(central),
             View::History => self.history.set_bounds(central),
             View::Settings => self.settings.set_bounds(central),
-            _ => self.placeholder.set_bounds(central),
+            View::NowPlaying => self.now_playing.set_bounds(central),
+            View::Visualization => self.visualization.set_bounds(central),
         }
     }
 

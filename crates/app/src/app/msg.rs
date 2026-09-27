@@ -7,6 +7,7 @@ use emusic_ui::views::column_browser::Pane;
 use xui::xui_core::geometry::Point;
 
 use crate::views::album_grid::AlbumMsg;
+use crate::views::now_playing::SummaryEvent;
 use crate::views::settings::SettingsMsg;
 use crate::views::track_table::ContextAction;
 
@@ -59,6 +60,20 @@ pub enum Msg {
     /// Shuffle-play the artist/genre of the activated name+counts row
     /// (Artists/Genres; the portable context menu is #376's).
     NameCountShuffle(usize),
+    /// The status-bar visualizer strip was clicked; cycle its mode.
+    CycleVisualizer,
+    /// A click on the Now Playing summary's star, links or action rows.
+    NowPlayingSummary(SummaryEvent),
+    /// Activate a preview row of the Now Playing queue (double-click / Enter).
+    QueueActivate(usize),
+    /// The preset browser's filter text changed.
+    PresetFilter(String),
+    /// The preset browser selected a visible row.
+    PresetSelect(usize),
+    /// The preset browser played a visible row.
+    PresetPlay(usize),
+    /// The preset browser's "Lock current preset" toggle changed.
+    PresetToggleLock(bool),
     /// The Most Played view's time-window selector changed.
     MostPlayed(StatsWindow),
     /// Ask to clear the whole play history; shows the confirmation dialog.

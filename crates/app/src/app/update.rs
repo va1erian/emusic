@@ -1,8 +1,9 @@
 //! The [`App`] implementation: message dispatch and post-update bookkeeping.
 
-use emusic_ui::state::{Command, View};
+use emusic_ui::state::{Command, View, VizCommand};
 use emusic_ui::views::Commands;
 use emusic_ui::views::folders::FoldersMsg;
+use emusic_ui::views::now_playing::NowPlayingMsg;
 use xui::xui_core::app::{App, Ui};
 
 use super::Win32App;
@@ -10,7 +11,9 @@ use super::msg::{Msg, shell_command};
 use super::sync::playing_id;
 use crate::dialogs::{database_info, database_info::DatabaseInfoChoice, properties};
 use crate::views::column_browser;
+use crate::views::now_playing::SummaryEvent;
 use crate::views::track_table::{self, ContextAction};
+use crate::views::visualization;
 
 impl App for Win32App {
     type Msg = Msg;
@@ -237,6 +240,40 @@ impl Win32App {
                 self.shell.state.most_played.window = window;
                 self.tick_inner();
             }
+            Msg::CycleVisualizer => {
+                self.shell.dispatch(Command::CycleVisualizer);
+                self.tick_inner();
+            }
+            Msg::NowPlayingSummary(event) => {
+                self.handle_summary(event, ui);
+            }
+            Msg::QueueActivate(row) => {
+                if let Some(index) = self.now_playing.entry_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::PresetFilter(text) => {
+                self.visualization.set_filter(&text);
+                self.tick_inner();
+            }
+            Msg::PresetSelect(row) => {
+                self.visualization.select(row);
+                self.tick_inner();
+            }
+            Msg::PresetPlay(row) => {
+                if let Some(index) = self.visualization.playlist_index(row) {
+                    for command in visualization::play_commands(index) {
+                        self.shell.dispatch(command);
+                    }
+                    self.tick_inner();
+                }
+            }
+            Msg::PresetToggleLock(_on) => {
+                self.shell
+                    .dispatch(Command::Viz(VizCommand::TogglePresetLock));
+                self.tick_inner();
+            }
             Msg::HistoryClear => self.show_history_clear(ui),
             Msg::HistoryClearConfirmed => {
                 self.shell.dispatch(Command::HistoryClear);
@@ -269,6 +306,56 @@ impl Win32App {
                 // `Some(Msg::Quit)`), so nothing else ends the event loop.
                 ui.quit();
             }
+        }
+    }
+
+    /// Turns a summary click into a now-playing intent, if it carries one.
+    fn handle_summary(&mut self, event: SummaryEvent, ui: &Ui<Msg>) {
+        // The Properties dialog is frontend-owned (the model keeps only the
+        // intent), so it is opened directly, as the track table does.
+        if event == SummaryEvent::ShowProperties {
+            if let Some(track) = self.shell.state.now_playing.track() {
+                properties::show(ui, track);
+            }
+            return;
+        }
+        let message = {
+            let model = &self.shell.state.now_playing;
+            match event {
+                SummaryEvent::ToggleStar => model
+                    .track()
+                    .map(|track| NowPlayingMsg::ToggleStar(track.id)),
+                SummaryEvent::EditTags => {
+                    model.track().map(|track| NowPlayingMsg::EditTags(track.id))
+                }
+                SummaryEvent::ShowProperties => None,
+                SummaryEvent::GoToArtist => model
+                    .now_playing()
+                    .filter(|np| !np.artist.is_empty())
+                    .map(|np| NowPlayingMsg::GoToArtist(np.artist.clone())),
+                SummaryEvent::GoToAlbum => {
+                    model.track().filter(|t| !t.album.is_empty()).map(|track| {
+                        NowPlayingMsg::GoToAlbum {
+                            name: track.album.clone(),
+                            artist: track.artist.clone(),
+                        }
+                    })
+                }
+            }
+        };
+        if let Some(message) = message {
+            self.apply_now_playing(message);
+            self.tick_inner();
+        }
+    }
+
+    /// Applies a now-playing intent through the shared model and dispatches the
+    /// commands it queued.
+    fn apply_now_playing(&mut self, message: NowPlayingMsg) {
+        let mut out = Commands::new();
+        self.shell.state.now_playing.update(message, &mut out);
+        for command in out.into_vec() {
+            self.shell.dispatch(command);
         }
     }
 
