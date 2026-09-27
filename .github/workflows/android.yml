@@ -8,7 +8,6 @@ on:
       - "crates/mobile/**"
       - "crates/client/**"
       - "crates/render/**"
-      - "crates/server/**"
       - ".github/workflows/android.yml"
   pull_request:
     paths:
@@ -16,7 +15,6 @@ on:
       - "crates/mobile/**"
       - "crates/client/**"
       - "crates/render/**"
-      - "crates/server/**"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
