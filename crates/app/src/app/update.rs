@@ -55,7 +55,6 @@ impl Win32App {
                 let command = match self.shell.state.view {
                     View::Music => self.music.toggle_star(row),
                     View::Folders => self.folders.toggle_star(row),
-                    View::Albums => self.albums.toggle_star(row),
                     View::Starred => self.starred.toggle_star(row),
                     View::MostPlayed => self.most_played.toggle_star(row),
                     _ => None,

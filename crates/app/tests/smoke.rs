@@ -8,10 +8,12 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use emusic::app::{Msg, Win32App};
+use emusic::views::album_grid::AlbumMsg;
 use emusic_ui::config::Config;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::mock::{MockLibrary, MockPlayer};
 use emusic_ui::state::View;
+use emusic_ui::views::album_grid::models::AlbumSort;
 use emusic_ui::waker::WakerSlot;
 use xui::xui_core::app::Ui;
 use xui::xui_core::backend::{Backend, Result as BackendResult};
@@ -141,6 +143,38 @@ fn folders_view_commands_dispatch() {
         ui.emit(Msg::Navigate(View::Folders));
         ui.emit(Msg::FoldersSubfolders(false));
         ui.emit(Msg::FoldersSelect(r"C:\music".to_string()));
+        ui.emit(Msg::PlayRow(0));
+        ui.emit(Msg::SortColumn(2));
+        ui.emit(Msg::Quit);
+        app
+    });
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+    }
+}
+
+/// The Albums view's grid and toolbar intents run the whole dispatch path
+/// (navigate -> model -> grid/track list) without panicking.
+#[test]
+fn albums_view_commands_dispatch() {
+    let result = run_ui(move |ui| {
+        let app = Win32App::new(
+            ui,
+            Box::new(MockLibrary::new()),
+            Box::new(MockPlayer::default()),
+            Config::default(),
+            None,
+            None,
+            Vec::new(),
+            WakerSlot::new(),
+        );
+        ui.emit(Msg::Navigate(View::Albums));
+        ui.emit(Msg::Album(AlbumMsg::SetSort(AlbumSort::Album)));
+        ui.emit(Msg::Album(AlbumMsg::SetTileSize(180.0)));
+        ui.emit(Msg::Album(AlbumMsg::Select(0)));
+        ui.emit(Msg::Album(AlbumMsg::Activate(0)));
+        ui.emit(Msg::Album(AlbumMsg::Shuffle));
+        ui.emit(Msg::Album(AlbumMsg::CloseAlbum));
         ui.emit(Msg::PlayRow(0));
         ui.emit(Msg::SortColumn(2));
         ui.emit(Msg::Quit);
