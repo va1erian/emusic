@@ -1,5 +1,6 @@
 package dev.emusic.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,40 +21,61 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.emusic_mobile.MobileCore
 import uniffi.emusic_mobile.Track
 
 /**
- * Connects to `url`, fetches the server's library and shows a summary plus the
- * track list. Reads only; playback comes later.
+ * Connects to `url`, fetches the server's library, shows a summary plus the
+ * track list, and streams the standard formats with Media3.
+ *
+ * Specialized formats (SID, tracker modules, MIDI) are not streamed here: they
+ * need the server-side `/render` path and are tracked in #430.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val core = remember { runCatching { MobileCore(url, dataDir) }.getOrNull() }
+
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var version by remember { mutableStateOf(0L) }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var nonce by remember { mutableStateOf(0) }
 
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var nowPlaying by remember { mutableStateOf<Track?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var playbackMessage by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(nonce) {
         loading = true
         error = null
-        val result = withContext(Dispatchers.IO) {
-            runCatching { MobileCore(url, dataDir).library() }
+        val client = core
+        if (client == null) {
+            error = "invalid server"
+            loading = false
+            return@LaunchedEffect
         }
+        val result = withContext(Dispatchers.IO) { runCatching { client.library() } }
         result
             .onSuccess {
                 version = it.version
@@ -61,6 +83,56 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
             }
             .onFailure { error = it.message ?: it.toString() }
         loading = false
+    }
+
+    // Build the player once a token is available, and release it on leave.
+    LaunchedEffect(core) {
+        val client = core ?: return@LaunchedEffect
+        val token = withContext(Dispatchers.IO) {
+            runCatching { client.bearerToken() }.getOrNull()
+        }
+        token?.let { player = createAuthenticatedPlayer(context, it) }
+    }
+
+    DisposableEffect(player) {
+        val active = player
+        if (active == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) isPlaying = false
+                }
+            }
+            active.addListener(listener)
+            onDispose {
+                active.removeListener(listener)
+                active.release()
+            }
+        }
+    }
+
+    fun play(track: Track) {
+        val active = player
+        val client = core
+        if (active == null || client == null) {
+            playbackMessage = "not connected yet"
+            return
+        }
+        if (track.specialized) {
+            playbackMessage =
+                "Specialized formats (SID / modules / MIDI) play via server render (#430)"
+            return
+        }
+        playbackMessage = null
+        nowPlaying = track
+        active.setMediaItem(streamMediaItem(client.streamUrl(track.id)))
+        active.prepare()
+        active.play()
     }
 
     Scaffold(
@@ -103,9 +175,65 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 else -> {
                     LibrarySummary(url = url, version = version, tracks = tracks)
                     HorizontalDivider()
-                    TrackList(tracks)
+                    TrackList(
+                        tracks = tracks,
+                        onPlay = ::play,
+                        modifier = Modifier.weight(1f),
+                    )
+                    playbackMessage?.let { message ->
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                    nowPlaying?.let { track ->
+                        NowPlayingBar(
+                            track = track,
+                            isPlaying = isPlaying,
+                            onToggle = {
+                                player?.let { active ->
+                                    if (isPlaying) active.pause() else active.play()
+                                }
+                            },
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingBar(track: Track, isPlaying: Boolean, onToggle: () -> Unit) {
+    HorizontalDivider()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .testTag("now_playing"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.titleOrFileName(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = listOfNotNull(track.artist, track.album)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · "),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        TextButton(onClick = onToggle, modifier = Modifier.testTag("play_pause")) {
+            Text(if (isPlaying) "Pause" else "Play")
         }
     }
 }
@@ -159,21 +287,28 @@ private fun LibrarySummary(url: String, version: Long, tracks: List<Track>) {
 }
 
 @Composable
-private fun TrackList(tracks: List<Track>) {
+private fun TrackList(
+    tracks: List<Track>,
+    onPlay: (Track) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (tracks.isEmpty()) {
         Text(
             text = "The server library is empty.",
-            modifier = Modifier.padding(vertical = 12.dp),
+            modifier = modifier.padding(vertical = 12.dp),
         )
         return
     }
     LazyColumn(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag("track_list"),
     ) {
         items(tracks, key = { it.id }) { track ->
             ListItem(
+                modifier = Modifier
+                    .clickable { onPlay(track) }
+                    .testTag("track_row"),
                 headlineContent = { Text(track.titleOrFileName()) },
                 supportingContent = {
                     val subtitle = listOfNotNull(track.artist, track.album)
