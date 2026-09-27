@@ -1,6 +1,6 @@
-//! The Settings view (#115, #400): a portable [`Tabs`] strip over the six
-//! pages the Win32 build had — Library folders, Appearance, Visualization,
-//! File associations, Playback and About.
+//! The Settings view (#115, #400): a portable [`Tabs`] strip over the pages
+//! the Win32 build has — Library folders, Appearance, Visualization, File
+//! associations, Playback, Server and About.
 //!
 //! Each page owns its portable widgets and only reads and writes the shared
 //! `emusic-ui` state, emitting [`Command`]s for the shell to apply; this module
@@ -19,12 +19,14 @@ mod associations;
 mod form;
 mod library;
 mod playback;
+mod server;
 mod visualization;
 
 use std::cell::Cell;
 use std::path::PathBuf;
 
 use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::remote::RemoteServer;
 use emusic_ui::state::{AppState, Density, FontSize, SettingsTab, Theme, VisualizerMode};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Ui;
@@ -126,9 +128,20 @@ pub enum SettingsMsg {
     SidClear,
     /// The SID fallback play length slider moved.
     SidFallback(u32),
+    /// The Server page asked to pair with the entered URL/code (#391).
+    ServerPair,
+    /// The background pairing finished: the server entry plus a success
+    /// message, or an error.
+    ServerPaired(std::result::Result<(RemoteServer, String), String>),
+    /// The Server page asked to sync every configured server.
+    ServerSync,
+    /// The Server page asked to unpair the selected server.
+    ServerUnpair,
+    /// The Server page toggled "server only" mode (#391).
+    ServerOnly(bool),
 }
 
-/// The Settings central area: a tab strip over the six pages.
+/// The Settings central area: a tab strip over the seven pages.
 pub struct SettingsView {
     ui: Ui<Msg>,
     tabs: Tabs<Msg>,
@@ -137,6 +150,7 @@ pub struct SettingsView {
     visualization: visualization::VisualizationPage,
     associations: associations::AssociationsPage,
     playback: playback::PlaybackPage,
+    server: server::ServerPage,
     about: xui::xui_core::widget::FlowText<Msg>,
     /// Whether the whole view is shown; the selected page is only visible when
     /// this is set too.
@@ -158,6 +172,7 @@ impl SettingsView {
         let visualization = visualization::VisualizationPage::new(&inner);
         let associations = associations::AssociationsPage::new(&inner);
         let playback = playback::PlaybackPage::new(&inner);
+        let server = server::ServerPage::new(&inner);
         let about = about::build(&inner, Rect::default());
         let tabs = tabs
             .page(SettingsTab::Library.label(), &[library.id()])
@@ -165,6 +180,7 @@ impl SettingsView {
             .page(SettingsTab::Visualization.label(), &[visualization.id()])
             .page(SettingsTab::Associations.label(), &[associations.id()])
             .page(SettingsTab::Playback.label(), &[playback.id()])
+            .page(SettingsTab::Server.label(), &[server.id()])
             .page(SettingsTab::About.label(), &[about.id()])
             .on_change(|index| {
                 SettingsTab::ALL
@@ -181,6 +197,7 @@ impl SettingsView {
             visualization,
             associations,
             playback,
+            server,
             about,
             visible: Cell::new(false),
             applied_tab: Cell::new(SettingsTab::default()),
@@ -222,6 +239,7 @@ impl SettingsView {
         self.visualization.sync(state);
         self.associations.sync();
         self.playback.sync(state);
+        self.server.sync(state, library);
     }
 
     /// Applies one control intent, queueing the [`Command`]s it raises.
@@ -242,6 +260,9 @@ impl SettingsView {
         if self.associations.update(&msg) {
             return;
         }
+        if self.server.update(&msg, out) {
+            return;
+        }
         self.playback.update(&msg, state, out);
     }
 
@@ -258,6 +279,7 @@ impl SettingsView {
         self.visualization.relayout();
         self.associations.relayout();
         self.playback.relayout();
+        self.server.relayout();
     }
 
     /// Insets the selected page's content by [`PAGE_MARGIN`] on every side, so
@@ -269,6 +291,7 @@ impl SettingsView {
             Some(SettingsTab::Visualization) => self.visualization.id(),
             Some(SettingsTab::Associations) => self.associations.id(),
             Some(SettingsTab::Playback) => self.playback.id(),
+            Some(SettingsTab::Server) => self.server.id(),
             Some(SettingsTab::About) => self.about.id(),
             None => return,
         };
@@ -301,6 +324,7 @@ impl SettingsView {
         self.visualization.set_visible(vis(2));
         self.associations.set_visible(vis(3));
         self.playback.set_visible(vis(4));
-        self.ui.set_visible(self.about.id(), vis(5));
+        self.server.set_visible(vis(5));
+        self.ui.set_visible(self.about.id(), vis(6));
     }
 }

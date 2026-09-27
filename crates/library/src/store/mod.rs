@@ -7,6 +7,7 @@
 
 mod folders;
 mod migrations;
+mod remote;
 mod schema;
 mod stats;
 mod tracks;
@@ -19,6 +20,7 @@ use rusqlite::Connection;
 use crate::error::{LibraryError, Result};
 
 pub use folders::Folder;
+pub use remote::RemoteTrack;
 pub use stats::{MostPlayedEntry, PlayHistoryEntry, TrackStats};
 
 /// How long a connection waits for another writer's lock before returning
@@ -115,9 +117,16 @@ impl Store {
 
 /// The default database path, `%LOCALAPPDATA%\emusic\library.db`.
 ///
+/// When `EMUSIC_DATA_DIR` is set, the database is placed at
+/// `<EMUSIC_DATA_DIR>/library.db` instead. Pointing a development/test run at
+/// a scratch directory keeps it from touching the real library (#391).
+///
 /// Does not create the directory; [`Store::open`] does that for whatever
 /// path it is given.
 pub fn default_db_path() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("EMUSIC_DATA_DIR") {
+        return Ok(PathBuf::from(dir).join("library.db"));
+    }
     let base = dirs::data_local_dir().ok_or(LibraryError::NoDataDir)?;
     Ok(base.join("emusic").join("library.db"))
 }

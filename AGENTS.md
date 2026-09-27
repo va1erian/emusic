@@ -45,6 +45,15 @@ cargo test --workspace
 
 Do not submit work with failing or skipped checks. PR bodies must contain `Closes #<issue>`.
 
+When the change touches `android/` or the Rust connector it builds on (`crates/mobile`, `crates/client`, `crates/render`), also run the Android instrumentation test locally, because the Android workflow's `instrumentation` job only runs nightly (the hosted emulator is too slow for every PR):
+
+```powershell
+cd android
+.\gradlew :app:connectedDebugAndroidTest --no-daemon   # needs a booted emulator or device
+```
+
+See [docs/android-testing.md](docs/android-testing.md), which also covers the `scripts\android\android.ps1` driver for screenshots and UI control.
+
 ## Running tests on a shared desktop: use the Windows Sandbox
 
 The UI tests create real top-level windows, move focus and send synthetic input, and render Direct2D frames. On your own (or another agent's) desktop that steals focus and makes runs flaky, so run the test suite inside Windows Sandbox:
@@ -71,3 +80,19 @@ It runs the real `Win32App` against deterministic mock data (`emusic --mock` run
 ## Behaviour changes: verify with UI Automation
 
 The app exposes a UI Automation tree, so you can click, type and read state in the real app instead of guessing from screenshots. See [docs/win32-uia.md](docs/win32-uia.md) and `scripts/win32-uia.ps1`. Prefer it for any change that depends on input handling (clicks, keys, focus, menus); use real input (`Click-Uia`, `Send-Key`) rather than direct invokes for those, and always stop the process you start.
+
+## Android: screenshots and UI automation
+
+The Android app has the same loop through `scripts\android\android.ps1`: it boots a headless emulator, installs and launches the APK, takes real screenshots and drives the UI by text or resource-id. See [docs/android-testing.md](docs/android-testing.md).
+
+```
+scripts\android\android.ps1 start
+scripts\android\android.ps1 install
+scripts\android\android.ps1 launch
+scripts\android\android.ps1 shot -Out scratch\main.png -Width 480
+scripts\android\android.ps1 tap  -Text Add
+scripts\android\android.ps1 type -Text "123456"
+scripts\android\android.ps1 stop
+```
+
+Screenshots must be pulled as files (never piped through PowerShell, which corrupts the PNG) and downscaled before viewing; **look at the PNG** before trusting a change. Use `tap`/`type` (real input) rather than invoking handlers directly, and stop the emulator when done. Instrumentation tests live in `android/app/src/androidTest` and run with `.\gradlew :app:connectedDebugAndroidTest` (CI runs them on an emulator).

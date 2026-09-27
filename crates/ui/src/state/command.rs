@@ -97,6 +97,15 @@ pub enum Command {
     LibraryRescan,
     /// Stop the scan currently running, if any.
     LibraryCancelScan,
+    /// Add a remote `emusic-server` (Settings → Server, #391). Persisted in
+    /// the config and synced by the library backend.
+    AddRemoteServer(crate::remote::RemoteServer),
+    /// Remove the remote server with this id (#391).
+    RemoveRemoteServer(String),
+    /// Sync every configured remote server now (#391).
+    SyncRemote,
+    /// Ignore the local library folders and show only remote tracks (#391).
+    SetServerOnly(bool),
     /// Remove one playback history entry (History view, #24).
     HistoryRemove(i64),
     /// Clear the whole playback history (History view, #24), after the

@@ -125,6 +125,20 @@ Standard streaming protocols (like HLS or Icecast) transcode audio server-side i
 - **Sidecar Metadata**:
   - High Voltage SID Collection (HVSC) songlength details (`Songlengths.md5`) and subtunes count are sent as JSON headers alongside the stream or queried via the server's metadata API.
 
+#### Android: Server-Side Rendering (extends the above)
+
+Android has no cRSID/BASS engines (and cRSID will not build for the NDK), so raw
+delivery cannot work there. Instead, the optional `[render]` feature turns a
+specialized file into a **rendition** — FLAC today via `crates/render`
+(`Renderer` trait, `SidRenderer`, `flacenc`) — and serves it from
+`GET /api/v1/tracks/{id}/render`. Renditions are cached under
+`<data_dir>/renditions/` with an LRU size cap and reuse the `/stream`
+Range/ETag machinery, so seeking is unchanged. `TrackView` gains `renderable`
+and `renditions` so clients know when `/render` applies; `specialized` and the
+raw path are untouched for the desktop. The feature is **off by default**
+(`render.enabled`), and module/MIDI renderers are follow-ups, so those formats
+currently report not-renderable and return `404`.
+
 ---
 
 ## 5. Server Architecture & Data Model

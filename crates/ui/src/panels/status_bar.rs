@@ -22,6 +22,7 @@ pub struct StatusBar {
     scanning: bool,
     auto_tag: Option<String>,
     status_message: Option<String>,
+    network: Option<String>,
     revision: u64,
 }
 
@@ -50,6 +51,7 @@ impl StatusBar {
         let scanning = library.is_scanning();
         let auto_tag = library.auto_tag_status().map(|status| status.text);
         let status_message = player.status_message().map(str::to_owned);
+        let network = library.network_activity();
 
         if self.result_count == result_count
             && self.total_duration == total_duration
@@ -59,6 +61,7 @@ impl StatusBar {
             && self.scanning == scanning
             && self.auto_tag == auto_tag
             && self.status_message == status_message
+            && self.network == network
         {
             return;
         }
@@ -70,6 +73,7 @@ impl StatusBar {
         self.scanning = scanning;
         self.auto_tag = auto_tag;
         self.status_message = status_message;
+        self.network = network;
         self.revision += 1;
     }
 
@@ -116,6 +120,11 @@ impl StatusBar {
     /// A transient player message (e.g. an unreadable file was skipped).
     pub fn status_message(&self) -> Option<&str> {
         self.status_message.as_deref()
+    }
+
+    /// The remote network indicator (#391), if a server track is streaming.
+    pub fn network(&self) -> Option<&str> {
+        self.network.as_deref()
     }
 }
 

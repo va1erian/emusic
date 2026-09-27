@@ -270,6 +270,29 @@ pub trait LibraryDataSource {
     /// were removed; mock backends ignore this.
     fn set_folders(&mut self, _folders: &[PathBuf]) {}
 
+    /// Sets the configured remote servers (#391). Real backends sync them in
+    /// the background; mock backends ignore this.
+    fn set_remote_servers(&mut self, _servers: &[crate::remote::RemoteServer]) {}
+
+    /// Requests an immediate sync of every configured remote server (#391).
+    fn sync_remote(&mut self) {}
+
+    /// When set, snapshots show only remote tracks (the local library is
+    /// hidden, not deleted) (#391).
+    fn set_server_only(&mut self, _on: bool) {}
+
+    /// A status line describing the remote sync, if any (#391).
+    fn remote_status(&self) -> Option<String> {
+        None
+    }
+
+    /// The remote network indicator (#391): shown while a track is fetched from
+    /// a server and after, until the next track opens. Kept separate from
+    /// [`LibraryDataSource::status_text`] so a scan cannot clear it.
+    fn network_activity(&self) -> Option<String> {
+        None
+    }
+
     /// Rescans every enabled folder, even if the folder set is unchanged.
     fn rescan(&mut self) {}
 

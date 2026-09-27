@@ -1,0 +1,334 @@
+//! Persisted row models shared between the database and the REST API.
+
+use serde::{Deserialize, Serialize};
+
+use crate::render::RenderCapabilities;
+
+/// A paired client device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Device {
+    /// Server-assigned opaque identifier (UUID v4).
+    pub id: String,
+    /// Human-readable device name supplied at pairing time.
+    pub name: String,
+    /// PASERK-encoded Ed25519 public key proving possession at refresh.
+    pub public_key: String,
+    /// Unix timestamp (seconds) when the device paired.
+    pub paired_at: i64,
+    /// Unix timestamp (seconds) of the device's last authenticated request.
+    pub last_seen: Option<i64>,
+    /// Whether administrator revocation has invalidated the device.
+    pub is_revoked: bool,
+}
+
+/// One scanned track as stored in the `tracks` table.
+///
+/// The identifier is the SHA-256 of the file's canonical absolute path, which
+/// keeps it stable across scans and opaque to clients (the absolute host path
+/// is never disclosed).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackRecord {
+    /// Opaque track identifier.
+    pub id: String,
+    /// Index into the configured library roots.
+    pub root_index: i64,
+    /// Path relative to the root, using forward slashes.
+    pub relative_path: String,
+    /// Lowercase format label (`flac`, `mp3`, `sid`, `xm`, `mid`, ...).
+    pub format: String,
+    /// Either `stream` or `module`.
+    pub kind: String,
+    /// Tagged title.
+    pub title: Option<String>,
+    /// Tagged artist.
+    pub artist: Option<String>,
+    /// Tagged album artist.
+    pub album_artist: Option<String>,
+    /// Tagged album.
+    pub album: Option<String>,
+    /// Opaque album identifier derived from album artist and album name.
+    pub album_id: Option<String>,
+    /// Tagged genre.
+    pub genre: Option<String>,
+    /// Tagged year.
+    pub year: Option<i32>,
+    /// Tagged track number.
+    pub track_no: Option<u32>,
+    /// Tagged disc number.
+    pub disc_no: Option<u32>,
+    /// Duration in seconds, when known.
+    pub duration_secs: Option<f64>,
+    /// Number of subtunes (SID files; `1` otherwise).
+    pub subtunes: u32,
+    /// Channel count, when known.
+    pub channels: Option<u32>,
+    /// File size in bytes.
+    pub file_size: u64,
+    /// File modification time as a Unix timestamp (seconds).
+    pub mtime: i64,
+    /// Cheap change fingerprint (SHA-256 over size and mtime).
+    pub hash: String,
+    /// Whether artwork is available for this track.
+    pub has_art: bool,
+    /// Monotonic version at which this row last changed.
+    pub sync_version: i64,
+    /// Unix timestamp (seconds) when the track was first seen.
+    pub added_at: i64,
+}
+
+/// A track as produced by a scan, ready to be inserted or updated.
+///
+/// The `sync_version` and `added_at` bookkeeping is owned by the store, not by
+/// the scanner.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewTrack {
+    /// Opaque identifier (SHA-256 of the canonical absolute path).
+    pub id: String,
+    /// Index into the configured library roots.
+    pub root_index: i64,
+    /// Path relative to the root, using forward slashes.
+    pub relative_path: String,
+    /// Lowercase format label.
+    pub format: String,
+    /// Either `stream` or `module`.
+    pub kind: String,
+    /// Tagged title.
+    pub title: Option<String>,
+    /// Tagged artist.
+    pub artist: Option<String>,
+    /// Tagged album artist.
+    pub album_artist: Option<String>,
+    /// Tagged album.
+    pub album: Option<String>,
+    /// Opaque album identifier derived from album artist and album name.
+    pub album_id: Option<String>,
+    /// Tagged genre.
+    pub genre: Option<String>,
+    /// Tagged year.
+    pub year: Option<i32>,
+    /// Tagged track number.
+    pub track_no: Option<u32>,
+    /// Tagged disc number.
+    pub disc_no: Option<u32>,
+    /// Duration in seconds, when known.
+    pub duration_secs: Option<f64>,
+    /// Number of subtunes.
+    pub subtunes: u32,
+    /// Channel count, when known.
+    pub channels: Option<u32>,
+    /// File size in bytes.
+    pub file_size: u64,
+    /// File modification time (Unix seconds).
+    pub mtime: i64,
+    /// Cheap change fingerprint.
+    pub hash: String,
+    /// Whether artwork is available.
+    pub has_art: bool,
+    /// Unix timestamp (seconds) when the track was first seen.
+    pub added_at: i64,
+}
+
+/// A batch of changes since a client's known version.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyncDelta {
+    /// The current library version after this batch.
+    pub version: i64,
+    /// Added or updated tracks.
+    pub tracks: Vec<TrackRecord>,
+    /// Identifiers of tracks deleted since the requested version.
+    pub deleted: Vec<String>,
+}
+
+/// Track metadata as sent to clients: everything except the internal
+/// `root_index` and `relative_path`, which are not disclosed. `filename` is
+/// the path's final component only and `directory` its parent, so clients can
+/// show the file name and browse by folder without revealing the absolute
+/// library root.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackView {
+    /// Opaque track identifier.
+    pub id: String,
+    /// The file's name (final path component), for display fallback.
+    pub filename: String,
+    /// The parent directory's relative path, `/`-separated with no leading or
+    /// trailing slash (empty for a file at the library root).
+    pub directory: String,
+    /// Lowercase format label.
+    pub format: String,
+    /// Either `stream` or `module`.
+    pub kind: String,
+    /// Whether the client should fetch the whole file and render it natively
+    /// (SID, tracker module or MIDI) rather than stream it for seeking.
+    pub specialized: bool,
+    /// Whether the server can render this track to a streamable codec.
+    pub renderable: bool,
+    /// Output codecs the server can render this track to (empty when not
+    /// renderable).
+    pub renditions: Vec<String>,
+    /// Tagged title.
+    pub title: Option<String>,
+    /// Tagged artist.
+    pub artist: Option<String>,
+    /// Tagged album artist.
+    pub album_artist: Option<String>,
+    /// Tagged album.
+    pub album: Option<String>,
+    /// Opaque album identifier.
+    pub album_id: Option<String>,
+    /// Tagged genre.
+    pub genre: Option<String>,
+    /// Tagged year.
+    pub year: Option<i32>,
+    /// Tagged track number.
+    pub track_no: Option<u32>,
+    /// Tagged disc number.
+    pub disc_no: Option<u32>,
+    /// Duration in seconds, when known.
+    pub duration_secs: Option<f64>,
+    /// Number of subtunes.
+    pub subtunes: u32,
+    /// Channel count, when known.
+    pub channels: Option<u32>,
+    /// File size in bytes.
+    pub file_size: u64,
+    /// Cheap change fingerprint.
+    pub hash: String,
+    /// Whether artwork is available.
+    pub has_art: bool,
+    /// Monotonic version at which this row last changed.
+    pub sync_version: i64,
+    /// Unix timestamp (seconds) when the track was first seen.
+    pub added_at: i64,
+}
+
+impl TrackView {
+    /// Projects a stored row, tagging it with the server's render capability.
+    ///
+    /// `capabilities` comes from the runtime render service, so disabling
+    /// `render` makes every track report `renderable = false` without a rescan.
+    pub fn from_record(track: &TrackRecord, capabilities: &RenderCapabilities) -> Self {
+        let renderable = capabilities.is_renderable(&track.format);
+        Self {
+            id: track.id.clone(),
+            filename: file_name(&track.relative_path),
+            directory: directory_of(&track.relative_path),
+            format: track.format.clone(),
+            kind: track.kind.clone(),
+            specialized: is_specialized_format(&track.format),
+            renderable,
+            renditions: if renderable {
+                capabilities.renditions().to_vec()
+            } else {
+                Vec::new()
+            },
+            title: track.title.clone(),
+            artist: track.artist.clone(),
+            album_artist: track.album_artist.clone(),
+            album: track.album.clone(),
+            album_id: track.album_id.clone(),
+            genre: track.genre.clone(),
+            year: track.year,
+            track_no: track.track_no,
+            disc_no: track.disc_no,
+            duration_secs: track.duration_secs,
+            subtunes: track.subtunes,
+            channels: track.channels,
+            file_size: track.file_size,
+            hash: track.hash.clone(),
+            has_art: track.has_art,
+            sync_version: track.sync_version,
+            added_at: track.added_at,
+        }
+    }
+}
+
+/// A sync batch as sent to clients (no internal path fields).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyncDeltaView {
+    /// The current library version after this batch.
+    pub version: i64,
+    /// Added or updated tracks.
+    pub tracks: Vec<TrackView>,
+    /// Identifiers of tracks deleted since the requested version.
+    pub deleted: Vec<String>,
+}
+
+impl SyncDeltaView {
+    /// Projects a delta, tagging every track with the server's capability.
+    pub fn from_delta(delta: SyncDelta, capabilities: &RenderCapabilities) -> Self {
+        Self {
+            version: delta.version,
+            tracks: delta
+                .tracks
+                .iter()
+                .map(|track| TrackView::from_record(track, capabilities))
+                .collect(),
+            deleted: delta.deleted,
+        }
+    }
+}
+
+/// Whether a format label must be fetched whole and rendered by the client.
+fn is_specialized_format(format: &str) -> bool {
+    matches!(
+        format,
+        "sid"
+            | "psid"
+            | "rsid"
+            | "mid"
+            | "midi"
+            | "mod"
+            | "xm"
+            | "it"
+            | "s3m"
+            | "mo3"
+            | "mtm"
+            | "umx"
+    )
+}
+
+/// The final component of a stored relative path (forward slashes).
+fn file_name(relative_path: &str) -> String {
+    relative_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(relative_path)
+        .to_string()
+}
+
+/// The parent directory of a stored relative path, `/`-separated with no
+/// leading or trailing slash, or empty when the file is at the library root.
+fn directory_of(relative_path: &str) -> String {
+    match relative_path.rsplit_once(['/', '\\']) {
+        Some((parent, _)) => parent.replace('\\', "/").trim_matches('/').to_string(),
+        None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn specialized_formats_are_flagged() {
+        assert!(is_specialized_format("sid"));
+        assert!(is_specialized_format("xm"));
+        assert!(is_specialized_format("mid"));
+        assert!(!is_specialized_format("flac"));
+        assert!(!is_specialized_format("mp3"));
+    }
+
+    #[test]
+    fn file_name_is_the_last_component() {
+        assert_eq!(file_name("Album/Disc 1/01 - Song.flac"), "01 - Song.flac");
+        assert_eq!(file_name("song.mp3"), "song.mp3");
+        assert_eq!(file_name(""), "");
+    }
+
+    #[test]
+    fn directory_is_the_parent_path() {
+        assert_eq!(directory_of("Album/Disc 1/01 - Song.flac"), "Album/Disc 1");
+        assert_eq!(directory_of("song.mp3"), "");
+        assert_eq!(directory_of("a\\b\\c.mod"), "a/b");
+    }
+}

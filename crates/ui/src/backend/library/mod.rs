@@ -10,6 +10,7 @@
 pub(crate) mod auto_tag;
 pub(crate) mod folders;
 pub(crate) mod loader;
+pub(crate) mod remote;
 pub(crate) mod scan;
 pub(crate) mod source;
 pub(crate) mod stats;
@@ -52,7 +53,7 @@ impl Updates {
     }
 
     /// Sends `update` and wakes the UI. Mirrors [`Sender::send`].
-    fn send(&self, update: Update) -> Result<(), std::sync::mpsc::SendError<Update>> {
+    pub(crate) fn send(&self, update: Update) -> Result<(), std::sync::mpsc::SendError<Update>> {
         let result = self.tx.send(update);
         if result.is_ok() {
             self.waker.wake();
@@ -68,6 +69,9 @@ pub(crate) enum Update {
     Snapshot(Box<Snapshot>),
     /// A progress line for the status bar; empty clears it.
     Status(String),
+    /// The remote network indicator (#391): a status line kept separately from
+    /// the scan/auto-tag progress so a scan finishing cannot clear it.
+    Network(Option<String>),
     /// A scan with this id finished; clears the scanning state if it is still
     /// the current one (an older scan's completion is ignored).
     ScanFinished(u64),
@@ -96,6 +100,8 @@ pub struct LibraryBackend {
     stats_recorder: StatsRecorder,
     watcher: Option<Watcher>,
     status: Option<String>,
+    /// Remote network indicator text (#391), independent of `status`.
+    network: Option<String>,
     loader_started: bool,
     /// Id handed to the next scan; makes stale `ScanFinished` messages
     /// detectable.
@@ -111,6 +117,14 @@ pub struct LibraryBackend {
     /// during scans. `None` when BASS failed to initialize, in which case
     /// modules are counted but skipped (see [`emusic_library::scanner`]).
     bass: Option<Arc<bass::Bass>>,
+    /// Remote-server sync state and worker (#391).
+    remote: remote::RemoteState,
+    /// Live server list shared with the playback backend so a remote cache
+    /// path can be resolved to its server URL (#391).
+    remote_registry: crate::remote::RemoteRegistry,
+    /// When set, snapshots include only tracks under the remote cache root
+    /// (#391), so the local library is hidden without deleting it.
+    server_only: bool,
     /// The database file, cached at construction so the Database info dialog
     /// never needs the store lock.
     db_path: Option<PathBuf>,
@@ -181,12 +195,16 @@ impl LibraryBackend {
             stats_recorder,
             watcher,
             status: None,
+            network: None,
             loader_started: false,
             next_scan_id: 0,
             active_scan: None,
             tag_edit_results: Vec::new(),
             auto_tag: auto_tag::AutoTagState::new(Arc::new(MusicBrainzProvider::new())),
             bass,
+            remote: remote::RemoteState::new(),
+            remote_registry: crate::remote::RemoteRegistry::new(),
+            server_only: false,
             db_path,
             last_scan: None,
             revision: 0,
@@ -202,6 +220,43 @@ impl LibraryBackend {
     /// Sender the player adapter uses to report track starts and finishes.
     pub(crate) fn play_message_tx(&self) -> Sender<PlayMessage> {
         self.play_message_tx.clone()
+    }
+
+    /// The live remote-server registry, shared with the playback backend so a
+    /// remote cache path can be resolved to its server URL (#391).
+    pub(crate) fn remote_registry(&self) -> crate::remote::RemoteRegistry {
+        self.remote_registry.clone()
+    }
+
+    /// A handle the playback decorator can use to post status lines (the
+    /// network indicator) to the same channel the scanner uses (#391).
+    pub(crate) fn updates_handle(&self) -> Updates {
+        self.update_tx.clone()
+    }
+
+    /// The path filter applied when building snapshots in server-only mode:
+    /// the remote cache root, or `None` to include everything.
+    pub(crate) fn only_root(&self) -> Option<PathBuf> {
+        if self.server_only {
+            self.remote.cache_root()
+        } else {
+            None
+        }
+    }
+
+    /// Deletes every remote row stored for `server_ids`, used when a server is
+    /// unpaired (#391).
+    fn forget_servers(&self, server_ids: &[String]) -> emusic_library::Result<()> {
+        match private_store(&self.store) {
+            Some(mut store) => forget_servers_in(&mut store, server_ids),
+            None => {
+                let mut guard = self
+                    .store
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                forget_servers_in(&mut guard, server_ids)
+            }
+        }
     }
 
     /// Replaces the metadata provider, so tests can drive the worker without a
@@ -339,6 +394,7 @@ impl LibraryDataSource for LibraryBackend {
             self.folders.clone(),
             requests,
             self.update_tx.clone(),
+            self.only_root(),
         );
     }
 
@@ -372,6 +428,9 @@ impl LibraryDataSource for LibraryBackend {
                 Update::Status(text) => {
                     self.status = if text.is_empty() { None } else { Some(text) };
                 }
+                Update::Network(text) => {
+                    self.network = text.filter(|text| !text.is_empty());
+                }
                 Update::ScanFinished(id) => {
                     if self.active_scan.as_ref().is_some_and(|scan| scan.id == id) {
                         self.active_scan = None;
@@ -396,6 +455,7 @@ impl LibraryDataSource for LibraryBackend {
                         handle,
                         Vec::new(),
                         self.bass.clone(),
+                        self.only_root(),
                     );
                 }
             }
@@ -432,6 +492,66 @@ impl LibraryDataSource for LibraryBackend {
         self.apply_folders(folders);
     }
 
+    fn set_remote_servers(&mut self, servers: &[crate::remote::RemoteServer]) {
+        let removed: Vec<String> = self
+            .remote
+            .servers()
+            .iter()
+            .map(|server| server.id.clone())
+            .filter(|id| !servers.iter().any(|server| &server.id == id))
+            .collect();
+        self.remote.set_servers(servers);
+        self.remote_registry.replace(servers);
+        if !removed.is_empty() {
+            if let Err(err) = self.forget_servers(&removed) {
+                warn!(%err, "failed to remove unpaired server tracks");
+            }
+            self.remote.forget(&removed);
+        }
+        self.remote.spawn_sync(
+            self.store.clone(),
+            self.folders.clone(),
+            self.update_tx.clone(),
+            self.only_root(),
+        );
+    }
+
+    fn sync_remote(&mut self) {
+        self.remote.spawn_sync(
+            self.store.clone(),
+            self.folders.clone(),
+            self.update_tx.clone(),
+            self.only_root(),
+        );
+    }
+
+    fn set_server_only(&mut self, on: bool) {
+        if self.server_only == on {
+            return;
+        }
+        self.server_only = on;
+        // Rebuild the snapshot with (or without) the remote-cache filter,
+        // without rescanning or touching the store's rows.
+        if self.loader_started {
+            loader::spawn(
+                self.store.clone(),
+                self.folders.clone(),
+                self.update_tx.clone(),
+                None,
+                self.bass.clone(),
+                self.only_root(),
+            );
+        }
+    }
+
+    fn remote_status(&self) -> Option<String> {
+        self.remote.status()
+    }
+
+    fn network_activity(&self) -> Option<String> {
+        self.network.clone()
+    }
+
     fn rescan(&mut self) {
         let roots = enabled_roots(&self.folders);
         if roots.is_empty() {
@@ -448,6 +568,7 @@ impl LibraryDataSource for LibraryBackend {
             handle,
             Vec::new(),
             self.bass.clone(),
+            self.only_root(),
         );
     }
 
@@ -517,6 +638,15 @@ pub(crate) fn scan_options(bass: Option<Arc<bass::Bass>>) -> emusic_library::sca
         bass,
         ..Default::default()
     }
+}
+
+/// Deletes every remote row stored for each server id (unpair, #391).
+fn forget_servers_in(store: &mut Store, server_ids: &[String]) -> emusic_library::Result<()> {
+    for id in server_ids {
+        let tracks: Vec<String> = store.remote_track_ids(id)?.into_iter().collect();
+        store.delete_remote_tracks(id, &tracks)?;
+    }
+    Ok(())
 }
 
 /// Opens a private connection to the same database file as the shared store,
