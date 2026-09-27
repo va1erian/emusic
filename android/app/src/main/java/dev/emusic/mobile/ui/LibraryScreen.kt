@@ -66,6 +66,10 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var nonce by remember { mutableStateOf(0) }
     var formatFilter by remember { mutableStateOf<String?>(null) }
+    var browseMode by remember { mutableStateOf(BrowseMode.Tracks) }
+    var query by remember { mutableStateOf("") }
+    var albumFilter by remember { mutableStateOf<String?>(null) }
+    var artistFilter by remember { mutableStateOf<String?>(null) }
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
@@ -237,21 +241,56 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 }
 
                 else -> {
-                    val visibleTracks = formatFilter
-                        ?.let { filter -> tracks.filter { it.format == filter } }
-                        ?: tracks
+                    val searched = searchTracks(tracks, query)
+                    val visibleTracks = searched
+                        .filter { formatFilter == null || it.format == formatFilter }
+                        .filter { albumFilter == null || it.album == albumFilter }
+                        .filter { artistFilter == null || it.artist == artistFilter }
                     LibrarySummary(url = url, version = version, tracks = tracks)
                     HorizontalDivider()
-                    FormatFilter(
-                        tracks = tracks,
-                        selected = formatFilter,
-                        onSelect = { formatFilter = it },
-                    )
-                    TrackList(
-                        tracks = visibleTracks,
-                        onPlay = { track -> play(track, visibleTracks) },
-                        modifier = Modifier.weight(1f),
-                    )
+                    SearchField(query = query, onQueryChange = { query = it })
+                    BrowseTabs(mode = browseMode, onSelect = { browseMode = it })
+                    val activeLabel = albumFilter ?: artistFilter
+                    if (activeLabel != null) {
+                        FilterBanner(label = activeLabel, onClear = {
+                            albumFilter = null
+                            artistFilter = null
+                        })
+                    }
+                    when (browseMode) {
+                        BrowseMode.Albums -> AlbumList(
+                            albums = albumsOf(searched),
+                            onSelect = { group ->
+                                albumFilter = group.album
+                                artistFilter = null
+                                browseMode = BrowseMode.Tracks
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+
+                        BrowseMode.Artists -> ArtistList(
+                            artists = artistsOf(searched),
+                            onSelect = { group ->
+                                artistFilter = group.artist
+                                albumFilter = null
+                                browseMode = BrowseMode.Tracks
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+
+                        BrowseMode.Tracks -> {
+                            FormatFilter(
+                                tracks = tracks,
+                                selected = formatFilter,
+                                onSelect = { formatFilter = it },
+                            )
+                            TrackList(
+                                tracks = visibleTracks,
+                                onPlay = { track -> play(track, visibleTracks) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                     playbackMessage?.let { message ->
                         Text(
                             text = message,
