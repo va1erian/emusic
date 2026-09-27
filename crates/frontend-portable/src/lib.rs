@@ -1,24 +1,22 @@
 #![forbid(unsafe_code)]
 
-//! emusic's portable frontend, a UI built on the `xui_core` widget layer.
+//! Placeholder for emusic's portable frontend.
 //!
-//! This crate is one of the two interchangeable frontends over the
-//! toolkit-agnostic [`emusic_ui`] core: a non-Windows binary selects it, the
-//! Windows binary selects `emusic-frontend-win32`. Both drive the shared
-//! [`Shell`](emusic_ui::shell::Shell) and expose the same [`run`] entry point.
+//! The binary selects a frontend at build time: the native Win32 renderer
+//! (`emusic-frontend-win32`) on Windows, and this crate elsewhere. The portable
+//! renderer is filled in when emusic's migration to the portable `xui_core`
+//! widget layer lands (branch `migration/xui`); the two frontends drive the same
+//! [`emusic_ui::shell::Shell`] through [`emusic_ui::startup::Startup`], so
+//! adopting it later needs no change in the binary.
 //!
-//! The shell layout and the views live here; OS shell services go through
-//! [`emusic_platform`], so this crate names no backend type outside [`run`] and
-//! [`window`].
+//! Until then [`run`] fails loudly rather than starting a half-migrated UI.
 
-pub mod app;
-pub mod dialogs;
-pub mod menu;
-pub mod theme;
-pub mod views;
-pub mod waker;
-pub mod window;
+use emusic_ui::startup::Startup;
 
-mod run;
-
-pub use run::run;
+/// The portable entry point — not implemented yet.
+pub fn run(_startup: Startup) -> anyhow::Result<()> {
+    anyhow::bail!(
+        "emusic's portable frontend is not implemented yet; \
+         build the native Win32 frontend instead"
+    )
+}
