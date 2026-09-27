@@ -8,8 +8,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use emusic::app::Msg;
-use emusic::views::projectm::ProjectMView;
+use emusic_frontend_win32::app::Msg;
+use emusic_frontend_win32::views::projectm::ProjectMView;
 use emusic_ui::mock::MockPlayer;
 use emusic_ui::state::projectm::ProjectMAvailability;
 use win32ui::column;

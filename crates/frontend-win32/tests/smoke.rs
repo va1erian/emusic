@@ -7,7 +7,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use emusic::app::{Msg, Win32App};
+use emusic_frontend_win32::app::{Msg, Win32App};
 use emusic_ui::config::Config;
 use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::mock::{MockLibrary, MockPlayer};
@@ -397,7 +397,7 @@ fn visualization_window_opens_hides_and_reopens() {
 /// Appearance page messages, must relayout every list without panicking.
 #[test]
 fn appearance_changes_apply_live_and_quit() {
-    use emusic::views::settings::SettingsMsg;
+    use emusic_frontend_win32::views::settings::SettingsMsg;
     use emusic_ui::state::{Appearance, Density, FontSize};
 
     let constructed = Rc::new(Cell::new(false));
