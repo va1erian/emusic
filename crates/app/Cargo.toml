@@ -22,11 +22,14 @@ emusic-ui = { path = "../ui" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# The native frontend is the Windows default; the portable frontend is the
-# default everywhere else. Each frontend pulls its own toolkit only on the
-# platform it targets, so the binary names the platform boundary once.
+# The native frontend is the Windows default. On Windows the portable
+# frontend is additionally available behind the `portable` feature (dev /
+# backend comparison); everywhere else it is the only frontend. Each frontend
+# pulls its own toolkit only on the platform it targets, so the binary names
+# the platform boundary once.
 [target.'cfg(windows)'.dependencies]
 emusic-frontend-win32 = { path = "../frontend-win32" }
+emusic-frontend-portable = { path = "../frontend-portable", optional = true }
 png = { version = "0.18", optional = true }
 win32ui = { git = "https://github.com/va1erian/win32ui", branch = "main", optional = true }
 winshell = { path = "../winshell" }
@@ -35,6 +38,9 @@ winshell = { path = "../winshell" }
 emusic-frontend-portable = { path = "../frontend-portable" }
 
 [features]
+# Windows dev/compare: build the portable frontend and run it instead of the
+# native one (pair with `XUI_BACKEND=canvas` for the software backend).
+portable = ["dep:emusic-frontend-portable"]
 # The headless screenshot tool (`emusic-shot`, #118). Off by default so the PNG
 # encoder and the WinRT capture bindings never enter the real binary's tree.
 shot = ["dep:png", "dep:win32ui", "win32ui/wgc"]
