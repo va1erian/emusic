@@ -5,8 +5,7 @@
 //! [`Win32App::update`], which runs [`Shell::tick`] on wakes and timers, syncs
 //! the views, and schedules the next timer from `Tick::next_wake`.
 //!
-//! Only the shell layout and the Music view are ported here (#370); the other
-//! central views are documented [`Placeholder`]s owned by later issues. OS
+//! Every central view is ported to the portable widget layer (#370–#376). OS
 //! shell services go through [`emusic_platform`], whose signature names no
 //! backend type.
 
@@ -37,11 +36,12 @@ use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
-use crate::views::placeholder::Placeholder;
+use crate::views::now_playing::NowPlayingView;
 use crate::views::settings::SettingsView;
 use crate::views::starred::StarredView;
 use crate::views::status_bar::StatusBarView;
 use crate::views::top_bar::TopBarView;
+use crate::views::visualization::VisualizationView;
 use crate::waker::UiWaker;
 use crate::window::WindowChrome;
 
@@ -73,7 +73,10 @@ pub struct Win32App {
     /// The Music view's three cascading facet lists (#372).
     browser: ColumnBrowserView,
     settings: SettingsView,
-    placeholder: Placeholder,
+    /// The Now Playing central view (#371).
+    now_playing: NowPlayingView,
+    /// The Visualization central view: the portable preset browser (#371).
+    visualization: VisualizationView,
     /// The File/View/Help menu bar, with its ticks kept in step with the state.
     menu: Menu<Msg>,
     /// The track table's pooled right-click menu.
@@ -123,6 +126,7 @@ impl Win32App {
         ipc: Option<IpcBridge>,
         startup_files: Vec<PathBuf>,
         waker: WakerSlot,
+        mock: bool,
     ) -> Self {
         let look = (config.theme, config.accent);
         ui.set_theme(app_theme(look.0, look.1));
@@ -143,7 +147,8 @@ impl Win32App {
         let history = HistoryView::new(ui);
         let browser = ColumnBrowserView::new(ui);
         let settings = SettingsView::new(ui);
-        let placeholder = Placeholder::new(ui, "view", "later issues");
+        let now_playing = NowPlayingView::new(ui, waker.handle());
+        let visualization = VisualizationView::new(ui, mock, waker.handle());
 
         waker.bind(UiWaker::new(ui.proxy()));
         let mut shell = Shell::new(library, player, config, config_path, waker);
@@ -186,7 +191,8 @@ impl Win32App {
             history,
             browser,
             settings,
-            placeholder,
+            now_playing,
+            visualization,
             menu,
             context_menu,
             chrome: None,

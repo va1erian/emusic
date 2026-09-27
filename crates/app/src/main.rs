@@ -146,6 +146,7 @@ fn build_app(
         ipc,
         startup,
         waker,
+        mock,
     );
     if let Some(notice) = notice {
         app.set_backend_notice(notice);

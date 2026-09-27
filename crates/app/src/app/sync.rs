@@ -86,6 +86,19 @@ impl Win32App {
             }
             _ => {}
         }
+
+        // The transport model feeding the Now Playing view is shell state; it
+        // is refreshed every tick (cheaply) so the view is ready the instant it
+        // becomes visible.
+        self.shell
+            .state
+            .now_playing
+            .refresh(self.shell.player.as_ref(), self.shell.library.as_ref());
+        self.now_playing.sync(&self.shell.state.now_playing);
+        if view == View::Visualization {
+            self.visualization.sync(&self.shell.state.projectm.settings);
+        }
+
         self.navigator.sync(view);
         menu::sync(&self.menu, &self.shell.state);
         if view == View::Settings {
@@ -106,6 +119,11 @@ impl Win32App {
         );
         let notice = self.shell.backend_notice();
         self.status_bar.sync(&self.shell.state.status_bar, notice);
+        self.status_bar.feed(
+            self.shell.state.visualizer_enabled,
+            self.shell.state.visualizer,
+            player,
+        );
 
         let look = (self.shell.state.theme, self.shell.state.accent);
         if look != self.applied_look {
@@ -131,29 +149,12 @@ impl Win32App {
         self.browser
             .set_visible(music && self.shell.state.music.browser.visible);
         self.settings.set_visible(settings);
-        let ported = matches!(
-            view,
-            View::Music
-                | View::Folders
-                | View::Albums
-                | View::Artists
-                | View::Genres
-                | View::Starred
-                | View::MostPlayed
-                | View::History
-                | View::Settings
-        );
-        self.placeholder.set_visible(!ported);
+        self.now_playing.set_visible(view == View::NowPlaying);
+        self.visualization.set_visible(view == View::Visualization);
         self.navigator
             .set_visible(self.shell.state.panels.navigator);
         self.status_bar
             .set_visible(self.shell.state.panels.status_bar);
-        if !ported {
-            self.placeholder.sync(&format!(
-                "{} view: not ported to xui_core yet (see the migration epic #369)",
-                view.label()
-            ));
-        }
     }
 
     /// Rebuilds the Folders model (its tree rows and visible ids) from the
