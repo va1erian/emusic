@@ -9,6 +9,7 @@
 //! No toolkit is named here (except `winshell` for the Windows process
 //! bootstrap): the frontend crate owns the window and the message loop.
 
+#[cfg(windows)]
 use std::env;
 
 use clap::Parser;
