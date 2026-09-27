@@ -59,6 +59,9 @@ const SEARCH: TopBarId = TopBarId::new(14);
 pub struct TopBarView {
     ui: Ui<Msg>,
     caption: Label<Msg>,
+    /// The band's background surface, behind the transport and the search, so
+    /// the one-line search field's column shares the band's colour.
+    band: TopBar<Msg>,
     bar: TopBar<Msg>,
     search: Edit<Msg>,
     /// Whether the play/pause glyph is currently the pause icon; a change
@@ -75,6 +78,9 @@ impl TopBarView {
     /// Builds the caption band, the transport bar and the search box.
     pub fn new(ui: &Ui<Msg>) -> TopBarView {
         let caption = Label::new(ui, Rect::default(), "").expect("create caption band");
+        // The band's surface spans the whole transport band, behind the
+        // transport bar and the search field; it is raised below them.
+        let band = TopBar::new(ui, Rect::default()).expect("create band");
         let duration = Rc::new(Cell::new(0.0));
         let bar = build_bar(ui, false, Rc::clone(&duration));
         let search = Edit::new(ui, Rect::default(), "")
@@ -83,9 +89,12 @@ impl TopBarView {
         // On Windows the native extended title bar owns the strip; elsewhere
         // the band is the app's drag region.
         ui.set_visible(caption.id(), !cfg!(windows));
+        ui.raise(bar.id());
+        ui.raise(search.id());
         TopBarView {
             ui: ui.clone(),
             caption,
+            band,
             bar,
             search,
             playing: false,
@@ -118,6 +127,7 @@ impl TopBarView {
         );
         self.ui.apply_moves(&[
             (self.caption.id(), caption),
+            (self.band.id(), bar),
             (self.bar.id(), self.bar_bounds),
             (self.search.id(), edit),
         ]);
@@ -156,6 +166,8 @@ impl TopBarView {
     fn rebuild(&mut self) {
         self.bar = build_bar(&self.ui, self.playing, Rc::clone(&self.duration));
         self.ui.apply_moves(&[(self.bar.id(), self.bar_bounds)]);
+        // The recreated bar must sit above the band's surface.
+        self.ui.raise(self.bar.id());
     }
 }
 
