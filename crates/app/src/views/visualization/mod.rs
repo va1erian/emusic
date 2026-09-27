@@ -13,7 +13,7 @@
 
 mod presets;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -92,6 +92,10 @@ pub struct VisualizationView {
     applied_revision: Cell<u64>,
     /// The lock state last pushed into the toggle.
     applied_lock: Cell<bool>,
+    /// The count text last pushed into the label.
+    applied_count: RefCell<String>,
+    /// The current preset last pushed into the model.
+    applied_current: RefCell<Option<PathBuf>>,
 }
 
 impl VisualizationView {
@@ -104,7 +108,7 @@ impl VisualizationView {
             .on_change(|text| Some(Msg::PresetFilter(text.to_owned())));
         let lock = CheckBox::new(ui, Rect::default(), "Lock current preset")
             .expect("create preset lock")
-            .on_toggle(|on| Some(Msg::PresetToggleLock(on)));
+            .on_toggle(|_| Some(Msg::PresetToggleLock));
         let count = Label::new(ui, Rect::default(), "").expect("create preset count");
         let list = ListView::new(ui, Rect::default(), &[])
             .expect("create preset list")
@@ -131,6 +135,8 @@ impl VisualizationView {
             started: false,
             applied_revision: Cell::new(u64::MAX),
             applied_lock: Cell::new(false),
+            applied_count: RefCell::new(String::new()),
+            applied_current: RefCell::new(None),
         }
     }
 
@@ -194,13 +200,22 @@ impl VisualizationView {
             self.scanner = None;
         }
 
-        self.model.set_current(settings.last_preset.as_deref());
+        // Guard every push on an actual change: `sync` runs every tick, and an
+        // unconditional `set_text`/`set_current` would invalidate the widgets
+        // (and clone the path) each time.
+        if self.applied_current.borrow().as_ref() != settings.last_preset.as_ref() {
+            *self.applied_current.borrow_mut() = settings.last_preset.clone();
+            self.model.set_current(settings.last_preset.as_deref());
+        }
         if settings.preset_locked != self.applied_lock.get() {
             self.applied_lock.set(settings.preset_locked);
             self.lock.set_checked(settings.preset_locked);
         }
-        self.count
-            .set_text(&format!("{} of {}", self.model.len(), self.model.total()));
+        let count = format!("{} of {}", self.model.len(), self.model.total());
+        if *self.applied_count.borrow() != count {
+            self.count.set_text(&count);
+            *self.applied_count.borrow_mut() = count;
+        }
 
         if self.model.revision() != self.applied_revision.get() {
             self.applied_revision.set(self.model.revision());
@@ -225,7 +240,8 @@ impl VisualizationView {
     }
 
     /// Rebuilds the native rows from the model's visible entries and restores
-    /// the current preset's selection.
+    /// the user's selection (falling back to the current preset, e.g. on the
+    /// first build), so a filter edit does not lose it.
     fn rebuild_rows(&mut self) {
         let rows: Vec<PresetRow> = (0..self.model.len())
             .filter_map(|row| {
@@ -242,7 +258,7 @@ impl VisualizationView {
         self.list.set_model(Rows {
             rows: Rc::clone(&self.rows),
         });
-        match self.model.current_row() {
+        match self.model.selected().or_else(|| self.model.current_row()) {
             Some(row) => self.list.select(Some(row)),
             None => self.list.select(None),
         }

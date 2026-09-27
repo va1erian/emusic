@@ -60,8 +60,8 @@ fn app_constructs_ticks_and_quits() {
     smoke(None);
 }
 
-/// Navigating to each central view builds its view (the Music view's list, or
-/// a placeholder) and ticks without panicking.
+/// Navigating to each central view builds its view (its list/grid/canvas) and
+/// ticks without panicking.
 #[test]
 fn every_view_builds_and_quits() {
     for view in View::ALL {
@@ -171,6 +171,7 @@ fn albums_view_commands_dispatch() {
             None,
             Vec::new(),
             WakerSlot::new(),
+            true,
         );
         ui.emit(Msg::Navigate(View::Albums));
         ui.emit(Msg::Album(AlbumMsg::SetSort(AlbumSort::Album)));

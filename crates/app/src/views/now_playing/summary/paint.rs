@@ -150,6 +150,7 @@ pub(super) fn paint(
     match artwork {
         Some(image) => canvas.draw_image(image, layout.artwork),
         None => draw_text(
+            ui,
             canvas,
             layout.artwork,
             "\u{266A}",
@@ -162,6 +163,7 @@ pub(super) fn paint(
     hits.clear();
     if !data.playing {
         draw_text(
+            ui,
             canvas,
             layout.artist,
             "Nothing playing",
@@ -178,6 +180,7 @@ pub(super) fn paint(
             theme.text_secondary
         };
         draw_text(
+            ui,
             canvas,
             layout.star,
             glyph,
@@ -188,6 +191,7 @@ pub(super) fn paint(
     }
 
     draw_text(
+        ui,
         canvas,
         layout.title,
         &data.title,
@@ -197,6 +201,7 @@ pub(super) fn paint(
     if !data.artist.is_empty() {
         fill_hot(canvas, layout.artist, hot == Some(Hit::Artist), theme);
         draw_text(
+            ui,
             canvas,
             layout.artist,
             &data.artist,
@@ -214,6 +219,7 @@ pub(super) fn paint(
             theme.accent
         };
         draw_text(
+            ui,
             canvas,
             layout.album,
             &data.album_line,
@@ -223,6 +229,7 @@ pub(super) fn paint(
 
     if let Some(details) = &data.details {
         draw_text(
+            ui,
             canvas,
             layout.details,
             details,
@@ -232,12 +239,15 @@ pub(super) fn paint(
 
     if !data.path.is_empty() {
         let text = emusic_ui::views::now_playing::truncate_path(&data.path);
+        fill_hot(canvas, layout.path, hot == Some(Hit::Path), theme);
         draw_text(
+            ui,
             canvas,
             layout.path,
             &text,
             &TextStyle::new(theme.accent, SMALL_SIZE).middle(),
         );
+        hits.push((layout.path, Hit::Path));
     }
 
     if data.has_track {
@@ -256,6 +266,7 @@ pub(super) fn paint(
             let rect = Rect::new(x, layout.links.top, x + width, layout.links.bottom);
             fill_hot(canvas, rect, hot == Some(hit), theme);
             draw_text(
+                ui,
                 canvas,
                 rect,
                 text,
@@ -267,29 +278,38 @@ pub(super) fn paint(
     }
 
     if let Some(module) = &data.module {
-        paint_module(canvas, &layout, module, theme);
+        paint_module(ui, canvas, &layout, module, theme);
     }
 }
 
 /// Paints the tracker-module block.
-fn paint_module(canvas: &mut dyn Canvas, layout: &Layout, module: &ModuleView, theme: &Theme) {
+fn paint_module(
+    ui: &Ui<Msg>,
+    canvas: &mut dyn Canvas,
+    layout: &Layout,
+    module: &ModuleView,
+    theme: &Theme,
+) {
     let Some(rects) = &layout.module else {
         return;
     };
     canvas.fill_rect(rects.separator, theme.border);
     draw_text(
+        ui,
         canvas,
         rects.header,
         "MODULE",
         &TextStyle::new(theme.text_secondary, SMALL_SIZE).middle(),
     );
     draw_text(
+        ui,
         canvas,
         rects.summary,
         &module.summary_text(),
         &TextStyle::new(theme.text, BODY_SIZE).middle(),
     );
     draw_text(
+        ui,
         canvas,
         rects.order_row,
         &module.order_row_text(),
@@ -301,12 +321,14 @@ fn paint_module(canvas: &mut dyn Canvas, layout: &Layout, module: &ModuleView, t
         module.message.clone()
     };
     draw_text(
+        ui,
         canvas,
         rects.message,
         &message,
         &TextStyle::new(theme.text_secondary, SMALL_SIZE).middle(),
     );
     draw_text(
+        ui,
         canvas,
         rects.details,
         &module.format,
@@ -314,14 +336,38 @@ fn paint_module(canvas: &mut dyn Canvas, layout: &Layout, module: &ModuleView, t
     );
 }
 
-/// Draws single-line text clipped to `rect`.
-fn draw_text(canvas: &mut dyn Canvas, rect: Rect, text: &str, style: &TextStyle) {
+/// Draws single-line text clipped to `rect`, eliding it with an ellipsis when
+/// it does not fit.
+fn draw_text(ui: &Ui<Msg>, canvas: &mut dyn Canvas, rect: Rect, text: &str, style: &TextStyle) {
     if rect.width() <= 0 || rect.height() <= 0 || text.is_empty() {
         return;
     }
     canvas.push_clip(rect);
-    canvas.draw_text(text, rect, style);
+    if ui.measure_text(text, style, canvas.dpi()).width > rect.width() {
+        let elided = elide(ui, text, style, rect.width(), canvas.dpi());
+        canvas.draw_text(&elided, rect, style);
+    } else {
+        canvas.draw_text(text, rect, style);
+    }
     canvas.pop_clip();
+}
+
+/// Trims `text` on a `char` boundary so the longest prefix plus an ellipsis fits
+/// `max_width`.
+fn elide(ui: &Ui<Msg>, text: &str, style: &TextStyle, max_width: i32, dpi: u32) -> String {
+    const ELLIPSIS: char = '\u{2026}';
+    let mut best = String::new();
+    let mut candidate = String::new();
+    for ch in text.chars() {
+        candidate.push(ch);
+        let mut probe = candidate.clone();
+        probe.push(ELLIPSIS);
+        if ui.measure_text(&probe, style, dpi).width > max_width {
+            break;
+        }
+        best = candidate.clone();
+    }
+    format!("{best}{ELLIPSIS}")
 }
 
 /// Fills `rect` with the hover colour when `hot`.

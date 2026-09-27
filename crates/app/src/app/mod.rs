@@ -81,6 +81,8 @@ pub struct Win32App {
     menu: Menu<Msg>,
     /// The track table's pooled right-click menu.
     context_menu: Menu<Msg>,
+    /// The Now Playing queue's right-click menu.
+    queue_context: Menu<Msg>,
     /// The window-level chrome (drag region, window buttons), attached by the
     /// binary once the backend exists; `None` in headless runs.
     chrome: Option<WindowChrome>,
@@ -104,6 +106,8 @@ pub struct Win32App {
     /// The row the track context menu was opened on, while a context action is
     /// pending.
     context_row: Option<usize>,
+    /// The queue preview row the queue context menu was opened on.
+    queue_context_row: Option<usize>,
     /// The Help -> Keyboard shortcuts message dialog, while it is open.
     shortcuts_dialog: Option<Dialog<Msg>>,
     /// The History -> Clear confirmation, while it is open.
@@ -161,6 +165,7 @@ impl Win32App {
 
         let menu = menu::bar(ui, Rect::default(), &shell.state);
         let context_menu = menu::track_context(ui);
+        let queue_context = menu::queue_context(ui);
 
         // The portable runtime has no dedicated resize hook; a window-level
         // event mapper observes `Event::Resize` and relayouts.
@@ -195,6 +200,7 @@ impl Win32App {
             visualization,
             menu,
             context_menu,
+            queue_context,
             chrome: None,
             shell_integration: Box::new(NullShell),
             timer: None,
@@ -205,6 +211,7 @@ impl Win32App {
             last_full_sync: Instant::now(),
             central_bounds: Rect::default(),
             context_row: None,
+            queue_context_row: None,
             shortcuts_dialog: None,
             history_dialog: None,
             tag_editor: None,
