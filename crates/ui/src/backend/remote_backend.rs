@@ -147,6 +147,9 @@ fn parse_remote_path(path: &Path, root: &Path) -> Option<(String, String)> {
 mod tests {
     use super::*;
 
+    // The literals below use Windows separators, which `Path` only splits on
+    // Windows; the parser itself is portable (it walks `components`).
+    #[cfg(windows)]
     #[test]
     fn parses_remote_cache_paths() {
         let root = Path::new(r"C:\cache\remote");

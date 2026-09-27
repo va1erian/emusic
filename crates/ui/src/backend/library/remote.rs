@@ -337,6 +337,9 @@ mod tests {
         }
     }
 
+    // The literal path uses Windows separators, which `Path` only splits on
+    // Windows; `track_from_view` itself is portable.
+    #[cfg(windows)]
     #[test]
     fn maps_a_view_to_a_track() {
         let path = PathBuf::from(r"C:\cache\srv\abc.xm");
