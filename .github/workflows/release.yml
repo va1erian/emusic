@@ -142,4 +142,7 @@ jobs:
             installer/Output/emusic-*-setup.exe
             emusic-*-portable.zip
             emusic-*-canvas.zip
+          # A hyphenated tag (e.g. `v1.6.0-canvas2`) is a test/prerelease and
+          # must not become the repo's latest; a plain `vX.Y.Z` is a release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
