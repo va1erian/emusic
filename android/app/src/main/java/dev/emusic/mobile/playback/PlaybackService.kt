@@ -73,7 +73,18 @@ class PlaybackService : MediaLibraryService() {
         val active = ActiveServer.get(this)
         val core = active?.let { runCatching { MobileCore(it, ActiveServer.dataDir(this)) }.getOrNull() }
         val tracks = core?.let { runCatching { it.cachedLibrary().tracks }.getOrNull() }.orEmpty()
-        val built = LibraryBrowser(tracks) { trackId -> core?.streamUrl(trackId).orEmpty() }
+        val built = LibraryBrowser(tracks) { track ->
+            when {
+                core == null -> TrackSource("", false)
+                !track.specialized -> TrackSource(core.streamUrl(track.id), true)
+                core.canRender(track.format) -> TrackSource(
+                    MediaContentProvider.renderUri(track.id, track.format).toString(),
+                    true,
+                )
+
+                else -> TrackSource("", false)
+            }
+        }
         browser = built
         return built
     }
@@ -88,6 +99,27 @@ class PlaybackService : MediaLibraryService() {
 
     /** Serves the browse tree to Android Auto and other media browsers. */
     private inner class LibraryCallback : MediaLibraryService.MediaLibrarySession.Callback {
+        /**
+         * Resolves a browser-picked item into a playable one: the session strips
+         * `localConfiguration`, so the playable URI travels in
+         * `requestMetadata.mediaUri` and is restored here.
+         */
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+        ): ListenableFuture<List<MediaItem>> =
+            Futures.immediateFuture(
+                mediaItems.map { item ->
+                    val mediaUri = item.requestMetadata.mediaUri
+                    if (item.localConfiguration == null && mediaUri != null) {
+                        item.buildUpon().setUri(mediaUri).build()
+                    } else {
+                        item
+                    }
+                },
+            )
+
         override fun onGetLibraryRoot(
             session: MediaLibraryService.MediaLibrarySession,
             browser: MediaSession.ControllerInfo,

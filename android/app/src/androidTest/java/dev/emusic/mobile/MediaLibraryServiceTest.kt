@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.emusic.mobile.playback.LibraryBrowser
 import dev.emusic.mobile.playback.PlaybackService
+import uniffi.emusic_mobile.MobileCore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -62,10 +63,24 @@ class MediaLibraryServiceTest {
                 .get(timeout, TimeUnit.SECONDS).value!!
             assertTrue(albumTracks.isNotEmpty())
             assertTrue(albumTracks[0].mediaMetadata.isPlayable == true)
+            assertEquals("content", albumTracks[0].mediaMetadata.artworkUri?.scheme)
 
             val allTracks = onMain { browser.getChildren(LibraryBrowser.TRACKS, 0, 100, null) }
                 .get(timeout, TimeUnit.SECONDS).value!!
             assertEquals(2, allTracks.size)
+
+            // A standard track streams over http; a specialized one plays its
+            // on-device rendered FLAC via content://.
+            val stream = allTracks.first { it.mediaId == "track:t2" }
+            assertEquals("http", stream.requestMetadata.mediaUri?.scheme)
+
+            val dataDir = File(context.filesDir, "emusic").absolutePath
+            assertTrue(
+                "canRender(mod) should be true on device",
+                MobileCore("http://10.0.2.2:8080", dataDir).canRender("mod"),
+            )
+            val specialized = allTracks.first { it.mediaId == "track:t1" }
+            assertEquals("content", specialized.requestMetadata.mediaUri?.scheme)
         } finally {
             onMain { browser.release() }
         }
@@ -88,8 +103,8 @@ class MediaLibraryServiceTest {
 
         const val LIBRARY_JSON = """
             {"version":1,"tracks":[
-              {"id":"t1","filename":"a.mod","directory":"Mods","format":"mod","kind":"module","specialized":true,"title":"First Tune","artist":"An Artist","album_artist":null,"album":"An Album","genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":120.0,"subtunes":1,"channels":null,"file_size":1234,"has_art":false,"sync_version":1,"added_at":0},
-              {"id":"t2","filename":"b.mp3","directory":"Songs","format":"mp3","kind":"stream","specialized":false,"title":"Second Song","artist":"An Artist","album_artist":null,"album":"Other","genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":60.0,"subtunes":1,"channels":null,"file_size":900,"has_art":false,"sync_version":1,"added_at":0}
+              {"id":"t1","filename":"a.mod","directory":"Mods","format":"mod","kind":"module","specialized":true,"title":"First Tune","artist":"An Artist","album_artist":null,"album":"An Album","album_id":"alb1","genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":120.0,"subtunes":1,"channels":null,"file_size":1234,"has_art":true,"sync_version":1,"added_at":0},
+              {"id":"t2","filename":"b.mp3","directory":"Songs","format":"mp3","kind":"stream","specialized":false,"title":"Second Song","artist":"An Artist","album_artist":null,"album":"Other","album_id":null,"genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":60.0,"subtunes":1,"channels":null,"file_size":900,"has_art":false,"sync_version":1,"added_at":0}
             ]}
         """
     }

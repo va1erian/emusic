@@ -22,6 +22,8 @@ const MAX_JSON_BYTES: usize = 64 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum bytes buffered for an error body.
 const MAX_ERROR_BYTES: usize = 64 * 1024;
+/// Maximum bytes buffered for album art.
+const MAX_ART_BYTES: usize = 32 * 1024 * 1024;
 /// Total budget for receiving a response body (large tracks on slow links).
 const BODY_BUDGET: Duration = Duration::from_secs(30 * 60);
 
@@ -168,6 +170,25 @@ impl RemoteClient {
             .call()
             .map_err(map_transport)?;
         Self::decode_text(response)
+    }
+
+    /// `GET /api/v1/albums/{id}/art`: cover art bytes.
+    pub fn album_art(&self, token: &str, album_id: &str) -> Result<Vec<u8>> {
+        let url = self.url(&format!("/api/v1/albums/{}/art", encode_segment(album_id)));
+        let response = Self::bearer(self.agent.get(url), token)
+            .call()
+            .map_err(map_transport)?;
+        let status = response.status().as_u16();
+        if status == 401 {
+            return Err(ClientError::Unauthorized);
+        }
+        if !(200..300).contains(&status) {
+            return Err(ClientError::Http {
+                status,
+                message: error_message(response),
+            });
+        }
+        read_capped(response, MAX_ART_BYTES)
     }
 
     /// Streams a track's bytes into `writer`, returning the byte count.
