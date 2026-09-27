@@ -310,4 +310,27 @@ mod tests {
     fn album_line_is_empty_without_tags() {
         assert_eq!(album_line(&TrackInfo::default(), None), "");
     }
+
+    #[test]
+    fn the_subtune_selector_is_only_shown_for_multiple_subtunes() {
+        let with = |subsong| SummaryData {
+            subsong,
+            ..SummaryData::default()
+        };
+        assert!(!with(None).has_subsong());
+        assert!(
+            !with(Some(SubsongInfo {
+                current: 1,
+                count: 1
+            }))
+            .has_subsong()
+        );
+        assert!(
+            with(Some(SubsongInfo {
+                current: 2,
+                count: 3
+            }))
+            .has_subsong()
+        );
+    }
 }

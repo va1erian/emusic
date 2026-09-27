@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bass::Bass;
-use emusic_player::sid::{CrsidDecoder, SidDecoder};
-use emusic_player::{AudioBackend, BassBackend};
+use emusic_player::sid::{CrsidDecoder, SidDecoder, SongLengths};
+use emusic_player::{AudioBackend, BackendChannel, BassBackend, SidChannel};
 
 /// Sample rate the engine renders at, matching [`emusic_player`]'s SID path.
 const SAMPLE_RATE: u32 = 44_100;
@@ -63,8 +63,7 @@ fn load(path: &Path) -> CrsidDecoder {
     CrsidDecoder::from_bytes(data, SAMPLE_RATE, Default::default()).expect("load SID tune")
 }
 
-/// Renders one [`WINDOW`] of PCM, restarting the current subtune first so every
-/// probe starts from a clean engine state.
+/// Renders one [`WINDOW`] of PCM from the engine's current state.
 fn render(decoder: &mut CrsidDecoder) -> Vec<i16> {
     let mut pcm = vec![0i16; WINDOW];
     let written = decoder.render(&mut pcm).expect("render PCM");
@@ -90,11 +89,8 @@ fn engine_renders_audible_pcm_for_a_real_tune() {
         return;
     };
     let mut decoder = load(&path);
-    assert_eq!(
-        decoder.subtune_count(),
-        1,
-        "Winners.sid is a single-subtune tune"
-    );
+    // The bundled tune is single-subtune; a caller-supplied override may not be.
+    assert!(decoder.subtune_count() >= 1);
 
     let pcm = render(&mut decoder);
     assert!(
@@ -116,6 +112,17 @@ fn switching_subtunes_changes_the_rendered_audio() {
         count >= 2,
         "{} should have multiple subtunes, got {count}",
         path.display()
+    );
+
+    // Baseline: rendering the same subtune twice must be deterministic, so the
+    // "differ" assertion below cannot pass just because the engine is noisy.
+    decoder.select_subtune(1).expect("select subtune");
+    let baseline = render(&mut decoder);
+    decoder.select_subtune(1).expect("select subtune");
+    assert_eq!(
+        baseline,
+        render(&mut decoder),
+        "rendering the same subtune should be deterministic"
     );
 
     // Render every subtune from a clean start; switching must re-init the tune.
@@ -163,19 +170,19 @@ fn channel_reports_and_plays_subtunes() {
     let Some(bass) = init_silent() else {
         return;
     };
-    let backend = BassBackend::new(Arc::new(bass));
+    let bass = Arc::new(bass);
+    let backend = BassBackend::new(Arc::clone(&bass));
 
     // Playback: a single-subtune tune still reports its one subtune and plays.
     if let Some(path) = fixture("EMUSIC_SID_TEST_FILE", SINGLE_TUNE) {
         let channel = open_channel(&backend, &path);
         let state = channel.subsong().expect("a SID channel reports subsongs");
-        assert_eq!(
-            state.count,
-            1,
-            "{} is a single-subtune tune",
-            path.display()
+        // The bundled tune is single-subtune, but a caller override may not be.
+        assert!(state.count >= 1);
+        assert!(
+            (1..=state.count).contains(&state.current),
+            "current subtune must be in range"
         );
-        assert_eq!(state.current, 1);
 
         channel.play(false).expect("start SID playback");
         std::thread::sleep(Duration::from_millis(250));
@@ -200,11 +207,10 @@ fn channel_reports_and_plays_subtunes() {
         channel.play(false).expect("start SID playback");
         std::thread::sleep(Duration::from_millis(100));
         channel.select_subsong(2).expect("switch subtune");
-        assert_eq!(
-            channel.subsong().expect("subsong state").current,
-            2,
-            "selecting subtune 2 should make it current"
-        );
+        // The feeder applies the switch asynchronously, and the channel only
+        // reflects it once the engine has actually restarted on subtune 2, so
+        // waiting here genuinely exercises the feeder command.
+        wait_for_subsong(&*channel, 2);
 
         std::thread::sleep(Duration::from_millis(250));
         assert!(
@@ -212,5 +218,47 @@ fn channel_reports_and_plays_subtunes() {
             "playback should continue after a subtune switch"
         );
         channel.stop().expect("stop SID playback");
+
+        // A subtune with no Songlengths entry must report its length as
+        // unknown, and switching back to a known one must restore it: this
+        // exercises `SidChannel::capabilities` being evaluated per current
+        // subtune rather than fixed at load.
+        let data = std::fs::read(&path).expect("read multi fixture");
+        let key: String = SongLengths::md5(&data)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        // Only subtune 1 has an entry, so subtune 2 stays unknown.
+        let database = SongLengths::parse(&format!("[Database]\n{key}=1:00\n"));
+        let tuned = SidChannel::open(&bass, &path, Some(&database), Duration::from_secs(180))
+            .expect("open the tune with a Songlengths database");
+        assert!(
+            tuned.capabilities().duration_known,
+            "subtune 1 has a database entry"
+        );
+        tuned.select_subsong(2).expect("switch subtune");
+        wait_for_subsong(&tuned, 2);
+        assert!(
+            !tuned.capabilities().duration_known,
+            "subtune 2 has no database entry, so its length is unknown"
+        );
+        tuned.select_subsong(1).expect("switch subtune");
+        wait_for_subsong(&tuned, 1);
+        assert!(
+            tuned.capabilities().duration_known,
+            "switching back to subtune 1 restores the known length"
+        );
     }
+}
+
+/// Blocks until `channel` reports `expected` as its current subtune (the
+/// feeder applies switches asynchronously), panicking after ~2s.
+fn wait_for_subsong(channel: &dyn BackendChannel, expected: u16) {
+    for _ in 0..2000 {
+        if channel.subsong().expect("subsong state").current == expected {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("subtune did not switch to {expected} in time");
 }

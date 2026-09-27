@@ -267,18 +267,36 @@ pub fn generate() -> GeneratedLibrary {
 /// mock metadata. Applied after generation so the seeded RNG sequence — and
 /// therefore every other track — stays byte-identical.
 pub fn seed_sid_demo_track(library: &mut GeneratedLibrary) {
-    let Some(first) = library.tracks.first_mut() else {
-        return;
-    };
-    if let Some((stem, _extension)) = first.path.rsplit_once('.') {
-        first.path = format!("{stem}.sid");
+    if let Some(first) = library.tracks.first_mut() {
+        to_sid(first);
     }
-    first.format = "sid".to_string();
-    first.codec = "SID".to_string();
-    first.bitrate = None;
-    first.sample_rate = Some(44_100);
-    first.bit_depth = None;
-    first.channels = None;
+    // The most-played rankings are independent clones of the same track, so
+    // patch the demo track there too; otherwise it would still show as its old
+    // format in the Most Played view.
+    for list in [
+        &mut library.most_played_all,
+        &mut library.most_played_30d,
+        &mut library.most_played_year,
+    ] {
+        for track in list.iter_mut().filter(|track| track.id == 0) {
+            to_sid(track);
+        }
+    }
+}
+
+/// Rewrites `track` as the SID demo tune (path/format/codec), keeping every
+/// other field.
+fn to_sid(track: &mut TrackInfo) {
+    track.path = std::path::Path::new(&track.path)
+        .with_extension("sid")
+        .to_string_lossy()
+        .into_owned();
+    track.format = "sid".to_string();
+    track.codec = "SID".to_string();
+    track.bitrate = None;
+    track.sample_rate = Some(44_100);
+    track.bit_depth = None;
+    track.channels = None;
 }
 
 /// Builds the three "most played" rankings (all time / 30 days / year).
