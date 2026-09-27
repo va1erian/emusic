@@ -1,5 +1,11 @@
 package dev.emusic.mobile.ui
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -40,10 +46,15 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
+import com.google.common.util.concurrent.MoreExecutors
+import dev.emusic.mobile.playback.ActiveServer
+import dev.emusic.mobile.playback.PlaybackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -64,6 +75,8 @@ import java.io.File
 fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val notificationPermission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val core = remember { runCatching { MobileCore(url, dataDir) }.getOrNull() }
 
     var loading by remember { mutableStateOf(true) }
@@ -81,7 +94,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var showInfo by remember { mutableStateOf(false) }
     var renderJob by remember { mutableStateOf<Job?>(null) }
 
-    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var controller by remember { mutableStateOf<MediaController?>(null) }
     var nowPlaying by remember { mutableStateOf<Track?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
@@ -110,16 +123,20 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         loading = false
     }
 
-    // Build the player once; the token is resolved per request so it refreshes.
-    LaunchedEffect(core) {
-        val client = core ?: return@LaunchedEffect
-        player = createAuthenticatedPlayer(context) {
-            runCatching { client.bearerToken() }.getOrNull()
+    // Connect to the playback service; it owns the player, so playback
+    // survives this screen (and the task) being destroyed.
+    DisposableEffect(context) {
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, token).buildAsync()
+        future.addListener({ controller = future.get() }, MoreExecutors.directExecutor())
+        onDispose {
+            controller = null
+            MediaController.releaseFuture(future)
         }
     }
 
-    DisposableEffect(player) {
-        val active = player
+    DisposableEffect(controller) {
+        val active = controller
         if (active == null) {
             onDispose { }
         } else {
@@ -138,20 +155,27 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 }
             }
             active.addListener(listener)
-            onDispose {
-                active.removeListener(listener)
-                active.release()
-            }
+            onDispose { active.removeListener(listener) }
         }
     }
 
     // Poll the transport while a track is loaded.
-    LaunchedEffect(player, nowPlaying) {
-        val active = player ?: return@LaunchedEffect
+    LaunchedEffect(controller, nowPlaying) {
+        val active = controller ?: return@LaunchedEffect
         while (nowPlaying != null) {
             positionMs = active.currentPosition.coerceAtLeast(0)
             durationMs = active.duration.coerceAtLeast(0)
             delay(500)
+        }
+    }
+
+    /** Asks for notification permission (API 33+) so playback can show its controls. */
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
@@ -163,13 +187,15 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         preparing = false
 
         val client = core
-        val active = player
+        val active = controller
         if (client == null || active == null) {
             playbackMessage = "not connected yet"
             return
         }
         playbackMessage = null
         nowPlaying = track
+        ActiveServer.set(context, url)
+        requestNotificationPermission()
 
         if (!track.specialized) {
             active.setMediaItem(streamMediaItem(client.streamUrl(track.id)))
@@ -189,7 +215,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 preparing = false
                 result
                     .onSuccess { path ->
-                        player?.run {
+                        controller?.run {
                             setMediaItem(streamMediaItem(File(path).toURI().toString()))
                             prepare()
                             play()
@@ -369,14 +395,14 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                             preparing = preparing,
                             positionMs = positionMs,
                             durationMs = durationMs,
-                            onSeek = { millis -> player?.seekTo(millis) },
+                            onSeek = { millis -> controller?.seekTo(millis) },
                             onToggle = {
-                                player?.let { active ->
+                                controller?.let { active ->
                                     if (isPlaying) active.pause() else active.play()
                                 }
                             },
                             onPrevious = {
-                                if (queueIndex > 0) playAt(queueIndex - 1) else player?.seekTo(0)
+                                if (queueIndex > 0) playAt(queueIndex - 1) else controller?.seekTo(0)
                             },
                             onNext = { playAt(queueIndex + 1) },
                         )
