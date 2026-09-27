@@ -1,6 +1,7 @@
 //! The left navigator (#104), ported to the portable [`TreeView`]: the shared
-//! view [`SECTIONS`] as collapsible headings, each view a selectable row that
-//! switches the central view.
+//! view [`SECTIONS`] as collapsible headings, each view a selectable row,
+//! marked with a per-view [`Glyph`] icon (#399), that switches the central
+//! view.
 //!
 //! Sections start expanded; collapsing a heading hides its views through the
 //! widget's ancestor-visibility filter, and the indented view rows draw indent
@@ -14,9 +15,28 @@ use emusic_ui::panels::navigator::SECTIONS;
 use emusic_ui::state::View;
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::Rect;
-use xui::xui_core::widget::{TreeRow, TreeView};
+use xui::xui_core::widget::{Glyph, TreeRow, TreeView};
 
 use crate::app::Msg;
+
+/// The portable icon for a view, matching the Win32 build's Segoe Fluent
+/// glyphs (#399). [`View::Starred`] keeps the outlined [`Glyph::Star`] and
+/// [`View::MostPlayed`] the filled [`Glyph::StarFilled`], as in Win32.
+fn glyph(view: View) -> Glyph {
+    match view {
+        View::Music => Glyph::Audio,
+        View::Albums => Glyph::Album,
+        View::Artists => Glyph::People,
+        View::Genres => Glyph::Tag,
+        View::Folders => Glyph::Folder,
+        View::Starred => Glyph::Star,
+        View::MostPlayed => Glyph::StarFilled,
+        View::History => Glyph::History,
+        View::NowPlaying => Glyph::Play,
+        View::Visualization => Glyph::Monitor,
+        View::Settings => Glyph::Settings,
+    }
+}
 
 /// The left navigator: the collapsible central-view switcher.
 pub struct NavigatorView {
@@ -43,7 +63,7 @@ impl NavigatorView {
             );
             views.push(None);
             for &view in section.views {
-                rows.push(TreeRow::new(view.label(), 1));
+                rows.push(TreeRow::new(view.label(), 1).icon(glyph(view)));
                 views.push(Some(view));
             }
         }
@@ -127,5 +147,23 @@ mod tests {
             "a section heading is the first row"
         );
         assert_eq!(map.get(1).copied().flatten(), Some(View::Music));
+    }
+
+    #[test]
+    fn every_view_has_a_distinct_vector_icon() {
+        let mut icons = Vec::new();
+        for view in View::ALL {
+            let icon = glyph(view);
+            assert!(
+                !matches!(icon, Glyph::Text(_)),
+                "{view:?} must use a vector glyph, not a text placeholder"
+            );
+            assert!(
+                icons.iter().all(|&other| other != icon),
+                "{view:?} shares its icon with another view"
+            );
+            icons.push(icon);
+        }
+        assert_eq!(icons.len(), View::ALL.len());
     }
 }
