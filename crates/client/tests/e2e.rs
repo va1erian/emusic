@@ -11,7 +11,7 @@ use emusic_client::auth::{
     generate_keypair, issue_refresh_proof, public_key_paserk, secret_key_paserk, token_fingerprint,
 };
 use emusic_client::{ClientError, Credentials, RemoteClient, ServerEndpoint, TrackCache};
-use emusic_server::config::{Config, LibraryConfig, SecurityConfig, ServerConfig};
+use emusic_server::config::{Config, LibraryConfig, RenderConfig, SecurityConfig, ServerConfig};
 use emusic_server::state::AppState;
 use emusic_server::util::unix_now;
 use tempfile::TempDir;
@@ -42,6 +42,7 @@ fn start_server() -> Server {
             hvsc_songlengths_path: None,
             scan_interval_secs: 0,
         },
+        render: RenderConfig::default(),
     };
     let state = emusic_server::build_state(config).expect("build state");
 
