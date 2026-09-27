@@ -138,7 +138,26 @@ fn build_app(
     }
     let chrome = WindowChrome::new(backend, ui.window());
     app.attach_chrome(chrome);
+    schedule_smoke_exit(ui);
     app
+}
+
+/// If `EMUSIC_SMOKE_EXIT_MS` is set, posts [`Msg::Quit`] after that many
+/// milliseconds so CI can run the real shell non-interactively (the macOS
+/// port's smoke run). A no-op in normal runs.
+fn schedule_smoke_exit(ui: &Ui<Msg>) {
+    let Ok(value) = std::env::var("EMUSIC_SMOKE_EXIT_MS") else {
+        return;
+    };
+    let Ok(ms) = value.parse::<u64>() else {
+        tracing::warn!(value, "ignoring non-numeric EMUSIC_SMOKE_EXIT_MS");
+        return;
+    };
+    let proxy = ui.proxy();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        let _ = proxy.send(Msg::Quit);
+    });
 }
 
 /// Runs on the native Win32 backend, attaching the Windows shell integration

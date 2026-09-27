@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 //! Windows shell integration for emusic: single instance detection with
 //! named-pipe IPC ([`instance`]), per-user file association registration
 //! ([`assoc`]), taskbar thumbnail-toolbar transport buttons ([`thumbbar`]),

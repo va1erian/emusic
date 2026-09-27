@@ -98,8 +98,9 @@ scripts\sandbox\run.ps1 -Build `
 - **Working directory.** Some tests read files relative to their crate root.
   The script stages `tests\` and runs each binary from its crate root, so those
   tests really run.
-- **Name collisions.** `emusic` and `win32ui-demo` both build `smoke.exe`; a
-  single `bin\` folder would overwrite one. Each gets a unique name.
+- **Name collisions.** Two crates can build an integration test with the same
+  target name (e.g. `smoke.exe`); a single `bin\` folder would overwrite one.
+  Each gets a unique name.
 - **Runtime.** A static CRT makes the binaries self-contained (no
   `vcruntime140.dll` in the sandbox image).
 
@@ -128,8 +129,8 @@ scripts\sandbox\run.ps1 -Build `
 - **Disk.** The static-CRT build in `target\sandbox` is a second, cold build
   (several GB). Use `-TargetDir` to point it at a shared location, and delete
   it when you're done with a branch.
-- **First build needs network.** Cargo fetches the `win32ui` git dependency on
-  the host the first time. The sandbox itself is network-less.
+- **First build needs network.** Cargo fetches the `xui` git dependency on the
+  host the first time. The sandbox itself is network-less.
 - **CI.** The `windows-latest` GitHub runner is already a disposable VM with an
   interactive desktop, so the `ci.yml` jobs are sandboxed by design. Windows
   Sandbox can't run on hosted runners (no nested virtualization), so

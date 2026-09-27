@@ -60,16 +60,52 @@ jobs:
 
       - run: cargo test --workspace --features emusic/shot
 
+  # macOS: the portable canvas backend, from the same codebase (macOS port,
+  # wiki). GNU GCC is required for the vendored cRSID engine, whose nested
+  # functions Apple clang does not implement. The BASS/projectM dylibs are
+  # absent, so the tests that need them skip gracefully.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: "true"
+
+      - name: Install GNU GCC (cRSID)
+        run: brew install gcc
+
+      - run: cargo fmt --all --check
+
+      - run: cargo check --workspace --all-targets
+
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - run: cargo test --workspace
+
+      # Start the real shell on the canvas backend against mock data and let
+      # `EMUSIC_SMOKE_EXIT_MS` close it, so the run cannot hang CI.
+      - name: Canvas smoke run
+        run: cargo run -p emusic --features canvas -- --mock
+        env:
+          EMUSIC_SMOKE_EXIT_MS: "4000"
+
   # Aggregator that preserves the branch-protection required check named
-  # `ci`. It succeeds only if both `lint` and `test` succeeded, so the
-  # required name does not change while the work itself runs in parallel.
+  # `ci`. It succeeds only if every job succeeded, so the required name does
+  # not change while the work itself runs in parallel.
   ci:
     if: ${{ always() }}
-    needs: [lint, test]
+    needs: [lint, test, macos]
     runs-on: ubuntu-latest
     steps:
-      - name: Require lint and test to succeed
+      - name: Require lint, test and macos to succeed
         run: |
-          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }}"
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} macos=${{ needs.macos.result }}"
           test "${{ needs.lint.result }}" = success
           test "${{ needs.test.result }}" = success
+          test "${{ needs.macos.result }}" = success

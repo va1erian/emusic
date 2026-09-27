@@ -1,5 +1,9 @@
 # Driving the app with UI Automation
 
+> **Note:** written for the pre-migration `win32ui` shell. The app now renders
+> through `xui-win32` (#369); the effective-control ids and the
+> `set_accessible_id` API below may no longer apply. Verify against `xui` first.
+
 The app (`crates/app`) exposes its controls to Windows UI
 Automation (UIA) through `win32ui`'s accessibility providers. Screen readers use
 the same tree, and so can agents and tests: read state, click, type and select

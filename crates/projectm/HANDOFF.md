@@ -28,7 +28,7 @@ Status when handed off (2026-09-25):
 
 ## Next steps
 1. Open/finish the PR for this branch (Closes #297), let CI run.
-2. #301 (Win32 widget) once the win32ui prerequisites (#296) land. Consider the
-   UTF-8 active code page in `emusic-win32.manifest` so non-ASCII preset paths
-   work (projectM opens files with narrow APIs).
+2. #301 (visualizer widget) on the portable xui runtime. Consider the UTF-8
+   active code page in the app manifest so non-ASCII preset paths work (projectM
+   opens files with narrow APIs).
 3. #298/#299 packaging scripts (need Windows/MSVC/Inno Setup).
