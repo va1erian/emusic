@@ -16,6 +16,7 @@ uniffi::setup_scaffolding!();
 
 mod core;
 mod error;
+mod library_store;
 mod registry;
 mod types;
 

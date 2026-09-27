@@ -7,7 +7,7 @@
 use emusic_client::TrackView;
 
 /// A track as synced from the server.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct Track {
     /// Opaque track identifier.
     pub id: String,

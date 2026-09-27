@@ -15,6 +15,7 @@ use emusic_render::{
 };
 
 use crate::error::MobileError;
+use crate::library_store;
 use crate::registry;
 use crate::types::{AuthState, Health, ServerEntry, SyncResult, Track};
 
@@ -211,6 +212,57 @@ impl MobileCore {
         let (_, token) = self.fresh_token()?;
         let delta = self.client.sync(&token, 0)?;
         Ok(map_delta(delta))
+    }
+
+    /// The last synced library, read from the local snapshot (no network).
+    ///
+    /// Empty when the app has not completed a sync yet.
+    pub fn cached_library(&self) -> Result<SyncResult, MobileError> {
+        let snapshot = library_store::load(&self.data_dir)?;
+        Ok(SyncResult {
+            version: snapshot.version,
+            tracks: snapshot.tracks,
+            deleted: Vec::new(),
+        })
+    }
+
+    /// Applies the server's delta to the local snapshot and returns the full,
+    /// updated library, persisting it for the next launch.
+    pub fn refresh_library(&self) -> Result<SyncResult, MobileError> {
+        let mut snapshot = library_store::load(&self.data_dir)?;
+        let (_, token) = self.fresh_token()?;
+        let delta = self.client.sync(&token, snapshot.version)?;
+
+        let mut positions: std::collections::HashMap<String, usize> = snapshot
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| (track.id.clone(), index))
+            .collect();
+        for view in delta.tracks {
+            let track = Track::from(view);
+            match positions.get(&track.id).copied() {
+                Some(index) => snapshot.tracks[index] = track,
+                None => {
+                    positions.insert(track.id.clone(), snapshot.tracks.len());
+                    snapshot.tracks.push(track);
+                }
+            }
+        }
+        let deleted: std::collections::HashSet<String> = delta.deleted.into_iter().collect();
+        if !deleted.is_empty() {
+            snapshot.tracks.retain(|track| !deleted.contains(&track.id));
+        }
+
+        let version = delta.version;
+        snapshot.version = version;
+        library_store::save(&self.data_dir, &snapshot)?;
+
+        Ok(SyncResult {
+            version,
+            tracks: snapshot.tracks,
+            deleted: deleted.into_iter().collect(),
+        })
     }
 
     /// The authenticated `/stream` URL for a track.
@@ -443,5 +495,18 @@ mod tests {
         for format in ["flac", "mp3", "mid", "mo3", "ape"] {
             assert!(!core.can_render(format.into()), "{format} is not local");
         }
+    }
+
+    #[test]
+    fn cached_library_is_empty_until_synced() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = MobileCore::new(
+            "https://music.example.com".into(),
+            dir.path().to_string_lossy().into_owned(),
+        )
+        .unwrap();
+        let cached = core.cached_library().unwrap();
+        assert_eq!(cached.version, 0);
+        assert!(cached.tracks.is_empty());
     }
 }
