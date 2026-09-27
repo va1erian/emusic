@@ -9,7 +9,7 @@
 use std::time::Duration;
 
 use emusic_ui::panels::top_bar::{TopBar, TopBarMsg};
-use emusic_ui::player_api::PlayerApi;
+use emusic_ui::player_api::{PlayerApi, RepeatMode};
 use emusic_ui::state::VisualizerMode;
 use win32ui::prelude::*;
 
@@ -58,13 +58,17 @@ const CLEAR_SIZE_DIP: f32 = SEARCH_HEIGHT_DIP;
 /// Segoe Fluent Icons `E894`: the clear ("x") glyph, shown in the search box's
 /// clear button (win32ui's `Fluent` doesn't define it).
 const CLEAR_GLYPH: char = '\u{E894}';
+/// Segoe Fluent Icons `E8ED`: the "repeat one" glyph. win32ui's `Fluent` only
+/// defines `REPEAT` (`E8EE`, repeat-all), so the distinct one-track variant is
+/// a raw literal, like [`CLEAR_GLYPH`].
+const REPEAT_ONE_GLYPH: char = '\u{E8ED}';
 
 /// What the item list depends on beyond the per-frame values; the list is only
 /// rebuilt when one of these changes.
 #[derive(PartialEq)]
 struct Signature {
     playing: bool,
-    repeat: bool,
+    repeat: RepeatMode,
     shuffle: bool,
     seek_supported: bool,
     has_duration: bool,
@@ -107,7 +111,7 @@ impl TopBarView {
     pub fn sync(&mut self, top_bar: &TopBar, search_query: &str, visualizer: bool) {
         let signature = Signature {
             playing: top_bar.is_playing(),
-            repeat: top_bar.repeat_active(),
+            repeat: top_bar.repeat(),
             shuffle: top_bar.shuffle(),
             seek_supported: top_bar.seek_supported(),
             has_duration: top_bar.duration_secs().is_some(),
@@ -152,6 +156,21 @@ impl TopBarView {
     }
 }
 
+/// The repeat toggle's glyph, tooltip and checked state for `mode`.
+///
+/// The three repeat modes must look distinct: repeat-all and repeat-one share
+/// the checked (active) look but use different glyphs, so the button shows
+/// which mode is on instead of collapsing them to one on/off toggle. The
+/// tooltip doubles as the accessible name (win32ui derives it from the
+/// tooltip), so a screen reader reads the mode too.
+fn repeat_face(mode: RepeatMode) -> (char, &'static str, bool) {
+    match mode {
+        RepeatMode::Off => (Fluent::REPEAT, "Repeat off", false),
+        RepeatMode::All => (Fluent::REPEAT, "Repeat all", true),
+        RepeatMode::One => (REPEAT_ONE_GLYPH, "Repeat one", true),
+    }
+}
+
 /// Builds the item list for the current structural state.
 fn items(
     top_bar: &TopBar,
@@ -172,15 +191,17 @@ fn items(
         .unwrap_or(position.max(1.0))
         .max(0.001);
 
+    let (repeat_glyph, repeat_tip, repeat_checked) = repeat_face(signature.repeat);
+
     let mut items = vec![
         TopBarItem::icon_button(BarItem::Previous.id(), Fluent::PREVIOUS).tooltip("Previous"),
         TopBarItem::icon_button(BarItem::PlayPause.id(), play_glyph).tooltip(play_tip),
         TopBarItem::icon_button(BarItem::Stop.id(), Fluent::STOP).tooltip("Stop"),
         TopBarItem::icon_button(BarItem::Next.id(), Fluent::NEXT).tooltip("Next"),
         TopBarItem::spacer(),
-        TopBarItem::toggle(BarItem::Repeat.id(), Fluent::REPEAT)
-            .tooltip("Repeat")
-            .checked(signature.repeat),
+        TopBarItem::toggle(BarItem::Repeat.id(), repeat_glyph)
+            .tooltip(repeat_tip)
+            .checked(repeat_checked),
         TopBarItem::spacer(),
         TopBarItem::toggle(BarItem::Shuffle.id(), Fluent::SHUFFLE)
             .tooltip("Shuffle")
@@ -306,6 +327,25 @@ mod tests {
             Some(TopBarMsg::SetSearchQuery(String::new()))
         );
         assert_eq!(click(BarItem::Search), None, "the slot is not a button");
+    }
+
+    #[test]
+    fn repeat_toggle_shows_the_active_mode() {
+        // Off and All share the repeat-all glyph but differ by checked state;
+        // One uses the distinct repeat-one glyph so the mode is visible.
+        assert_eq!(
+            repeat_face(RepeatMode::Off),
+            (Fluent::REPEAT, "Repeat off", false)
+        );
+        assert_eq!(
+            repeat_face(RepeatMode::All),
+            (Fluent::REPEAT, "Repeat all", true)
+        );
+        assert_eq!(
+            repeat_face(RepeatMode::One),
+            (REPEAT_ONE_GLYPH, "Repeat one", true)
+        );
+        assert_ne!(Fluent::REPEAT, REPEAT_ONE_GLYPH);
     }
 
     #[test]
