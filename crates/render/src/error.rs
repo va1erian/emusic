@@ -33,6 +33,10 @@ pub enum RenderError {
     #[cfg(feature = "modules")]
     #[error("module rendering failed: {0}")]
     Module(String),
+    /// The pure-Rust SID player rejected or could not render the tune.
+    #[cfg(feature = "sid-sidera")]
+    #[error("SID playback failed: {0}")]
+    SidPlayer(String),
     /// A [`crate::PcmBuffer`] was constructed with inconsistent shape.
     #[error("invalid PCM buffer: {0}")]
     InvalidPcm(String),

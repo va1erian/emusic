@@ -9,7 +9,10 @@ use emusic_client::auth::{
 };
 use emusic_client::cache::safe_id;
 use emusic_client::{CredentialStore, Credentials, RemoteClient, ServerEndpoint, unix_now};
-use emusic_render::{MODULE_EXTENSIONS, ModuleRenderer, RenderOptions, Renderer, flac};
+use emusic_render::{
+    MODULE_EXTENSIONS, ModuleRenderer, RenderOptions, Renderer, SID_EXTENSIONS, SidPlayerRenderer,
+    flac,
+};
 
 use crate::error::MobileError;
 use crate::registry;
@@ -249,12 +252,12 @@ impl MobileCore {
 
     /// Whether `format` can be rendered to FLAC on this device.
     ///
-    /// Only pure-Rust tracker modules (MOD/XM/S3M/IT) are supported locally.
-    /// SID falls back to the server's `/render`; other specialized formats are
-    /// unsupported.
+    /// Pure-Rust tracker modules (MOD/XM/S3M/IT) and SID (PSID/RSID) are
+    /// supported locally; other specialized formats are not.
     pub fn can_render(&self, format: String) -> bool {
         MODULE_EXTENSIONS
             .iter()
+            .chain(SID_EXTENSIONS)
             .any(|candidate| format.eq_ignore_ascii_case(candidate))
     }
 
@@ -280,7 +283,10 @@ impl MobileCore {
             self.client.download_to(&token, &track_id, &mut file)?;
         }
 
-        let renderer = ModuleRenderer::new(RENDER_SAMPLE_RATE);
+        let renderer =
+            renderer_for(&format, RENDER_SAMPLE_RATE).ok_or_else(|| MobileError::Client {
+                message: format!("no local renderer for {format:?}"),
+            })?;
         let pcm = renderer
             .render(&raw_path, &RenderOptions::default())
             .map_err(|error| MobileError::Client {
@@ -311,6 +317,23 @@ fn safe_extension(format: &str) -> String {
     } else {
         "bin".to_string()
     }
+}
+
+/// The local renderer for a format, if one exists.
+fn renderer_for(format: &str, sample_rate: u32) -> Option<Box<dyn Renderer + Send>> {
+    if MODULE_EXTENSIONS
+        .iter()
+        .any(|candidate| format.eq_ignore_ascii_case(candidate))
+    {
+        return Some(Box::new(ModuleRenderer::new(sample_rate)));
+    }
+    if SID_EXTENSIONS
+        .iter()
+        .any(|candidate| format.eq_ignore_ascii_case(candidate))
+    {
+        return Some(Box::new(SidPlayerRenderer::new(sample_rate)));
+    }
+    None
 }
 
 /// Percent-encodes a value for use as a single URL path segment.
@@ -408,10 +431,10 @@ mod tests {
             dir.path().to_string_lossy().into_owned(),
         )
         .unwrap();
-        for format in ["mod", "MOD", "xm", "s3m", "it"] {
+        for format in ["mod", "MOD", "xm", "s3m", "it", "sid", "psid"] {
             assert!(core.can_render(format.into()), "{format} should render");
         }
-        for format in ["flac", "mp3", "sid", "mid", "mo3"] {
+        for format in ["flac", "mp3", "mid", "mo3", "ape"] {
             assert!(!core.can_render(format.into()), "{format} is not local");
         }
     }

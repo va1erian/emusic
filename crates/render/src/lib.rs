@@ -30,6 +30,8 @@ mod pcm;
 mod renderer;
 #[cfg(feature = "sid")]
 mod sid;
+#[cfg(feature = "sid-sidera")]
+mod sid_player;
 
 pub use cache::{RenditionCache, RenditionKey};
 pub use codec::Codec;
@@ -40,3 +42,5 @@ pub use pcm::PcmBuffer;
 pub use renderer::{RenderOptions, Renderer};
 #[cfg(feature = "sid")]
 pub use sid::SidRenderer;
+#[cfg(feature = "sid-sidera")]
+pub use sid_player::{SID_EXTENSIONS, SidPlayerRenderer};
