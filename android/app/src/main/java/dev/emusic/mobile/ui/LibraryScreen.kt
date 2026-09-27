@@ -105,7 +105,6 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var durationMs by remember { mutableStateOf(0L) }
 
     LaunchedEffect(nonce) {
-        loading = true
         error = null
         val client = core
         if (client == null) {
@@ -113,13 +112,28 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
             loading = false
             return@LaunchedEffect
         }
-        val result = withContext(Dispatchers.IO) { runCatching { client.library() } }
-        result
-            .onSuccess {
-                version = it.version
-                tracks = it.tracks
+
+        // Show the cached library immediately, then apply the server's delta.
+        loading = tracks.isEmpty()
+        withContext(Dispatchers.IO) { runCatching { client.cachedLibrary() } }
+            .onSuccess { cached ->
+                if (cached.tracks.isNotEmpty()) {
+                    version = cached.version
+                    tracks = cached.tracks
+                    loading = false
+                }
             }
-            .onFailure { error = it.message ?: it.toString() }
+
+        withContext(Dispatchers.IO) { runCatching { client.refreshLibrary() } }
+            .onSuccess { refreshed ->
+                version = refreshed.version
+                tracks = refreshed.tracks
+                error = null
+            }
+            .onFailure { failure ->
+                // Keep the cache when the refresh fails (for example offline).
+                if (tracks.isEmpty()) error = failure.message ?: failure.toString()
+            }
         loading = false
     }
 
