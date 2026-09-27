@@ -24,13 +24,19 @@ mod cache;
 mod codec;
 pub mod error;
 pub mod flac;
+#[cfg(feature = "modules")]
+mod modules;
 mod pcm;
 mod renderer;
+#[cfg(feature = "sid")]
 mod sid;
 
 pub use cache::{RenditionCache, RenditionKey};
 pub use codec::Codec;
 pub use error::RenderError;
+#[cfg(feature = "modules")]
+pub use modules::{MODULE_EXTENSIONS, ModuleRenderer};
 pub use pcm::PcmBuffer;
 pub use renderer::{RenderOptions, Renderer};
+#[cfg(feature = "sid")]
 pub use sid::SidRenderer;
