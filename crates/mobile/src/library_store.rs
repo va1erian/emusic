@@ -32,12 +32,14 @@ fn path(data_dir: &Path) -> PathBuf {
     data_dir.join(LIBRARY_FILE)
 }
 
-/// Loads the snapshot, or an empty one when none exists yet.
+/// Loads the snapshot, or an empty one when none exists or it cannot be parsed.
+///
+/// The snapshot is a disposable cache, so a corrupt or schema-mismatched file
+/// is treated as "no snapshot" (the next refresh rebuilds it) rather than an
+/// error that would block offline loading.
 pub fn load(data_dir: &Path) -> Result<Snapshot, MobileError> {
     match std::fs::read_to_string(path(data_dir)) {
-        Ok(text) => serde_json::from_str(&text).map_err(|error| MobileError::Client {
-            message: format!("cannot parse library snapshot: {error}"),
-        }),
+        Ok(text) => Ok(serde_json::from_str(&text).unwrap_or_default()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Snapshot::default()),
         Err(error) => Err(error.into()),
     }
@@ -52,10 +54,7 @@ pub fn save(data_dir: &Path, snapshot: &Snapshot) -> Result<(), MobileError> {
     let destination = path(data_dir);
     let temporary = destination.with_extension("json.tmp");
     std::fs::write(&temporary, &encoded)?;
-    if destination.exists() {
-        let _ = std::fs::remove_file(&destination);
-    }
-    std::fs::rename(&temporary, &destination)?;
+    crate::util::replace_file(&temporary, &destination)?;
     Ok(())
 }
 

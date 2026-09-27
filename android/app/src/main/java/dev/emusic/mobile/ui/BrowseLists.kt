@@ -1,11 +1,13 @@
 package dev.emusic.mobile.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -223,5 +225,96 @@ fun FolderFilterBanner(
             modifier = Modifier.testTag("subfolders_toggle"),
         )
         androidx.compose.material3.TextButton(onClick = onClear) { Text("Clear") }
+    }
+}
+
+/** Format chips with per-format counts. */
+@Composable
+fun FormatFilter(
+    tracks: List<Track>,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val formats = tracks
+        .groupingBy { it.format }
+        .eachCount()
+        .entries
+        .sortedByDescending { it.value }
+    androidx.compose.foundation.layout.Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp)
+            .testTag("format_filter"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.material3.FilterChip(
+            selected = selected == null,
+            onClick = { onSelect(null) },
+            label = { Text("All ${tracks.size}") },
+        )
+        formats.forEach { (format, count) ->
+            androidx.compose.material3.FilterChip(
+                selected = selected == format,
+                onClick = { onSelect(format) },
+                label = { Text("$format $count") },
+            )
+        }
+    }
+}
+
+/** The track list; taps play the given track. */
+@Composable
+fun TrackList(
+    tracks: List<Track>,
+    onPlay: (Track) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (tracks.isEmpty()) {
+        Text(
+            text = "The server library is empty.",
+            modifier = modifier.padding(vertical = 12.dp),
+        )
+        return
+    }
+    LazyColumn(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("track_list"),
+    ) {
+        items(tracks, key = { it.id }) { track ->
+            ListItem(
+                modifier = Modifier
+                    .clickable { onPlay(track) }
+                    .testTag("track_row"),
+                headlineContent = { Text(track.displayTitle()) },
+                supportingContent = {
+                    val subtitle = listOfNotNull(track.artist, track.album)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · ")
+                    Text(if (subtitle.isBlank()) track.format else subtitle)
+                },
+                trailingContent = {
+                    Text(
+                        text = track.durationSecs?.let { formatDuration(it) } ?: track.format,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+            )
+        }
+    }
+}
+
+/** Formats seconds as `h:mm:ss` or `m:ss`. */
+fun formatDuration(seconds: Double): String {
+    val total = seconds.toLong().coerceAtLeast(0)
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val secs = total % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, secs)
+    } else {
+        "%d:%02d".format(minutes, secs)
     }
 }

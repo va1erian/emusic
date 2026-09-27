@@ -19,6 +19,7 @@ mod error;
 mod library_store;
 mod registry;
 mod types;
+mod util;
 
 pub use core::{MobileCore, list_servers};
 pub use error::MobileError;

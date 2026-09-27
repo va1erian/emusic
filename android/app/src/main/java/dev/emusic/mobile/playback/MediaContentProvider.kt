@@ -33,8 +33,18 @@ class MediaContentProvider : ContentProvider() {
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         val ctx = context ?: throw FileNotFoundException("no context")
         val core = activeCore(ctx) ?: throw FileNotFoundException("no active server")
+        // `albumArtFile`/`renderToFile` throw `MobileException` on failure, but
+        // the ContentResolver contract expects `FileNotFoundException`.
+        val path = runCatching { resolve(core, uri) }
+            .getOrElse { error -> throw FileNotFoundException("$uri: ${error.message}") }
+            ?: throw FileNotFoundException(uri.toString())
+        return ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+    }
+
+    /** Resolves a content URI to an app-private file path. */
+    private fun resolve(core: MobileCore, uri: Uri): String? {
         val segments = uri.pathSegments
-        val path = when (segments.firstOrNull()) {
+        return when (segments.firstOrNull()) {
             SEGMENT_ART -> segments.getOrNull(1)?.let { albumId -> core.albumArtFile(albumId) }
             SEGMENT_RENDER -> {
                 val trackId = segments.getOrNull(1)
@@ -47,8 +57,7 @@ class MediaContentProvider : ContentProvider() {
             }
 
             else -> null
-        } ?: throw FileNotFoundException(uri.toString())
-        return ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+        }
     }
 
     override fun query(

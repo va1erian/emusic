@@ -41,8 +41,7 @@
         <provider
             android:name=".playback.MediaContentProvider"
             android:authorities="dev.emusic.mobile.media"
-            android:exported="true"
-            android:grantUriPermissions="true" />
+            android:exported="false" />
     </application>
 
 </manifest>
