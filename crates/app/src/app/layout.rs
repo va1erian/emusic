@@ -57,7 +57,22 @@ impl Win32App {
             client.left + navigator_width,
             bottom,
         ));
-        let central = Rect::new(client.left + navigator_width, top, client.right, bottom);
+        // The right panel is a fixed-width strip on the trailing edge, beside
+        // every central view while `panels.right_panel` is on. Its saved width
+        // is clamped so the central area never disappears.
+        let central_left = client.left + navigator_width;
+        let right_width = if self.shell.state.panels.right_panel {
+            dip(self.shell.state.right_panel_width)
+                .to_px(dpi)
+                .value()
+                .min((client.right - central_left).max(0))
+        } else {
+            0
+        };
+        let central_right = client.right - right_width;
+        self.right_panel
+            .set_bounds(Rect::new(central_right, top, client.right, bottom));
+        let central = Rect::new(central_left, top, central_right, bottom);
         self.central_bounds = central;
         match self.shell.state.view {
             View::Music => {

@@ -22,9 +22,10 @@ use std::time::Duration;
 use emusic_ui::panels::top_bar::TopBar as TopBarModel;
 use emusic_ui::state::Command;
 use xui::xui_core::app::Ui;
+use xui::xui_core::backend::{NodeKind, NodeSpec};
 use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Edit, Glyph, HasText, TopBar, TopBarId};
+use xui::xui_core::widget::{Control, Edit, Glyph, HasText, TopBar, TopBarId};
 
 use crate::app::Msg;
 use crate::backend::has_native_chrome;
@@ -75,9 +76,13 @@ pub struct TopBarView {
     /// The caption band: the app title, with the rest of the band as the
     /// window's drag region. Shown only on the canvas backend.
     caption: TopBar<Msg>,
+    /// The trailing window buttons' host: a bare container placed at the
+    /// caption band's trailing edge so the buttons sit there while their own
+    /// node still starts at the origin (see [`caption_buttons_rect`]).
+    caption_buttons_host: Control<Msg>,
     /// The caption band's trailing window buttons. Shown only on the canvas
     /// backend, as a node of its own so a click reaches the button instead of
-    /// the drag region it sits on.
+    /// the drag region it sits on. Parented to [`Self::caption_buttons_host`].
     caption_buttons: TopBar<Msg>,
     /// The band's background surface, behind the transport and the search, so
     /// the one-line search field's column shares the band's colour.
@@ -100,8 +105,22 @@ pub struct TopBarView {
 impl TopBarView {
     /// Builds the caption band, the transport bar and the search box.
     pub fn new(ui: &Ui<Msg>) -> TopBarView {
+        TopBarView::new_with(ui, !has_native_chrome())
+    }
+
+    /// Builds the view, showing the portable caption chrome when `canvas` is
+    /// set. [`TopBarView::new`] passes [`is_canvas`]; a test passes the backend
+    /// it drives explicitly, so the chrome can be exercised without the
+    /// environment the real binary picks it from.
+    fn new_with(ui: &Ui<Msg>, canvas: bool) -> TopBarView {
         let caption = build_caption(ui);
-        let caption_buttons = build_caption_buttons(ui);
+        // The buttons live in a host of their own, positioned at the caption
+        // band's trailing edge; the `TopBar` itself starts at its host's origin
+        // and hit-tests its items against that, as it expects.
+        let caption_buttons_host =
+            Control::new(ui, &NodeSpec::new(NodeKind::Container, Rect::default()))
+                .expect("create caption buttons host");
+        let caption_buttons = build_caption_buttons(&ui.with_parent(caption_buttons_host.id()));
         // The band's surface spans the whole transport band, behind the
         // transport bar and the search field; it is raised below them.
         let band = TopBar::new(ui, Rect::default()).expect("create band");
@@ -113,8 +132,9 @@ impl TopBarView {
         // A backend with no native chrome (the canvas backend on Windows/Linux)
         // shows the caption band and its buttons and drags the window from the
         // band; the native Win32 backend and macOS own the strip and hide them.
-        let custom_caption = !has_native_chrome();
+        let custom_caption = canvas;
         ui.set_visible(caption.id(), custom_caption);
+        ui.set_visible(caption_buttons_host.id(), custom_caption);
         ui.set_visible(caption_buttons.id(), custom_caption);
         ui.raise(bar.id());
         ui.raise(search.id());
@@ -122,6 +142,7 @@ impl TopBarView {
         TopBarView {
             ui: ui.clone(),
             caption,
+            caption_buttons_host,
             caption_buttons,
             band,
             bar,
@@ -152,12 +173,7 @@ impl TopBarView {
         let search_h = dip(SEARCH_HEIGHT).to_px(dpi).value();
         let inset = dip(BAND_INSET).to_px(dpi).value();
         let buttons_w = dip(CAPTION_BUTTONS).to_px(dpi).value();
-        let buttons = Rect::new(
-            (caption.right - buttons_w).max(caption.left),
-            caption.top,
-            caption.right,
-            caption.bottom,
-        );
+        let buttons = caption_buttons_rect(caption, buttons_w);
         let bar_right = (bar.right - search_w - inset).max(bar.left);
         self.bar_bounds = Rect::new(bar.left, bar.top, bar_right, bar.bottom);
         let edit_top = (bar.top + bar.bottom - search_h) / 2;
@@ -169,7 +185,8 @@ impl TopBarView {
         );
         self.ui.apply_moves(&[
             (self.caption.id(), caption),
-            (self.caption_buttons.id(), buttons),
+            (self.caption_buttons_host.id(), buttons),
+            (self.caption_buttons.id(), local(buttons)),
             (self.band.id(), bar),
             (self.bar.id(), self.bar_bounds),
             (self.search.id(), edit),
@@ -212,6 +229,25 @@ impl TopBarView {
         // The recreated bar must sit above the band's surface.
         self.ui.raise(self.bar.id());
     }
+}
+
+/// The trailing window buttons' host bounds inside the caption band `caption`:
+/// `width` device pixels wide, flush with the band's trailing edge and spanning
+/// its height. Clamped to the band when it is too small to seat them. Pure, so
+/// the arithmetic is unit-tested.
+fn caption_buttons_rect(caption: Rect, width: i32) -> Rect {
+    let left = (caption.right - width).max(caption.left);
+    Rect::new(left, caption.top, caption.right, caption.bottom)
+}
+
+/// `rect` translated to the origin, for a node laid out in its parent's own
+/// coordinates. The portable `TopBar` hit-tests its items against the node's
+/// bounds *and* the pointer coordinates it is handed, both of which are
+/// node-relative, so its bounds must start at the origin; a bar placed directly
+/// at a non-zero window position would never match an item. Its host carries
+/// the offset instead.
+fn local(rect: Rect) -> Rect {
+    Rect::new(0, 0, rect.width(), rect.height())
 }
 
 /// Builds the caption band: the app title at the leading edge. The rest of the
@@ -314,4 +350,131 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
             None
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_buttons_host_sits_at_the_caption_bands_trailing_edge() {
+        let caption = Rect::new(0, 0, 800, 36);
+        let buttons = caption_buttons_rect(caption, 108);
+        assert_eq!(buttons, Rect::new(692, 0, 800, 36));
+    }
+
+    #[test]
+    fn a_caption_too_narrow_for_the_buttons_keeps_them_in_the_band() {
+        // Degenerate band: the host is clamped to it rather than inverted.
+        let caption = Rect::new(10, 0, 50, 36);
+        let buttons = caption_buttons_rect(caption, 108);
+        assert_eq!(buttons, Rect::new(10, 0, 50, 36));
+    }
+
+    #[test]
+    fn the_bar_is_rebased_to_the_host_origin() {
+        // The workaround the caption buttons rely on: the bar's own bounds must
+        // start at the origin so its item hit-testing (which is node-relative)
+        // matches the pointer coordinates the backend delivers.
+        let host = Rect::new(692, 0, 800, 36);
+        assert_eq!(local(host), Rect::new(0, 0, 108, 36));
+    }
+}
+
+/// A click on a caption window button must reach the button (#450), on a bar
+/// that sits away from the window origin. Drives the real [`TopBarView`] on the
+/// offscreen software backend (the production hit-testing path) and checks the
+/// message each button maps to. Built wherever the offscreen backend is: with
+/// the `canvas` feature on Windows, and on every non-Windows target.
+#[cfg(all(test, any(feature = "canvas", not(windows))))]
+mod caption_button_tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use xui::xui_canvas::OffscreenBackend;
+    use xui::xui_core::app::{App, Ui};
+    use xui::xui_core::backend::{Event, PlatformSpec};
+    use xui::xui_core::geometry::Rect;
+    use xui::xui_core::message::{Modifiers, MouseButton};
+    use xui::xui_core::units::dip;
+
+    use super::TopBarView;
+    use crate::app::Msg;
+
+    /// Records the window-button messages the injected clicks produce.
+    struct Recorder {
+        minimize: Rc<Cell<u32>>,
+        maximize: Rc<Cell<u32>>,
+        quit: Rc<Cell<u32>>,
+    }
+
+    impl App for Recorder {
+        type Msg = Msg;
+
+        fn update(&mut self, msg: Msg, _ui: &mut Ui<Msg>) {
+            match msg {
+                Msg::Minimize => self.minimize.set(self.minimize.get() + 1),
+                Msg::ToggleMaximize => self.maximize.set(self.maximize.get() + 1),
+                Msg::Quit => self.quit.set(self.quit.get() + 1),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn the_caption_window_buttons_deliver_their_clicks() {
+        let backend = Rc::new(OffscreenBackend::new());
+        let backend_for_make = Rc::clone(&backend);
+        let seen = (
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+            Rc::new(Cell::new(0)),
+        );
+        let seen_for_make = (Rc::clone(&seen.0), Rc::clone(&seen.1), Rc::clone(&seen.2));
+        let spec = PlatformSpec::new("caption").size(dip(800.0), dip(400.0));
+        let _ = xui::xui_core::run_app(backend, spec, move |ui: &mut Ui<Msg>| {
+            let mut view = TopBarView::new_with(ui, true);
+            view.set_bounds(Rect::new(0, 0, 800, 36), Rect::new(0, 36, 800, 76));
+            let window = ui.window();
+            // The 108px button group is flush right (692..800); each button is
+            // 36px, so click each one's centre.
+            for x in [710, 746, 782] {
+                click(backend_for_make.as_ref(), window, x);
+            }
+            Recorder {
+                minimize: Rc::clone(&seen_for_make.0),
+                maximize: Rc::clone(&seen_for_make.1),
+                quit: Rc::clone(&seen_for_make.2),
+            }
+        });
+        assert_eq!(seen.0.get(), 1, "minimize");
+        assert_eq!(seen.1.get(), 1, "maximize");
+        assert_eq!(seen.2.get(), 1, "close");
+    }
+
+    /// Presses and releases the left button at `(x, 18)` through the backend's
+    /// own hit-test, as the windowed backend does.
+    fn click(backend: &OffscreenBackend, window: xui::xui_core::backend::WindowId, x: i32) {
+        for event in [
+            Event::MouseMove {
+                x,
+                y: 18,
+                modifiers: Modifiers::NONE,
+            },
+            Event::MouseDown {
+                x,
+                y: 18,
+                button: MouseButton::Left,
+                modifiers: Modifiers::NONE,
+            },
+            Event::MouseUp {
+                x,
+                y: 18,
+                button: MouseButton::Left,
+                modifiers: Modifiers::NONE,
+            },
+        ] {
+            backend.inject(window, event);
+        }
+    }
 }

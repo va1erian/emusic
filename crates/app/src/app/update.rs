@@ -273,6 +273,26 @@ impl Win32App {
                     self.tick_inner();
                 }
             }
+            Msg::RightPanelQueueActivate(row) => {
+                if let Some(index) = self.right_panel.entry_index(row) {
+                    self.apply_now_playing(NowPlayingMsg::QueueJump(index));
+                    self.tick_inner();
+                }
+            }
+            Msg::RightPanelQueueContext(row, at) => {
+                self.right_panel_context_row = Some(row);
+                let origin = self.right_panel.context_origin();
+                self.right_panel_queue_context
+                    .show_context(origin.x + at.x, origin.y + at.y);
+            }
+            Msg::RightPanelQueueRemove => {
+                if let Some(row) = self.right_panel_context_row.take()
+                    && let Some(index) = self.right_panel.entry_index(row)
+                {
+                    self.apply_now_playing(NowPlayingMsg::QueueRemove(index));
+                    self.tick_inner();
+                }
+            }
             Msg::PresetFilter(text) => {
                 self.visualization.set_filter(&text);
                 self.tick_inner();
