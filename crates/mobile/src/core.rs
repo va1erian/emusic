@@ -77,6 +77,15 @@ fn entry_for(endpoint: &ServerEndpoint) -> ServerEntry {
     }
 }
 
+/// Maps a server sync delta to the mobile record.
+fn map_delta(delta: emusic_client::SyncDelta) -> SyncResult {
+    SyncResult {
+        version: delta.version,
+        tracks: delta.tracks.into_iter().map(Track::from).collect(),
+        deleted: delta.deleted,
+    }
+}
+
 /// Lists the servers this app has been configured with.
 #[uniffi::export]
 pub fn list_servers(data_dir: String) -> Result<Vec<ServerEntry>, MobileError> {
@@ -179,11 +188,17 @@ impl MobileCore {
         let delta = self.client.sync(&token, credentials.since_version)?;
         credentials.since_version = delta.version;
         self.store.save(&self.endpoint.id, &credentials)?;
-        Ok(SyncResult {
-            version: delta.version,
-            tracks: delta.tracks.into_iter().map(Track::from).collect(),
-            deleted: delta.deleted,
-        })
+        Ok(map_delta(delta))
+    }
+
+    /// The full library as currently indexed by the server (sync from version 0).
+    ///
+    /// Unlike [`Self::sync`], this does not move the stored cursor, so an
+    /// incremental sync can still follow it.
+    pub fn library(&self) -> Result<SyncResult, MobileError> {
+        let (_, token) = self.fresh_token()?;
+        let delta = self.client.sync(&token, 0)?;
+        Ok(map_delta(delta))
     }
 
     /// The authenticated `/stream` URL for a track.

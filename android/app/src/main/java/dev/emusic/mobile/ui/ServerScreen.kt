@@ -58,6 +58,7 @@ fun EmusicApp() {
     var adding by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var nonce by remember { mutableStateOf(0) }
+    var browsing by remember { mutableStateOf<ServerView?>(null) }
 
     suspend fun reload() {
         loading = true
@@ -67,14 +68,28 @@ fun EmusicApp() {
 
     LaunchedEffect(nonce) { reload() }
 
-    fun run(action: suspend () -> Unit) {
+    fun run(action: suspend () -> Unit, onSuccess: () -> Unit = {}) {
         scope.launch {
             val error = withContext(Dispatchers.IO) {
                 runCatching { action() }.exceptionOrNull()?.message
             }
             status = error
+            if (error == null) onSuccess()
             nonce++
         }
+    }
+
+    val open = browsing
+    if (open != null) {
+        LibraryScreen(
+            url = open.entry.url,
+            dataDir = dataDir,
+            onBack = {
+                browsing = null
+                nonce++
+            },
+        )
+        return
     }
 
     Scaffold(
@@ -114,10 +129,18 @@ fun EmusicApp() {
             if (adding) {
                 AddServerForm(
                     onPair = { url, code, name ->
-                        run {
-                            MobileCore(url, dataDir).pair(code, name)
-                            adding = false
-                        }
+                        var entry: ServerEntry? = null
+                        run(
+                            action = {
+                                val core = MobileCore(url, dataDir)
+                                core.pair(code, name)
+                                entry = core.entry()
+                            },
+                            onSuccess = {
+                                adding = false
+                                entry?.let { browsing = ServerView(it, true) }
+                            },
+                        )
                     },
                 )
             } else if (loading) {
@@ -137,6 +160,7 @@ fun EmusicApp() {
                     servers.forEach { view ->
                         ServerRow(
                             view = view,
+                            onBrowse = { browsing = view },
                             onDisconnect = { run { MobileCore(view.entry.url, dataDir).disconnect() } },
                             onRevoke = { run { MobileCore(view.entry.url, dataDir).revoke() } },
                             onRemove = { run { MobileCore(view.entry.url, dataDir).removeServer() } },
@@ -159,6 +183,7 @@ private fun loadServers(dataDir: String): List<ServerView> =
 @Composable
 private fun ServerRow(
     view: ServerView,
+    onBrowse: () -> Unit,
     onDisconnect: () -> Unit,
     onRevoke: () -> Unit,
     onRemove: () -> Unit,
@@ -178,6 +203,11 @@ private fun ServerRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                TextButton(
+                    onClick = onBrowse,
+                    enabled = view.paired,
+                    modifier = Modifier.testTag("browse_button"),
+                ) { Text("Browse") }
                 TextButton(onClick = onDisconnect, enabled = view.paired) { Text("Disconnect") }
                 TextButton(onClick = onRevoke, enabled = view.paired) { Text("Revoke") }
                 TextButton(onClick = onRemove) { Text("Remove") }
@@ -188,7 +218,7 @@ private fun ServerRow(
 
 @Composable
 private fun AddServerForm(onPair: (String, String, String) -> Unit) {
-    var url by rememberSaveable { mutableStateOf("http://10.0.2.2:8080") }
+    var url by rememberSaveable { mutableStateOf("http://chatonnas:11337") }
     var code by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("Android phone") }
 
