@@ -21,7 +21,7 @@ use rusqlite::Connection;
 use crate::error::{LibraryError, Result};
 
 pub use folders::Folder;
-pub use playlists::{Playlist, PlaylistEntry};
+pub use playlists::{Playlist, PlaylistEntry, reordered};
 pub use remote::RemoteTrack;
 pub use stats::{MostPlayedEntry, PlayHistoryEntry, TrackStats};
 

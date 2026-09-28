@@ -10,6 +10,7 @@
 pub(crate) mod auto_tag;
 pub(crate) mod folders;
 pub(crate) mod loader;
+pub(crate) mod playlists;
 pub(crate) mod remote;
 pub(crate) mod scan;
 pub(crate) mod source;
@@ -30,7 +31,8 @@ use tracing::{info, warn};
 use crate::backend::PlayMessage;
 use crate::library_api::{
     AlbumInfo, ArtistInfo, AutoTagOutcome, AutoTagRequest, AutoTagStatus, DatabaseInfo,
-    DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, StatsWindow, TrackInfo,
+    DirNodeInfo, FolderInfo, GenreInfo, HistoryEntry, LibraryDataSource, PlaylistInfo,
+    PlaylistItem, StatsWindow, TrackInfo,
 };
 use crate::waker::{Waker as _, WakerHandle};
 
@@ -134,6 +136,8 @@ pub struct LibraryBackend {
     /// (#104), bumped whenever the snapshot or one of its in-memory mirrors
     /// changes.
     revision: u64,
+    /// The user playlists, mirrored from the store (#473).
+    playlists: playlists::PlaylistCache,
 }
 
 impl Default for LibraryBackend {
@@ -166,6 +170,7 @@ impl LibraryBackend {
     /// Creates a backend around an existing store. Useful in tests.
     pub fn with_store(store: Store, bass: Option<Arc<bass::Bass>>, waker: WakerHandle) -> Self {
         let db_path = store.path().map(Path::to_path_buf);
+        let playlists = playlists::PlaylistCache::load(&store);
         let store = Arc::new(Mutex::new(store));
         let stats_recorder = StatsRecorder::spawn(store.clone());
 
@@ -208,6 +213,7 @@ impl LibraryBackend {
             db_path,
             last_scan: None,
             revision: 0,
+            playlists,
         }
     }
 
@@ -384,6 +390,53 @@ impl LibraryDataSource for LibraryBackend {
         self.mark_changed();
     }
 
+    fn playlists(&self) -> &[PlaylistInfo] {
+        self.playlists.infos()
+    }
+
+    fn playlist_items(&self, id: u64) -> &[PlaylistItem] {
+        self.playlists.items(id)
+    }
+
+    fn create_playlist(&mut self, name: &str) -> Option<u64> {
+        let created_at = source::unix_now();
+        self.write_playlists("create playlist", |store| {
+            store.create_playlist(name, created_at)
+        })
+        .map(|id| id.0 as u64)
+    }
+
+    fn rename_playlist(&mut self, id: u64, name: &str) {
+        self.write_playlists("rename playlist", |store| {
+            store.rename_playlist(playlists::playlist_id(id), name)
+        });
+    }
+
+    fn delete_playlist(&mut self, id: u64) {
+        self.write_playlists("delete playlist", |store| {
+            store.delete_playlist(playlists::playlist_id(id))
+        });
+    }
+
+    fn add_to_playlist(&mut self, id: u64, tracks: &[u64]) {
+        let tracks = playlists::track_ids(tracks);
+        self.write_playlists("add to playlist", |store| {
+            store.add_to_playlist(playlists::playlist_id(id), &tracks)
+        });
+    }
+
+    fn remove_from_playlist(&mut self, id: u64, entries: &[i64]) {
+        self.write_playlists("remove from playlist", |store| {
+            store.remove_playlist_entries(playlists::playlist_id(id), entries)
+        });
+    }
+
+    fn move_in_playlist(&mut self, id: u64, entries: &[i64], to: usize) {
+        self.write_playlists("reorder playlist", |store| {
+            store.move_playlist_entries(playlists::playlist_id(id), entries, to)
+        });
+    }
+
     fn request_tag_edits(&mut self, requests: Vec<EditRequest>) {
         if requests.is_empty() {
             return;
@@ -423,6 +476,7 @@ impl LibraryDataSource for LibraryBackend {
             match update {
                 Update::Snapshot(snapshot) => {
                     self.snapshot = *snapshot;
+                    self.reload_playlists();
                     self.mark_changed();
                 }
                 Update::Status(text) => {
