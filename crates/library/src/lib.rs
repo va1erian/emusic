@@ -12,9 +12,10 @@ pub mod watch;
 
 pub use error::{LibraryError, Result};
 pub use store::{
-    Folder, MostPlayedEntry, PlayHistoryEntry, RemoteTrack, Store, TrackStats, default_db_path,
+    Folder, MostPlayedEntry, PlayHistoryEntry, Playlist, PlaylistEntry, RemoteTrack, Store,
+    TrackStats, default_db_path,
 };
 
 // Re-export domain types used in the public store/scanner/index API so
 // consumers don't have to depend on emusic-core separately for common types.
-pub use emusic_core::{ArtSource, Track, TrackId, TrackKind};
+pub use emusic_core::{ArtSource, PlaylistId, Track, TrackId, TrackKind};

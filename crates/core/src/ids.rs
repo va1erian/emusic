@@ -37,6 +37,28 @@ impl std::fmt::Display for TrackId {
     }
 }
 
+/// Identifier of a playlist, backed by the SQLite `playlists.id` row id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct PlaylistId(pub i64);
+
+impl From<i64> for PlaylistId {
+    fn from(value: i64) -> Self {
+        PlaylistId(value)
+    }
+}
+
+impl From<PlaylistId> for i64 {
+    fn from(value: PlaylistId) -> Self {
+        value.0
+    }
+}
+
+impl std::fmt::Display for PlaylistId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

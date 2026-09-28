@@ -11,5 +11,5 @@ mod ids;
 mod track;
 
 pub use events::PlayEvent;
-pub use ids::TrackId;
+pub use ids::{PlaylistId, TrackId};
 pub use track::{ArtSource, Track, TrackKind};
