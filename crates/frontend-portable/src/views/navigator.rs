@@ -139,7 +139,11 @@ mod tests {
                 "{view:?} appears more than once"
             );
         }
-        assert_eq!(listed.len(), View::ALL.len() - 1, "Settings is menu-only");
+        assert_eq!(
+            listed.len(),
+            View::ALL.len() - 2,
+            "Settings is menu-only and Playlist has no row until the playlists section lands"
+        );
     }
 
     #[test]
