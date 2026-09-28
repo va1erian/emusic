@@ -150,6 +150,22 @@ pub struct HistoryEntry {
     pub finished: bool,
 }
 
+/// A user playlist as listed in the navigator (#473).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlaylistInfo {
+    pub id: u64,
+    pub name: String,
+    pub track_count: usize,
+}
+
+/// One entry of a playlist. The same track can appear in several entries, so
+/// `entry_id` (not `track_id`) identifies an entry for removal and reordering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaylistItem {
+    pub entry_id: i64,
+    pub track_id: u64,
+}
+
 /// Facts about the library database file, shown by File -> Database info.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DatabaseInfo {
@@ -204,6 +220,39 @@ pub trait LibraryDataSource {
 
     /// Removes every playback history entry.
     fn clear_history(&mut self) {}
+
+    /// The user's playlists in creation order (#473).
+    fn playlists(&self) -> &[PlaylistInfo] {
+        &[]
+    }
+
+    /// The entries of playlist `id` in play order; empty if it does not exist.
+    fn playlist_items(&self, _id: u64) -> &[PlaylistItem] {
+        &[]
+    }
+
+    /// Creates an empty playlist and returns its id, or `None` for backends
+    /// that don't persist playlists.
+    fn create_playlist(&mut self, _name: &str) -> Option<u64> {
+        None
+    }
+
+    /// Renames playlist `id`. A no-op if it does not exist.
+    fn rename_playlist(&mut self, _id: u64, _name: &str) {}
+
+    /// Deletes playlist `id` and its entries. A no-op if it does not exist.
+    fn delete_playlist(&mut self, _id: u64) {}
+
+    /// Appends `tracks` (in order, duplicates allowed) to playlist `id`.
+    fn add_to_playlist(&mut self, _id: u64, _tracks: &[u64]) {}
+
+    /// Removes the given entries ([`PlaylistItem::entry_id`]) from playlist `id`.
+    fn remove_from_playlist(&mut self, _id: u64, _entries: &[i64]) {}
+
+    /// Moves the given entries, keeping their relative order, so they sit
+    /// together starting at index `to` of the list as it was before the move
+    /// (`to == len` appends).
+    fn move_in_playlist(&mut self, _id: u64, _entries: &[i64], _to: usize) {}
 
     /// Sets whether the track with `id` is starred (#131). A no-op for
     /// backends that don't persist a library.

@@ -139,19 +139,27 @@ impl Store {
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let current: Vec<i64> = entries(&tx, id)?.iter().map(|e| e.id).collect();
-        let (moved, mut rest): (Vec<i64>, Vec<i64>) =
-            current.iter().partition(|entry| entry_ids.contains(entry));
-        let before = current
-            .iter()
-            .take(to)
-            .filter(|entry| entry_ids.contains(entry))
-            .count();
-        let at = to.saturating_sub(before).min(rest.len());
-        rest.splice(at..at, moved);
+        let rest = reordered(&current, entry_ids, to);
         renumber(&tx, &rest)?;
         tx.commit()?;
         Ok(())
     }
+}
+
+/// `order` with the `moving` entries pulled out (keeping their relative
+/// order) and re-inserted together at index `to` of the original `order`
+/// (`to >= len` appends). Ids in `moving` that are not in `order` are ignored.
+pub fn reordered(order: &[i64], moving: &[i64], to: usize) -> Vec<i64> {
+    let (moved, mut rest): (Vec<i64>, Vec<i64>) =
+        order.iter().partition(|entry| moving.contains(entry));
+    let before = order
+        .iter()
+        .take(to)
+        .filter(|entry| moving.contains(entry))
+        .count();
+    let at = to.saturating_sub(before).min(rest.len());
+    rest.splice(at..at, moved);
+    rest
 }
 
 fn entries(conn: &rusqlite::Connection, id: PlaylistId) -> Result<Vec<PlaylistEntry>> {

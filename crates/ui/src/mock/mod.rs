@@ -7,6 +7,7 @@ mod dirs;
 mod generators;
 mod library;
 mod player;
+mod playlists;
 
 pub use data::generate;
 pub use library::MockLibrary;

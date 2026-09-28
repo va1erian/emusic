@@ -1,10 +1,11 @@
 //! [`LibraryDataSource`] backed by the generated mock data.
 
 use super::data::{self, GeneratedLibrary};
+use super::playlists::MockPlaylists;
 use crate::library_api::{
     AlbumInfo, ArtistInfo, AutoTagOutcome, AutoTagRequest, AutoTagStatus, Candidate, DatabaseInfo,
     DirNodeInfo, EditOutcome, EditRequest, EditableTags, FolderInfo, GenreInfo, HistoryEntry,
-    LibraryDataSource, StatsWindow, TrackInfo,
+    LibraryDataSource, PlaylistInfo, PlaylistItem, StatsWindow, TrackInfo,
 };
 
 pub struct MockLibrary {
@@ -24,6 +25,8 @@ pub struct MockLibrary {
     /// Change signal exposed through [`LibraryDataSource::revision`] (#104),
     /// bumped whenever the mock's in-memory data changes.
     revision: u64,
+    /// In-memory playlists (#473).
+    playlists: MockPlaylists,
 }
 
 impl MockLibrary {
@@ -38,6 +41,7 @@ impl MockLibrary {
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
             revision: 0,
+            playlists: MockPlaylists::default(),
         }
     }
 
@@ -51,6 +55,7 @@ impl MockLibrary {
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
             revision: 0,
+            playlists: MockPlaylists::default(),
         }
     }
 
@@ -80,6 +85,7 @@ impl MockLibrary {
             auto_tag_results: Vec::new(),
             auto_tag_status: None,
             revision: 0,
+            playlists: MockPlaylists::default(),
         }
     }
 
@@ -175,6 +181,45 @@ impl LibraryDataSource for MockLibrary {
         self.data.most_played_all.clear();
         self.data.most_played_30d.clear();
         self.data.most_played_year.clear();
+        self.mark_changed();
+    }
+
+    fn playlists(&self) -> &[PlaylistInfo] {
+        self.playlists.infos()
+    }
+
+    fn playlist_items(&self, id: u64) -> &[PlaylistItem] {
+        self.playlists.items(id)
+    }
+
+    fn create_playlist(&mut self, name: &str) -> Option<u64> {
+        let id = self.playlists.create(name);
+        self.mark_changed();
+        Some(id)
+    }
+
+    fn rename_playlist(&mut self, id: u64, name: &str) {
+        self.playlists.rename(id, name);
+        self.mark_changed();
+    }
+
+    fn delete_playlist(&mut self, id: u64) {
+        self.playlists.delete(id);
+        self.mark_changed();
+    }
+
+    fn add_to_playlist(&mut self, id: u64, tracks: &[u64]) {
+        self.playlists.add(id, tracks);
+        self.mark_changed();
+    }
+
+    fn remove_from_playlist(&mut self, id: u64, entries: &[i64]) {
+        self.playlists.remove(id, entries);
+        self.mark_changed();
+    }
+
+    fn move_in_playlist(&mut self, id: u64, entries: &[i64], to: usize) {
+        self.playlists.relocate(id, entries, to);
         self.mark_changed();
     }
 
