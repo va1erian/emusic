@@ -9,6 +9,7 @@
 //! can update only the affected controls; an immediate-mode one ignores it.
 
 mod commands;
+mod playlists;
 mod tick;
 
 use std::path::PathBuf;
@@ -114,6 +115,7 @@ impl Shell {
         config_path: Option<PathBuf>,
         waker: WakerSlot,
     ) -> Self {
+        crate::export_picker::init();
         let mut state = AppState::default();
         config.apply_to_state(&mut state);
         config.apply_to_player(player.as_mut());
@@ -230,6 +232,9 @@ impl Shell {
             .tick(self.library.tracks(), &self.state.search_popup.state.query);
 
         self.poll_ipc();
+        while let Some((id, path)) = crate::export_picker::try_recv() {
+            self.dispatch(Command::ExportPlaylist { id, path });
+        }
         self.apply_pending();
         self.tick_config_persistence(now);
 
@@ -252,9 +257,13 @@ impl Shell {
         let commands = std::mem::take(&mut self.state.pending);
         for cmd in &commands {
             self.state.apply_local(cmd);
+            let expanded = playlists::expand_play(cmd, self.library.as_ref());
+            let cmd = expanded.as_ref().unwrap_or(cmd);
             commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
         }
         commands::apply_library_commands(self.library.as_mut(), &mut self.state, &commands);
+        playlists::apply_commands(self.library.as_mut(), &mut self.state, &commands);
+        playlists::sync(self.library.as_ref(), &mut self.state);
     }
 
     fn poll_ipc(&mut self) {

@@ -191,6 +191,7 @@ impl NavigatorWidget {
             View::History => "\u{E81C}",       // History
             View::NowPlaying => "\u{E768}",    // Play
             View::Visualization => "\u{E7F4}", // TVMonitor
+            View::Playlist => "\u{E8FD}",      // BulletedList
             View::Settings => "\u{E713}",      // Settings
         }
     }

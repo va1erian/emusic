@@ -83,7 +83,8 @@ fn non_default_config() -> Config {
         column_browser_height: 222.0,
         navigator_width: 198.0,
         right_panel_width: 321.0,
-        last_view: View::MostPlayed,
+        last_view: View::Playlist,
+        last_playlist: Some(7),
         resume_playback: false,
         autoplay_on_restore: true,
         last_session: Some(PlaybackSession {

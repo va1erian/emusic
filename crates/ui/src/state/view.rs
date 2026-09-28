@@ -24,11 +24,15 @@ pub enum View {
     History,
     NowPlaying,
     Visualization,
+    /// A user playlist (#473); which one is [`AppState::selected_playlist`].
+    ///
+    /// [`AppState::selected_playlist`]: super::AppState::selected_playlist
+    Playlist,
     Settings,
 }
 
 impl View {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Music,
         Self::Albums,
         Self::Artists,
@@ -39,6 +43,7 @@ impl View {
         Self::History,
         Self::NowPlaying,
         Self::Visualization,
+        Self::Playlist,
         Self::Settings,
     ];
 
@@ -55,6 +60,7 @@ impl View {
             Self::History => "History",
             Self::NowPlaying => "Now Playing",
             Self::Visualization => "Visualization",
+            Self::Playlist => "Playlist",
             Self::Settings => "Settings",
         }
     }
@@ -72,6 +78,7 @@ impl View {
             Self::History => "history",
             Self::NowPlaying => "now-playing",
             Self::Visualization => "visualization",
+            Self::Playlist => "playlist",
             Self::Settings => "settings",
         }
     }

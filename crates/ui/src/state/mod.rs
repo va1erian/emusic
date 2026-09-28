@@ -46,6 +46,7 @@ use crate::views::genres::GenresView;
 use crate::views::history::HistoryState;
 use crate::views::most_played::MostPlayedState;
 use crate::views::music::MusicView;
+use crate::views::playlist::PlaylistView;
 use crate::views::starred::StarredView;
 
 #[cfg(test)]
@@ -65,6 +66,9 @@ pub const MAX_RIGHT_PANEL_WIDTH: f32 = 560.0;
 /// Everything the shell needs beyond the player/library data itself.
 pub struct AppState {
     pub view: View,
+    /// The playlist the Playlist view shows (#473); `None` when no playlist
+    /// is selected.
+    pub selected_playlist: Option<u64>,
     pub theme: Theme,
     pub accent: Accent,
     /// Whether the win32 window's acrylic bands are tinted with the accent
@@ -153,6 +157,8 @@ pub struct AppState {
     pub genres: GenresView,
     /// The Starred view (#104, #131): its track table and count.
     pub starred: StarredView,
+    /// The Playlist view model (#473).
+    pub playlist: PlaylistView,
     /// The Most Played view's window selector + track table (#24).
     pub most_played: MostPlayedState,
     /// The History view's confirmation flag (#24).
@@ -196,6 +202,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             view: View::Music,
+            selected_playlist: None,
             theme: Theme::Dark,
             accent: Accent::default(),
             accent_tint: false,
@@ -228,6 +235,7 @@ impl Default for AppState {
             artists: ArtistsView::default(),
             genres: GenresView::default(),
             starred: StarredView::default(),
+            playlist: PlaylistView::default(),
             most_played: MostPlayedState::default(),
             history: HistoryState::default(),
             pending: Vec::new(),
@@ -254,6 +262,10 @@ impl AppState {
     pub fn apply_local(&mut self, cmd: &Command) {
         match cmd {
             Command::SetView(view) => self.view = *view,
+            Command::SelectPlaylist(id) => {
+                self.view = View::Playlist;
+                self.selected_playlist = Some(*id);
+            }
             Command::OpenSettings(tab) => {
                 self.view = View::Settings;
                 self.settings_tab = *tab;
