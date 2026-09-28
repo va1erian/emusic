@@ -155,3 +155,17 @@ fn deleting_a_playlist_or_track_removes_its_entries() {
         .unwrap();
     assert_eq!(left, 0);
 }
+
+#[test]
+fn adding_after_a_track_was_deleted_keeps_the_new_entry_last() {
+    let (mut store, id, [a, b, c]) = setup();
+    store.add_to_playlist(id, &[a, b, c]).unwrap();
+
+    // Deleting `b` cascades its entry away and leaves a gap in the positions.
+    store
+        .delete_tracks_by_paths(&[PathBuf::from(r"C:\music\b.flac")])
+        .unwrap();
+    store.add_to_playlist(id, &[a]).unwrap();
+
+    assert_eq!(order(&store, id), [a, c, a]);
+}

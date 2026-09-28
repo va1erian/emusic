@@ -390,6 +390,10 @@ impl LibraryDataSource for LibraryBackend {
         self.mark_changed();
     }
 
+    fn remote_cache_root(&self) -> Option<PathBuf> {
+        self.remote.cache_root()
+    }
+
     fn playlists(&self) -> &[PlaylistInfo] {
         self.playlists.infos()
     }

@@ -93,7 +93,7 @@ impl Store {
             return Ok(0);
         }
         let mut next: i64 = tx.query_row(
-            "SELECT count(*) FROM playlist_tracks WHERE playlist_id = ?1",
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?1",
             params![id.0],
             |row| row.get(0),
         )?;
@@ -164,7 +164,7 @@ pub fn reordered(order: &[i64], moving: &[i64], to: usize) -> Vec<i64> {
 
 fn entries(conn: &rusqlite::Connection, id: PlaylistId) -> Result<Vec<PlaylistEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+        "SELECT id, track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position, id",
     )?;
     let entries = stmt
         .query_map(params![id.0], |row| {

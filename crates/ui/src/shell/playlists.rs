@@ -12,53 +12,53 @@ use crate::panels::navigator::new_playlist_name;
 use crate::state::{AppState, Command, View};
 use crate::views::playlist;
 
-/// Applies a frame's queued playlist commands.
-pub(super) fn apply_commands(
+/// Applies one playlist command, returning a message for the user when
+/// something they should know about happened (an export failed or left
+/// tracks out).
+///
+/// The shell applies playlist commands one by one, in order, so a "play" that
+/// follows an "add" in the same frame sees the added tracks.
+pub(super) fn apply_command(
     library: &mut dyn LibraryDataSource,
     state: &mut AppState,
-    commands: &[Command],
-) {
-    for cmd in commands {
-        match cmd {
-            Command::CreatePlaylist(name) => {
-                let name = match name.trim() {
-                    "" => new_playlist_name(library.playlists()),
-                    name => name.to_owned(),
-                };
-                if let Some(id) = library.create_playlist(&name) {
-                    state.view = View::Playlist;
-                    state.selected_playlist = Some(id);
-                }
+    cmd: &Command,
+) -> Option<String> {
+    match cmd {
+        Command::CreatePlaylist(name) => {
+            let name = match name.trim() {
+                "" => new_playlist_name(library.playlists()),
+                name => name.to_owned(),
+            };
+            if let Some(id) = library.create_playlist(&name) {
+                state.view = View::Playlist;
+                state.selected_playlist = Some(id);
             }
-            Command::RenamePlaylist { id, name } => {
-                let name = name.trim();
-                if !name.is_empty() {
-                    library.rename_playlist(*id, name);
-                }
-            }
-            Command::DeletePlaylist(id) => {
-                library.delete_playlist(*id);
-                if state.selected_playlist == Some(*id) {
-                    state.selected_playlist = None;
-                    state.view = View::Music;
-                }
-            }
-            Command::AddToPlaylist { id, tracks } => library.add_to_playlist(*id, tracks),
-            Command::RemoveFromPlaylist { id, entries } => {
-                library.remove_from_playlist(*id, entries)
-            }
-            Command::MoveInPlaylist { id, entries, to } => {
-                library.move_in_playlist(*id, entries, *to)
-            }
-            Command::ExportPlaylistAs(id) => {
-                if let Some(info) = library.playlists().iter().find(|info| info.id == *id) {
-                    export_picker::request(*id, &info.name);
-                }
-            }
-            Command::ExportPlaylist { id, path } => export(library, *id, path),
-            _ => {}
         }
+        Command::RenamePlaylist { id, name } => {
+            let name = name.trim();
+            if !name.is_empty() {
+                library.rename_playlist(*id, name);
+            }
+        }
+        Command::DeletePlaylist(id) => {
+            library.delete_playlist(*id);
+            if state.selected_playlist == Some(*id) {
+                state.selected_playlist = None;
+                state.view = View::Music;
+            }
+        }
+        Command::AddToPlaylist { id, tracks } => library.add_to_playlist(*id, tracks),
+        Command::RemoveFromPlaylist { id, entries } => library.remove_from_playlist(*id, entries),
+        Command::MoveInPlaylist { id, entries, to } => library.move_in_playlist(*id, entries, *to),
+        Command::ExportPlaylistAs(id) => {
+            if let Some(info) = library.playlists().iter().find(|info| info.id == *id) {
+                export_picker::request(*id, &info.name);
+            }
+        }
+        Command::ExportPlaylist { id, path } => return export(library, *id, path),
+        _ => {}
     }
+    None
 }
 
 /// Turns [`Command::PlayPlaylist`] into the queue command that plays it, or
@@ -105,14 +105,23 @@ pub(super) fn sync(library: &dyn LibraryDataSource, state: &mut AppState) {
 }
 
 /// Writes playlist `id` to `path` as an M3U file, with track paths relative
-/// to the file's folder where they sit beneath it.
-fn export(library: &dyn LibraryDataSource, id: u64, path: &Path) {
+/// to the file's folder where they sit beneath it. Remote-server tracks are
+/// left out. Returns a message when the write failed or tracks were skipped.
+fn export(library: &dyn LibraryDataSource, id: u64, path: &Path) -> Option<String> {
     let resolved = playlist::resolve(library, id);
     let base = path.parent().unwrap_or_else(|| Path::new(""));
-    let text = crate::m3u::export(&resolved.tracks, base);
-    if let Err(err) = std::fs::write(path, text) {
+    let remote_root = library.remote_cache_root();
+    let exported = crate::m3u::export(&resolved.tracks, base, remote_root.as_deref());
+    if let Err(err) = std::fs::write(path, exported.text) {
         warn!(%err, path = %path.display(), "could not export playlist");
+        return Some(format!("Could not export playlist: {err}"));
     }
+    (exported.skipped_remote > 0).then(|| {
+        format!(
+            "Exported playlist; left out {} remote track(s)",
+            exported.skipped_remote
+        )
+    })
 }
 
 #[cfg(test)]

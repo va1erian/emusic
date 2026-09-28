@@ -125,7 +125,19 @@ impl PlaylistView {
     /// Queues moving the entries at display `rows` so they land together at
     /// display index `to` (an insertion point: `0..=count`). Does nothing
     /// while a sort is active, or for rows out of range.
-    pub fn move_rows(&self, id: u64, rows: &[usize], to: usize, out: &mut Commands) {
+    ///
+    /// `all` is the playlist's complete entry list
+    /// ([`LibraryDataSource::playlist_items`]): display rows skip entries whose
+    /// track is unavailable, so the display index is translated to the
+    /// matching position in the full list, which is what the backend expects.
+    pub fn move_rows(
+        &self,
+        id: u64,
+        rows: &[usize],
+        to: usize,
+        all: &[PlaylistItem],
+        out: &mut Commands,
+    ) {
         if !self.can_reorder() {
             return;
         }
@@ -134,9 +146,15 @@ impl PlaylistView {
             .filter_map(|&row| self.items.get(row))
             .map(|item| item.entry_id)
             .collect();
-        if !entries.is_empty() {
-            out.push(Command::MoveInPlaylist { id, entries, to });
+        if entries.is_empty() {
+            return;
         }
+        let to = self
+            .items
+            .get(to)
+            .and_then(|target| all.iter().position(|item| item.entry_id == target.entry_id))
+            .unwrap_or(all.len());
+        out.push(Command::MoveInPlaylist { id, entries, to });
     }
 
     /// Queues playing the whole playlist from the start, or shuffled.

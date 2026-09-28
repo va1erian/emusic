@@ -1,6 +1,6 @@
 # Playlist support: plan
 
-Status: draft. Nothing is implemented; `grep playlist` only finds projectM preset lists.
+Status: partially implemented. Phases 1 and 2 (storage, m3u export, the `emusic-ui` layer) landed in #474; the frontends, drag and drop and m3u import are still to do.
 
 ## Requirements
 
