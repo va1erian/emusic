@@ -231,3 +231,38 @@ fn export_writes_an_m3u_file_next_to_the_music() {
     assert!(text.starts_with("#EXTM3U\n"));
     assert_eq!(text.matches("#EXTINF:").count(), tracks.len());
 }
+
+#[test]
+fn a_play_after_an_add_in_the_same_frame_sees_the_added_tracks() {
+    let mut shell = shell();
+    run(&mut shell, [Command::CreatePlaylist("Mix".into())]);
+    let id = shell.state.selected_playlist.unwrap();
+    let track = shell.library.tracks()[0].id;
+
+    run(
+        &mut shell,
+        [
+            Command::AddToPlaylist {
+                id,
+                tracks: vec![track],
+            },
+            Command::PlayPlaylist { id, shuffle: false },
+        ],
+    );
+
+    assert!(shell.player.now_playing().is_some());
+}
+
+#[test]
+fn a_failed_export_tells_the_user() {
+    let mut shell = shell();
+    let (id, _) = with_playlist(&mut shell);
+    let missing = std::env::temp_dir()
+        .join(format!("emusic-no-such-dir-{}", std::process::id()))
+        .join("mix.m3u8");
+
+    run(&mut shell, [Command::ExportPlaylist { id, path: missing }]);
+
+    let notice = shell.backend_notice().unwrap();
+    assert!(notice.starts_with("Could not export playlist"), "{notice}");
+}

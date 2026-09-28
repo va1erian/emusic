@@ -257,12 +257,16 @@ impl Shell {
         let commands = std::mem::take(&mut self.state.pending);
         for cmd in &commands {
             self.state.apply_local(cmd);
+            if let Some(notice) =
+                playlists::apply_command(self.library.as_mut(), &mut self.state, cmd)
+            {
+                self.backend_notice = Some(notice);
+            }
             let expanded = playlists::expand_play(cmd, self.library.as_ref());
             let cmd = expanded.as_ref().unwrap_or(cmd);
             commands::apply_player_command(self.player.as_mut(), self.library.as_ref(), cmd);
         }
         commands::apply_library_commands(self.library.as_mut(), &mut self.state, &commands);
-        playlists::apply_commands(self.library.as_mut(), &mut self.state, &commands);
         playlists::sync(self.library.as_ref(), &mut self.state);
     }
 

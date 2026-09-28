@@ -323,6 +323,13 @@ pub trait LibraryDataSource {
     /// the background; mock backends ignore this.
     fn set_remote_servers(&mut self, _servers: &[crate::remote::RemoteServer]) {}
 
+    /// The folder remote tracks are cached under (#391): a track whose path
+    /// lies beneath it belongs to a server, not the local disk. `None` for
+    /// backends without remote support.
+    fn remote_cache_root(&self) -> Option<PathBuf> {
+        None
+    }
+
     /// Requests an immediate sync of every configured remote server (#391).
     fn sync_remote(&mut self) {}
 

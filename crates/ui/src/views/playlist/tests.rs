@@ -97,7 +97,7 @@ fn move_rows_maps_rows_to_entries_and_needs_playlist_order() {
     let entries: Vec<i64> = view.items().iter().map(|i| i.entry_id).collect();
 
     let mut out = Commands::new();
-    view.move_rows(id, &[3, 99], 0, &mut out);
+    view.move_rows(id, &[3, 99], 0, library.playlist_items(id), &mut out);
     assert_eq!(
         out.into_vec(),
         vec![Command::MoveInPlaylist {
@@ -112,7 +112,7 @@ fn move_rows_maps_rows_to_entries_and_needs_playlist_order() {
         .toggle(crate::views::track_table::columns::ColumnId::Title);
     assert!(!view.can_reorder());
     let mut out = Commands::new();
-    view.move_rows(id, &[3], 0, &mut out);
+    view.move_rows(id, &[3], 0, library.playlist_items(id), &mut out);
     assert!(out.into_vec().is_empty(), "no reordering while sorted");
 }
 
@@ -128,4 +128,27 @@ fn play_emits_the_playlist_command() {
             shuffle: true
         }]
     );
+}
+
+#[test]
+fn move_rows_translates_the_target_past_hidden_entries() {
+    // The stale entry (unknown track) is the third of five, so display index 3
+    // (before the fourth visible row) is index 4 of the full list.
+    let (library, id, _) = library_with_playlist();
+    let mut view = PlaylistView::default();
+    refreshed(&library, id, &mut view);
+    let all = library.playlist_items(id);
+    assert_eq!((all.len(), view.count()), (5, 4));
+
+    let mut out = Commands::new();
+    view.move_rows(id, &[0], 3, all, &mut out);
+    let mut end = Commands::new();
+    view.move_rows(id, &[0], 4, all, &mut end);
+
+    let to = |commands: Vec<Command>| match &commands[0] {
+        Command::MoveInPlaylist { to, .. } => *to,
+        other => panic!("unexpected {other:?}"),
+    };
+    assert_eq!(to(out.into_vec()), 4);
+    assert_eq!(to(end.into_vec()), 5, "past the last row appends");
 }

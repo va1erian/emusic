@@ -472,8 +472,9 @@ impl Win32App {
             View::MostPlayed => self.most_played.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
-            // No playlist view yet (#473 follow-up): nothing navigates here.
-            View::Playlist => self.starred.layout().fill(1),
+            // No playlist view yet (#473 follow-up): nothing navigates here, and
+            // a restored Playlist view shows the central placeholder.
+            View::Playlist => self.central.fill(1),
             View::History => self.history.layout().fill(1),
             View::Visualization => self.preset_browser.layout().fill(1),
             View::NowPlaying => self.now_playing_central.layout().fill(1),
