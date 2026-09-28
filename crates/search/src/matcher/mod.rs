@@ -217,7 +217,9 @@ fn track_matches<S: PlayStats>(
                 field: Some(field),
                 negated,
             } => (
-                finder.find(entry.haystack.field(*field).as_bytes()).is_some(),
+                finder
+                    .find(entry.haystack.field(*field).as_bytes())
+                    .is_some(),
                 *negated,
             ),
             PreparedTerm::Numeric {
