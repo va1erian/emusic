@@ -142,7 +142,7 @@ impl<'q> PreparedQuery<'q> {
             .iter()
             .map(|term| match &term.body {
                 TermBody::Text(text) => PreparedTerm::Text {
-                    finder: memchr::memmem::Finder::new(text.text()),
+                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
                     field: None,
                     negated: term.negated,
                 },
@@ -150,7 +150,7 @@ impl<'q> PreparedQuery<'q> {
                     field,
                     value: FieldValue::Text(text),
                 } => PreparedTerm::Text {
-                    finder: memchr::memmem::Finder::new(text.text()),
+                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
                     field: Some(*field),
                     negated: term.negated,
                 },
@@ -174,7 +174,7 @@ impl<'q> PreparedQuery<'q> {
 #[derive(Debug)]
 enum PreparedTerm<'q> {
     Text {
-        finder: memchr::memmem::Finder<'q>,
+        finder: Box<memchr::memmem::Finder<'q>>,
         field: Option<Field>,
         negated: bool,
     },
