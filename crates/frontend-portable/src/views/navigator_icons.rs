@@ -46,6 +46,7 @@ pub(crate) fn source(view: View) -> (&'static str, bool) {
         View::History => ("history", false),
         View::NowPlaying => ("play", false),
         View::Visualization => ("monitor", false),
+        View::Playlist => ("music", false),
         View::Settings => ("settings", false),
     }
 }
@@ -101,6 +102,7 @@ fn light(view: View) -> &'static [u8] {
         View::History => include_bytes!("../../assets/navigator/light/history.png"),
         View::NowPlaying => include_bytes!("../../assets/navigator/light/now-playing.png"),
         View::Visualization => include_bytes!("../../assets/navigator/light/visualization.png"),
+        View::Playlist => include_bytes!("../../assets/navigator/light/music.png"),
         View::Settings => include_bytes!("../../assets/navigator/light/settings.png"),
     }
 }
@@ -118,6 +120,7 @@ fn dark(view: View) -> &'static [u8] {
         View::History => include_bytes!("../../assets/navigator/dark/history.png"),
         View::NowPlaying => include_bytes!("../../assets/navigator/dark/now-playing.png"),
         View::Visualization => include_bytes!("../../assets/navigator/dark/visualization.png"),
+        View::Playlist => include_bytes!("../../assets/navigator/dark/music.png"),
         View::Settings => include_bytes!("../../assets/navigator/dark/settings.png"),
     }
 }

@@ -106,6 +106,51 @@ pub enum Command {
     SyncRemote,
     /// Ignore the local library folders and show only remote tracks (#391).
     SetServerOnly(bool),
+    /// Show playlist `id` in the Playlist view (#473).
+    SelectPlaylist(u64),
+    /// Create an empty playlist named `name` and show it (#473). A blank name
+    /// becomes "New playlist".
+    CreatePlaylist(String),
+    /// Rename a playlist (#473). A blank name is ignored.
+    RenamePlaylist {
+        id: u64,
+        name: String,
+    },
+    /// Delete a playlist and its entries (#473).
+    DeletePlaylist(u64),
+    /// Append tracks to a playlist, in order (#473), e.g. after a drop onto it
+    /// or from a track's "Add to playlist" menu.
+    AddToPlaylist {
+        id: u64,
+        tracks: Vec<u64>,
+    },
+    /// Remove playlist entries ([`crate::library_api::PlaylistItem::entry_id`])
+    /// (#473).
+    RemoveFromPlaylist {
+        id: u64,
+        entries: Vec<i64>,
+    },
+    /// Move playlist entries together to index `to` of the list as it was
+    /// before the move (#473).
+    MoveInPlaylist {
+        id: u64,
+        entries: Vec<i64>,
+        to: usize,
+    },
+    /// Ask where to save playlist `id` (a native save dialog off the UI
+    /// thread), then export it there with [`Command::ExportPlaylist`] (#473).
+    ExportPlaylistAs(u64),
+    /// Write playlist `id` to `path` as an extended M3U file (#473).
+    ExportPlaylist {
+        id: u64,
+        path: PathBuf,
+    },
+    /// Play a playlist from the start, or shuffled (#473). The shell resolves
+    /// it to [`Command::PlayAlbum`] or [`Command::ShuffleScope`].
+    PlayPlaylist {
+        id: u64,
+        shuffle: bool,
+    },
     /// Remove one playback history entry (History view, #24).
     HistoryRemove(i64),
     /// Clear the whole playback history (History view, #24), after the

@@ -104,6 +104,8 @@ impl Win32App {
             View::Artists => self.artists.set_bounds(central),
             View::Genres => self.genres.set_bounds(central),
             View::Starred => self.starred.set_bounds(central),
+            // No playlist view yet (#473 follow-up): nothing navigates here.
+            View::Playlist => self.starred.set_bounds(central),
             View::MostPlayed => self.most_played.set_bounds(central),
             View::History => self.history.set_bounds(central),
             View::Settings => self.settings.set_bounds(central),

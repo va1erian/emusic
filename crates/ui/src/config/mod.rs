@@ -116,6 +116,8 @@ pub struct Config {
     pub right_panel_width: f32,
     /// View shown on startup.
     pub last_view: View,
+    /// The playlist shown when `last_view` is the Playlist view (#473).
+    pub last_playlist: Option<u64>,
     /// Reopen the last played track and queue where they left off on startup
     /// (#190, #214). On by default; turn it off to always start with an empty
     /// player.
@@ -206,6 +208,7 @@ impl Default for Config {
             navigator_width: crate::state::DEFAULT_NAVIGATOR_WIDTH,
             right_panel_width: crate::state::DEFAULT_RIGHT_PANEL_WIDTH,
             last_view: View::default(),
+            last_playlist: None,
             resume_playback: true,
             autoplay_on_restore: false,
             last_session: None,
@@ -251,6 +254,7 @@ impl Config {
             navigator_width: state.navigator_width,
             right_panel_width: state.right_panel_width,
             last_view: state.view,
+            last_playlist: state.selected_playlist,
             resume_playback: state.resume_playback,
             autoplay_on_restore: state.autoplay_on_restore,
             last_session: None,
@@ -284,6 +288,7 @@ impl Config {
         state.navigator_width = self.navigator_width;
         state.right_panel_width = self.right_panel_width;
         state.view = self.last_view;
+        state.selected_playlist = self.last_playlist;
         state.resume_playback = self.resume_playback;
         state.autoplay_on_restore = self.autoplay_on_restore;
         self.ui.apply_to_state(state);

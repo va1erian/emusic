@@ -19,6 +19,7 @@ pub mod auto_tag;
 pub mod backend;
 pub mod cli;
 pub mod config;
+pub mod export_picker;
 pub mod folder_picker;
 pub mod image_cache;
 pub mod library_api;

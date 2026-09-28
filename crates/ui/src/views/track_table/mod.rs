@@ -10,6 +10,7 @@
 //! clicks, keyboard navigation and the persistent per-instance state.
 
 pub mod columns;
+mod playlist;
 pub mod properties;
 pub mod selection;
 pub mod sort;
