@@ -6,7 +6,7 @@
 //! edited — add a new one instead.
 
 /// The schema version this build of `emusic-library` expects.
-pub const CURRENT_VERSION: i64 = 6;
+pub const CURRENT_VERSION: i64 = 7;
 
 pub const MIGRATIONS: &[&str] = &[
     // v1: initial schema.
@@ -96,5 +96,24 @@ pub const MIGRATIONS: &[&str] = &[
         server_id       TEXT PRIMARY KEY,
         since_version   INTEGER NOT NULL DEFAULT 0
     );
+    ",
+    // v7: user playlists (#473). Each `playlist_tracks` row is one entry, so
+    // a track may appear more than once; `position` orders the entries and is
+    // kept dense (0..n) by the store. Entries go with their playlist or track.
+    r"
+    CREATE TABLE playlists (
+        id          INTEGER PRIMARY KEY,
+        name        TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+    );
+
+    CREATE TABLE playlist_tracks (
+        id           INTEGER PRIMARY KEY,
+        playlist_id  INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+        track_id     INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        position     INTEGER NOT NULL
+    );
+    CREATE INDEX idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position);
+    CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
     ",
 ];

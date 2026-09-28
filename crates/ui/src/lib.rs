@@ -22,6 +22,7 @@ pub mod config;
 pub mod folder_picker;
 pub mod image_cache;
 pub mod library_api;
+pub mod m3u;
 pub mod mock;
 pub mod panels;
 pub mod player_api;

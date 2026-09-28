@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn upgrading_from_the_previous_version_preserves_tracks() {
-        // Build the v5 schema (all but the last migration) and insert one
+        // Build the previous schema (all but the last migration) and insert one
         // starred track, then apply the pending migration.
         let conn = Connection::open_in_memory().unwrap();
         for migration in &MIGRATIONS[..MIGRATIONS.len() - 1] {
