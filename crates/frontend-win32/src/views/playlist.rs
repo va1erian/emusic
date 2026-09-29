@@ -83,9 +83,10 @@ impl PlaylistView {
             .set_rows(&resolved.tracks, state.playlist.table.sort);
     }
 
-    /// The rows the current reorder drag started from.
-    pub fn dragged_rows(&self) -> Vec<usize> {
-        self.table.dragged_rows()
+    /// The rows the reorder drag carrying `payload` started from; empty for
+    /// a drag that did not start in this table.
+    pub fn dragged_rows(&self, payload: Option<&[u8]>) -> Vec<usize> {
+        self.table.dragged_rows(payload)
     }
 
     /// The command to play `index` in the context of the whole visible list.
