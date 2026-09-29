@@ -6,8 +6,38 @@
 //! fields and a user-supplied [`PlayStats`] source for play counts.
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 
 use emusic_core::{Track, TrackId};
+
+/// Fast 64-bit integer hasher for `TrackId` keys in the search index.
+#[derive(Default)]
+pub struct TrackIdHasher(u64);
+
+impl Hasher for TrackIdHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+
+    #[inline]
+    fn write_i64(&mut self, i: i64) {
+        self.0 = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.0 = i.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+
+type TrackMap<V> = HashMap<TrackId, V, BuildHasherDefault<TrackIdHasher>>;
 
 use crate::query::{Field, FieldValue, NumericSpec, Query, TermBody};
 
@@ -37,7 +67,7 @@ where
 /// An in-memory index of tracks ready for substring search.
 #[derive(Debug, Clone, Default)]
 pub struct Index {
-    entries: HashMap<TrackId, Entry>,
+    entries: TrackMap<Entry>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +81,7 @@ impl Index {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: HashMap::new(),
+            entries: HashMap::default(),
         }
     }
 
@@ -99,7 +129,7 @@ impl Index {
             return candidates.to_vec();
         }
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(candidates.len().min(1024));
 
         for &id in candidates {
             let Some(entry) = self.entries.get(&id) else {
