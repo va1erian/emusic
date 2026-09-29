@@ -36,7 +36,8 @@ use win32ui::prelude::*;
 use emusic_ui::backend;
 use emusic_ui::config::Config;
 use emusic_ui::state::{
-    Accent, Appearance, Density, FontSize, SettingsTab, Theme, View, VisualizerMode,
+    Accent, Appearance, Command as UiCommand, Density, FontSize, SettingsTab, Theme, View,
+    VisualizerMode,
 };
 use emusic_ui::waker::WakerSlot;
 
@@ -386,6 +387,11 @@ fn render_one(
         } else {
             None
         };
+        // The Playlist view shows one specific playlist; pick the mock's
+        // first one so `--view playlist` is never empty (#476).
+        let first_playlist = (view == View::Playlist)
+            .then(|| backends.library.playlists().first().map(|info| info.id))
+            .flatten();
         let mut app = Win32App::new(
             ui,
             backends.library,
@@ -398,6 +404,9 @@ fn render_one(
         );
         if let Some(notice) = backends.notice {
             app.set_backend_notice(notice);
+        }
+        if let Some(id) = first_playlist {
+            ui.emit(Msg::Dispatch(UiCommand::SelectPlaylist(id)));
         }
         // The mock run has no preset install layout, so the preset browser
         // (#338) is shot against the deterministic placeholder list.

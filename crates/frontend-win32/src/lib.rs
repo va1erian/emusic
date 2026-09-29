@@ -18,6 +18,7 @@ mod d2d_text;
 pub mod app;
 pub mod backend;
 pub mod dialogs;
+pub mod dnd;
 pub mod icon;
 pub mod menu;
 pub mod theme;

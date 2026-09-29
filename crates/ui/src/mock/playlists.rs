@@ -18,6 +18,22 @@ impl MockPlaylists {
         &self.infos
     }
 
+    /// Seeds a few representative playlists from `tracks`, so the navigator's
+    /// PLAYLISTS section and the Playlist view have content in `--mock` runs
+    /// and screenshots (#476). A no-op for an empty library.
+    pub(super) fn seed_demo(&mut self, tracks: &[u64]) {
+        if tracks.is_empty() {
+            return;
+        }
+        let pick = |index: usize| tracks[index % tracks.len()];
+        let road = self.create("Road trip");
+        self.add(road, &[pick(0), pick(3), pick(7), pick(12)]);
+        let focus = self.create("Focus");
+        self.add(focus, &[pick(1), pick(2), pick(5)]);
+        let favourites = self.create("Favourites mix");
+        self.add(favourites, &[pick(9), pick(0), pick(4)]);
+    }
+
     pub(super) fn items(&self, id: u64) -> &[PlaylistItem] {
         self.index(id).map_or(&[], |i| &self.items[i])
     }

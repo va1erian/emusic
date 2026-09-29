@@ -15,8 +15,9 @@ use emusic_ui::library_api::{TrackInfo, format_minutes_ago};
 use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
+use win32ui::dnd::DropEffects;
 use win32ui::prelude::*;
-use win32ui::{Column, ColumnWidth, Fill, ListModel, ListView, Menu, RowStyle, SortDirection, dip};
+use win32ui::{Column, ColumnWidth, Fill, ListModel, ListView, RowStyle, SortDirection, dip};
 
 use crate::app::Msg;
 
@@ -37,6 +38,15 @@ const PLAY_COLUMN_WIDTH: f32 = 20.0;
 /// matching the now-playing summary.
 pub(crate) fn star_glyph(starred: bool) -> &'static str {
     if starred { "\u{2605}" } else { "\u{2606}" }
+}
+
+/// Whether a table is a plain list or also a reorder drop target (#476).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TableMode {
+    /// No drop target: the table only starts drags.
+    Plain,
+    /// The list accepts row drops for a manual reorder (the Playlist view).
+    Reorder,
 }
 
 /// Builds the star toggle column: centred, not resizable, its glyph tinted
@@ -165,15 +175,21 @@ pub struct TrackView {
     /// The playing track id, shared with the `row_style` closure so the
     /// highlight follows playback without rebuilding the model.
     playing: Rc<Cell<Option<u64>>>,
-    context: Menu<Msg>,
     context_row: Cell<Option<usize>>,
+    /// The rows the current drag started from (#476), so a drop back onto the
+    /// same list can reorder them.
+    dragged: Cell<Vec<usize>>,
+    /// Whether a drop may reorder the list: false while a sort column is
+    /// active, so the native insert marker is not shown (#476).
+    reorder_ok: Rc<Cell<bool>>,
     /// Column index and direction currently showing a sort arrow, if any.
     indicator: Cell<Option<(usize, bool)>>,
 }
 
 impl TrackView {
-    /// Creates the table and its (empty) virtual list.
-    pub fn new(ui: &mut Ui<Msg>) -> Result<Self> {
+    /// Creates the table and its (empty) virtual list. A [`TableMode::Reorder`]
+    /// table also accepts row drops for a manual reorder.
+    pub fn new(ui: &mut Ui<Msg>, mode: TableMode) -> Result<Self> {
         let playing = Rc::new(Cell::new(None));
         let playing_for_style = Rc::clone(&playing);
 
@@ -194,7 +210,8 @@ impl TrackView {
             })
             .on_activate(|row| Some(Msg::PlayRow(row)))
             .on_sort(|column| Some(Msg::SortColumn(column)))
-            .on_context(|row| Some(Msg::ContextRow(row)));
+            .on_context(|row| Some(Msg::ContextRow(row)))
+            .on_begin_drag(|rows, _| Some(Msg::TrackBeginDrag(rows.to_vec())));
         for column in columns::COLUMNS {
             let id = column.id;
             list = list.column(
@@ -204,39 +221,21 @@ impl TrackView {
             );
         }
 
-        let context = Menu::new()
-            .item("Play", None, || Msg::ContextAction(ContextAction::Play))
-            .item("Play next", None, || {
-                Msg::ContextAction(ContextAction::PlayNext)
-            })
-            .item("Add to queue", None, || {
-                Msg::ContextAction(ContextAction::AddToQueue)
-            })
-            .separator()
-            .item("Star / Unstar", None, || {
-                Msg::ContextAction(ContextAction::ToggleStar)
-            })
-            .separator()
-            .item("Open file location", None, || {
-                Msg::ContextAction(ContextAction::OpenFileLocation)
-            })
-            .item("Copy path", None, || {
-                Msg::ContextAction(ContextAction::CopyPath)
-            })
-            .separator()
-            .item("Edit tags…", None, || {
-                Msg::ContextAction(ContextAction::EditTags)
-            })
-            .item("Properties…", None, || {
-                Msg::ContextAction(ContextAction::Properties)
-            });
+        let reorder_ok = Rc::new(Cell::new(mode == TableMode::Reorder));
+        if mode == TableMode::Reorder {
+            let allowed = Rc::clone(&reorder_ok);
+            list = list
+                .drop_filter(move |data| data.has_payload() && allowed.get())
+                .on_drop(|drop| Some(Msg::TrackDrop(drop)))?;
+        }
 
         Ok(Self {
             list,
             rows: Rc::new(Vec::new()),
             playing,
-            context,
             context_row: Cell::new(None),
+            dragged: Cell::new(Vec::new()),
+            reorder_ok,
             indicator: Cell::new(None),
         })
     }
@@ -306,8 +305,49 @@ impl TrackView {
         self.context_row.set(Some(row));
     }
 
-    pub fn context_menu(&self) -> &Menu<Msg> {
-        &self.context
+    /// Starts dragging `rows`: records them for a possible reorder and runs the
+    /// drag with their track ids as the payload (#476). Blocks until the drag
+    /// ends, so call it from the [`Msg::TrackBeginDrag`] handler.
+    pub fn begin_drag(&self, rows: &[usize]) {
+        self.dragged.set(rows.to_vec());
+        let tracks: Vec<u64> = rows
+            .iter()
+            .filter_map(|&row| self.rows.as_slice().get(row))
+            .map(|row| row.track.id)
+            .collect();
+        if tracks.is_empty() {
+            return;
+        }
+        let payload = crate::dnd::encode_track_ids(&tracks);
+        let _ = self.list.begin_drag(&payload, DropEffects::COPY, None);
+    }
+
+    /// The rows the current drag started from.
+    pub fn dragged_rows(&self) -> Vec<usize> {
+        self.dragged.replace(Vec::new())
+    }
+
+    /// Sets whether a drop may reorder the table (false while sorted).
+    pub fn set_reorder_ok(&self, ok: bool) {
+        self.reorder_ok.set(ok);
+    }
+
+    /// Queues adding the context row's selection to playlist `id` (#476): the
+    /// whole selection when the row is part of it, else just that row.
+    pub fn add_to_playlist(&self, id: u64) -> Option<Command> {
+        let row = self.context_row.get()?;
+        let selection = self.list.selection();
+        let rows = if selection.contains(&row) {
+            selection
+        } else {
+            vec![row]
+        };
+        let tracks: Vec<u64> = rows
+            .iter()
+            .filter_map(|&index| self.rows.as_slice().get(index))
+            .map(|row| row.track.id)
+            .collect();
+        (!tracks.is_empty()).then_some(Command::AddToPlaylist { id, tracks })
     }
 
     fn context_ids(&self) -> Vec<u64> {

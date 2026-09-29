@@ -45,6 +45,14 @@ impl MockLibrary {
         }
     }
 
+    /// Seeds a few representative playlists (#476), for `--mock` runs and the
+    /// screenshots. Kept out of [`MockLibrary::new`] so headless tests start
+    /// from an empty playlist set.
+    pub fn seed_demo_playlists(&mut self) {
+        let ids: Vec<u64> = self.data.tracks.iter().map(|track| track.id).collect();
+        self.playlists.seed_demo(&ids);
+    }
+
     /// An empty library, for screenshots of the first-run empty state (#19).
     pub fn empty() -> Self {
         Self {

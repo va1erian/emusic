@@ -13,7 +13,7 @@ use win32ui::prelude::*;
 use win32ui::{Button, Control, Label, LayoutItem, Menu, Rect, Result, Ui, dip, row};
 
 use crate::app::Msg;
-use crate::views::track_table::TrackView;
+use crate::views::track_table::{TableMode, TrackView};
 
 /// Header row height, in device-independent pixels.
 const HEADER_HEIGHT: f32 = 28.0;
@@ -47,7 +47,7 @@ impl MusicView {
         Ok(Self {
             count_label,
             shuffle_button,
-            table: TrackView::new(ui)?,
+            table: TrackView::new(ui, TableMode::Plain)?,
             signature: None,
         })
     }
@@ -167,8 +167,18 @@ impl MusicView {
         self.table.context_track()
     }
 
-    pub fn context_menu(&self) -> &Menu<Msg> {
-        self.table.context_menu()
+    pub fn context_menu(&self, playlists: &[emusic_ui::library_api::PlaylistInfo]) -> Menu<Msg> {
+        crate::views::track_menu::track_context_menu(playlists, false)
+    }
+
+    /// Starts dragging the table's `rows` (#476).
+    pub fn begin_drag(&self, rows: &[usize]) {
+        self.table.begin_drag(rows);
+    }
+
+    /// Queues adding the context row's selection to playlist `id` (#476).
+    pub fn add_to_playlist(&self, id: u64) -> Option<emusic_ui::state::Command> {
+        self.table.add_to_playlist(id)
     }
 }
 
