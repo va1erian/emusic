@@ -15,7 +15,7 @@ use emusic_ui::library_api::{TrackInfo, format_minutes_ago};
 use emusic_ui::state::Command;
 use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
-use win32ui::dnd::DropEffects;
+use win32ui::dnd::{DropEffect, DropEffects};
 use win32ui::prelude::*;
 use win32ui::{Column, ColumnWidth, Fill, ListModel, ListView, RowStyle, SortDirection, dip};
 
@@ -179,6 +179,9 @@ pub struct TrackView {
     /// The rows the current drag started from (#476), so a drop back onto the
     /// same list can reorder them.
     dragged: Cell<Vec<usize>>,
+    /// The track ids of `dragged`, so a drop can tell this table's own drag
+    /// from a stale one or another table's.
+    dragged_ids: Cell<Vec<u64>>,
     /// Whether a drop may reorder the list: false while a sort column is
     /// active, so the native insert marker is not shown (#476).
     reorder_ok: Rc<Cell<bool>>,
@@ -235,6 +238,7 @@ impl TrackView {
             playing,
             context_row: Cell::new(None),
             dragged: Cell::new(Vec::new()),
+            dragged_ids: Cell::new(Vec::new()),
             reorder_ok,
             indicator: Cell::new(None),
         })
@@ -309,7 +313,6 @@ impl TrackView {
     /// drag with their track ids as the payload (#476). Blocks until the drag
     /// ends, so call it from the [`Msg::TrackBeginDrag`] handler.
     pub fn begin_drag(&self, rows: &[usize]) {
-        self.dragged.set(rows.to_vec());
         let tracks: Vec<u64> = rows
             .iter()
             .filter_map(|&row| self.rows.as_slice().get(row))
@@ -318,13 +321,29 @@ impl TrackView {
         if tracks.is_empty() {
             return;
         }
+        self.dragged.set(rows.to_vec());
+        self.dragged_ids.set(tracks.clone());
         let payload = crate::dnd::encode_track_ids(&tracks);
-        let _ = self.list.begin_drag(&payload, DropEffects::COPY, None);
+        let effect = self.list.begin_drag(&payload, DropEffects::COPY, None);
+        // A cancelled or rejected drag leaves nothing to reorder.
+        if matches!(effect, Ok(DropEffect::None) | Err(_)) {
+            self.clear_drag();
+        }
     }
 
-    /// The rows the current drag started from.
-    pub fn dragged_rows(&self) -> Vec<usize> {
-        self.dragged.replace(Vec::new())
+    /// The rows the drop carrying `payload` started from: only when the drag
+    /// was this table's own (its payload matches the ids recorded by
+    /// [`TrackView::begin_drag`]), else empty. Consumes the recorded drag.
+    pub fn dragged_rows(&self, payload: Option<&[u8]>) -> Vec<usize> {
+        let ids = self.dragged_ids.take();
+        let rows = self.dragged.take();
+        let own = payload.and_then(crate::dnd::decode_track_ids).as_deref() == Some(ids.as_slice());
+        if own { rows } else { Vec::new() }
+    }
+
+    fn clear_drag(&self) {
+        self.dragged.set(Vec::new());
+        self.dragged_ids.set(Vec::new());
     }
 
     /// Sets whether a drop may reorder the table (false while sorted).

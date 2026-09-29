@@ -1680,7 +1680,7 @@ impl App for Win32App {
                 if self.shell.state.view != View::Playlist {
                     return;
                 }
-                let rows = self.playlist.dragged_rows();
+                let rows = self.playlist.dragged_rows(drop.payload.as_deref());
                 if rows.is_empty() || !self.shell.state.playlist.can_reorder() {
                     return;
                 }
