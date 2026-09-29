@@ -1725,6 +1725,9 @@ impl App for Win32App {
                 ui.popup(&menu, ui.cursor_position());
             }
             Msg::NavigatorDropTracks { playlist, tracks } => {
+                // The navigator consumed the drop: a reorder recorded by the
+                // playlist table must not survive into a later drag.
+                self.playlist.end_drag();
                 self.shell.dispatch(Command::AddToPlaylist {
                     id: playlist,
                     tracks,

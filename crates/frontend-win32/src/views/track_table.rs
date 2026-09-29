@@ -327,7 +327,7 @@ impl TrackView {
         let effect = self.list.begin_drag(&payload, DropEffects::COPY, None);
         // A cancelled or rejected drag leaves nothing to reorder.
         if matches!(effect, Ok(DropEffect::None) | Err(_)) {
-            self.clear_drag();
+            self.end_drag();
         }
     }
 
@@ -341,7 +341,8 @@ impl TrackView {
         if own { rows } else { Vec::new() }
     }
 
-    fn clear_drag(&self) {
+    /// Forgets the recorded drag, e.g. once another target consumed the drop.
+    pub fn end_drag(&self) {
         self.dragged.set(Vec::new());
         self.dragged_ids.set(Vec::new());
     }

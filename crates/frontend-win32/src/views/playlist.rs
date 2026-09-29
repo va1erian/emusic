@@ -83,6 +83,11 @@ impl PlaylistView {
             .set_rows(&resolved.tracks, state.playlist.table.sort);
     }
 
+    /// Forgets the recorded reorder drag after another target took the drop.
+    pub fn end_drag(&self) {
+        self.table.end_drag();
+    }
+
     /// The rows the reorder drag carrying `payload` started from; empty for
     /// a drag that did not start in this table.
     pub fn dragged_rows(&self, payload: Option<&[u8]>) -> Vec<usize> {
