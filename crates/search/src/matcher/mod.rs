@@ -10,6 +10,9 @@ use std::hash::{BuildHasherDefault, Hasher};
 
 use emusic_core::{Track, TrackId};
 
+/// Golden ratio constant `2^64 / φ` used for 64-bit Fibonacci/multiplicative hashing.
+const GOLDEN_RATIO_U64: u64 = 0x9e37_79b9_7f4a_7c15;
+
 /// Fast 64-bit integer hasher for `TrackId` keys in the search index.
 #[derive(Default)]
 pub struct TrackIdHasher(u64);
@@ -22,18 +25,18 @@ impl Hasher for TrackIdHasher {
 
     fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
-            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            self.0 = (self.0 ^ u64::from(byte)).wrapping_mul(GOLDEN_RATIO_U64);
         }
     }
 
     #[inline]
     fn write_i64(&mut self, i: i64) {
-        self.0 = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        self.0 = (i as u64).wrapping_mul(GOLDEN_RATIO_U64);
     }
 
     #[inline]
     fn write_u64(&mut self, i: u64) {
-        self.0 = i.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        self.0 = i.wrapping_mul(GOLDEN_RATIO_U64);
     }
 }
 
