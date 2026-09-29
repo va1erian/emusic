@@ -15,7 +15,7 @@ use win32ui::prelude::*;
 use win32ui::{CheckBox, Control, Layout, Menu, Node, TreeModel, TreeView, column, dip, row};
 
 use crate::app::Msg;
-use crate::views::track_table::TrackView;
+use crate::views::track_table::{TableMode, TrackView};
 
 /// The directory tree panel's width, in design units.
 const TREE_WIDTH: f32 = 260.0;
@@ -128,7 +128,7 @@ impl FoldersView {
             .on_context(|path| Some(Msg::FoldersContext(path.clone())));
         let include = CheckBox::new(ui, "Include subfolders")?
             .on_toggle(|on| Some(Msg::FoldersSubfolders(on)));
-        let table = TrackView::new(ui)?;
+        let table = TrackView::new(ui, TableMode::Plain)?;
         Ok(Self {
             tree,
             include,
@@ -229,8 +229,18 @@ impl FoldersView {
         self.table.context_track()
     }
 
-    pub fn context_menu(&self) -> &Menu<Msg> {
-        self.table.context_menu()
+    pub fn context_menu(&self, playlists: &[emusic_ui::library_api::PlaylistInfo]) -> Menu<Msg> {
+        crate::views::track_menu::track_context_menu(playlists, false)
+    }
+
+    /// Starts dragging the table's `rows` (#476).
+    pub fn begin_drag(&self, rows: &[usize]) {
+        self.table.begin_drag(rows);
+    }
+
+    /// Queues adding the context row's selection to playlist `id` (#476).
+    pub fn add_to_playlist(&self, id: u64) -> Option<emusic_ui::state::Command> {
+        self.table.add_to_playlist(id)
     }
 
     /// The context menu shown on a tree node: a scoped shuffle of that folder.

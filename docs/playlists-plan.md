@@ -1,6 +1,6 @@
 # Playlist support: plan
 
-Status: partially implemented. Phases 1 and 2 (storage, m3u export, the `emusic-ui` layer) landed in #474; the frontends, drag and drop and m3u import are still to do.
+Status: implemented for the native Win32 frontend. Phases 1 and 2 (storage, m3u export, the `emusic-ui` layer) landed in #474; the win32ui drag-and-drop prerequisites in va1erian/win32ui#193; the `frontend-win32` navigator section, playlist view, context menus, "Add to playlist" submenu, play/shuffle, export and drag-and-drop in #476. The portable frontend (phase 5) is still to do.
 
 ## Requirements
 

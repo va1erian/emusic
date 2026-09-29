@@ -36,6 +36,7 @@ use crate::backend::smtc::Smtc;
 use crate::backend::taskbar::TaskbarPreview;
 use crate::backend::thumbbar::ThumbBar;
 use crate::dialogs::database_info::{self, DatabaseInfoChoice};
+use crate::dialogs::name_prompt;
 use crate::dialogs::properties;
 use crate::dialogs::tag_editor;
 use crate::menu;
@@ -51,6 +52,7 @@ use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
 use crate::views::now_playing::{CentralNowPlayingView, NowPlayingView, SummaryEvent};
 use crate::views::placeholder::Placeholder;
+use crate::views::playlist::PlaylistView;
 use crate::views::preset_browser::{self, PresetBrowserView};
 use crate::views::projectm::{
     GraceTimer, PresetFiles, PresetRoots, PresetScanner, ProjectMEvent, VizWindow,
@@ -72,6 +74,16 @@ const TABLE_MIN_HEIGHT: f32 = 160.0;
 /// DIP (#342).
 const MIDDLE_MIN_WIDTH: f32 = 320.0;
 
+/// A playlist action from the navigator's row context menu (#476).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaylistAction {
+    Play,
+    Shuffle,
+    Rename,
+    Export,
+    Delete,
+}
+
 /// Everything the window can ask the app to do.
 pub enum Msg {
     /// A background worker (search, IPC, image decode) woke the UI.
@@ -92,6 +104,35 @@ pub enum Msg {
     ContextRow(usize),
     /// Run a track-table context-menu action.
     ContextAction(ContextAction),
+    /// A track table started a drag of these rows (#476).
+    TrackBeginDrag(Vec<usize>),
+    /// A track table accepted a drop (#476; reorder inside the Playlist view).
+    TrackDrop(win32ui::ListDrop),
+    /// Add the context row's selection to playlist with this id (#476).
+    AddSelectionToPlaylist(u64),
+    /// Remove the selected entries from the shown playlist (#476).
+    PlaylistRemoveSelected,
+    /// Show the playlist with this id (navigator playlist row click, #476).
+    NavigatePlaylist(u64),
+    /// The navigator's playlist row was right-clicked (#476).
+    NavigatorPlaylistContext(u64),
+    /// The navigator's `+` asks for a new playlist name (#476).
+    NavigatorAddPlaylist,
+    /// F2 on a navigator playlist row: rename it (#476).
+    NavigatorRenamePlaylist(u64),
+    /// Delete on a navigator playlist row: delete it (#476).
+    NavigatorDeletePlaylist(u64),
+    /// Tracks were dropped onto a navigator playlist row (#476).
+    NavigatorDropTracks { playlist: u64, tracks: Vec<u64> },
+    /// A playlist header button was clicked: play it, shuffled or in order
+    /// (#476).
+    PlaylistPlay(bool),
+    /// The shown playlist's Export button was clicked (#476).
+    PlaylistExport,
+    /// An action from the navigator's playlist context menu (#476).
+    PlaylistMenu { id: u64, action: PlaylistAction },
+    /// A message with no effect, for disabled menu placeholders (#476).
+    Noop,
     /// The Most Played view's time-window selector changed.
     MostPlayed(StatsWindow),
     /// Clear the whole play history, after the confirmation dialog.
@@ -197,6 +238,7 @@ pub struct Win32App {
     preset_browser: PresetBrowserView,
     settings: SettingsView,
     starred: StarredView,
+    playlist: PlaylistView,
     right_panel: NowPlayingView,
     /// The `View::NowPlaying` central view (#247): the same summary and
     /// queue widgets as `right_panel`, laid out full width. The right panel
@@ -314,6 +356,7 @@ impl Win32App {
         let settings =
             SettingsView::new(ui, config.visualizer_enabled).expect("create settings view");
         let starred = StarredView::new(ui).expect("create starred view");
+        let playlist = PlaylistView::new(ui).expect("create playlist view");
         let status = StatusBarView::new(ui).expect("create status bar");
         // The top bar needs an extended title bar (see `main`) and DirectWrite;
         // without them the app just runs without it.
@@ -358,6 +401,7 @@ impl Win32App {
                 | View::History
                 | View::NowPlaying
                 | View::Visualization
+                | View::Playlist
         ));
         browser.set_visible(browser_visible);
         music.set_visible(view == View::Music);
@@ -368,6 +412,7 @@ impl Win32App {
         most_played.set_visible(view == View::MostPlayed);
         settings.set_visible(view == View::Settings);
         starred.set_visible(view == View::Starred);
+        playlist.set_visible(view == View::Playlist);
         history.set_visible(view == View::History);
         preset_browser.set_visible(view == View::Visualization);
         now_playing_central.set_visible(view == View::NowPlaying);
@@ -411,6 +456,7 @@ impl Win32App {
             preset_browser,
             settings,
             starred,
+            playlist,
             right_panel,
             now_playing_central,
             status,
@@ -472,9 +518,7 @@ impl Win32App {
             View::MostPlayed => self.most_played.layout().fill(1),
             View::Folders => self.folders.layout().fill(1),
             View::Starred => self.starred.layout().fill(1),
-            // No playlist view yet (#473 follow-up): nothing navigates here, and
-            // a restored Playlist view shows the central placeholder.
-            View::Playlist => self.central.fill(1),
+            View::Playlist => self.playlist.layout().fill(1),
             View::History => self.history.layout().fill(1),
             View::Visualization => self.preset_browser.layout().fill(1),
             View::NowPlaying => self.now_playing_central.layout().fill(1),
@@ -645,6 +689,7 @@ impl Win32App {
                     | View::Settings
                     | View::Starred
                     | View::NowPlaying
+                    | View::Playlist
                     | View::Visualization
             ));
             self.music.set_visible(view == View::Music);
@@ -655,6 +700,7 @@ impl Win32App {
             self.most_played.set_visible(view == View::MostPlayed);
             self.settings.set_visible(view == View::Settings);
             self.starred.set_visible(view == View::Starred);
+            self.playlist.set_visible(view == View::Playlist);
             self.history.set_visible(view == View::History);
             self.preset_browser.set_visible(view == View::Visualization);
             self.now_playing_central
@@ -713,6 +759,19 @@ impl Win32App {
         if view == View::Artists {
             self.artists
                 .sync(&mut self.shell.state, self.shell.library.as_ref());
+        }
+
+        // The Playlist view resolves its entries against the library each
+        // frame; the table only rebuilds when the model revision changed.
+        if view == View::Playlist
+            && let Some(id) = self.shell.state.selected_playlist
+        {
+            self.playlist.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                playing_id,
+                id,
+            );
         }
 
         if view == View::Genres {
@@ -901,6 +960,7 @@ impl Win32App {
         self.history.apply_appearance();
         self.preset_browser.apply_appearance();
         self.starred.apply_appearance();
+        self.playlist.apply_appearance();
         self.browser.apply_appearance();
         self.right_panel.apply_appearance();
         self.now_playing_central.apply_appearance();
@@ -1252,6 +1312,48 @@ impl Win32App {
         self.shell.state.music.refresh(&tracks, &self.shell.search);
     }
 
+    /// Prompts for a name and creates a playlist (#476).
+    fn create_playlist(&mut self, ui: &Ui<Msg>) {
+        let initial =
+            emusic_ui::panels::navigator::new_playlist_name(self.shell.library.playlists());
+        if let Some(name) = name_prompt::show(ui, "New playlist", &initial) {
+            self.shell.dispatch(Command::CreatePlaylist(name));
+        }
+    }
+
+    /// Prompts for a new name and renames playlist `id` (#476).
+    fn rename_playlist(&mut self, ui: &Ui<Msg>, id: u64) {
+        let current = self
+            .shell
+            .library
+            .playlists()
+            .iter()
+            .find(|playlist| playlist.id == id)
+            .map(|playlist| playlist.name.clone());
+        let Some(current) = current else {
+            return;
+        };
+        if let Some(name) = name_prompt::show(ui, "Rename playlist", &current) {
+            self.shell.dispatch(Command::RenamePlaylist { id, name });
+        }
+    }
+
+    /// Runs the "Add to playlist" context action on the current view's table
+    /// (#476).
+    fn add_selection_to_playlist(&mut self, id: u64) {
+        let command = match self.shell.state.view {
+            View::Music => self.music.add_to_playlist(id),
+            View::Folders => self.folders.add_to_playlist(id),
+            View::Starred => self.starred.add_to_playlist(id),
+            View::MostPlayed => self.most_played.add_to_playlist(id),
+            View::Playlist => self.playlist.add_to_playlist(id),
+            _ => None,
+        };
+        if let Some(command) = command {
+            self.shell.dispatch(command);
+        }
+    }
+
     /// Keeps a single repeating timer in step with the shell's `next_wake` and
     /// the projectM stop grace period, so a stopped instance is freed even
     /// while the shell is otherwise idle (#305).
@@ -1305,6 +1407,7 @@ impl App for Win32App {
                     View::Starred => self.starred.activate(row),
                     View::MostPlayed => self.most_played.activate(row),
                     View::History => self.history.activate(row),
+                    View::Playlist => self.playlist.activate(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -1318,6 +1421,7 @@ impl App for Win32App {
                     View::Folders => self.folders.toggle_star(row),
                     View::Starred => self.starred.toggle_star(row),
                     View::MostPlayed => self.most_played.toggle_star(row),
+                    View::Playlist => self.playlist.toggle_star(row),
                     _ => None,
                 };
                 if let Some(command) = command {
@@ -1353,19 +1457,31 @@ impl App for Win32App {
                         self.most_played
                             .resort(&self.shell.state, self.shell.library.as_ref());
                     }
+                    View::Playlist => {
+                        let Some(playlist) = self.shell.state.selected_playlist else {
+                            return;
+                        };
+                        self.shell.state.playlist.table.sort.toggle(id);
+                        self.playlist.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            playlist,
+                        );
+                    }
                     _ => return,
                 }
                 self.tick(ui);
             }
             Msg::ContextRow(row) => {
+                let playlists = self.shell.library.playlists().to_vec();
                 let menu = match self.shell.state.view {
                     View::Music => {
                         self.music.set_context_row(row);
-                        self.music.context_menu().clone()
+                        self.music.context_menu(&playlists)
                     }
                     View::Folders => {
                         self.folders.set_context_row(row);
-                        self.folders.context_menu().clone()
+                        self.folders.context_menu(&playlists)
                     }
                     View::Artists => {
                         self.artists.set_context_row(row);
@@ -1377,11 +1493,15 @@ impl App for Win32App {
                     }
                     View::Starred => {
                         self.starred.set_context_row(row);
-                        self.starred.context_menu().clone()
+                        self.starred.context_menu(&playlists)
                     }
                     View::MostPlayed => {
                         self.most_played.set_context_row(row);
-                        self.most_played.context_menu().clone()
+                        self.most_played.context_menu(&playlists)
+                    }
+                    View::Playlist => {
+                        self.playlist.set_context_row(row);
+                        self.playlist.context_menu(&playlists)
                     }
                     View::History => {
                         if !self.history.is_entry_row(row) {
@@ -1430,6 +1550,7 @@ impl App for Win32App {
                         View::Folders => self.folders.context_track(),
                         View::Starred => self.starred.context_track(),
                         View::MostPlayed => self.most_played.context_track(),
+                        View::Playlist => self.playlist.context_track(),
                         View::History => self.history.context_track_id().and_then(|id| {
                             self.shell
                                 .library
@@ -1450,6 +1571,7 @@ impl App for Win32App {
                     View::Folders => self.folders.run_context(action, ui.hwnd()),
                     View::Starred => self.starred.run_context(action, ui.hwnd()),
                     View::MostPlayed => self.most_played.run_context(action, ui.hwnd()),
+                    View::Playlist => self.playlist.run_context(action, ui.hwnd()),
                     View::History => self.history.run_context(action),
                     _ => None,
                 };
@@ -1537,6 +1659,111 @@ impl App for Win32App {
                 self.shell.dispatch(Command::SetView(view));
                 self.tick(ui);
             }
+            Msg::NavigatePlaylist(id) => {
+                self.shell.dispatch(Command::SelectPlaylist(id));
+                self.tick(ui);
+            }
+            Msg::TrackBeginDrag(rows) => match self.shell.state.view {
+                View::Music => self.music.begin_drag(&rows),
+                View::Folders => self.folders.begin_drag(&rows),
+                View::Starred => self.starred.begin_drag(&rows),
+                View::MostPlayed => self.most_played.begin_drag(&rows),
+                View::Playlist => self.playlist.begin_drag(&rows),
+                _ => {}
+            },
+            Msg::TrackDrop(drop) => {
+                // Reorder only inside the Playlist view, and only in playlist
+                // order; a drag that started elsewhere leaves no rows behind.
+                let Some(id) = self.shell.state.selected_playlist else {
+                    return;
+                };
+                if self.shell.state.view != View::Playlist {
+                    return;
+                }
+                let rows = self.playlist.dragged_rows();
+                if rows.is_empty() || !self.shell.state.playlist.can_reorder() {
+                    return;
+                }
+                let all = self.shell.library.playlist_items(id).to_vec();
+                let mut out = Commands::new();
+                self.shell
+                    .state
+                    .playlist
+                    .move_rows(id, &rows, drop.index, &all, &mut out);
+                for command in out.into_vec() {
+                    self.shell.dispatch(command);
+                }
+                self.tick(ui);
+            }
+            Msg::AddSelectionToPlaylist(id) => {
+                self.add_selection_to_playlist(id);
+                self.tick(ui);
+            }
+            Msg::PlaylistRemoveSelected => {
+                let Some(id) = self.shell.state.selected_playlist else {
+                    return;
+                };
+                if let Some(command) = self.playlist.remove_selected(&self.shell.state, id) {
+                    self.shell.dispatch(command);
+                    self.tick(ui);
+                }
+            }
+            Msg::NavigatorAddPlaylist => {
+                self.create_playlist(ui);
+                self.tick(ui);
+            }
+            Msg::NavigatorRenamePlaylist(id) => {
+                self.rename_playlist(ui, id);
+                self.tick(ui);
+            }
+            Msg::NavigatorDeletePlaylist(id) => {
+                self.shell.dispatch(Command::DeletePlaylist(id));
+                self.tick(ui);
+            }
+            Msg::NavigatorPlaylistContext(id) => {
+                let menu = playlist_context_menu(id);
+                ui.popup(&menu, ui.cursor_position());
+            }
+            Msg::NavigatorDropTracks { playlist, tracks } => {
+                self.shell.dispatch(Command::AddToPlaylist {
+                    id: playlist,
+                    tracks,
+                });
+                self.tick(ui);
+            }
+            Msg::PlaylistPlay(shuffle) => {
+                if let Some(id) = self.shell.state.selected_playlist {
+                    self.shell.dispatch(Command::PlayPlaylist { id, shuffle });
+                    self.tick(ui);
+                }
+            }
+            Msg::PlaylistExport => {
+                if let Some(id) = self.shell.state.selected_playlist {
+                    self.shell.dispatch(Command::ExportPlaylistAs(id));
+                    self.tick(ui);
+                }
+            }
+            Msg::PlaylistMenu { id, action } => {
+                match action {
+                    PlaylistAction::Play => {
+                        self.shell
+                            .dispatch(Command::PlayPlaylist { id, shuffle: false });
+                    }
+                    PlaylistAction::Shuffle => {
+                        self.shell
+                            .dispatch(Command::PlayPlaylist { id, shuffle: true });
+                    }
+                    PlaylistAction::Rename => self.rename_playlist(ui, id),
+                    PlaylistAction::Export => {
+                        self.shell.dispatch(Command::ExportPlaylistAs(id));
+                    }
+                    PlaylistAction::Delete => {
+                        self.shell.dispatch(Command::DeletePlaylist(id));
+                    }
+                }
+                self.tick(ui);
+            }
+            Msg::Noop => {}
             Msg::NavigatorContext(view) => {
                 if view != View::Music {
                     return;
@@ -1852,6 +2079,34 @@ fn viz_menu_ticks(projectm: &emusic_ui::state::ProjectMState) -> (bool, bool, bo
         !layout.fullscreen && layout.dock == VizDock::Window,
         layout.fullscreen,
     )
+}
+
+/// The context menu of a navigator playlist row (#476): play, shuffle,
+/// rename, export and delete.
+fn playlist_context_menu(id: u64) -> Menu<Msg> {
+    Menu::new()
+        .item("Play", None, move || Msg::PlaylistMenu {
+            id,
+            action: PlaylistAction::Play,
+        })
+        .item("Shuffle", None, move || Msg::PlaylistMenu {
+            id,
+            action: PlaylistAction::Shuffle,
+        })
+        .separator()
+        .item("Rename…", None, move || Msg::PlaylistMenu {
+            id,
+            action: PlaylistAction::Rename,
+        })
+        .item("Export as M3U…", None, move || Msg::PlaylistMenu {
+            id,
+            action: PlaylistAction::Export,
+        })
+        .separator()
+        .item("Delete", None, move || Msg::PlaylistMenu {
+            id,
+            action: PlaylistAction::Delete,
+        })
 }
 
 /// The library id of the player's current track, matched by path.

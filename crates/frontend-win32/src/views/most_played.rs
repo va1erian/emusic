@@ -16,7 +16,7 @@ use win32ui::prelude::*;
 use win32ui::{Control, Label, Menu, Tabs, column, dip};
 
 use crate::app::Msg;
-use crate::views::track_table::TrackView;
+use crate::views::track_table::{TableMode, TrackView};
 
 /// Height of the window-tab band, in design units.
 const HEADER_HEIGHT: f32 = 30.0;
@@ -43,7 +43,7 @@ impl MostPlayedView {
                 Rect::default(),
                 "No completed plays in this window yet.",
             )?,
-            table: TrackView::new(ui)?,
+            table: TrackView::new(ui, TableMode::Plain)?,
             window: Cell::new(StatsWindow::AllTime),
             applied: Cell::new((None, u64::MAX)),
         })
@@ -117,8 +117,18 @@ impl MostPlayedView {
     }
 
     /// The track table's context menu.
-    pub fn context_menu(&self) -> &Menu<Msg> {
-        self.table.context_menu()
+    pub fn context_menu(&self, playlists: &[emusic_ui::library_api::PlaylistInfo]) -> Menu<Msg> {
+        crate::views::track_menu::track_context_menu(playlists, false)
+    }
+
+    /// Starts dragging the table's `rows` (#476).
+    pub fn begin_drag(&self, rows: &[usize]) {
+        self.table.begin_drag(rows);
+    }
+
+    /// Queues adding the context row's selection to playlist `id` (#476).
+    pub fn add_to_playlist(&self, id: u64) -> Option<emusic_ui::state::Command> {
+        self.table.add_to_playlist(id)
     }
 
     /// Shows or hides the whole view (its tabs, count label and table).

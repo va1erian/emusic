@@ -57,7 +57,8 @@ pub struct Backends {
 /// (#284).
 pub fn build(mock: bool, waker: WakerHandle) -> Backends {
     if mock {
-        let library = mock::MockLibrary::new();
+        let mut library = mock::MockLibrary::new();
+        library.seed_demo_playlists();
         // A fixed, arbitrary index into the deterministically seeded mock
         // library, just so "now playing" points at a real track (and thus
         // highlights a real row in the track table) instead of made-up

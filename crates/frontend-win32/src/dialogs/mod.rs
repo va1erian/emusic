@@ -2,5 +2,6 @@
 //! and hand a result back to the main window.
 
 pub mod database_info;
+pub mod name_prompt;
 pub mod properties;
 pub mod tag_editor;
