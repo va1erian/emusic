@@ -128,7 +128,7 @@ impl MostPlayedView {
         );
         if self.applied.get() != applied {
             self.applied.set(applied);
-            self.count.set_text(&count_label(&visible));
+            self.count.set_text(&count_label(&tracks, &visible));
             self.table.set_rows(&visible, state.most_played.table.sort);
         }
         self.table.sync_playing(playing_id);
@@ -172,12 +172,15 @@ fn window_index(window: StatsWindow) -> usize {
         .unwrap_or(0)
 }
 
-/// The label above the table: the number of ranked tracks, or the empty hint.
-fn count_label(tracks: &[&TrackInfo]) -> String {
+/// The label above the table: the number of visible ranked tracks, the empty
+/// hint when nothing was ranked, or a search hint when the filter hides them all.
+fn count_label(tracks: &[&TrackInfo], visible: &[&TrackInfo]) -> String {
     if tracks.is_empty() {
         "No completed plays in this window yet.".to_string()
+    } else if visible.is_empty() {
+        "No ranked tracks match the search.".to_string()
     } else {
-        format!("Top {} tracks", tracks.len())
+        format!("Top {} tracks", visible.len())
     }
 }
 
@@ -187,9 +190,16 @@ mod tests {
 
     #[test]
     fn count_label_pluralizes_the_ranking_size() {
-        assert_eq!(count_label(&[]), "No completed plays in this window yet.");
+        assert_eq!(
+            count_label(&[], &[]),
+            "No completed plays in this window yet."
+        );
         let track = TrackInfo::default();
-        assert_eq!(count_label(&[&track]), "Top 1 tracks");
+        assert_eq!(count_label(&[&track], &[&track]), "Top 1 tracks");
+        assert_eq!(
+            count_label(&[&track], &[]),
+            "No ranked tracks match the search."
+        );
     }
 
     #[test]
