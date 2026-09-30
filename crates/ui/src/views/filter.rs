@@ -13,7 +13,7 @@ use crate::search::SearchEngine;
 /// Whether the track `track_id` survives `search`. No search, or an inactive
 /// query, keeps every track.
 pub fn track_kept(search: Option<&SearchEngine>, track_id: u64) -> bool {
-    search.is_none_or(|search| search.is_match(track_id))
+    search.is_none_or(|search| !search.is_active() || search.is_match(track_id))
 }
 
 /// Whether the free-text `name` (artist, album, genre, ...) matches `search`.
