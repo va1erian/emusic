@@ -6,7 +6,13 @@
 /// ASCII representations before lowercasing.
 #[must_use]
 pub fn normalize_text(input: &str) -> String {
-    deunicode::deunicode(input).to_lowercase()
+    // Optimization: Fast path for ASCII strings to avoid `deunicode` lookup tables
+    // and double string allocations (`deunicode` -> `to_lowercase`).
+    if input.is_ascii() {
+        input.to_ascii_lowercase()
+    } else {
+        deunicode::deunicode(input).to_lowercase()
+    }
 }
 
 #[cfg(test)]

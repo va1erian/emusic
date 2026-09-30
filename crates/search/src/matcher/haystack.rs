@@ -120,21 +120,26 @@ struct Builder {
 impl Builder {
     fn new() -> Self {
         Self {
-            text: String::new(),
+            // Pre-reserve capacity for typical total track metadata length to avoid reallocations.
+            text: String::with_capacity(256),
         }
     }
 
     fn push(&mut self, value: Option<&str>) -> Span {
         let start = self.text.len();
         if let Some(value) = value {
-            for ch in normalize_text(value).chars() {
-                // Sanitize the field separator so offsets stay valid even if
-                // metadata happens to contain a control character.
-                if ch == FIELD_SEP {
-                    self.text.push(' ');
-                } else {
-                    self.text.push(ch);
+            let norm = normalize_text(value);
+            // Fast path: bulk memcpy when the normalized string contains no control separator.
+            if norm.contains(FIELD_SEP) {
+                for ch in norm.chars() {
+                    if ch == FIELD_SEP {
+                        self.text.push(' ');
+                    } else {
+                        self.text.push(ch);
+                    }
                 }
+            } else {
+                self.text.push_str(&norm);
             }
         }
         let end = self.text.len();
