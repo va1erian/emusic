@@ -33,8 +33,8 @@ pub struct MostPlayedView {
     tabs: Tabs<Msg>,
     count: Label<Msg>,
     table: TrackView,
-    /// The window and table revision the controls were last built from.
-    applied: Cell<(Option<StatsWindow>, u64)>,
+    /// The window, table and search revision the controls were last built from.
+    applied: Cell<(Option<StatsWindow>, u64, u64)>,
 }
 
 impl MostPlayedView {
@@ -57,7 +57,7 @@ impl MostPlayedView {
             tabs,
             count,
             table: TrackView::new(ui),
-            applied: Cell::new((None, u64::MAX)),
+            applied: Cell::new((None, u64::MAX, u64::MAX)),
         }
     }
 
@@ -125,6 +125,7 @@ impl MostPlayedView {
         let applied = (
             Some(state.most_played.window),
             state.most_played.table.revision(),
+            search.revision(),
         );
         if self.applied.get() != applied {
             self.applied.set(applied);

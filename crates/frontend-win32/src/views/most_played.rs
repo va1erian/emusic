@@ -31,8 +31,8 @@ pub struct MostPlayedView {
     /// The window the tab strip was last synced to; it decides the tab the
     /// strip opens on when the view is shown again.
     window: Cell<StatsWindow>,
-    /// The window and table revision the controls were last built from.
-    applied: Cell<(Option<StatsWindow>, u64)>,
+    /// The window, table and search revision the controls were last built from.
+    applied: Cell<(Option<StatsWindow>, u64, u64)>,
 }
 
 impl MostPlayedView {
@@ -46,7 +46,7 @@ impl MostPlayedView {
             )?,
             table: TrackView::new(ui, TableMode::Plain)?,
             window: Cell::new(StatsWindow::AllTime),
-            applied: Cell::new((None, u64::MAX)),
+            applied: Cell::new((None, u64::MAX, u64::MAX)),
         })
     }
 
@@ -73,6 +73,7 @@ impl MostPlayedView {
         let applied = (
             Some(state.most_played.window),
             state.most_played.table.revision(),
+            search.revision(),
         );
         if self.applied.get() != applied {
             self.applied.set(applied);
