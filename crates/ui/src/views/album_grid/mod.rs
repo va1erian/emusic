@@ -8,8 +8,12 @@
 pub mod catalog;
 pub mod models;
 
-use crate::library_api::AlbumInfo;
+use std::collections::HashSet;
+
+use crate::library_api::{AlbumInfo, LibraryDataSource};
+use crate::search::SearchEngine;
 use crate::state::Command;
+use crate::views::filter;
 use crate::views::track_table::{TrackTable, TrackTableMsg};
 use crate::views::{Commands, Ctx};
 
@@ -74,6 +78,8 @@ pub struct AlbumGrid {
     source_revision: Option<u64>,
     /// The sort the album list was last ordered by.
     source_sort: AlbumSort,
+    /// The search revision the album list was last filtered for.
+    source_search: u64,
     /// The selection the selected-track ids were resolved for.
     source_selected: Option<AlbumKey>,
     /// Bumped when the album list (its content or order) changes, so a
@@ -95,6 +101,7 @@ impl Default for AlbumGrid {
             selected_track_ids: Vec::new(),
             source_revision: None,
             source_sort: AlbumSort::default(),
+            source_search: 0,
             source_selected: None,
             list_revision: 0,
             selection_revision: 0,
@@ -131,12 +138,23 @@ impl AlbumGrid {
         };
         let sort_changed = self.source_sort != self.sort;
         let selection_changed = self.source_selected != self.selected;
+        let search_revision = cx.search_revision();
+        let search_changed = self.source_search != search_revision;
 
-        if library_changed || sort_changed {
+        if library_changed || sort_changed || search_changed {
             self.source_revision = revision;
             self.source_sort = self.sort;
+            self.source_search = search_revision;
             let meta = catalog::album_meta(library);
             let mut albums: Vec<AlbumInfo> = library.albums().to_vec();
+            if let Some(search) = cx.search.filter(|search| search.is_active()) {
+                let matched = matching_album_tracks(library, search);
+                albums.retain(|album| {
+                    filter::name_kept(Some(search), &album.name)
+                        || filter::name_kept(Some(search), &album.artist)
+                        || album_has_matching_track(&matched, album)
+                });
+            }
             albums.sort_by(|a, b| catalog::compare(a, b, self.sort, &meta));
             if albums != self.albums {
                 self.albums = albums;
@@ -145,8 +163,10 @@ impl AlbumGrid {
         }
 
         // The selected album's tracks, in disc/track order, so the (shared)
-        // track table can be built from them and played as a whole.
-        if library_changed || selection_changed {
+        // track table can be built from them and played as a whole. Resolved
+        // against the filtered album list, so an album hidden by the search
+        // shows no tracks.
+        if library_changed || selection_changed || search_changed {
             self.source_selected = self.selected.clone();
             let selected_ids = self
                 .selected_key()
@@ -293,6 +313,28 @@ impl AlbumGrid {
 /// Re-exported for callers that need the album's tracks outside the model
 /// (e.g. the now-playing panel's links).
 pub use catalog::{album_meta, album_tracks};
+
+/// The `(album, artist)` tags of the tracks matching `search`, so an album is
+/// kept when any of its tracks match (including tracks with an untagged
+/// artist, which [`catalog::belongs_to`] treats as belonging to the album).
+fn matching_album_tracks<'a>(
+    library: &'a dyn LibraryDataSource,
+    search: &SearchEngine,
+) -> HashSet<(&'a str, &'a str)> {
+    library
+        .tracks()
+        .iter()
+        .filter(|track| search.is_match(track.id))
+        .map(|track| (track.album.as_str(), track.artist.as_str()))
+        .collect()
+}
+
+/// Whether `album` has a matching track among the `(album, artist)` tags,
+/// matching the album's own artist or an untagged artist.
+fn album_has_matching_track(matched: &HashSet<(&str, &str)>, album: &AlbumInfo) -> bool {
+    matched.contains(&(album.name.as_str(), album.artist.as_str()))
+        || matched.contains(&(album.name.as_str(), ""))
+}
 
 #[cfg(test)]
 mod tests;

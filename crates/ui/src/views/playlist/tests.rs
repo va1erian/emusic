@@ -1,5 +1,6 @@
 use super::*;
 use crate::mock::MockLibrary;
+use crate::search::SearchEngine;
 use crate::views::track_table::selection::ClickModifiers;
 
 /// A mock library with a playlist holding its first three tracks plus a
@@ -14,8 +15,34 @@ fn library_with_playlist() -> (MockLibrary, u64, [u64; 3]) {
 
 fn refreshed(library: &MockLibrary, id: u64, view: &mut PlaylistView) -> Vec<u64> {
     let resolved = resolve(library, id);
-    view.refresh(&resolved.items, &Ctx::new(&resolved.tracks, None));
-    resolved.tracks.iter().map(|t| t.id).collect()
+    let visible = view.refresh(&resolved.items, &resolved.tracks, None, None);
+    visible.iter().map(|t| t.id).collect()
+}
+
+/// Ticks `engine` until it stops being pending, polling like the UI does.
+fn settle(engine: &mut SearchEngine, tracks: &[TrackInfo], query: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        engine.tick(tracks, query);
+        if !engine.is_pending() || std::time::Instant::now() > deadline {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// The file name of track `id`, unique enough to isolate it in a search.
+fn filename_of(library: &MockLibrary, id: u64) -> String {
+    library
+        .tracks()
+        .iter()
+        .find(|track| track.id == id)
+        .unwrap()
+        .path
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_string()
 }
 
 #[test]
@@ -151,4 +178,84 @@ fn move_rows_translates_the_target_past_hidden_entries() {
     };
     assert_eq!(to(out.into_vec()), 4);
     assert_eq!(to(end.into_vec()), 5, "past the last row appends");
+}
+
+#[test]
+fn search_keeps_only_matching_entries_and_restores_on_clear() {
+    let (library, id, [_a, b, _c]) = library_with_playlist();
+    let needle = filename_of(&library, b);
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, library.tracks(), &needle);
+
+    let resolved = resolve(&library, id);
+    let mut view = PlaylistView::default();
+    let visible = view.refresh(&resolved.items, &resolved.tracks, Some(&engine), None);
+    assert_eq!(visible.iter().map(|t| t.id).collect::<Vec<_>>(), vec![b]);
+    assert_eq!(view.count(), 1);
+    assert!(!view.can_reorder(), "reordering is disabled while filtered");
+
+    settle(&mut engine, library.tracks(), "");
+    let visible = view.refresh(&resolved.items, &resolved.tracks, Some(&engine), None);
+    assert_eq!(visible.len(), 4, "clearing the query restores every entry");
+    assert!(view.can_reorder());
+}
+
+#[test]
+fn remove_selected_under_a_filter_ignores_hidden_entries() {
+    let (library, id, [a, b, _c]) = library_with_playlist();
+    let needle = filename_of(&library, b);
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, library.tracks(), &needle);
+
+    let resolved = resolve(&library, id);
+    let order: Vec<u64> = resolved.tracks.iter().map(|t| t.id).collect();
+    let mut view = PlaylistView::default();
+    view.refresh(&resolved.items, &resolved.tracks, Some(&engine), None);
+
+    // A selection on the hidden track removes nothing.
+    view.table
+        .selection
+        .click(&order, 0, a, ClickModifiers::default());
+    let mut out = Commands::new();
+    view.remove_selected(id, &mut out);
+    assert!(out.into_vec().is_empty());
+
+    // A selection on the visible track removes exactly its entry.
+    view.table
+        .selection
+        .click(&order, 0, b, ClickModifiers::default());
+    let mut out = Commands::new();
+    view.remove_selected(id, &mut out);
+    let b_entry = resolved
+        .items
+        .iter()
+        .find(|item| item.track_id == b)
+        .map(|item| item.entry_id)
+        .unwrap();
+    assert_eq!(
+        out.into_vec(),
+        vec![Command::RemoveFromPlaylist {
+            id,
+            entries: vec![b_entry]
+        }]
+    );
+}
+
+#[test]
+fn reordering_is_disabled_while_filtered() {
+    let (library, id, [_a, b, _c]) = library_with_playlist();
+    let needle = filename_of(&library, b);
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, library.tracks(), &needle);
+
+    let resolved = resolve(&library, id);
+    let mut view = PlaylistView::default();
+    view.refresh(&resolved.items, &resolved.tracks, Some(&engine), None);
+
+    let mut out = Commands::new();
+    view.move_rows(id, &[0], 0, library.playlist_items(id), &mut out);
+    assert!(
+        out.into_vec().is_empty(),
+        "no reorder while a filter hides entries"
+    );
 }

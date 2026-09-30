@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 
 use crate::library_api::{LibraryDataSource, PlaylistItem, TrackInfo};
+use crate::search::SearchEngine;
 use crate::state::Command;
+use crate::views::filter;
 use crate::views::track_table::TrackTable;
 use crate::views::{Commands, Ctx};
 
@@ -52,24 +54,50 @@ pub struct PlaylistView {
     /// The track table (sort + selection). Reordering is only meaningful in
     /// playlist order, i.e. with no sort column active.
     pub table: TrackTable,
-    /// The entries the table shows, in playlist order.
+    /// The entries the table shows, in playlist order (filtered by the active
+    /// search).
     items: Vec<PlaylistItem>,
+    /// Whether the active search is narrowing the entries.
+    filtered: bool,
     /// Bumped whenever the entries change.
     revision: u64,
 }
 
 impl PlaylistView {
-    /// Adopts the resolved entries and refreshes the table. `cx.tracks` must
-    /// be the [`Resolved::tracks`] that go with `items`.
+    /// Adopts the resolved entries, keeping only those whose track matches the
+    /// active search, refreshes the table and returns the tracks to render, in
+    /// playlist order. `items` and `tracks` must be index-aligned (see
+    /// [`resolve`]).
     ///
     /// Bumps the revision when the entries changed; an unchanged playlist
     /// costs one comparison per frame.
-    pub fn refresh(&mut self, items: &[PlaylistItem], cx: &Ctx) {
-        if self.items != items {
-            self.items = items.to_vec();
+    pub fn refresh<'a>(
+        &mut self,
+        items: &[PlaylistItem],
+        tracks: &[&'a TrackInfo],
+        search: Option<&SearchEngine>,
+        playing_id: Option<u64>,
+    ) -> Vec<&'a TrackInfo> {
+        debug_assert_eq!(
+            items.len(),
+            tracks.len(),
+            "playlist items and tracks must be aligned"
+        );
+        let visible: Vec<(&PlaylistItem, &'a TrackInfo)> = items
+            .iter()
+            .zip(tracks.iter().copied())
+            .filter(|(item, _)| filter::track_kept(search, item.track_id))
+            .collect();
+        let visible_items: Vec<PlaylistItem> = visible.iter().map(|(item, _)| **item).collect();
+        let visible_tracks: Vec<&'a TrackInfo> = visible.iter().map(|(_, track)| *track).collect();
+
+        if self.items != visible_items {
+            self.items = visible_items;
             self.revision += 1;
         }
-        self.table.refresh(cx);
+        self.filtered = search.is_some_and(SearchEngine::is_active);
+        self.table.refresh(&Ctx::new(&visible_tracks, playing_id));
+        visible_tracks
     }
 
     /// The entries shown, in playlist order.
@@ -96,9 +124,11 @@ impl PlaylistView {
     }
 
     /// Whether the rows can be reordered: only in playlist order, since a
-    /// sorted table's row positions are not playlist positions.
+    /// sorted table's row positions are not playlist positions, and never
+    /// while a search filter hides some entries (a display row would no
+    /// longer map to a playlist position).
     pub fn can_reorder(&self) -> bool {
-        self.table.sort.key.is_none()
+        self.table.sort.key.is_none() && !self.filtered
     }
 
     /// The entries whose track is selected, in playlist order.

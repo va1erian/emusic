@@ -13,6 +13,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::{LibraryDataSource, TrackInfo};
+use emusic_ui::search::SearchEngine;
 use emusic_ui::shell::Changes;
 use emusic_ui::state::AppState;
 use emusic_ui::views::album_grid::models::{AlbumKey, AlbumSort};
@@ -273,6 +274,7 @@ impl AlbumGridView {
         &mut self,
         state: &mut AppState,
         library: &dyn LibraryDataSource,
+        search: &SearchEngine,
         playing_id: Option<u64>,
         theme: Theme,
         changes: Changes,
@@ -281,7 +283,7 @@ impl AlbumGridView {
         self.thumbs.borrow_mut().drain();
 
         {
-            let cx = Ctx::with_library(&[], playing_id, library);
+            let cx = Ctx::with_library(&[], playing_id, library).with_search(search);
             state.album_grid.refresh(&cx);
         }
         let list_revision = state.album_grid.list_revision();

@@ -29,6 +29,12 @@ impl Win32App {
         }
 
         let playing_id = playing_id(self.shell.library.as_ref(), self.shell.player.as_ref());
+        // Keep the Music model - and so the status bar's search result count -
+        // current even while another view is showing, as the win32 frontend
+        // does.
+        if view != View::Music && changes.intersects(Changes::LIBRARY | Changes::SEARCH) {
+            self.refresh_music();
+        }
         match view {
             View::Music => {
                 self.refresh_music();
@@ -53,22 +59,28 @@ impl Win32App {
                 if self.albums.sync(
                     &mut self.shell.state,
                     self.shell.library.as_ref(),
+                    &self.shell.search,
                     playing_id,
                     changes,
                 ) {
                     self.relayout();
                 }
             }
-            View::Artists => self
-                .artists
-                .sync(&mut self.shell.state, self.shell.library.as_ref()),
-            View::Genres => self
-                .genres
-                .sync(&mut self.shell.state, self.shell.library.as_ref()),
+            View::Artists => self.artists.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                &self.shell.search,
+            ),
+            View::Genres => self.genres.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                &self.shell.search,
+            ),
             View::Starred => {
                 self.starred.sync(
                     &mut self.shell.state,
                     self.shell.library.as_ref(),
+                    &self.shell.search,
                     playing_id,
                 );
             }
@@ -76,13 +88,18 @@ impl Win32App {
                 self.most_played.sync(
                     &mut self.shell.state,
                     self.shell.library.as_ref(),
+                    &self.shell.search,
                     playing_id,
                 );
             }
             View::History => {
-                let rebuild = changes.intersects(Changes::LIBRARY);
-                self.history
-                    .sync(self.shell.library.as_ref(), playing_id, rebuild);
+                let rebuild = changes.intersects(Changes::LIBRARY | Changes::SEARCH);
+                self.history.sync(
+                    self.shell.library.as_ref(),
+                    &self.shell.search,
+                    playing_id,
+                    rebuild,
+                );
             }
             _ => {}
         }

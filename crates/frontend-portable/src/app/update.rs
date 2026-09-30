@@ -97,8 +97,11 @@ impl Win32App {
                     }
                     View::MostPlayed => {
                         self.shell.state.most_played.table.sort.toggle(id);
-                        self.most_played
-                            .resort(&self.shell.state, self.shell.library.as_ref());
+                        self.most_played.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            &self.shell.search,
+                        );
                     }
                     _ => return,
                 }

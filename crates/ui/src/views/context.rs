@@ -8,6 +8,7 @@
 //! be unit-tested on its own.
 
 use crate::library_api::{LibraryDataSource, TrackInfo};
+use crate::search::SearchEngine;
 use crate::state::Command;
 
 /// Read-only, per-frame context handed to a view model's `update`.
@@ -25,6 +26,9 @@ pub struct Ctx<'a> {
     /// `tracks` (e.g. the album grid rebuilding its album list). `None` for
     /// models that only work from `tracks`.
     pub library: Option<&'a dyn LibraryDataSource>,
+    /// The live top-bar search, when a view should filter itself by it. `None`
+    /// (the default) means "no search": every row is kept.
+    pub search: Option<&'a SearchEngine>,
 }
 
 impl<'a> Ctx<'a> {
@@ -34,6 +38,7 @@ impl<'a> Ctx<'a> {
             tracks,
             playing_id,
             library: None,
+            search: None,
         }
     }
 
@@ -48,7 +53,22 @@ impl<'a> Ctx<'a> {
             tracks,
             playing_id,
             library: Some(library),
+            search: None,
         }
+    }
+
+    /// Attaches the live top-bar search, so the view filters itself by it.
+    #[must_use]
+    pub fn with_search(mut self, search: &'a SearchEngine) -> Self {
+        self.search = Some(search);
+        self
+    }
+
+    /// The active search's revision, for a view's refresh key; `0` when no
+    /// search is attached. Views that cache rows derived from the library key
+    /// them on this so a query change rebuilds even when the library didn't.
+    pub fn search_revision(&self) -> u64 {
+        self.search.map_or(0, SearchEngine::revision)
     }
 }
 

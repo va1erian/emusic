@@ -6,7 +6,9 @@
 //! [`StarredView::refresh`] compares the incoming ids before allocating, so a
 //! stable list does no work per frame.
 
+use crate::library_api::TrackInfo;
 use crate::views::Ctx;
+use crate::views::filter;
 use crate::views::track_table::TrackTable;
 
 /// Persistent Starred-view state: the shared track table plus the visible
@@ -23,22 +25,44 @@ pub struct StarredView {
 }
 
 impl StarredView {
-    /// Rebuilds the visible starred ids from the context's (already filtered)
-    /// tracks, bumping the revision when the list changed.
+    /// Rebuilds the visible starred ids from the context's tracks, keeping only
+    /// those matching the active search, bumping the revision when the list
+    /// changed.
     ///
     /// The incoming ids are compared before any allocation, so an unchanged
     /// list costs nothing per frame.
     pub fn refresh(&mut self, cx: &Ctx) {
-        let changed = cx.tracks.len() != self.track_ids.len()
-            || cx
-                .tracks
+        let visible: Vec<u64> = cx
+            .tracks
+            .iter()
+            .filter(|track| filter::track_kept(cx.search, track.id))
+            .map(|track| track.id)
+            .collect();
+        let changed = visible.len() != self.track_ids.len()
+            || visible
                 .iter()
                 .zip(&self.track_ids)
-                .any(|(track, id)| track.id != *id);
+                .any(|(id, previous)| id != previous);
         if changed {
-            self.track_ids = cx.tracks.iter().map(|track| track.id).collect();
+            self.track_ids = visible;
             self.revision += 1;
         }
+    }
+
+    /// The starred tracks to show, resolved from the full starred list `all`
+    /// (which must be in the same order as the one passed to
+    /// [`StarredView::refresh`]), so a frontend renders exactly the filtered
+    /// rows.
+    pub fn visible_tracks<'a>(&self, all: &[&'a TrackInfo]) -> Vec<&'a TrackInfo> {
+        let mut wanted = self.track_ids.iter().peekable();
+        let mut visible = Vec::with_capacity(self.track_ids.len());
+        for track in all {
+            if wanted.peek() == Some(&&track.id) {
+                wanted.next();
+                visible.push(*track);
+            }
+        }
+        visible
     }
 
     /// The starred track ids, in library order.
@@ -70,7 +94,7 @@ impl StarredView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library_api::TrackInfo;
+    use crate::search::SearchEngine;
 
     fn track(id: u64, starred: bool) -> TrackInfo {
         TrackInfo {
@@ -101,5 +125,63 @@ mod tests {
         view.refresh(&Ctx::new(&fewer, None));
         assert_eq!(view.count(), 1);
         assert!(view.revision() > after, "unstarring bumps");
+    }
+
+    /// Ticks `engine` until it stops being pending, polling like the UI does.
+    fn settle(engine: &mut SearchEngine, tracks: &[TrackInfo], query: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            engine.tick(tracks, query);
+            if !engine.is_pending() || std::time::Instant::now() > deadline {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn search_keeps_only_matching_starred_tracks_and_restores_on_clear() {
+        let tracks = [
+            TrackInfo {
+                id: 1,
+                title: "One".to_string(),
+                starred: true,
+                ..TrackInfo::default()
+            },
+            TrackInfo {
+                id: 2,
+                title: "Two".to_string(),
+                starred: true,
+                ..TrackInfo::default()
+            },
+        ];
+        let refs: Vec<&TrackInfo> = tracks.iter().collect();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &tracks, "one");
+
+        let mut view = StarredView::default();
+        view.refresh(&Ctx::new(&refs, None).with_search(&engine));
+        assert_eq!(view.track_ids(), &[1]);
+        let visible = view.visible_tracks(&refs);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, 1);
+
+        settle(&mut engine, &tracks, "");
+        view.refresh(&Ctx::new(&refs, None).with_search(&engine));
+        assert_eq!(view.track_ids(), &[1, 2]);
+        assert_eq!(view.visible_tracks(&refs).len(), 2);
+    }
+
+    #[test]
+    fn a_query_matching_no_starred_track_leaves_no_rows() {
+        let tracks = [track(1, true), track(2, true)];
+        let refs: Vec<&TrackInfo> = tracks.iter().collect();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &tracks, "zzzz");
+
+        let mut view = StarredView::default();
+        view.refresh(&Ctx::new(&refs, None).with_search(&engine));
+        assert!(view.is_empty());
+        assert!(view.visible_tracks(&refs).is_empty());
     }
 }

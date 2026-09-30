@@ -7,8 +7,12 @@
 //! does no allocation or sorting per frame. User intents arrive as
 //! [`GenresMsg`].
 
-use crate::library_api::GenreInfo;
+use std::collections::HashSet;
+
+use crate::library_api::{GenreInfo, LibraryDataSource};
+use crate::search::SearchEngine;
 use crate::state::Command;
+use crate::views::filter;
 use crate::views::{Commands, Ctx};
 
 /// A user intent on the Genres view.
@@ -27,27 +31,40 @@ pub struct GenresView {
     /// The library revision the rows were built from; `None` when the backend
     /// provides no cheap signal or the rows are stale.
     source_revision: Option<u64>,
+    /// The search revision the rows were last filtered for.
+    source_search: u64,
     /// Bumped whenever what the view displays changes.
     revision: u64,
 }
 
 impl GenresView {
-    /// Rebuilds the name-sorted rows from the library snapshot in `cx` when
-    /// the library's revision changed since the last call.
+    /// Rebuilds the name-sorted rows from the library snapshot in `cx`,
+    /// keeping only genres whose name matches the active search or that have a
+    /// matching track.
     pub fn refresh(&mut self, cx: &Ctx) {
         let Some(library) = cx.library else {
             return;
         };
-        if let Some(revision) = library.revision() {
-            if self.source_revision == Some(revision) {
-                return;
-            }
-            self.source_revision = Some(revision);
-        } else {
-            self.source_revision = None;
+        let library_changed = match library.revision() {
+            Some(revision) => self.source_revision != Some(revision),
+            None => true,
+        };
+        let search_revision = cx.search_revision();
+        let search_changed = self.source_search != search_revision;
+        if !library_changed && !search_changed {
+            return;
         }
+        self.source_revision = library.revision();
+        self.source_search = search_revision;
 
         let mut rows = library.genres().to_vec();
+        if let Some(search) = cx.search.filter(|search| search.is_active()) {
+            let matching = matching_genres(library, search);
+            rows.retain(|genre| {
+                filter::name_kept(Some(search), &genre.name)
+                    || matching.contains(&genre.name.to_lowercase())
+            });
+        }
         rows.sort_by(|a, b| a.name.cmp(&b.name));
         if rows != self.rows {
             self.rows = rows;
@@ -108,8 +125,29 @@ impl GenresView {
 /// Whether a raw genre tag contains `name` as one of its `;`/`/`/`, `-split
 /// parts, matching the library index and the old `shuffle::genre` rule.
 fn genre_matches(tag: &str, name: &str) -> bool {
+    genre_parts(tag).any(|part| part.eq_ignore_ascii_case(name))
+}
+
+/// The trimmed, non-empty parts of a raw genre tag.
+fn genre_parts(tag: &str) -> impl Iterator<Item = &str> {
     tag.split(&[';', '/', ','][..])
-        .any(|part| part.trim().eq_ignore_ascii_case(name))
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+}
+
+/// The lower-cased genre names that have at least one track matching
+/// `search`, so a genre row survives when one of its tracks does.
+fn matching_genres(library: &dyn LibraryDataSource, search: &SearchEngine) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for track in library.tracks() {
+        if !search.is_match(track.id) {
+            continue;
+        }
+        for part in genre_parts(&track.genre) {
+            names.insert(part.to_lowercase());
+        }
+    }
+    names
 }
 
 #[cfg(test)]
@@ -123,6 +161,44 @@ mod tests {
         let mut view = GenresView::default();
         view.refresh(&Ctx::with_library(&[], None, library));
         view
+    }
+
+    /// Ticks `engine` until it stops being pending, polling like the UI does.
+    fn settle(engine: &mut SearchEngine, tracks: &[crate::library_api::TrackInfo], query: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            engine.tick(tracks, query);
+            if !engine.is_pending() || std::time::Instant::now() > deadline {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    /// A library with genres "Rock"/"Jazz"/"Ambient" and a track in Rock and
+    /// one in Jazz.
+    fn genre_library() -> RiggedLibrary {
+        let mut library = RiggedLibrary::new(1);
+        library.genres = vec![
+            RiggedLibrary::genre("Rock"),
+            RiggedLibrary::genre("Jazz"),
+            RiggedLibrary::genre("Ambient"),
+        ];
+        library.tracks = vec![
+            crate::library_api::TrackInfo {
+                id: 1,
+                title: "One".to_string(),
+                genre: "Rock".to_string(),
+                ..crate::library_api::TrackInfo::default()
+            },
+            crate::library_api::TrackInfo {
+                id: 2,
+                title: "Two".to_string(),
+                genre: "Jazz".to_string(),
+                ..crate::library_api::TrackInfo::default()
+            },
+        ];
+        library
     }
 
     #[test]
@@ -229,5 +305,52 @@ mod tests {
         assert!(genre_matches("Rock/Pop", "pop"));
         assert!(genre_matches("Electronic, Ambient", "ambient"));
         assert!(!genre_matches("Jazz", "Rock"));
+    }
+
+    #[test]
+    fn search_keeps_genres_by_name_or_matching_track_and_restores_on_clear() {
+        let library = genre_library();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &library.tracks, "one");
+
+        let mut view = GenresView::default();
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        let names: Vec<&str> = view.rows().iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["Rock"], "only the genre of the matching track");
+
+        settle(&mut engine, &library.tracks, "jazz");
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        let names: Vec<&str> = view.rows().iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["Jazz"], "the genre name matches too");
+
+        settle(&mut engine, &library.tracks, "");
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        assert_eq!(view.len(), 3, "clearing the query restores every genre");
+    }
+
+    #[test]
+    fn a_query_matching_no_genre_or_track_yields_no_rows() {
+        let library = genre_library();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &library.tracks, "zzzz");
+
+        let mut view = GenresView::default();
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        assert!(view.is_empty());
+    }
+
+    #[test]
+    fn a_search_change_rebuilds_with_an_unchanged_library() {
+        let library = genre_library();
+        let mut view = GenresView::default();
+        view.refresh(&Ctx::with_library(&[], None, &library));
+        assert_eq!(view.len(), 3);
+        let revision = view.revision();
+
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &library.tracks, "one");
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        assert!(view.revision() > revision);
+        assert_eq!(view.len(), 1);
     }
 }

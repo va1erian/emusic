@@ -4,7 +4,69 @@
 use super::*;
 use crate::library_api::{AlbumInfo, TrackInfo};
 use crate::mock::MockLibrary;
+use crate::search::SearchEngine;
 use crate::views::test_library::RiggedLibrary;
+
+/// Ticks `engine` until it stops being pending, polling like the UI does.
+fn settle(engine: &mut SearchEngine, tracks: &[TrackInfo], query: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        engine.tick(tracks, query);
+        if !engine.is_pending() || std::time::Instant::now() > deadline {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// A library with two albums: "Alpha" by "A" (two tracks) and "Beta" by "B".
+fn two_album_library() -> RiggedLibrary {
+    let mut library = RiggedLibrary::new(1);
+    library.albums = vec![
+        AlbumInfo {
+            name: "Alpha".to_string(),
+            artist: "A".to_string(),
+            year: None,
+            track_count: 2,
+        },
+        AlbumInfo {
+            name: "Beta".to_string(),
+            artist: "B".to_string(),
+            year: None,
+            track_count: 1,
+        },
+    ];
+    library.tracks = vec![
+        TrackInfo {
+            id: 1,
+            title: "One".to_string(),
+            album: "Alpha".to_string(),
+            artist: "A".to_string(),
+            ..TrackInfo::default()
+        },
+        TrackInfo {
+            id: 2,
+            title: "Two".to_string(),
+            album: "Alpha".to_string(),
+            artist: "A".to_string(),
+            ..TrackInfo::default()
+        },
+        TrackInfo {
+            id: 3,
+            title: "Three".to_string(),
+            album: "Beta".to_string(),
+            artist: "B".to_string(),
+            ..TrackInfo::default()
+        },
+    ];
+    library
+}
+
+fn grid_with_search(library: &RiggedLibrary, engine: &SearchEngine) -> AlbumGrid {
+    let mut grid = AlbumGrid::default();
+    grid.refresh(&Ctx::with_library(&[], None, library).with_search(engine));
+    grid
+}
 
 fn grid_with_library(library: &dyn crate::library_api::LibraryDataSource) -> AlbumGrid {
     let mut grid = AlbumGrid::default();
@@ -184,4 +246,74 @@ fn tile_size_change_does_not_rebuild_the_list() {
     grid.refresh(&cx);
 
     assert_eq!(grid.list_revision(), list);
+}
+
+#[test]
+fn search_keeps_only_albums_with_a_matching_track_and_restores_on_clear() {
+    let library = two_album_library();
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, &library.tracks, "one");
+
+    let grid = grid_with_search(&library, &engine);
+    assert_eq!(grid.len(), 1, "only the album with the matching track");
+    assert_eq!(grid.albums()[0].name, "Alpha");
+
+    settle(&mut engine, &library.tracks, "");
+    let restored = grid_with_search(&library, &engine);
+    assert_eq!(restored.len(), 2, "clearing the query restores every album");
+}
+
+#[test]
+fn an_album_with_one_matching_track_among_many_is_kept_once() {
+    let library = two_album_library();
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, &library.tracks, "one");
+
+    let grid = grid_with_search(&library, &engine);
+    let alpha = grid
+        .albums()
+        .iter()
+        .filter(|album| album.name == "Alpha")
+        .count();
+    assert_eq!(
+        alpha, 1,
+        "an album appears once regardless of its track hits"
+    );
+}
+
+#[test]
+fn search_keeps_an_album_whose_name_matches_without_a_track_hit() {
+    let library = two_album_library();
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, &library.tracks, "beta");
+
+    let grid = grid_with_search(&library, &engine);
+    assert_eq!(grid.len(), 1);
+    assert_eq!(grid.albums()[0].name, "Beta");
+}
+
+#[test]
+fn a_query_matching_nothing_yields_no_albums() {
+    let library = two_album_library();
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, &library.tracks, "zzzz");
+
+    let grid = grid_with_search(&library, &engine);
+    assert!(grid.is_empty());
+}
+
+#[test]
+fn a_search_change_rebuilds_the_list_without_a_library_change() {
+    let library = two_album_library();
+    let mut grid = AlbumGrid::default();
+    grid.refresh(&Ctx::with_library(&[], None, &library));
+    let revision = grid.list_revision();
+
+    let mut engine = SearchEngine::new();
+    settle(&mut engine, &library.tracks, "one");
+    grid.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+    assert!(
+        grid.list_revision() > revision,
+        "a search change rebuilds the album list even when the library did not"
+    );
 }

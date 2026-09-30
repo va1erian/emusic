@@ -11,9 +11,11 @@
 use std::cell::Cell;
 
 use emusic_ui::library_api::LibraryDataSource;
+use emusic_ui::search::SearchEngine;
 use emusic_ui::state::{AppState, Command};
+use emusic_ui::views::Commands;
+use emusic_ui::views::filter;
 use emusic_ui::views::playlist as model;
-use emusic_ui::views::{Commands, Ctx};
 use win32ui::prelude::*;
 use win32ui::{Button, Control, Label, Menu, Rect, column, dip, row};
 
@@ -58,29 +60,38 @@ impl PlaylistView {
         &mut self,
         state: &mut AppState,
         library: &dyn LibraryDataSource,
+        search: &SearchEngine,
         playing_id: Option<u64>,
         id: u64,
     ) {
         let resolved = model::resolve(library, id);
-        let cx = Ctx::new(&resolved.tracks, playing_id);
-        state.playlist.refresh(&resolved.items, &cx);
+        let visible =
+            state
+                .playlist
+                .refresh(&resolved.items, &resolved.tracks, Some(search), playing_id);
 
         self.name.set_text(&playlist_name(library, id));
         if state.playlist.revision() != self.applied_revision.get() {
             self.applied_revision.set(state.playlist.revision());
             self.count.set_text(&state.playlist.count_label());
-            self.table
-                .set_rows(&resolved.tracks, state.playlist.table.sort);
+            self.table.set_rows(&visible, state.playlist.table.sort);
         }
         self.table.set_reorder_ok(state.playlist.can_reorder());
         self.table.sync_playing(playing_id);
     }
 
-    /// Rebuilds the table after a header click, preserving the new sort.
-    pub fn resort(&mut self, state: &AppState, library: &dyn LibraryDataSource, id: u64) {
+    /// Rebuilds the table after a header click, preserving the new sort and the
+    /// active search filter.
+    pub fn resort(
+        &mut self,
+        state: &AppState,
+        library: &dyn LibraryDataSource,
+        search: &SearchEngine,
+        id: u64,
+    ) {
         let resolved = model::resolve(library, id);
-        self.table
-            .set_rows(&resolved.tracks, state.playlist.table.sort);
+        let visible = filter::kept_tracks(Some(search), &resolved.tracks);
+        self.table.set_rows(&visible, state.playlist.table.sort);
     }
 
     /// Forgets the recorded reorder drag after another target took the drop.

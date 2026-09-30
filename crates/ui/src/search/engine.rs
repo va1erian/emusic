@@ -48,6 +48,9 @@ pub struct SearchEngine {
     /// `None` means "no query active", i.e. every track matches.
     matches: Option<Arc<HashSet<TrackId>>>,
     pending: bool,
+    /// Bumped whenever the matching set changes (a query answered, or the
+    /// query cleared), so views can key their filtered rows on it.
+    revision: u64,
 }
 
 impl SearchEngine {
@@ -79,6 +82,7 @@ impl SearchEngine {
             last_query: String::new(),
             matches: None,
             pending: false,
+            revision: 0,
         }
     }
 
@@ -98,7 +102,9 @@ impl SearchEngine {
 
         if query_text.is_empty() {
             self.last_query.clear();
-            self.matches = None;
+            if self.matches.take().is_some() {
+                self.revision += 1;
+            }
             self.pending = false;
         } else if query_text != self.last_query || requery {
             self.last_query = query_text.to_string();
@@ -114,6 +120,7 @@ impl SearchEngine {
             if answer.generation == self.generation {
                 self.matches = Some(Arc::new(answer.ids.into_iter().collect()));
                 self.pending = false;
+                self.revision += 1;
             }
             // Older generations were superseded by a later keystroke; drop them.
         }
@@ -141,6 +148,28 @@ impl SearchEngine {
     #[must_use]
     pub fn is_active(&self) -> bool {
         !self.last_query.is_empty()
+    }
+
+    /// The active query text, empty when no query is active. Used by views
+    /// that also match free-text names (artist/album/genre) against it.
+    #[must_use]
+    pub fn query(&self) -> &str {
+        &self.last_query
+    }
+
+    /// A counter bumped whenever the matching set changes (a query answered,
+    /// or the query cleared), so a view can cheaply tell whether the rows it
+    /// filtered are stale. `0` before any query has run.
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Whether the background worker still owes an answer for the active
+    /// query. Mostly useful to tests that need to wait for a result.
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        self.pending
     }
 }
 
@@ -237,5 +266,30 @@ mod tests {
         settle(&mut engine, &tracks, "nonexistent artist");
 
         assert_eq!(engine.match_count(), Some(0));
+    }
+
+    #[test]
+    fn revision_tracks_the_matching_set_and_clearing_restores_everything() {
+        let tracks = vec![
+            track(1, "Homework", "Daft Punk"),
+            track(2, "OK Computer", "Radiohead"),
+        ];
+        let mut engine = SearchEngine::new();
+        let before = engine.revision();
+
+        settle(&mut engine, &tracks, "radiohead");
+        assert_eq!(engine.query(), "radiohead");
+        let answered = engine.revision();
+        assert!(answered > before, "answering a query bumps the revision");
+
+        // An unchanged query does not keep bumping.
+        engine.tick(&tracks, "radiohead");
+        assert_eq!(engine.revision(), answered);
+
+        // Clearing the query restores every track and bumps once more.
+        settle(&mut engine, &tracks, "");
+        assert!(engine.revision() > answered);
+        assert!(!engine.is_active());
+        assert!(engine.is_match(1) && engine.is_match(2));
     }
 }
