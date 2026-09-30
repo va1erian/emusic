@@ -752,13 +752,17 @@ impl Win32App {
             self.starred.sync(
                 &mut self.shell.state,
                 self.shell.library.as_ref(),
+                &self.shell.search,
                 playing_id,
             );
         }
 
         if view == View::Artists {
-            self.artists
-                .sync(&mut self.shell.state, self.shell.library.as_ref());
+            self.artists.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                &self.shell.search,
+            );
         }
 
         // The Playlist view resolves its entries against the library each
@@ -769,31 +773,40 @@ impl Win32App {
             self.playlist.sync(
                 &mut self.shell.state,
                 self.shell.library.as_ref(),
+                &self.shell.search,
                 playing_id,
                 id,
             );
         }
 
         if view == View::Genres {
-            self.genres
-                .sync(&mut self.shell.state, self.shell.library.as_ref());
+            self.genres.sync(
+                &mut self.shell.state,
+                self.shell.library.as_ref(),
+                &self.shell.search,
+            );
         }
 
         if view == View::MostPlayed {
             self.most_played.sync(
                 &mut self.shell.state,
                 self.shell.library.as_ref(),
+                &self.shell.search,
                 playing_id,
             );
         }
 
-        // The History list is rebuilt when the library (and so the history)
-        // changes; its day grouping and per-play status come from the shared
-        // model and the current track.
+        // The History list is rebuilt when the library (and so the history) or
+        // the search changes; its day grouping and per-play status come from
+        // the shared model and the current track.
         if view == View::History {
-            let rebuild = changes.intersects(Changes::LIBRARY);
-            self.history
-                .sync(self.shell.library.as_ref(), playing_id, rebuild);
+            let rebuild = changes.intersects(Changes::LIBRARY | Changes::SEARCH);
+            self.history.sync(
+                self.shell.library.as_ref(),
+                &self.shell.search,
+                playing_id,
+                rebuild,
+            );
         }
 
         if view == View::Albums {
@@ -801,6 +814,7 @@ impl Win32App {
             if self.albums.sync(
                 &mut self.shell.state,
                 self.shell.library.as_ref(),
+                &self.shell.search,
                 playing_id,
                 theme,
                 changes,
@@ -1454,8 +1468,11 @@ impl App for Win32App {
                     }
                     View::MostPlayed => {
                         self.shell.state.most_played.table.sort.toggle(id);
-                        self.most_played
-                            .resort(&self.shell.state, self.shell.library.as_ref());
+                        self.most_played.resort(
+                            &self.shell.state,
+                            self.shell.library.as_ref(),
+                            &self.shell.search,
+                        );
                     }
                     View::Playlist => {
                         let Some(playlist) = self.shell.state.selected_playlist else {
@@ -1465,6 +1482,7 @@ impl App for Win32App {
                         self.playlist.resort(
                             &self.shell.state,
                             self.shell.library.as_ref(),
+                            &self.shell.search,
                             playlist,
                         );
                     }

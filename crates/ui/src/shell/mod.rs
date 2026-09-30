@@ -90,6 +90,7 @@ struct Observed {
     queue_head: Option<String>,
     search_active: bool,
     search_count: Option<usize>,
+    search_revision: u64,
     popup_search_active: bool,
     popup_search_count: Option<usize>,
     view: View,
@@ -366,6 +367,7 @@ impl Shell {
         }
         if current.search_active != self.observed.search_active
             || current.search_count != self.observed.search_count
+            || current.search_revision != self.observed.search_revision
             || current.popup_search_active != self.observed.popup_search_active
             || current.popup_search_count != self.observed.popup_search_count
         {
@@ -406,6 +408,7 @@ impl Shell {
             queue_head: self.player.queue().first().map(|entry| entry.title.clone()),
             search_active: self.search.is_active(),
             search_count: self.search.match_count(),
+            search_revision: self.search.revision(),
             popup_search_active: self.popup_search.is_active(),
             popup_search_count: self.popup_search.match_count(),
             view: self.state.view,

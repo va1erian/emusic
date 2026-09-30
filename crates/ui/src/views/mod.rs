@@ -8,6 +8,7 @@ mod context;
 pub mod album_grid;
 pub mod artists;
 pub mod column_browser;
+pub mod filter;
 pub mod folders;
 pub mod genres;
 pub mod history;

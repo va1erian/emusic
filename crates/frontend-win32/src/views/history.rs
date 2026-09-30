@@ -13,7 +13,9 @@ use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use emusic_ui::library_api::{HistoryEntry, LibraryDataSource, format_minutes_ago};
+use emusic_ui::search::SearchEngine;
 use emusic_ui::state::Command;
+use emusic_ui::views::filter;
 use emusic_ui::views::history::{self, Row};
 use emusic_ui::views::track_table::columns;
 use win32ui::prelude::*;
@@ -138,6 +140,9 @@ pub struct HistoryView {
     context_row: Cell<Option<usize>>,
     /// Whether the list has been built at least once.
     built: Cell<bool>,
+    /// The search revision the rows were last built for, so switching into the
+    /// view after a query change rebuilds them.
+    applied_search: Cell<u64>,
 }
 
 impl HistoryView {
@@ -200,6 +205,7 @@ impl HistoryView {
             context,
             context_row: Cell::new(None),
             built: Cell::new(false),
+            applied_search: Cell::new(u64::MAX),
         })
     }
 
@@ -209,27 +215,43 @@ impl HistoryView {
     }
 
     /// Refreshes the list from the library. `rebuild` is set when the library
-    /// (and so the history) changed; the list is also rebuilt on the first
-    /// sync and whenever the playing track changes, because a play's status
-    /// cell reads "Playing" only for the current track.
+    /// (and so the history) or the search changed; the list is also rebuilt on
+    /// the first sync and whenever the playing track changes, because a play's
+    /// status cell reads "Playing" only for the current track.
     pub fn sync(
         &mut self,
         library: &dyn LibraryDataSource,
+        search: &SearchEngine,
         playing_id: Option<u64>,
         rebuild: bool,
     ) {
-        if !self.built.get() || rebuild || self.playing.get() != playing_id {
-            self.rebuild(library, playing_id);
+        if !self.built.get()
+            || rebuild
+            || self.playing.get() != playing_id
+            || self.applied_search.get() != search.revision()
+        {
+            self.rebuild(library, search, playing_id);
             self.built.set(true);
+            self.applied_search.set(search.revision());
         }
     }
 
-    /// Rebuilds the model from the library's history and updates the band.
-    fn rebuild(&mut self, library: &dyn LibraryDataSource, playing_id: Option<u64>) {
+    /// Rebuilds the model from the library's history, keeping only plays whose
+    /// track matches the search, and updates the band.
+    fn rebuild(
+        &mut self,
+        library: &dyn LibraryDataSource,
+        search: &SearchEngine,
+        playing_id: Option<u64>,
+    ) {
         let entries = library.history();
         let now = unix_now();
-        let rows = build_rows(entries, now, playing_id);
-        self.header.set_text(&format!("{} plays", entries.len()));
+        let rows = build_rows(entries, now, playing_id, search);
+        let kept = entries
+            .iter()
+            .filter(|entry| filter::track_kept(Some(search), entry.track_id))
+            .count();
+        self.header.set_text(&format!("{kept} plays"));
         self.clear.set_enabled(!entries.is_empty());
         self.playing.set(playing_id);
         self.rows = Rc::new(rows);
@@ -365,15 +387,23 @@ fn centered(control: &impl AsControl, height: f32) -> Layout {
         .margins(Insets::new(dip(0.0), dip(pad), dip(0.0), dip(pad)))
 }
 
-/// Flattens the shared grouping into pre-formatted native rows.
-fn build_rows(entries: &[HistoryEntry], now: i64, playing_id: Option<u64>) -> Vec<HistoryRow> {
-    history::build_rows(entries, now)
-        .into_iter()
-        .map(|row| match row {
-            Row::Day(label) => HistoryRow::Day(label),
-            Row::Entry(entry) => HistoryRow::Entry(HistoryPlay::new(entry, now, playing_id)),
-        })
-        .collect()
+/// Flattens the shared grouping into pre-formatted native rows, keeping only
+/// the plays whose track matches `search`.
+fn build_rows(
+    entries: &[HistoryEntry],
+    now: i64,
+    playing_id: Option<u64>,
+    search: &SearchEngine,
+) -> Vec<HistoryRow> {
+    history::build_rows_filtered(entries, now, |entry| {
+        filter::track_kept(Some(search), entry.track_id)
+    })
+    .into_iter()
+    .map(|row| match row {
+        Row::Day(label) => HistoryRow::Day(label),
+        Row::Entry(entry) => HistoryRow::Entry(HistoryPlay::new(entry, now, playing_id)),
+    })
+    .collect()
 }
 
 /// The current Unix time, for grouping and relative ages. `0` on a clock
@@ -441,7 +471,7 @@ mod tests {
             entry(2, 20, now - DAY),
             entry(3, 30, now - DAY - 60),
         ];
-        let rows = build_rows(&entries, now, Some(20));
+        let rows = build_rows(&entries, now, Some(20), &SearchEngine::new());
 
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[0].text(0), "Today");

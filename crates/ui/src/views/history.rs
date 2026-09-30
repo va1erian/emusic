@@ -33,6 +33,21 @@ pub enum Row<'a> {
 /// contiguous, correctly ordered groups, and it also keeps a single header
 /// per day if the input is not perfectly sorted.
 pub fn build_rows(entries: &[HistoryEntry], now: i64) -> Vec<Row<'_>> {
+    build_rows_from(entries.iter(), now)
+}
+
+/// Like [`build_rows`], but keeps only the entries `keep` accepts (used to
+/// apply the top-bar search: a play is kept when its track matches).
+pub fn build_rows_filtered<'a>(
+    entries: &'a [HistoryEntry],
+    now: i64,
+    keep: impl Fn(&HistoryEntry) -> bool,
+) -> Vec<Row<'a>> {
+    build_rows_from(entries.iter().filter(|entry| keep(entry)), now)
+}
+
+/// Flattens an iterator of entries into day headers + entry rows.
+fn build_rows_from<'a>(entries: impl Iterator<Item = &'a HistoryEntry>, now: i64) -> Vec<Row<'a>> {
     let mut groups: Vec<(String, Vec<&HistoryEntry>)> = Vec::new();
     for entry in entries {
         let day = day_label(entry.played_at, now);
@@ -42,7 +57,8 @@ pub fn build_rows(entries: &[HistoryEntry], now: i64) -> Vec<Row<'_>> {
         }
     }
 
-    let mut rows = Vec::with_capacity(entries.len() + groups.len());
+    let entry_count: usize = groups.iter().map(|(_, group)| group.len()).sum();
+    let mut rows = Vec::with_capacity(entry_count + groups.len());
     for (label, group) in groups {
         rows.push(Row::Day(label));
         rows.extend(group.into_iter().map(Row::Entry));
@@ -122,5 +138,36 @@ mod tests {
     #[test]
     fn empty_history_produces_no_rows() {
         assert!(build_rows(&[], 1_000).is_empty());
+    }
+
+    #[test]
+    fn build_rows_filtered_keeps_only_matching_entries_and_their_headers() {
+        let now = 1_000_000_000;
+        let entries = vec![entry(1, now), entry(2, now - 60), entry(3, now - DAY)];
+        let rows = build_rows_filtered(&entries, now, |entry| entry.id != 2);
+
+        let entry_ids: Vec<i64> = rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Entry(entry) => Some(entry.id),
+                Row::Day(_) => None,
+            })
+            .collect();
+        assert_eq!(entry_ids, vec![1, 3]);
+
+        let labels: Vec<&str> = rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Day(label) => Some(label.as_str()),
+                Row::Entry(_) => None,
+            })
+            .collect();
+        assert_eq!(labels, vec!["Today", "Yesterday"]);
+    }
+
+    #[test]
+    fn build_rows_filtered_with_no_matches_produces_no_rows() {
+        let entries = vec![entry(1, 1_000)];
+        assert!(build_rows_filtered(&entries, 1_000, |_| false).is_empty());
     }
 }

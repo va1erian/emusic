@@ -10,6 +10,7 @@
 use std::cell::Cell;
 
 use emusic_ui::library_api::{GenreInfo, LibraryDataSource};
+use emusic_ui::search::SearchEngine;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::genres::GenresMsg;
 use emusic_ui::views::{Commands, Ctx};
@@ -76,8 +77,13 @@ impl GenresView {
 
     /// Refreshes the shared model from `library` and rebuilds the list rows
     /// when the model changed.
-    pub fn sync(&mut self, state: &mut AppState, library: &dyn LibraryDataSource) {
-        let cx = Ctx::with_library(&[], None, library);
+    pub fn sync(
+        &mut self,
+        state: &mut AppState,
+        library: &dyn LibraryDataSource,
+        search: &SearchEngine,
+    ) {
+        let cx = Ctx::with_library(&[], None, library).with_search(search);
         state.genres.refresh(&cx);
         if self.applied_revision.get() != state.genres.revision() {
             self.applied_revision.set(state.genres.revision());

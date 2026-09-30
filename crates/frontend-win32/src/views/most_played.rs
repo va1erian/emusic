@@ -10,6 +10,7 @@
 use std::cell::Cell;
 
 use emusic_ui::library_api::{LibraryDataSource, StatsWindow, TrackInfo};
+use emusic_ui::search::SearchEngine;
 use emusic_ui::state::AppState;
 use emusic_ui::views::Ctx;
 use win32ui::prelude::*;
@@ -56,16 +57,18 @@ impl MostPlayedView {
         &mut self,
         state: &mut AppState,
         library: &dyn LibraryDataSource,
+        search: &SearchEngine,
         playing_id: Option<u64>,
     ) {
         self.window.set(state.most_played.window);
 
         let ranked = library.most_played(state.most_played.window);
         let tracks: Vec<&TrackInfo> = ranked.iter().collect();
+        let visible = state.most_played.visible_tracks(&tracks, Some(search));
         state
             .most_played
             .table
-            .refresh(&Ctx::new(&tracks, playing_id));
+            .refresh(&Ctx::new(&visible, playing_id));
 
         let applied = (
             Some(state.most_played.window),
@@ -73,17 +76,24 @@ impl MostPlayedView {
         );
         if self.applied.get() != applied {
             self.applied.set(applied);
-            self.count.set_text(&count_label(&tracks));
-            self.table.set_rows(&tracks, state.most_played.table.sort);
+            self.count.set_text(&count_label(&visible));
+            self.table.set_rows(&visible, state.most_played.table.sort);
         }
         self.table.sync_playing(playing_id);
     }
 
-    /// Rebuilds the table after a header click, preserving the new sort.
-    pub fn resort(&mut self, state: &AppState, library: &dyn LibraryDataSource) {
+    /// Rebuilds the table after a header click, preserving the new sort and the
+    /// active search filter.
+    pub fn resort(
+        &mut self,
+        state: &AppState,
+        library: &dyn LibraryDataSource,
+        search: &SearchEngine,
+    ) {
         let ranked = library.most_played(state.most_played.window);
         let tracks: Vec<&TrackInfo> = ranked.iter().collect();
-        self.table.set_rows(&tracks, state.most_played.table.sort);
+        let visible = state.most_played.visible_tracks(&tracks, Some(search));
+        self.table.set_rows(&visible, state.most_played.table.sort);
     }
 
     /// The command to play `index` in the context of the whole visible list.

@@ -7,8 +7,12 @@
 //! does no allocation or sorting per frame. User intents arrive as
 //! [`ArtistsMsg`].
 
-use crate::library_api::ArtistInfo;
+use std::collections::HashSet;
+
+use crate::library_api::{ArtistInfo, LibraryDataSource};
+use crate::search::SearchEngine;
 use crate::state::Command;
+use crate::views::filter;
 use crate::views::{Commands, Ctx};
 
 /// A user intent on the Artists view.
@@ -27,27 +31,40 @@ pub struct ArtistsView {
     /// The library revision the rows were built from; `None` when the backend
     /// provides no cheap signal or the rows are stale.
     source_revision: Option<u64>,
+    /// The search revision the rows were last filtered for.
+    source_search: u64,
     /// Bumped whenever what the view displays changes.
     revision: u64,
 }
 
 impl ArtistsView {
-    /// Rebuilds the name-sorted rows from the library snapshot in `cx` when
-    /// the library's revision changed since the last call.
+    /// Rebuilds the name-sorted rows from the library snapshot in `cx`,
+    /// keeping only artists whose name matches the active search or that have a
+    /// matching track.
     pub fn refresh(&mut self, cx: &Ctx) {
         let Some(library) = cx.library else {
             return;
         };
-        if let Some(revision) = library.revision() {
-            if self.source_revision == Some(revision) {
-                return;
-            }
-            self.source_revision = Some(revision);
-        } else {
-            self.source_revision = None;
+        let library_changed = match library.revision() {
+            Some(revision) => self.source_revision != Some(revision),
+            None => true,
+        };
+        let search_revision = cx.search_revision();
+        let search_changed = self.source_search != search_revision;
+        if !library_changed && !search_changed {
+            return;
         }
+        self.source_revision = library.revision();
+        self.source_search = search_revision;
 
         let mut rows = library.artists().to_vec();
+        if let Some(search) = cx.search.filter(|search| search.is_active()) {
+            let matching = matching_artists(library, search);
+            rows.retain(|artist| {
+                filter::name_kept(Some(search), &artist.name)
+                    || matching.contains(&artist.name.to_lowercase())
+            });
+        }
         rows.sort_by(|a, b| a.name.cmp(&b.name));
         if rows != self.rows {
             self.rows = rows;
@@ -105,6 +122,18 @@ impl ArtistsView {
     }
 }
 
+/// The lower-cased artist names that have at least one track matching
+/// `search`, so an artist row survives when one of its tracks does.
+fn matching_artists(library: &dyn LibraryDataSource, search: &SearchEngine) -> HashSet<String> {
+    library
+        .tracks()
+        .iter()
+        .filter(|track| search.is_match(track.id))
+        .map(|track| track.artist.to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +145,43 @@ mod tests {
         let mut view = ArtistsView::default();
         view.refresh(&Ctx::with_library(&[], None, library));
         view
+    }
+
+    /// Ticks `engine` until it stops being pending, polling like the UI does.
+    fn settle(engine: &mut SearchEngine, tracks: &[crate::library_api::TrackInfo], query: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            engine.tick(tracks, query);
+            if !engine.is_pending() || std::time::Instant::now() > deadline {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+
+    /// A library with artists "Alpha"/"Beta"/"Gamma" and a track by each.
+    fn artist_library() -> RiggedLibrary {
+        let mut library = RiggedLibrary::new(1);
+        library.artists = vec![
+            RiggedLibrary::artist("Alpha"),
+            RiggedLibrary::artist("Beta"),
+            RiggedLibrary::artist("Gamma"),
+        ];
+        library.tracks = vec![
+            crate::library_api::TrackInfo {
+                id: 1,
+                title: "One".to_string(),
+                artist: "Alpha".to_string(),
+                ..crate::library_api::TrackInfo::default()
+            },
+            crate::library_api::TrackInfo {
+                id: 2,
+                title: "Two".to_string(),
+                artist: "Beta".to_string(),
+                ..crate::library_api::TrackInfo::default()
+            },
+        ];
+        library
     }
 
     #[test]
@@ -214,5 +280,37 @@ mod tests {
             &mut out,
         );
         assert!(out.is_empty(), "an empty scope is never queued");
+    }
+
+    #[test]
+    fn search_keeps_artists_by_name_or_matching_track_and_restores_on_clear() {
+        let library = artist_library();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &library.tracks, "one");
+
+        let mut view = ArtistsView::default();
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        let names: Vec<&str> = view.rows().iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Alpha"], "only the artist of the matching track");
+
+        settle(&mut engine, &library.tracks, "beta");
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        let names: Vec<&str> = view.rows().iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Beta"], "the artist name matches too");
+
+        settle(&mut engine, &library.tracks, "");
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        assert_eq!(view.len(), 3, "clearing the query restores every artist");
+    }
+
+    #[test]
+    fn a_query_matching_no_artist_or_track_yields_no_rows() {
+        let library = artist_library();
+        let mut engine = SearchEngine::new();
+        settle(&mut engine, &library.tracks, "zzzz");
+
+        let mut view = ArtistsView::default();
+        view.refresh(&Ctx::with_library(&[], None, &library).with_search(&engine));
+        assert!(view.is_empty());
     }
 }
