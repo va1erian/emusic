@@ -93,6 +93,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var nonce by remember { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var showInfo by remember { mutableStateOf(false) }
+    var showAccent by remember { mutableStateOf(false) }
 
     LaunchedEffect(nonce) {
         error = null
@@ -169,6 +170,15 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
         }
     }
 
+    val accentPreference = LocalAccentPreference.current
+    if (showAccent && accentPreference != null) {
+        AccentPickerDialog(
+            selected = accentPreference.accent,
+            onSelect = accentPreference::select,
+            onDismiss = { showAccent = false },
+        )
+    }
+
     val artSource = remember(core) { core?.let { client -> ArtSource { client.albumArtFile(it) } } }
     CompositionLocalProvider(LocalArtSource provides artSource) {
         BoxWithConstraints(
@@ -190,6 +200,10 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                     onServerInfo = { showInfo = true },
                     onRefresh = { nonce++ },
                     onSwitchServer = onBack,
+                    onAccent = {
+                        showAccent = true
+                        scope.launch { drawer.close() }
+                    },
                     modifier = modifier,
                 )
             }

@@ -34,23 +34,27 @@ private val DarkColors = darkColorScheme(
 )
 
 /**
- * The app theme. Follows the system light/dark setting and, on Android 12+,
- * the wallpaper's dynamic palette; otherwise falls back to the emusic palette.
+ * The app theme. Follows the system light/dark setting. [accent] picks the
+ * colour: the wallpaper's dynamic palette (Android 12+), or a fixed seed
+ * re-tinting the emusic palette.
  */
 @Composable
 fun EmusicTheme(
+    accent: Accent = Accent.default,
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
+    val seed = accent.seed
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        seed == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
 
-        darkTheme -> DarkColors
-        else -> LightColors
+        else -> {
+            val base = if (darkTheme) DarkColors else LightColors
+            seed?.let { base.withAccent(it, darkTheme) } ?: base
+        }
     }
     MaterialTheme(colorScheme = colorScheme, content = content)
 }
