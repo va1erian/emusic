@@ -100,10 +100,15 @@ class PlayerState(
     fun advance() {
         if (queue.isEmpty()) return
         when {
-            shuffle -> playAt(queue.indices.random())
+            // Never "advance" to the track that is already playing.
+            shuffle -> playAt(
+                queue.indices.filter { it != queueIndex }.ifEmpty { queue.indices.toList() }.random(),
+            )
             queueIndex + 1 < queue.size -> playAt(queueIndex + 1)
             repeatMode == RepeatMode.All -> playAt(0)
-            else -> isPlaying = false
+            // End of the queue: stop, and let onIsPlayingChanged report it,
+            // so the button never disagrees with the player.
+            else -> controller?.pause()
         }
     }
 
@@ -226,7 +231,13 @@ fun rememberPlayerState(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) state.onEnded()
+                // Only follow up our own item: Android Auto drives the same
+                // player and must not have the phone's queue started on it.
+                if (playbackState == Player.STATE_ENDED &&
+                    controller?.currentMediaItem?.mediaId == state.nowPlaying?.id
+                ) {
+                    state.onEnded()
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {

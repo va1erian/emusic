@@ -65,6 +65,9 @@ class LibraryIndex(val tracks: List<Track>) {
         music.filter { isInFolder(it.directory, folder, includeSubfolders) }
 }
 
+/** The name shown for an album the server identifies but no track names. */
+const val UNKNOWN_ALBUM = "Unknown album"
+
 /** The album grouping key: the server's album id, else the album name. */
 fun albumKey(track: Track): String? =
     track.albumId?.takeIf { it.isNotBlank() }
@@ -78,7 +81,9 @@ fun albumsOf(tracks: List<Track>): List<AlbumGroup> =
             if (key == null) return@mapNotNull null
             AlbumGroup(
                 key = key,
-                album = list.firstNotNullOf { it.album?.trim()?.takeIf(String::isNotEmpty) },
+                // An album id can arrive without a name (tagged elsewhere).
+                album = list.firstNotNullOfOrNull { it.album?.trim()?.takeIf(String::isNotEmpty) }
+                    ?: UNKNOWN_ALBUM,
                 artist = list.firstNotNullOfOrNull { it.albumArtistOrArtist() }.orEmpty(),
                 year = list.firstNotNullOfOrNull { it.year },
                 artId = list.firstNotNullOfOrNull { it.artId() },
