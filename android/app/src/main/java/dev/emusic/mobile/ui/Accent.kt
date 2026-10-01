@@ -65,6 +65,9 @@ class AccentPreference(context: Context) {
 /** The accent preference for the picker; provided by [MainActivity]. */
 val LocalAccentPreference = staticCompositionLocalOf<AccentPreference?> { null }
 
+/** WCAG AA contrast for normal-size text. */
+private const val MIN_CONTRAST = 4.5
+
 /**
  * Re-tints `base` around `seed`: primary, its container, and the secondary
  * container (selected navigator rows, selected chips), so the whole UI
@@ -75,6 +78,18 @@ fun ColorScheme.withAccent(seed: Color, dark: Boolean): ColorScheme {
     fun tone(lightness: Float, saturation: Float = hsl[1]): Color =
         Color(ColorUtils.HSLToColor(floatArrayOf(hsl[0], saturation.coerceIn(0f, 1f), lightness)))
     val muted = hsl[1] * 0.45f
+    // Light-theme primary is used for text on the surface and as the filled-
+    // button colour under white labels: darken it only as far as WCAG AA (4.5:1) needs, so
+    // light seeds (teal, green, amber) stay readable and dark ones stay vivid.
+    val lightPrimary = generateSequence(0.42f) { it - 0.02f }
+        .takeWhile { it > 0.1f }
+        .map { tone(it) }
+        .firstOrNull { candidate ->
+            listOf(Color.White, surface).all { background ->
+                ColorUtils.calculateContrast(candidate.toArgb(), background.toArgb()) >= MIN_CONTRAST
+            }
+        }
+        ?: tone(0.2f)
     return if (dark) {
         copy(
             primary = tone(0.78f),
@@ -87,13 +102,13 @@ fun ColorScheme.withAccent(seed: Color, dark: Boolean): ColorScheme {
         )
     } else {
         copy(
-            primary = tone(0.42f),
+            primary = lightPrimary,
             onPrimary = Color.White,
             primaryContainer = tone(0.90f),
             onPrimaryContainer = tone(0.16f),
             secondaryContainer = tone(0.88f, muted),
             onSecondaryContainer = tone(0.16f, muted),
-            surfaceTint = tone(0.42f),
+            surfaceTint = lightPrimary,
         )
     }
 }

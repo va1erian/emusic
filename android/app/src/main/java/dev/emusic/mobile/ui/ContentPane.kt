@@ -29,9 +29,9 @@ fun Destination.title(library: LibraryIndex): String = when (this) {
 /**
  * The right-hand pane: whichever view [LibraryNavigation.current] names.
  *
- * Root views list [searched] (the library narrowed by the search box), so the
- * search filters every view as on the desktop. Drill-downs show the whole
- * album/artist/folder from [library], whatever the query.
+ * The search box filters every view, as on the desktop: root views list
+ * [searched] (the library narrowed by the query), and drill-downs narrow their
+ * album/artist/genre/folder from [library] by the same query.
  */
 @Composable
 fun ContentPane(
@@ -119,7 +119,10 @@ fun ContentPane(
         )
 
         is Destination.Album -> {
-            val album = library.album(destination.key)
+            val whole = library.album(destination.key)
+            val album = remember(whole, query) {
+                whole?.let { it.copy(tracks = searchTracks(it.tracks, query)) }
+            }
             if (album == null) {
                 EmptyState("This album is no longer in the library.", modifier)
             } else {
@@ -136,14 +139,16 @@ fun ContentPane(
             }
         }
 
-        is Destination.Artist -> GroupPage(destination.name, library.artist(destination.name), nav, player, modifier)
+        is Destination.Artist ->
+            GroupPage(destination.name, library.artist(destination.name), query, nav, player, modifier)
 
-        is Destination.Genre -> GroupPage(destination.name, library.genre(destination.name), nav, player, modifier)
+        is Destination.Genre ->
+            GroupPage(destination.name, library.genre(destination.name), query, nav, player, modifier)
 
         is Destination.Folder -> {
             val include = options.includeSubfolders
-            val tracks = remember(library, destination.path, include) {
-                library.folderTracks(destination.path, include)
+            val tracks = remember(library, destination.path, include, query) {
+                searchTracks(library.folderTracks(destination.path, include), query)
             }
             FolderDetail(
                 path = destination.path,
@@ -163,6 +168,7 @@ fun ContentPane(
 private fun GroupPage(
     name: String,
     group: NamedGroup?,
+    query: String,
     nav: LibraryNavigation,
     player: PlayerState,
     modifier: Modifier,
@@ -171,10 +177,11 @@ private fun GroupPage(
         EmptyState("“$name” is no longer in the library.", modifier)
         return
     }
-    val albums = remember(group) { albumsOf(group.tracks) }
+    val tracks = remember(group, query) { searchTracks(group.tracks, query) }
+    val albums = remember(tracks) { albumsOf(tracks) }
     GroupDetail(
         title = name,
-        tracks = group.tracks,
+        tracks = tracks,
         albums = albums,
         nowPlayingId = player.nowPlaying?.id,
         onOpenAlbum = { nav.push(Destination.Album(it.key)) },
