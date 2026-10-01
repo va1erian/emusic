@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use emusic_core::{ArtSource, Track, TrackId, TrackKind};
 use emusic_search::matcher::{Index, PreparedQuery};
-use emusic_search::query::parse;
+use emusic_search::query::{normalize_text, parse};
 
 const TRACK_COUNT: usize = 100_000;
 
@@ -91,5 +91,37 @@ fn bench_three_term_query(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_three_term_query);
+fn bench_normalize_text(c: &mut Criterion) {
+    let ascii_input = "The Quick Brown Fox Jumps Over The Lazy Dog";
+    let unicode_input = "Café Münsterland - Straße der Lieder (Remastered)";
+
+    c.bench_function("normalize_text ascii", |b| {
+        b.iter(|| normalize_text(black_box(ascii_input)))
+    });
+
+    c.bench_function("normalize_text unicode", |b| {
+        b.iter(|| normalize_text(black_box(unicode_input)))
+    });
+}
+
+fn bench_index_construction(c: &mut Criterion) {
+    let tracks: Vec<_> = (0..1_000).map(synthetic_track).collect();
+
+    c.bench_function("build_index 1k tracks", |b| {
+        b.iter(|| {
+            let mut index = Index::new();
+            for track in &tracks {
+                index.add_track(black_box(track.clone()));
+            }
+            index
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_three_term_query,
+    bench_normalize_text,
+    bench_index_construction
+);
 criterion_main!(benches);

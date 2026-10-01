@@ -120,21 +120,22 @@ struct Builder {
 impl Builder {
     fn new() -> Self {
         Self {
-            text: String::new(),
+            // Optimization: Reserve capacity up front to prevent intermediate buffer
+            // reallocations while concatenating all track fields into the haystack.
+            text: String::with_capacity(256),
         }
     }
 
     fn push(&mut self, value: Option<&str>) -> Span {
         let start = self.text.len();
         if let Some(value) = value {
-            for ch in normalize_text(value).chars() {
-                // Sanitize the field separator so offsets stay valid even if
-                // metadata happens to contain a control character.
-                if ch == FIELD_SEP {
-                    self.text.push(' ');
-                } else {
-                    self.text.push(ch);
-                }
+            let normalized = normalize_text(value);
+            // Optimization: Use `push_str` for bulk memory copying (`memcpy`) instead of
+            // pushing character-by-character. Sanitize `FIELD_SEP` if present.
+            if normalized.contains(FIELD_SEP) {
+                self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+            } else {
+                self.text.push_str(&normalized);
             }
         }
         let end = self.text.len();
