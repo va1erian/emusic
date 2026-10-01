@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Music
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,7 +46,11 @@ private object ArtMemoryCache {
         override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
     }
 
-    /** Albums whose art failed this session, so scrolling does not refetch them. */
+    /**
+     * Albums whose downloaded art could not be decoded, so scrolling does not
+     * refetch them. Download errors (offline, timeouts) are not recorded here:
+     * they stay retryable.
+     */
     private val failed = HashSet<String>()
 
     fun get(albumId: String): ImageBitmap? = cache.get(albumId)
@@ -77,13 +82,22 @@ fun AlbumArt(artId: String?, colorKey: String, modifier: Modifier = Modifier) {
         if (value != null || artId == null || source == null || ArtMemoryCache.hasFailed(artId)) {
             return@produceState
         }
-        value = withContext(artDispatcher) {
-            runCatching { decodeCover(source.artFile(artId)) }.getOrNull()
-        }?.also { ArtMemoryCache.put(artId, it) }
-            ?: run {
-                ArtMemoryCache.markFailed(artId)
-                null
-            }
+        val path = try {
+            withContext(artDispatcher) { source.artFile(artId) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Likely transient (offline, timeout): show the placeholder now and
+            // try again the next time this cover is composed.
+            return@produceState
+        }
+        val cover = withContext(artDispatcher) { decodeCover(path) }
+        if (cover == null) {
+            ArtMemoryCache.markFailed(artId)
+        } else {
+            ArtMemoryCache.put(artId, cover)
+            value = cover
+        }
     }
     Box(
         modifier = modifier

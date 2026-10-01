@@ -59,6 +59,13 @@ class LibraryIndexTest {
     }
 
     @Test
+    fun anAlbumIdWithoutANameStillGroupsUnderAFallbackName() {
+        val albums = albumsOf(listOf(track("x", albumId = "alb1"), track("y", albumId = "alb1")))
+        assertEquals(UNKNOWN_ALBUM, albums.single().album)
+        assertEquals(2, albums.single().tracks.size)
+    }
+
+    @Test
     fun albumsWithoutAnIdGroupByNameIgnoringCase() {
         val albums = albumsOf(listOf(track("x", album = "Live"), track("y", album = "live ")))
         assertEquals(1, albums.size)

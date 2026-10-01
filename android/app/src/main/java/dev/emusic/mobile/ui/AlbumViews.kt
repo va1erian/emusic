@@ -208,7 +208,8 @@ fun AlbumDetail(
                     )
                 }
             }
-            item(key = track.id) {
+            // Position-aware, so a duplicated row can never repeat a key.
+            item(key = "${index}_${track.id}") {
                 TrackRow(
                     track = track,
                     leading = (track.trackNo ?: (index + 1).toUInt()).toString(),
