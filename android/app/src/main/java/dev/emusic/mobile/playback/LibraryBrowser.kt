@@ -3,6 +3,7 @@ package dev.emusic.mobile.playback
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import dev.emusic.mobile.ui.displayTitle
 import uniffi.emusic_mobile.Track
 
 /** How a track should be played: a URI and whether it is playable at all. */
@@ -137,7 +138,7 @@ class LibraryBrowser(
     private fun playable(id: String, track: Track): MediaItem {
         val resolved = source(track)
         val metadata = MediaMetadata.Builder()
-            .setTitle(titleOf(track))
+            .setTitle(track.displayTitle())
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
             .setIsPlayable(resolved.playable)
@@ -157,12 +158,6 @@ class LibraryBrowser(
         }
         return builder.build()
     }
-
-    /** Title to display: the tagged title, else the file name, else the id. */
-    private fun titleOf(track: Track): String =
-        track.title?.takeIf { it.isNotBlank() }
-            ?: track.filename?.takeIf { it.isNotBlank() }
-            ?: track.id
 
     companion object {
         const val ROOT = "root"

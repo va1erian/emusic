@@ -85,18 +85,34 @@ impl From<TrackView> for Track {
 }
 
 impl Track {
-    /// Title to display: the tagged title, else the file name, else the id.
+    /// Title to display: the tagged title, else the file name without its
+    /// extension, else [`UNTITLED`]. Never the opaque id, which is a 64-digit
+    /// hash and meaningless to a person.
     pub fn display_title(&self) -> String {
-        self.title
+        if let Some(title) = self.title.as_deref().map(str::trim)
+            && !title.is_empty()
+        {
+            return title.to_string();
+        }
+        self.filename
             .as_deref()
-            .filter(|title| !title.trim().is_empty())
-            .or_else(|| {
-                self.filename
-                    .as_deref()
-                    .filter(|name| !name.trim().is_empty())
-            })
-            .unwrap_or(&self.id)
+            .map(file_stem)
+            .filter(|stem| !stem.is_empty())
+            .unwrap_or(UNTITLED)
             .to_string()
+    }
+}
+
+/// The title shown for a track with neither a title tag nor a file name.
+pub const UNTITLED: &str = "Untitled";
+
+/// `name` without its final extension (`a.b.flac` -> `a.b`), trimmed. A
+/// leading dot (`.hidden`) is part of the name, not an extension.
+fn file_stem(name: &str) -> &str {
+    let name = name.trim();
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => name[..dot].trim_end(),
+        _ => name,
     }
 }
 
@@ -157,12 +173,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_title_falls_back_to_filename_then_id() {
+    fn display_title_falls_back_to_the_file_stem_never_the_id() {
         let mut track = Track {
-            id: "abc".into(),
-            filename: Some("song.flac".into()),
+            id: "0e0a2e72050fc119033f89f75829941e".into(),
+            filename: Some("AMAZONS - KISS IN THE DARK.mp3".into()),
             directory: String::new(),
-            format: "flac".into(),
+            format: "mp3".into(),
             kind: "stream".into(),
             specialized: false,
             title: None,
@@ -182,12 +198,16 @@ mod tests {
             sync_version: 0,
             added_at: 0,
         };
-        assert_eq!(track.display_title(), "song.flac");
+        assert_eq!(track.display_title(), "AMAZONS - KISS IN THE DARK");
+        track.filename = Some("v1.2 mix.flac".into());
+        assert_eq!(track.display_title(), "v1.2 mix");
+        track.filename = Some(".hidden".into());
+        assert_eq!(track.display_title(), ".hidden");
         track.filename = None;
-        assert_eq!(track.display_title(), "abc");
+        assert_eq!(track.display_title(), UNTITLED);
         track.title = Some("  ".into());
-        assert_eq!(track.display_title(), "abc");
-        track.title = Some("Real".into());
+        assert_eq!(track.display_title(), UNTITLED);
+        track.title = Some(" Real ".into());
         assert_eq!(track.display_title(), "Real");
     }
 }

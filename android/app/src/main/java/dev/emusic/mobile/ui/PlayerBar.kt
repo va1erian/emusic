@@ -1,10 +1,13 @@
 package dev.emusic.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,120 +31,53 @@ import com.composables.icons.lucide.SkipBack
 import com.composables.icons.lucide.SkipForward
 import uniffi.emusic_mobile.Track
 
-/** How the queue repeats. */
-enum class RepeatMode { Off, All, One }
-
-/** The bottom transport: title, shuffle/prev/play-pause/next/repeat and a seek bar. */
+/**
+ * The bottom transport: cover and title (tap to open Now Playing),
+ * shuffle/prev/play-pause/next/repeat and a seek bar. It alone reads the
+ * polled position, so the 500 ms tick recomposes nothing else.
+ */
 @Composable
-fun PlayerBar(
-    track: Track,
-    isPlaying: Boolean,
-    preparing: Boolean,
-    positionMs: Long,
-    durationMs: Long,
-    repeatMode: RepeatMode,
-    shuffle: Boolean,
-    onSeek: (Long) -> Unit,
-    onToggle: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onCycleRepeat: () -> Unit,
-    onToggleShuffle: () -> Unit,
-) {
+fun PlayerBar(player: PlayerState, onOpenNowPlaying: () -> Unit) {
+    val track = player.nowPlaying ?: return
+    val preparing = player.preparing
+    val isPlaying = player.isPlaying
+    val shuffle = player.shuffle
+    val repeatMode = player.repeatMode
+    val positionMs = player.positionMs
+    val durationMs = player.durationMs
     HorizontalDivider()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .testTag("now_playing"),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.displayTitle(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    text = if (preparing) {
-                        "Preparing…"
-                    } else {
-                        listOfNotNull(track.artist, track.album)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · ")
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            IconButton(
-                onClick = onToggleShuffle,
-                enabled = !preparing,
-                modifier = Modifier.testTag("shuffle"),
-            ) {
-                Icon(
-                    imageVector = Lucide.Shuffle,
-                    contentDescription = if (shuffle) "Shuffle on" else "Shuffle off",
-                    tint = if (shuffle) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        LocalContentColor.current
-                    },
-                )
-            }
-            IconButton(
-                onClick = onPrevious,
-                enabled = !preparing,
-                modifier = Modifier.testTag("previous"),
-            ) {
-                Icon(Lucide.SkipBack, contentDescription = "Previous")
-            }
-            IconButton(
-                onClick = onToggle,
-                enabled = !preparing,
-                modifier = Modifier.testTag("play_pause"),
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Lucide.Pause else Lucide.Play,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                )
-            }
-            IconButton(
-                onClick = onNext,
-                enabled = !preparing,
-                modifier = Modifier.testTag("next"),
-            ) {
-                Icon(Lucide.SkipForward, contentDescription = "Next")
-            }
-            IconButton(
-                onClick = onCycleRepeat,
-                enabled = !preparing,
-                modifier = Modifier.testTag("repeat"),
-            ) {
-                Icon(
-                    imageVector = if (repeatMode == RepeatMode.One) Lucide.Repeat1 else Lucide.Repeat,
-                    contentDescription = when (repeatMode) {
-                        RepeatMode.Off -> "Repeat off"
-                        RepeatMode.All -> "Repeat all"
-                        RepeatMode.One -> "Repeat one"
-                    },
-                    tint = if (repeatMode == RepeatMode.Off) {
-                        LocalContentColor.current
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                )
+        // Narrow (a phone, a folded cover screen): the title gets its own line
+        // above the buttons instead of being squeezed beside them.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < SINGLE_ROW_MIN_WIDTH) {
+                Column {
+                    TrackSummary(track, preparing, onOpenNowPlaying, Modifier.fillMaxWidth())
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        TransportButtons(player, preparing, isPlaying, shuffle, repeatMode)
+                    }
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    TrackSummary(track, preparing, onOpenNowPlaying, Modifier.weight(1f))
+                    TransportButtons(player, preparing, isPlaying, shuffle, repeatMode)
+                }
             }
         }
         Slider(
             value = positionMs.coerceAtLeast(0).toFloat(),
-            onValueChange = { onSeek(it.toLong()) },
+            onValueChange = { player.seek(it.toLong()) },
             valueRange = 0f..(if (durationMs > 0) durationMs.toFloat() else 1f),
             modifier = Modifier
                 .fillMaxWidth()
@@ -154,6 +90,115 @@ fun PlayerBar(
             Text(formatMillis(positionMs), style = MaterialTheme.typography.labelSmall)
             Text(formatMillis(durationMs), style = MaterialTheme.typography.labelSmall)
         }
+    }
+}
+
+/** Below this width the transport stacks the title over the buttons. */
+private val SINGLE_ROW_MIN_WIDTH = 520.dp
+
+/** Cover, title and "artist · album"; tapping opens Now Playing. */
+@Composable
+private fun TrackSummary(
+    track: Track,
+    preparing: Boolean,
+    onOpenNowPlaying: () -> Unit,
+    modifier: Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clickable(onClickLabel = "Open now playing", onClick = onOpenNowPlaying)
+            .testTag("open_now_playing"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AlbumArt(
+            artId = track.artId(),
+            colorKey = albumKey(track) ?: track.id,
+            modifier = Modifier.size(44.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.displayTitle(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = if (preparing) "Preparing…" else track.subtitle(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/** Shuffle, previous, play/pause, next and repeat. */
+@Composable
+private fun TransportButtons(
+    player: PlayerState,
+    preparing: Boolean,
+    isPlaying: Boolean,
+    shuffle: Boolean,
+    repeatMode: RepeatMode,
+) {
+    IconButton(
+        onClick = player::toggleShuffle,
+        enabled = !preparing,
+        modifier = Modifier.testTag("shuffle"),
+    ) {
+        Icon(
+            imageVector = Lucide.Shuffle,
+            contentDescription = if (shuffle) "Shuffle on" else "Shuffle off",
+            tint = if (shuffle) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                LocalContentColor.current
+            },
+        )
+    }
+    IconButton(
+        onClick = player::previous,
+        enabled = !preparing,
+        modifier = Modifier.testTag("previous"),
+    ) {
+        Icon(Lucide.SkipBack, contentDescription = "Previous")
+    }
+    IconButton(
+        onClick = player::toggle,
+        enabled = !preparing,
+        modifier = Modifier.testTag("play_pause"),
+    ) {
+        Icon(
+            imageVector = if (isPlaying) Lucide.Pause else Lucide.Play,
+            contentDescription = if (isPlaying) "Pause" else "Play",
+        )
+    }
+    IconButton(
+        onClick = player::advance,
+        enabled = !preparing,
+        modifier = Modifier.testTag("next"),
+    ) {
+        Icon(Lucide.SkipForward, contentDescription = "Next")
+    }
+    IconButton(
+        onClick = player::cycleRepeat,
+        enabled = !preparing,
+        modifier = Modifier.testTag("repeat"),
+    ) {
+        Icon(
+            imageVector = if (repeatMode == RepeatMode.One) Lucide.Repeat1 else Lucide.Repeat,
+            contentDescription = when (repeatMode) {
+                RepeatMode.Off -> "Repeat off"
+                RepeatMode.All -> "Repeat all"
+                RepeatMode.One -> "Repeat one"
+            },
+            tint = if (repeatMode == RepeatMode.Off) {
+                LocalContentColor.current
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+        )
     }
 }
 
