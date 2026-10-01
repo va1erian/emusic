@@ -8,6 +8,7 @@ composeBom = "2026.09.00"
 media3 = "1.11.1"
 jna = "5.19.1"
 lucide = "1.1.0"
+junit = "4.13.2"
 androidxTestJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
 uiautomator = "2.4.0"
@@ -25,6 +26,7 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 lucide-icons = { group = "com.composables", name = "icons-lucide", version.ref = "lucide" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }

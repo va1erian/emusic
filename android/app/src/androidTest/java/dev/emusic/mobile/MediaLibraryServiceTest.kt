@@ -113,7 +113,7 @@ class MediaLibraryServiceTest {
         )
 
         const val LIBRARY_JSON = """
-            {"version":1,"tracks":[
+            {"schema":2,"version":1,"tracks":[
               {"id":"t1","filename":"a.mod","directory":"Mods","format":"mod","kind":"module","specialized":true,"title":"First Tune","artist":"An Artist","album_artist":null,"album":"An Album","album_id":"alb1","genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":120.0,"subtunes":1,"channels":null,"file_size":1234,"has_art":true,"sync_version":1,"added_at":0},
               {"id":"t2","filename":"b.mp3","directory":"Songs","format":"mp3","kind":"stream","specialized":false,"title":"Second Song","artist":"An Artist","album_artist":null,"album":"Other","album_id":null,"genre":null,"year":null,"track_no":null,"disc_no":null,"duration_secs":60.0,"subtunes":1,"channels":null,"file_size":900,"has_art":false,"sync_version":1,"added_at":0}
             ]}
