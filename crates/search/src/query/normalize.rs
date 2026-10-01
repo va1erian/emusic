@@ -6,7 +6,19 @@
 /// ASCII representations before lowercasing.
 #[must_use]
 pub fn normalize_text(input: &str) -> String {
-    deunicode::deunicode(input).to_lowercase()
+    // Optimization: For pure ASCII inputs (the vast majority of track metadata and search
+    // terms), bypass `deunicode` transliteration and convert directly to ASCII lowercase.
+    // This reduces heap allocations from 2 to 1 and avoids Unicode processing overhead.
+    if input.is_ascii() {
+        return input.to_ascii_lowercase();
+    }
+
+    // `deunicode` output is guaranteed to contain only ASCII characters.
+    // Instead of calling `.to_lowercase()` which allocates a second `String`,
+    // lowercasing in-place with `.make_ascii_lowercase()` saves 1 heap allocation.
+    let mut s = deunicode::deunicode(input);
+    s.make_ascii_lowercase();
+    s
 }
 
 #[cfg(test)]
