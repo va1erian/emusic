@@ -25,6 +25,7 @@ import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.ListMusic
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Music
+import com.composables.icons.lucide.Palette
 import com.composables.icons.lucide.RefreshCw
 import com.composables.icons.lucide.Tag
 import com.composables.icons.lucide.Users
@@ -43,7 +44,7 @@ val Destination.Root.icon: ImageVector
 
 /**
  * The library navigator: LIBRARY and ACTIVITY sections like the desktop
- * sidebar, then server actions. It is the permanent left pane on wide screens
+ * sidebar, then server actions and appearance. It is the permanent left pane on wide screens
  * (an unfolded Fold, a tablet) and the drawer's content on a phone.
  *
  * [counts] labels each root with its size (tracks, albums, ...), when known.
@@ -57,6 +58,7 @@ fun NavigatorPane(
     onServerInfo: () -> Unit,
     onRefresh: () -> Unit,
     onSwitchServer: () -> Unit,
+    onAccent: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -92,6 +94,8 @@ fun NavigatorPane(
         NavigatorRow("Server info", Lucide.Info, false, null, onServerInfo, "nav_info")
         NavigatorRow("Refresh library", Lucide.RefreshCw, false, null, onRefresh, "nav_refresh")
         NavigatorRow("Switch server", Lucide.ArrowLeft, false, null, onSwitchServer, "nav_servers")
+        SectionHeading("APPEARANCE")
+        NavigatorRow("Accent colour", Lucide.Palette, false, null, onAccent, "nav_accent")
     }
 }
 
