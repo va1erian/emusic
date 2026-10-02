@@ -9,3 +9,7 @@
 ## 2026-10-01 - Avoid Double-Allocation in Deunicode & Char-by-Char Haystack Appends
 **Learning:** `deunicode::deunicode` returns a guaranteed ASCII `String`. Calling `.to_lowercase()` allocates a second `String` on the heap when `.make_ascii_lowercase()` mutates in-place. For pure ASCII strings, `input.is_ascii()` allows bypassing `deunicode` entirely. In haystack string construction, pushing char-by-char causes UTF-8 decoding/re-encoding and incremental reallocations, which can be avoided with initial capacity reservation and `push_str`.
 **Action:** Use ASCII fast path and `make_ascii_lowercase()` in string normalization, and pre-allocate capacity with bulk `push_str` when building search haystacks.
+
+## 2026-10-02 - Fast ASCII Byte Path for Natural String Comparison
+**Learning:** `natural_compare` is called repeatedly during library index sorting (artists, albums, genres, directories). Standard `char` iteration and `c.to_lowercase()` creates `std::char::ToLowercase` iterators and performs Unicode table lookups per character. For ASCII strings (>95% of music metadata), iterating raw `u8` bytes directly and using `to_ascii_lowercase()` eliminates UTF-8 char decoding, `Peekable<Chars>` wrapper overhead, and Unicode lowercasing table lookups.
+**Action:** Use `a.is_ascii() && b.is_ascii()` fast-path in `natural_compare` to compare raw `u8` bytes and fast-path `(b - b'0')` digit parsing.
