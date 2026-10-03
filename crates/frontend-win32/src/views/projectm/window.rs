@@ -70,6 +70,7 @@ impl VizWindowApp {
     fn new(ui: &mut Ui<VizWindowMsg>, main: Proxy<Msg>) -> Self {
         let view = ProjectMView::new(ui)
             .expect("create the visualization widget")
+            .in_window()
             .with_gestures(forward_gesture);
         ui.set_layout(column![view.fill(1)]);
         ui.on_close(|| Some(VizWindowMsg::CloseRequested));

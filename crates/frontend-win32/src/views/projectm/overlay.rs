@@ -20,6 +20,16 @@ pub(super) enum Action {
     Hide,
 }
 
+/// Which surface hosts the overlay, so the dock button names where it goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Host {
+    /// Docked in the now-playing panel: the button pops it out.
+    #[default]
+    Panel,
+    /// In its own window: the button docks it back (#515).
+    Window,
+}
+
 /// One laid-out overlay button, in device pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Button {
@@ -72,6 +82,7 @@ pub(super) fn hit(buttons: &[Button], x: i32, y: i32) -> Option<Action> {
 pub(super) fn draw(
     canvas: &Canvas,
     buttons: &[Button],
+    host: Host,
     theme: &Theme,
     font: Option<&Font>,
     dpi: u32,
@@ -86,17 +97,18 @@ pub(super) fn draw(
         canvas.round_rect(button.rect, radius, theme.raised, Some(theme.border));
         if let Some(font) = font {
             canvas.with_font(font, |canvas| {
-                canvas.draw_text(button.rect, label(button.action), theme.text, format);
+                canvas.draw_text(button.rect, label(button.action, host), theme.text, format);
             });
         }
     }
 }
 
-/// The button's label.
-fn label(action: Action) -> &'static str {
-    match action {
-        Action::PopOut => "Pop out",
-        Action::Hide => "Hide",
+/// The button's label (also its UI Automation name) on `host`.
+pub(super) fn label(action: Action, host: Host) -> &'static str {
+    match (action, host) {
+        (Action::PopOut, Host::Panel) => "Pop out",
+        (Action::PopOut, Host::Window) => "Dock",
+        (Action::Hide, _) => "Hide",
     }
 }
 
@@ -118,6 +130,14 @@ mod tests {
         assert!(buttons.iter().all(|b| b.rect.top == 6));
         // Laid left-to-right.
         assert!(buttons[0].rect.left < buttons[1].rect.left);
+    }
+
+    #[test]
+    fn dock_button_is_named_for_where_it_goes() {
+        assert_eq!(label(Action::PopOut, Host::Panel), "Pop out");
+        assert_eq!(label(Action::PopOut, Host::Window), "Dock");
+        assert_eq!(label(Action::Hide, Host::Panel), "Hide");
+        assert_eq!(label(Action::Hide, Host::Window), "Hide");
     }
 
     #[test]
