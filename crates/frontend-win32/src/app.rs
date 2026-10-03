@@ -186,6 +186,9 @@ pub enum Msg {
     TagEditorApply,
     /// The right panel's queue splitter was dragged or double-clicked (#514).
     QueueSplitter(SplitterEvent),
+    /// The right panel's summary was resized: refit the displayed queue height
+    /// to the panel (#514).
+    QueueFit,
     /// Jump to a right-panel queue preview row (double-click / Enter).
     QueueJump(usize),
     /// Open the right panel's queue context menu for a preview row.
@@ -1861,16 +1864,23 @@ impl App for Win32App {
                     self.tick(ui);
                 }
             }
+            // A drag or reset sets the preference; the panel shows it fitted to
+            // its current height. A resize only refits, keeping the preference.
             Msg::QueueSplitter(event) => {
-                let height = match event {
+                let preferred = match event {
                     SplitterEvent::Dragged(delta) => {
                         self.right_panel.dragged_queue_height(delta, ui.dpi())
                     }
                     SplitterEvent::Reset => DEFAULT_QUEUE_HEIGHT,
                 };
-                if height != self.shell.state.queue_height {
-                    self.shell.state.queue_height = height;
-                    self.right_panel.set_queue_height(height);
+                self.shell.state.queue_height = preferred;
+                if self.right_panel.fit_queue_height(preferred, ui.dpi()) {
+                    self.install_layout(ui, self.applied_view);
+                }
+            }
+            Msg::QueueFit => {
+                let preferred = self.shell.state.queue_height;
+                if self.right_panel.fit_queue_height(preferred, ui.dpi()) {
                     self.install_layout(ui, self.applied_view);
                 }
             }

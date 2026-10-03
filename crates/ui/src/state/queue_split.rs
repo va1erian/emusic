@@ -6,6 +6,12 @@
 //! delta plus the height the summary and the queue currently share; this module
 //! turns that into the new queue height, so the clamping is toolkit-agnostic
 //! and unit-tested.
+//!
+//! The saved height is a *preference*: [`displayed_queue_height`] fits it to
+//! the panel as it is now, so a window shrunk below it (or a large saved value
+//! on a small screen) never squeezes the summary, and growing the window again
+//! brings the preferred height back. Only a drag or a reset changes the
+//! preference itself.
 
 /// The queue list's default height, in DIP: the panel's layout before it could
 /// be resized. Double-clicking the splitter returns to it.
@@ -45,6 +51,16 @@ pub fn clamp_queue_height(height: f32, span: f32) -> f32 {
         MAX_QUEUE_HEIGHT
     };
     sanitize_queue_height(height).min(max)
+}
+
+/// The queue height to lay out for the user's `preferred` height in a panel
+/// whose summary and queue share `span` DIP: the preference itself when it
+/// fits, otherwise the largest height that leaves the summary its minimum
+/// (see [`clamp_queue_height`]). The preference is left untouched, so the
+/// next, larger span shows it in full again.
+#[must_use]
+pub fn displayed_queue_height(preferred: f32, span: f32) -> f32 {
+    clamp_queue_height(preferred, span)
 }
 
 /// The queue height after dragging the splitter by `delta` DIP (positive is
@@ -87,6 +103,25 @@ mod tests {
     #[test]
     fn the_queue_keeps_about_three_rows() {
         assert_eq!(drag_queue_height(200.0, 1000.0, 600.0), MIN_QUEUE_HEIGHT);
+    }
+
+    #[test]
+    fn a_huge_saved_height_is_displayed_within_the_panel() {
+        let span = 500.0;
+        let shown = displayed_queue_height(MAX_QUEUE_HEIGHT, span);
+        assert_eq!(shown, span - MIN_SUMMARY_HEIGHT);
+        assert!(shown + MIN_SUMMARY_HEIGHT <= span);
+    }
+
+    #[test]
+    fn a_temporary_shrink_keeps_the_preference_and_growing_restores_it() {
+        let preferred = 400.0;
+        assert_eq!(displayed_queue_height(preferred, 300.0), 228.0);
+        assert_eq!(displayed_queue_height(preferred, 900.0), preferred);
+        assert_eq!(
+            displayed_queue_height(preferred, preferred + MIN_SUMMARY_HEIGHT),
+            preferred
+        );
     }
 
     #[test]

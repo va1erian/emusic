@@ -26,7 +26,7 @@ pub use panels::{PanelKind, PanelVisibility};
 pub use projectm::{ProjectMState, VizCommand};
 pub use queue_split::{
     DEFAULT_QUEUE_HEIGHT, MAX_QUEUE_HEIGHT, MIN_QUEUE_HEIGHT, MIN_SUMMARY_HEIGHT,
-    clamp_queue_height, drag_queue_height, sanitize_queue_height,
+    clamp_queue_height, displayed_queue_height, drag_queue_height, sanitize_queue_height,
 };
 pub use search::{SearchPopupItem, SearchPopupState};
 pub use settings::SettingsTab;
@@ -89,8 +89,9 @@ pub struct AppState {
     pub navigator_width: f32,
     /// Now-playing (right panel) width, in DIP; dragged by its splitter (#342).
     pub right_panel_width: f32,
-    /// Height of the now-playing panel's queue list, in DIP; dragged by the
-    /// splitter above it (#514).
+    /// Preferred height of the now-playing panel's queue list, in DIP; set by
+    /// dragging the splitter above it (#514). The frontend lays out
+    /// [`displayed_queue_height`] of it, which fits the current panel.
     pub queue_height: f32,
     pub search_query: String,
     /// Number of tracks the Music view's search box currently matches;
