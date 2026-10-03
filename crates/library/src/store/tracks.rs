@@ -351,39 +351,43 @@ fn art_source_from_columns(kind: i64, path: Option<String>) -> ArtSource {
     }
 }
 
+// Optimization: Access columns by positional index matching `TRACK_COLUMNS`
+// rather than string column names. Searching column names by string takes
+// 26 lookups per row; positional indexing bypasses string comparisons entirely,
+// significantly speeding up loading all tracks from the library store.
 fn row_to_track(row: &Row) -> rusqlite::Result<Track> {
-    let path: String = row.get("path")?;
-    let dir: String = row.get("dir")?;
-    let kind: i64 = row.get("kind")?;
-    let art_source_kind: i64 = row.get("art_source_kind")?;
-    let art_source_path: Option<String> = row.get("art_source_path")?;
+    let path: String = row.get(1)?;
+    let dir: String = row.get(2)?;
+    let kind: i64 = row.get(7)?;
+    let art_source_kind: i64 = row.get(22)?;
+    let art_source_path: Option<String> = row.get(23)?;
 
     Ok(Track {
-        id: TrackId(row.get("id")?),
+        id: TrackId(row.get(0)?),
         path: PathBuf::from(path),
         dir: PathBuf::from(dir),
-        filename: row.get("filename")?,
-        ext: row.get("ext")?,
-        size: row.get("size")?,
-        mtime: row.get("mtime")?,
+        filename: row.get(3)?,
+        ext: row.get(4)?,
+        size: row.get(5)?,
+        mtime: row.get(6)?,
         kind: track_kind_from_i64(kind),
-        duration_ms: row.get("duration_ms")?,
-        bitrate: row.get("bitrate")?,
-        sample_rate: row.get("sample_rate")?,
-        channels: row.get("channels")?,
-        title: row.get("title")?,
-        artist: row.get("artist")?,
-        album_artist: row.get("album_artist")?,
-        album: row.get("album")?,
-        genre: row.get("genre")?,
-        year: row.get("year")?,
-        track_no: row.get("track_no")?,
-        disc_no: row.get("disc_no")?,
-        composer: row.get("composer")?,
-        comment: row.get("comment")?,
+        duration_ms: row.get(8)?,
+        bitrate: row.get(9)?,
+        sample_rate: row.get(10)?,
+        channels: row.get(11)?,
+        title: row.get(12)?,
+        artist: row.get(13)?,
+        album_artist: row.get(14)?,
+        album: row.get(15)?,
+        genre: row.get(16)?,
+        year: row.get(17)?,
+        track_no: row.get(18)?,
+        disc_no: row.get(19)?,
+        composer: row.get(20)?,
+        comment: row.get(21)?,
         art_source: art_source_from_columns(art_source_kind, art_source_path),
-        added_at: row.get("added_at")?,
-        starred: row.get("starred")?,
+        added_at: row.get(24)?,
+        starred: row.get(25)?,
     })
 }
 

@@ -277,32 +277,34 @@ WHERE tracks.file_size <> excluded.file_size
    OR tracks.channels IS NOT excluded.channels
 ";
 
+// Optimization: Access columns by positional index matching `TRACK_COLUMNS`
+// rather than string column names. Searching column names by string takes
+// 23 lookups per row; positional indexing bypasses string comparisons entirely,
+// significantly speeding up bulk queries like `sync_since`.
 fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<TrackRecord> {
     Ok(TrackRecord {
-        id: row.get("id")?,
-        root_index: row.get("root_index")?,
-        relative_path: row.get("relative_path")?,
-        format: row.get("format")?,
-        kind: row.get("kind")?,
-        title: row.get("title")?,
-        artist: row.get("artist")?,
-        album_artist: row.get("album_artist")?,
-        album: row.get("album")?,
-        album_id: row.get("album_id")?,
-        genre: row.get("genre")?,
-        year: row.get("year")?,
-        track_no: row.get("track_no")?,
-        disc_no: row.get("disc_no")?,
-        duration_secs: row.get("duration_secs")?,
-        subtunes: row.get::<_, i64>("subtunes")? as u32,
-        channels: row
-            .get::<_, Option<i64>>("channels")?
-            .map(|value| value as u32),
-        file_size: row.get::<_, i64>("file_size")? as u64,
-        mtime: row.get("mtime")?,
-        hash: row.get("hash")?,
-        has_art: row.get::<_, i64>("has_art")? != 0,
-        sync_version: row.get("sync_version")?,
-        added_at: row.get("added_at")?,
+        id: row.get(0)?,
+        root_index: row.get(1)?,
+        relative_path: row.get(2)?,
+        format: row.get(3)?,
+        kind: row.get(4)?,
+        title: row.get(5)?,
+        artist: row.get(6)?,
+        album_artist: row.get(7)?,
+        album: row.get(8)?,
+        album_id: row.get(9)?,
+        genre: row.get(10)?,
+        year: row.get(11)?,
+        track_no: row.get(12)?,
+        disc_no: row.get(13)?,
+        duration_secs: row.get(14)?,
+        subtunes: row.get::<_, i64>(15)? as u32,
+        channels: row.get::<_, Option<i64>>(16)?.map(|value| value as u32),
+        file_size: row.get::<_, i64>(17)? as u64,
+        mtime: row.get(18)?,
+        hash: row.get(19)?,
+        has_art: row.get::<_, i64>(20)? != 0,
+        sync_version: row.get(21)?,
+        added_at: row.get(22)?,
     })
 }
