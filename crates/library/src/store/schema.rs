@@ -6,7 +6,7 @@
 //! edited — add a new one instead.
 
 /// The schema version this build of `emusic-library` expects.
-pub const CURRENT_VERSION: i64 = 7;
+pub const CURRENT_VERSION: i64 = 8;
 
 pub const MIGRATIONS: &[&str] = &[
     // v1: initial schema.
@@ -115,5 +115,24 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position);
     CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
+    ",
+    // v8: starred sync with emusic-server (#516). `starred_changed_at` is
+    // when the user last starred/unstarred a track on this desktop (Unix ms;
+    // NULL for older stars and for changes applied from a server), so the
+    // three-way merge can tell local edits apart and let the most recent
+    // action win. Per server, `remote_starred` holds the starred set as of
+    // the last successful sync (the merge base), and `remote_servers`
+    // remembers its version (the ETag; NULL until the first sync) and when
+    // local state was read for that sync.
+    r"
+    ALTER TABLE tracks ADD COLUMN starred_changed_at INTEGER;
+    ALTER TABLE remote_servers ADD COLUMN starred_version INTEGER;
+    ALTER TABLE remote_servers ADD COLUMN starred_synced_at INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE remote_starred (
+        server_id   TEXT NOT NULL,
+        track_id    TEXT NOT NULL,
+        PRIMARY KEY (server_id, track_id)
+    ) WITHOUT ROWID;
     ",
 ];

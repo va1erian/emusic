@@ -10,6 +10,7 @@ mod migrations;
 mod playlists;
 mod remote;
 mod schema;
+mod starred_sync;
 mod stats;
 mod tracks;
 
@@ -23,6 +24,7 @@ use crate::error::{LibraryError, Result};
 pub use folders::Folder;
 pub use playlists::{Playlist, PlaylistEntry, reordered};
 pub use remote::RemoteTrack;
+pub use starred_sync::{StarSyncRow, StarredBase};
 pub use stats::{MostPlayedEntry, PlayHistoryEntry, TrackStats};
 
 /// How long a connection waits for another writer's lock before returning
