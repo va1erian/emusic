@@ -3,6 +3,7 @@
 pub mod devices;
 pub mod models;
 pub mod schema;
+pub mod starred;
 pub mod tracks;
 
 use std::path::Path;

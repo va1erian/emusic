@@ -5,13 +5,14 @@ pub mod error;
 pub mod library_routes;
 pub mod range;
 pub mod render_routes;
+pub mod starred_routes;
 pub mod stream_routes;
 pub mod ws;
 
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use serde_json::{Value, json};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
@@ -37,9 +38,16 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/tracks/{id}/render", get(render_routes::render))
         .route("/api/v1/albums/{id}/art", get(library_routes::album_art))
         .route("/api/v1/sid/songlengths", get(library_routes::songlengths))
+        .route("/api/v1/starred", get(starred_routes::list))
+        .route(
+            "/api/v1/starred/{track_id}",
+            put(starred_routes::star).delete(starred_routes::unstar),
+        )
         .route("/api/v1/ws", get(ws::ws))
-        .layer(TraceLayer::new_for_http())
         .layer(RequestBodyLimitLayer::new(max_body))
+        // Merged after the global limit: the batch route carries its own.
+        .merge(starred_routes::batch_router())
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 

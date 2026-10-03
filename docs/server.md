@@ -143,7 +143,7 @@ Security events raised while serving are written as JSON lines to a
 daily-rotated `<data_dir>/audit.log.<date>` file, in addition to the
 human-readable stdout log. Events include `auth_failed`,
 `pair_failed`, `device_paired`, `device_revoked`, `token_refreshed`,
-`path_violation`, `rate_limited` and `scan_finished`.
+`path_violation`, `rate_limited`, `scan_finished` and `starred_changed`.
 
 ## HTTP API
 
@@ -164,11 +164,41 @@ All routes are under `/api/v1` and require a bearer token except `health` and
 | `GET /sid/songlengths` | HVSC `Songlengths.md5` text (parsed by the client's existing parser). |
 | `GET /tracks/{id}/stream` | Audio bytes, `Range` supported. |
 | `GET /tracks/{id}/render?subtune=N&codec=flac` | Server-rendered rendition of a specialized track. |
-| `GET /ws` | WebSocket: scan progress and library-version events. |
+| `GET /starred` | Server-wide starred tracks, newest first; `If-None-Match` → `304`. |
+| `PUT /starred/{track_id}` | Star a track (idempotent; unknown track → `404`). |
+| `DELETE /starred/{track_id}` | Unstar a track (idempotent). |
+| `POST /starred/batch` | Star/unstar many tracks in one transaction. |
+| `GET /ws` | WebSocket: scan progress, library-version and starred-version events. |
 
 `GET /library/sync` returns a monotonically increasing `version`; every row
 carries the `sync_version` at which it last changed, and deletions appear in
 `deleted`. A client that stores `version` only ever fetches the difference.
+
+### Starred tracks
+
+The server is single-user, so there is one starred set shared by every paired
+device. Rows are keyed by the server track id and survive a scan deleting the
+track (the file may come back), but responses only list ids that currently
+exist. Every effective change bumps a starred-set `version`; no-op requests
+(starring a starred track, unstarring an unstarred one) leave it unchanged.
+
+- `GET /starred` →
+  `{ "version": 3, "tracks": [{ "id": "…", "starred_at": 1730000000 }] }`,
+  newest first, with `ETag: "3"`. Sending `If-None-Match: "3"` returns `304`
+  while the version is unchanged.
+- `PUT /starred/{track_id}` and `DELETE /starred/{track_id}` →
+  `{ "version": 4 }`. Starring an id that is not in the library is a `404`;
+  unstarring never fails.
+- `POST /starred/batch` with `{ "star": ["…"], "unstar": ["…"] }` applies both
+  lists in one transaction (stars first, then unstars, so an id in both ends up
+  unstarred) and returns `{ "version": 5, "unknown": ["…"] }`, where `unknown`
+  lists ids in `star` that are not in the library (skipped). At most 5,000 ids
+  in total, otherwise `400`. This route accepts bodies up to 1 MiB regardless
+  of `security.max_body_bytes`.
+
+Each change is written to the audit log (`starred_changed`, with the device id
+and how many ids changed) and broadcast on `GET /ws` as
+`{ "type": "starred_changed", "version": 5 }`.
 
 ## Streaming & specialized formats
 

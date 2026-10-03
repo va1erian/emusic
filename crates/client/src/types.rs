@@ -128,9 +128,100 @@ pub struct Health {
     pub started_at: i64,
 }
 
+/// The server-wide starred set from `GET /api/v1/starred`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StarredSet {
+    /// Starred-set version; pass it back as the ETag to skip unchanged sets.
+    pub version: i64,
+    /// Starred tracks that currently exist on the server, newest first.
+    #[serde(default)]
+    pub tracks: Vec<StarredTrack>,
+}
+
+/// One starred track.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StarredTrack {
+    /// Server track id.
+    pub id: String,
+    /// Unix timestamp (seconds) when it was starred.
+    pub starred_at: i64,
+}
+
+/// Response of `PUT`/`DELETE /api/v1/starred/{track_id}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StarredVersion {
+    /// Starred-set version after the request.
+    pub version: i64,
+}
+
+/// Response of `POST /api/v1/starred/batch`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StarredBatchResult {
+    /// Starred-set version after the batch.
+    pub version: i64,
+    /// Ids asked to be starred that the server does not know (skipped).
+    #[serde(default)]
+    pub unknown: Vec<String>,
+}
+
+/// An event pushed on the server's WebSocket (`GET /api/v1/ws`).
+///
+/// Only the events clients act on are modelled; anything else (scan progress,
+/// status snapshots, future events) decodes as [`ServerEvent::Other`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ServerEvent {
+    /// The library version advanced: run a delta sync.
+    LibraryChanged {
+        /// New library version.
+        version: i64,
+    },
+    /// The starred set changed: re-fetch `GET /api/v1/starred`.
+    StarredChanged {
+        /// New starred-set version.
+        version: i64,
+    },
+    /// Any other event.
+    #[serde(other)]
+    Other,
+}
+
 /// The server's JSON error body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApiErrorBody {
     /// Human-readable error.
     pub error: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn starred_types_match_the_server_wire_format() {
+        let set: StarredSet = serde_json::from_str(
+            r#"{"version":4,"tracks":[{"id":"b","starred_at":20},{"id":"a","starred_at":10}]}"#,
+        )
+        .unwrap();
+        assert_eq!(set.version, 4);
+        assert_eq!(set.tracks[0].id, "b");
+        assert_eq!(set.tracks[1].starred_at, 10);
+        let batch: StarredBatchResult =
+            serde_json::from_str(r#"{"version":5,"unknown":["x"]}"#).unwrap();
+        assert_eq!(batch.unknown, vec!["x"]);
+    }
+
+    #[test]
+    fn server_events_decode_known_and_unknown_types() {
+        let event: ServerEvent =
+            serde_json::from_str(r#"{"type":"starred_changed","version":3}"#).unwrap();
+        assert_eq!(event, ServerEvent::StarredChanged { version: 3 });
+        let event: ServerEvent =
+            serde_json::from_str(r#"{"type":"library_changed","version":9}"#).unwrap();
+        assert_eq!(event, ServerEvent::LibraryChanged { version: 9 });
+        let event: ServerEvent =
+            serde_json::from_str(r#"{"type":"scan_progress","root_index":0,"files_found":1}"#)
+                .unwrap();
+        assert_eq!(event, ServerEvent::Other);
+    }
 }

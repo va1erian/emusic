@@ -28,5 +28,8 @@ pub use client::RemoteClient;
 pub use config::ServerEndpoint;
 pub use credentials::{CredentialStore, Credentials};
 pub use error::{ClientError, Result};
-pub use types::{PairResponse, SyncDelta, TokenResponse, TrackView};
+pub use types::{
+    PairResponse, ServerEvent, StarredBatchResult, StarredSet, StarredTrack, SyncDelta,
+    TokenResponse, TrackView,
+};
 pub use util::unix_now;
