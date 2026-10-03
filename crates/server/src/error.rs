@@ -42,9 +42,10 @@ pub enum ServerError {
         root: PathBuf,
     },
 
-    /// A pairing code was wrong, expired or already used.
+    /// A pairing code was wrong, expired or already used. The reason is for
+    /// the audit log only and is never sent to the client.
     #[error("invalid pairing code")]
-    InvalidPairingCode,
+    InvalidPairingCode(crate::audit::PairFailure),
 
     /// Metadata parsing failed for a scanned file.
     #[error("metadata error: {0}")]

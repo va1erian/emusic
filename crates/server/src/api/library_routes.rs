@@ -8,7 +8,6 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 use crate::api::error::ApiError;
-use crate::audit;
 use crate::auth::middleware::{AuthDevice, ClientIp};
 use crate::db::models::{SyncDeltaView, TrackView};
 use crate::error::ServerError;
@@ -85,7 +84,9 @@ pub async fn album_art(
         // Only a genuine escape is a security event; a missing/stale file is
         // ordinary and must not pollute the audit log.
         Err(error @ ServerError::PathEscape { .. }) => {
-            audit::path_violation(&ip.to_string(), &device.id, &album_id);
+            state
+                .audit
+                .path_violation(&ip.to_string(), &device.id, &album_id);
             Err(error.into())
         }
         Err(error) => Err(error.into()),

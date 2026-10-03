@@ -15,6 +15,7 @@ guide.
 - [Security model](#security-model)
 - [HTTP API](#http-api)
 - [Streaming & specialized formats](#streaming--specialized-formats)
+- [Admin page](#admin-page)
 - [Deployment](#deployment)
 - [Operations](#operations)
 
@@ -31,7 +32,7 @@ emusic-server --config deploy/server.example.toml pair
 emusic-server --config /etc/emusic-server/server.toml
 ```
 
-The binary has four subcommands:
+The binary has five subcommands:
 
 | Command | Purpose |
 | --- | --- |
@@ -39,6 +40,7 @@ The binary has four subcommands:
 | `pair [--ttl SECS]` | Generate and print a one-time pairing code. |
 | `devices` | List paired devices and their state. |
 | `revoke <device_id>` | Revoke a device immediately. |
+| `audit [--limit N] [--event X]` | Print recent audit events, newest first. |
 
 ## Configuration
 
@@ -67,6 +69,11 @@ environment override, which makes container configuration file-free.
 | `render.soundfont_path` | `EMUSIC_SERVER_RENDER_SOUNDFONT` | none | MIDI SoundFont (reserved). |
 | `render.cache_max_bytes` | `EMUSIC_SERVER_RENDER_CACHE_MAX_BYTES` | `2147483648` | Rendition cache cap. |
 | `render.max_concurrent` | `EMUSIC_SERVER_RENDER_MAX_CONCURRENT` | `2` | Concurrent renders. |
+| `admin.enabled` | `EMUSIC_SERVER_ADMIN_ENABLED` | `true` | Run the [admin page](#admin-page) listener. |
+| `admin.host` | `EMUSIC_SERVER_ADMIN_HOST` | `127.0.0.1` | IP literal or `localhost`. Non-loopback requires `admin.token`. |
+| `admin.port` | `EMUSIC_SERVER_ADMIN_PORT` | `8081` | Must differ from `server.port`. |
+| `admin.token` | `EMUSIC_SERVER_ADMIN_TOKEN` | empty | HTTP Basic password (24+ chars). Empty = no auth, loopback only. |
+| `audit.retention_days` | `EMUSIC_SERVER_AUDIT_RETENTION_DAYS` | `90` | Days kept in the `audit_log` table (1-3650). |
 
 ¹ `%LOCALAPPDATA%\emusic-server` on Windows.
 
@@ -139,11 +146,37 @@ rejected. Violations are audited and surfaced as `404` so no path is disclosed.
 
 ### Audit log
 
-Security events raised while serving are written as JSON lines to a
-daily-rotated `<data_dir>/audit.log.<date>` file, in addition to the
-human-readable stdout log. Events include `auth_failed`,
-`pair_failed`, `device_paired`, `device_revoked`, `token_refreshed`,
-`path_violation`, `rate_limited`, `scan_finished` and `starred_changed`.
+Security and operational events go to three places: the human-readable stdout
+log, a daily-rotated JSON-lines file `<data_dir>/audit.log.<date>`, and the
+`audit_log` table in the database, which the [admin page](#admin-page) and
+`emusic-server audit` query. Each row has a time, an event name, the real
+client IP (or `system` / `cli` for events the server or the CLI raises), the
+device concerned if any, and a JSON `detail` object (in the JSON-lines file,
+`detail` is a JSON string field).
+
+| Area | Events (`detail` fields) |
+| --- | --- |
+| Pairing | `pairing_code_created` (`by`: `cli`/`admin`/`device`, `ttl_secs`), `device_paired` (`device_name`), `pair_failed` (`reason`: `wrong`, `expired`, `reused`, `rate_limited`, `invalid_request`) |
+| Sessions | `token_refreshed`, `refresh_failed` (`reason`), `auth_failed` (`reason`), `device_revoked` (`by`, `by_device`) |
+| Library | `scan_started` (`roots`), `scan_finished` (`files_found`, `changed`, `deleted`, `skipped`, `partial`, `elapsed_ms`), `scan_failed`, `library_version_changed` (`from`, `to`), `tombstones_pruned` (`count`) |
+| Database | `migration_applied` (`from`, `to`), `audit_pruned` (`removed`, `retention_days`), `admin_integrity_check` (`ok`) |
+| Library state | `starred_changed` (`starred`, `unstarred`) |
+| Defences | `path_violation` (`track_id`), `rate_limited` (`scope`), `admin_auth_failed` (`reason`), `audit_events_dropped` (`count`) |
+
+Recording an event never blocks or fails a request: handlers push it onto a
+bounded in-memory queue (4096 events) drained by one background writer that
+inserts in batches. If the queue is ever full the event is dropped, counted,
+logged as a warning, and an `audit_events_dropped` row records how many were
+lost. Events an anonymous client can trigger at will (`auth_failed`,
+`pair_failed`, `rate_limited`, `admin_auth_failed`) are persisted at most 30
+times per minute per client address, so a flood cannot grow the table without
+bound; the rest still reach the log file, and the admin overview counts them.
+Rows older than `audit.retention_days` are pruned at startup and daily.
+
+```sh
+emusic-server audit --limit 20
+emusic-server audit --event pair_failed
+```
 
 ## HTTP API
 
@@ -245,6 +278,52 @@ can tell whether to call `/render` before trying. With `render.enabled = false`
 the endpoint returns `404` and no track is reported renderable; `specialized`
 is unchanged for the desktop's raw delivery path.
 
+## Admin page
+
+A small, server-rendered admin page runs on a **second listener** with its
+own router (`admin.host:admin.port`, default `127.0.0.1:8081`). It is never
+mounted on the public router: `/admin` on the public port is a `404`.
+
+| Page | Shows |
+| --- | --- |
+| **Overview** (`/admin/`) | Version, uptime, schema and library versions, DB + WAL size, rows per table, scan status, render cache size, library roots. |
+| **Active users** (`/admin/active`) | Devices with a request in the last 5 minutes or an open WebSocket: last request, client IP, user agent, WebSocket count, last streamed/rendered track. Refreshes every 10 s. |
+| **Devices** (`/admin/devices`) | Every paired device with last seen, and a *Revoke* button. |
+| **Pairing** (`/admin/pairing`) | Outstanding code count and a *Generate code* button that shows a one-time code. |
+| **Audit log** (`/admin/audit`) | Newest first, paginated, filterable by event, device and UTC time range. |
+| **Database** (`/admin/database`) | Per-table counts, tombstones, pairing-code rows, page stats, `PRAGMA quick_check`, and `PRAGMA integrity_check` on demand. |
+
+The same data is available as JSON from `GET /admin/api/overview`, `active`,
+`devices`, `pairing`, `audit` (same query parameters as the page: `event`,
+`device`, `since`, `until`, `before`, `limit`) and `database`.
+
+**Access control.**
+
+- Startup refuses an admin `host` that is not loopback unless `admin.token`
+  is set (at least 24 characters). With a token, every request needs HTTP
+  Basic auth: any user name, password = token, compared in constant time.
+  Wrong or malformed credentials are audited (`admin_auth_failed`), and after
+  10 failures in a minute an IP gets `429` until the window slides.
+- Without a token (loopback only), requests must carry a `Host` header that is
+  an IP literal or `localhost`, which defeats DNS-rebinding attacks from a web
+  page open in a browser on the server machine.
+- Revoke, generate-code and integrity-check are `POST` forms with a per-process
+  CSRF token (valid one hour); cross-site `Origin` / `Sec-Fetch-Site` are
+  refused too. These actions are audited with `by: admin`.
+- Every response has `Cache-Control: no-store`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a CSP
+  of `default-src 'none'; style-src 'self'; form-action 'self';
+  frame-ancestors 'none'`. Pages contain no scripts and load nothing external.
+- The listener speaks plain HTTP. Do not expose it to the internet or add it
+  to the reverse proxy; reach it over an SSH tunnel instead:
+
+  ```sh
+  ssh -L 8081:127.0.0.1:8081 you@homelab
+  # then browse http://localhost:8081/
+  ```
+
+Set `admin.enabled = false` to turn the listener off entirely.
+
 ## Deployment
 
 ### Docker + Cosmos Cloud
@@ -262,6 +341,13 @@ Cloud bridge subnet, for example:
 ```toml
 trusted_proxies = ["172.16.0.0/12", "127.0.0.1"]
 ```
+
+The compose file also publishes the [admin page](#admin-page) on the host's
+**loopback only** (`127.0.0.1:8081:8081`). Inside the container the listener
+binds `0.0.0.0` (`EMUSIC_SERVER_ADMIN_HOST`) so the mapping can reach it, which
+requires `EMUSIC_SERVER_ADMIN_TOKEN`: replace the `CHANGE-ME` placeholder with
+a random token (`openssl rand -hex 24`); the server refuses to start until you
+do. Do not add port 8081 to the Cosmos Cloud labels; use an SSH tunnel.
 
 The container runs as a non-root user with a read-only root filesystem, all
 capabilities dropped and `no-new-privileges`; only the data directory is
@@ -337,8 +423,9 @@ If no reverse proxy is used, set both `security.tls_cert` and
   cannot see part of the library (unreachable root, unreadable directory or a
   root that suddenly yields zero files) is marked partial and never deletes
   rows it could not verify, so an unmounted share cannot wipe the index.
-- **Revoking** a lost device: `emusic-server revoke <device_id>`; its tokens
-  stop working on the next request.
+- **Revoking** a lost device: `emusic-server revoke <device_id>` or the admin
+  page's *Devices* tab; its tokens stop working on the next request.
+- **Auditing**: `emusic-server audit` or the admin page's *Audit log* tab.
 - **Back up** `<data_dir>/emusic-server.db` (library index and devices) and
   `<data_dir>/server.key` (token signing key). The database runs in WAL mode,
   so stop the server first or copy the `-wal`/`-shm` files too (or use
@@ -369,9 +456,9 @@ The server does not need to be stopped; SQLite runs in WAL mode, so the CLI and
 the server share the database safely. The command prints the code on its own
 line and then a human-readable hint.
 
-**Can it be done from the web?** For the *first* device, no. There is no admin
-web UI, and the HTTP endpoint that mints codes requires an already-paired
-device. Later codes can be minted over the API by a paired device:
+**Can it be done from the web?** Yes, from the [admin page](#admin-page)'s
+*Pairing* tab (over the SSH tunnel), which also works for the first device.
+The public HTTP endpoint that mints codes requires an already-paired device:
 
 ```http
 POST /api/v1/devices/pairing-codes

@@ -43,6 +43,7 @@ fn start_server() -> Server {
             scan_interval_secs: 0,
         },
         render: RenderConfig::default(),
+        ..Config::default()
     };
     let state = emusic_server::build_state(config).expect("build state");
 

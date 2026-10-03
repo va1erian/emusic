@@ -77,7 +77,7 @@ impl From<ServerError> for ApiError {
     fn from(error: ServerError) -> Self {
         match error {
             ServerError::Unauthorized(message) => Self::unauthorized(message),
-            ServerError::InvalidPairingCode => Self::unauthorized("invalid pairing code"),
+            ServerError::InvalidPairingCode(_) => Self::unauthorized("invalid pairing code"),
             // Path violations are never disclosed to the client; the real
             // event is written to the audit log by the caller.
             ServerError::PathRejected(_) | ServerError::PathEscape { .. } => Self::not_found(),

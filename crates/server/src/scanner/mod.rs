@@ -61,8 +61,10 @@ impl Scanner {
         let started = Instant::now();
         let now = unix_now();
         let batch_size = batch_size.max(1);
-        let mut report = ScanReport::default();
-        db.purge_tombstones_before(now - TOMBSTONE_RETENTION_SECS)?;
+        let mut report = ScanReport {
+            tombstones_pruned: db.purge_tombstones_before(now - TOMBSTONE_RETENTION_SECS)? as u64,
+            ..ScanReport::default()
+        };
 
         for (root_index, root) in self.roots.iter().enumerate() {
             let walked = walk::walk_root(root);
@@ -177,4 +179,6 @@ pub struct ScanReport {
     pub partial: bool,
     /// Wall-clock duration in milliseconds.
     pub elapsed_ms: u64,
+    /// Expired tombstones removed before scanning.
+    pub tombstones_pruned: u64,
 }

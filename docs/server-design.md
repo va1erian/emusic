@@ -95,6 +95,9 @@ Security is paramount. The server exposes media and metadata to remote clients, 
   - Brute-force protection on authentication and pairing endpoints (e.g., maximum 3 pairing attempts per minute per IP), utilizing real client IPs extracted from proxy headers when behind Cosmos Cloud.
 - **Structured Audit Logs**:
   - Security events (failed auth, device paired, device revoked, path access violations) are written to structured audit logs (`tracing` + JSON file target).
+  - Audit events are also persisted to an `audit_log` SQLite table by a non-blocking batched writer, with configurable retention, and are browsable from the admin page.
+- **Admin Page on a Separate Listener**:
+  - A server-rendered admin page (overview, active users, devices, pairing, audit log, database health) is served by a second listener with its own router, bound to loopback by default and requiring an HTTP Basic token anywhere else. It is never mounted on the public router. See [server.md](server.md#admin-page).
 
 ---
 

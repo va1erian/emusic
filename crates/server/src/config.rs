@@ -15,6 +15,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, ServerError};
 
+mod admin;
+
+pub use admin::{AdminConfig, AuditConfig, DEFAULT_ADMIN_PORT, MIN_ADMIN_TOKEN_LEN};
+
 /// Default listen port when behind a TLS-terminating reverse proxy.
 pub const DEFAULT_PORT: u16 = 8080;
 
@@ -51,6 +55,10 @@ pub struct Config {
     pub library: LibraryConfig,
     /// Server-side rendering of SID, module and MIDI files for Android.
     pub render: RenderConfig,
+    /// The admin page listener.
+    pub admin: AdminConfig,
+    /// Persistent audit log retention.
+    pub audit: AuditConfig,
 }
 
 /// `[server]` table.
@@ -271,6 +279,8 @@ impl Config {
         if let Some(value) = get("EMUSIC_SERVER_RENDER_MAX_CONCURRENT") {
             self.render.max_concurrent = parse_env(&value, "EMUSIC_SERVER_RENDER_MAX_CONCURRENT")?;
         }
+        self.admin.apply_env(&get)?;
+        self.audit.apply_env(&get)?;
         Ok(())
     }
 
@@ -384,6 +394,8 @@ impl Config {
                 ));
             }
         }
+        self.admin.validate(self.server.port)?;
+        self.audit.validate()?;
         Ok(())
     }
 

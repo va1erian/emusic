@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use ipnet::IpNet;
 
+use crate::activity::ActivityTracker;
+use crate::audit::AuditLog;
 use crate::auth::ServerKey;
 use crate::config::Config;
 use crate::db::Db;
@@ -39,12 +41,16 @@ pub struct AppState {
     pub render_caps: RenderCapabilities,
     /// Server start time (Unix seconds).
     pub started_at: i64,
+    /// Audit log (tracing + persistent `audit_log` table).
+    pub audit: AuditLog,
+    /// Live per-device activity, read by the admin page only.
+    pub activity: Arc<ActivityTracker>,
 }
 
 impl AppState {
     /// Builds state from validated configuration, an open store and the
     /// server key. Non-fatal problems (e.g. a missing songlengths file) are
-    /// logged and degrade gracefully.
+    /// logged and degrade gracefully. Starts the background audit writer.
     pub fn new(config: Config, db: Db, keys: ServerKey, songlengths: SongLengths) -> Result<Self> {
         let render = RenderService::new(
             &config.render,
@@ -59,7 +65,8 @@ impl AppState {
         let roots = Arc::new(LibraryRoots::new(&config.library.paths));
         let trusted = Arc::new(config.trusted_proxy_nets()?);
         let scanner = Scanner::new(config.library.paths.clone(), Arc::new(songlengths.clone()));
-        let coordinator = ScanCoordinator::new(scanner, db.library_version()?);
+        let audit = AuditLog::spawn(db.clone())?;
+        let coordinator = ScanCoordinator::new(scanner, db.library_version()?, audit.clone());
         Ok(Self {
             config,
             db,
@@ -72,6 +79,8 @@ impl AppState {
             render: render.map(Arc::new),
             render_caps,
             started_at: unix_now(),
+            audit,
+            activity: Arc::new(ActivityTracker::new()),
         })
     }
 

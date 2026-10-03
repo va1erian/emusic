@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 emusic-render = { path = "../render" }
 axum = { version = "0.8", features = ["ws", "macros"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }

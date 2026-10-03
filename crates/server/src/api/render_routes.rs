@@ -28,7 +28,6 @@ use serde::Deserialize;
 
 use crate::api::error::ApiError;
 use crate::api::stream_routes;
-use crate::audit;
 use crate::auth::middleware::{AuthDevice, ClientIp};
 use crate::error::ServerError;
 use crate::render::{RenderService, rendition_key};
@@ -80,12 +79,13 @@ pub async fn render(
     let source = match state.roots.resolve(track.root_index, &track.relative_path) {
         Ok(path) => path,
         Err(error @ ServerError::PathEscape { .. }) => {
-            audit::path_violation(&ip.to_string(), &device.id, &id);
+            state.audit.path_violation(&ip.to_string(), &device.id, &id);
             return Err(error.into());
         }
         Err(error) => return Err(error.into()),
     };
 
+    state.activity.track_requested(&device.id, &track.id);
     // 0 stands for "the renderer's default subtune" in the stable cache key.
     let cache_subtune = query.subtune.unwrap_or(0);
     let etag = rendition_etag(&service, &track.id, cache_subtune);

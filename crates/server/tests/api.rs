@@ -51,6 +51,7 @@ impl Harness {
                 scan_interval_secs: 0,
             },
             render,
+            ..Config::default()
         };
         let state = emusic_server::build_state(config).unwrap();
         Self {

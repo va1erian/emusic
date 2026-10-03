@@ -11,6 +11,23 @@ pub fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
+/// Formats Unix seconds as `YYYY-MM-DD HH:MM:SS UTC` (the raw number when out
+/// of range).
+pub fn format_utc(unix: i64) -> String {
+    match time::OffsetDateTime::from_unix_timestamp(unix) {
+        Ok(at) => format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+            at.year(),
+            u8::from(at.month()),
+            at.day(),
+            at.hour(),
+            at.minute(),
+            at.second()
+        ),
+        Err(_) => unix.to_string(),
+    }
+}
+
 /// Hex-encoded SHA-256 of `bytes`, with an optional domain-separation prefix.
 pub fn sha256_hex(prefix: &[u8], bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -35,6 +52,12 @@ mod tests {
     #[test]
     fn unix_now_is_sane() {
         assert!(unix_now() > 1_700_000_000);
+    }
+
+    #[test]
+    fn format_utc_renders_utc() {
+        assert_eq!(format_utc(0), "1970-01-01 00:00:00 UTC");
+        assert_eq!(format_utc(1_700_000_000), "2023-11-14 22:13:20 UTC");
     }
 
     #[test]

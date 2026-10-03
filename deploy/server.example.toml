@@ -42,3 +42,16 @@ sample_rate = 44100
 # soundfont_path = "/media/soundfonts/GeneralUser.sf2"
 cache_max_bytes = 2147483648
 max_concurrent = 2
+
+[admin]
+# Admin page on a second listener, never mounted on the public port. Keep it
+# on loopback and reach it over an SSH tunnel. Binding anything else requires
+# a token of at least 24 characters (HTTP Basic: any user, password = token).
+enabled = true
+host = "127.0.0.1"
+port = 8081
+token = ""
+
+[audit]
+# Days of rows kept in the audit_log table (pruned at startup and daily).
+retention_days = 90

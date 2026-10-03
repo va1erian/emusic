@@ -11,12 +11,13 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::api::error::ApiError;
-use crate::audit;
+use crate::audit::{Actor, PairFailure};
 use crate::auth::middleware::{AuthDevice, ClientIp, bearer_token};
 use crate::auth::pairing;
 use crate::auth::paseto::{issue_access_token, token_fingerprint, verify_refresh_proof};
 use crate::db::devices::parse_device_public_key;
 use crate::db::models::Device;
+use crate::error::ServerError;
 use crate::state::AppState;
 use crate::util::unix_now;
 
@@ -111,7 +112,7 @@ pub async fn pair(
         state.pairing_attempt_limit(),
         Duration::from_secs(60),
     ) {
-        audit::rate_limited(&ip_text, "pair");
+        state.audit.pair_failed(&ip_text, PairFailure::RateLimited);
         return Err(ApiError::too_many_requests());
     }
 
@@ -134,7 +135,9 @@ pub async fn pair(
 
     match outcome {
         Ok(outcome) => {
-            audit::device_paired(&ip_text, &outcome.device.id, &outcome.device.name);
+            state
+                .audit
+                .device_paired(&ip_text, &outcome.device.id, &outcome.device.name);
             Ok(Json(PairResponse {
                 device_id: outcome.device.id,
                 device_name: outcome.device.name,
@@ -143,7 +146,11 @@ pub async fn pair(
             }))
         }
         Err(error) => {
-            audit::pair_failed(&ip_text);
+            let reason = match &error {
+                ServerError::InvalidPairingCode(reason) => *reason,
+                _ => PairFailure::InvalidRequest,
+            };
+            state.audit.pair_failed(&ip_text, reason);
             Err(error.into())
         }
     }
@@ -164,12 +171,14 @@ pub async fn refresh(
 
     let public = parse_device_public_key(&device.public_key)?;
     if let Err(error) = verify_refresh_proof(&public, &request.proof, &fingerprint) {
-        audit::auth_failed(&ip_text, "invalid refresh proof");
+        state
+            .audit
+            .refresh_failed(&ip_text, &device.id, "invalid refresh proof");
         return Err(error.into());
     }
 
     let issued = issue_access_token(&state.keys, &device.id, state.token_ttl())?;
-    audit::token_refreshed(&ip_text, &device.id);
+    state.audit.token_refreshed(&ip_text, &device.id);
     Ok(Json(TokenResponse {
         auth_token: issued.token,
         expires_at: issued.expires_at,
@@ -192,7 +201,7 @@ pub async fn list_devices(
 pub async fn create_pairing_code(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
-    AuthDevice(_): AuthDevice,
+    AuthDevice(device): AuthDevice,
 ) -> Result<Json<PairingCodeResponse>, ApiError> {
     let ip_text = ip.to_string();
     if !state.rate.check(
@@ -200,7 +209,7 @@ pub async fn create_pairing_code(
         PAIRING_CODE_ATTEMPT_LIMIT,
         Duration::from_secs(60),
     ) {
-        audit::rate_limited(&ip_text, "pairing-code");
+        state.audit.rate_limited(&ip_text, "pairing-code");
         return Err(ApiError::too_many_requests());
     }
 
@@ -212,6 +221,9 @@ pub async fn create_pairing_code(
     })
     .await
     .map_err(|_| ApiError::internal())??;
+    state
+        .audit
+        .pairing_code_created(&ip_text, &Actor::Device(device.id), ttl);
     Ok(Json(PairingCodeResponse {
         pairing_code: code,
         expires_in_secs: ttl,
@@ -222,7 +234,7 @@ pub async fn create_pairing_code(
 pub async fn revoke(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
-    AuthDevice(_): AuthDevice,
+    AuthDevice(caller): AuthDevice,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let db = state.db.clone();
@@ -233,6 +245,8 @@ pub async fn revoke(
     if !revoked {
         return Err(ApiError::not_found());
     }
-    audit::device_revoked(&ip.to_string(), &id);
+    state
+        .audit
+        .device_revoked(&ip.to_string(), &id, &Actor::Device(caller.id));
     Ok(StatusCode::NO_CONTENT)
 }

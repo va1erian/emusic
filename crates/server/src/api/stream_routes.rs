@@ -17,7 +17,6 @@ use tokio_util::io::ReaderStream;
 
 use crate::api::error::ApiError;
 use crate::api::range::{RangeError, parse_range};
-use crate::audit;
 use crate::auth::middleware::{AuthDevice, ClientIp};
 use crate::error::ServerError;
 use crate::scanner::formats;
@@ -45,7 +44,7 @@ pub async fn stream(
         // Only a genuine escape is a security event; a missing/stale file is
         // ordinary and must not pollute the audit log.
         Err(error @ ServerError::PathEscape { .. }) => {
-            audit::path_violation(&ip.to_string(), &device.id, &id);
+            state.audit.path_violation(&ip.to_string(), &device.id, &id);
             return Err(error.into());
         }
         Err(error) => return Err(error.into()),
@@ -60,6 +59,7 @@ pub async fn stream(
         .map(|info| info.mime)
         .unwrap_or("application/octet-stream");
     let etag = format!("\"{}\"", track.hash);
+    state.activity.track_requested(&device.id, &track.id);
     serve_with_range(&path, &headers, len, mime, &etag).await
 }
 
