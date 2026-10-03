@@ -3,8 +3,8 @@
 //! The Win32 projectM visualization surface (#301).
 //!
 //! [`ProjectMView`] is the one owner-drawn widget every projectM surface
-//! hosts — the panel (#302), the independent window (#303) and fullscreen
-//! (#304). It renders with OpenGL through `win32ui`'s [`Renderer::Gl`] and
+//! hosts — the panel (#302) and the independent window (#303); a double-click
+//! moves it between the two (#515). It renders with OpenGL through `win32ui`'s [`Renderer::Gl`] and
 //! drives a runtime-loaded libprojectM instance ([`emusic_projectm`]),
 //! falling back to a CPU plasma ([`emusic_milkdrop`]) plus a one-line hint
 //! when the libraries are missing or no OpenGL context can be created.
@@ -21,12 +21,14 @@
 mod engine;
 mod fallback;
 mod feed;
+mod gestures;
 mod grace;
 mod overlay;
 mod presets;
 mod widget;
 mod window;
 
+pub(crate) use gestures::panel_gesture;
 pub(crate) use grace::GraceTimer;
 pub(crate) use presets::{PresetFiles, PresetRoots, PresetScanner};
 pub(crate) use window::VizWindow;
@@ -54,12 +56,10 @@ pub enum ProjectMEvent {
 /// An input gesture on a projectM surface the frontend turns into a command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProjectMGesture {
-    /// The surface was double-clicked.
+    /// The surface was double-clicked: move it to its other dock (#515).
     DoubleClick,
     /// The "pop out" overlay button.
     PopOut,
-    /// The fullscreen overlay button (or a double-click).
-    Fullscreen,
     /// The hide overlay button.
     Hide,
     /// The surface was right-clicked; show its context menu (#306).

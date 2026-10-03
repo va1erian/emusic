@@ -310,8 +310,8 @@ pub struct Win32App {
     /// visibility (also false off the Music view).
     applied_browser_toggle: bool,
     /// The Visualization menu ticks last applied: shown, locked, panel,
-    /// window, fullscreen (#306). Updated in place so the bar is not rebuilt.
-    applied_viz_menu: (bool, bool, bool, bool, bool),
+    /// window (#306). Updated in place so the bar is not rebuilt.
+    applied_viz_menu: (bool, bool, bool, bool),
     /// When the views were last fully synced, so visualizer frames in between
     /// can skip the (much costlier) full sync.
     last_full_sync: Instant,
@@ -1114,6 +1114,14 @@ impl Win32App {
             {
                 window.show();
             }
+        } else if self.shell.state.projectm.surface() == Some(VizSurface::Panel) {
+            // Docked back into the panel (#515): close the window, keeping its
+            // geometry so the next pop-out reopens where the user left it.
+            self.record_viz_geometry();
+            if let Some(window) = self.viz_window.take() {
+                tracing::info!("closed the projectM visualization window");
+                window.close();
+            }
         } else if let Some(window) = &self.viz_window
             && window.is_visible()
         {
@@ -1138,12 +1146,11 @@ impl Win32App {
             return;
         }
         self.applied_viz_menu = ticks;
-        let (show, locked, panel, window, fullscreen) = ticks;
+        let (show, locked, panel, window) = ticks;
         ui.set_menu_checked("viz-show", show);
         ui.set_menu_checked("viz-lock", locked);
         ui.set_menu_checked("viz-panel", panel);
         ui.set_menu_checked("viz-window", window);
-        ui.set_menu_checked("viz-fullscreen", fullscreen);
     }
 
     /// Runs the visualization's stop/lifecycle policy: arm or cancel the grace
@@ -2118,15 +2125,14 @@ fn open_file_location(path: &str) {
 }
 
 /// The Visualization menu ticks for a projectM state: shown, locked, panel,
-/// window, fullscreen (#306).
-fn viz_menu_ticks(projectm: &emusic_ui::state::ProjectMState) -> (bool, bool, bool, bool, bool) {
+/// window (#306).
+fn viz_menu_ticks(projectm: &emusic_ui::state::ProjectMState) -> (bool, bool, bool, bool) {
     let layout = &projectm.layout;
     (
         layout.visible,
         projectm.settings.preset_locked,
-        !layout.fullscreen && layout.dock == VizDock::Panel,
-        !layout.fullscreen && layout.dock == VizDock::Window,
-        layout.fullscreen,
+        layout.dock == VizDock::Panel,
+        layout.dock == VizDock::Window,
     )
 }
 

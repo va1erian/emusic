@@ -18,6 +18,7 @@ use std::time::Instant;
 use emusic_milkdrop::{Frame, MilkdropEngine, PlaceholderEngine};
 use emusic_ui::player_api::PlayerApi;
 use emusic_ui::state::projectm::{PresetRequest, ProjectMAvailability, ProjectMSettings};
+use win32ui::accessibility::{AccessCx, Node, Role};
 use win32ui::gdi::{Canvas, Font};
 use win32ui::glow;
 use win32ui::{CustomWidget, Input, MouseButton, Rect, Renderer, Size, Theme, WidgetCx, dip};
@@ -193,6 +194,21 @@ impl ProjectMWidget {
         }
     }
 
+    /// The overlay button under `(x, y)`. The buttons are only drawn (and
+    /// hit) on the hovered GDI fallback; an invisible GL overlay must not
+    /// swallow clicks (see `overlay`).
+    fn overlay_action(
+        &self,
+        cx: &WidgetCx<ProjectMGesture>,
+        x: i32,
+        y: i32,
+    ) -> Option<overlay::Action> {
+        if !self.engine.is_fallback() || !self.hovered.get() {
+            return None;
+        }
+        overlay::hit(&overlay::buttons(cx.bounds(), cx.dpi()), x, y)
+    }
+
     /// Tracks the pointer entering or leaving the surface, repainting the GDI
     /// fallback so its overlay appears or disappears.
     fn set_hovered(&self, cx: &mut WidgetCx<ProjectMGesture>, hovered: bool) {
@@ -259,6 +275,16 @@ impl CustomWidget for ProjectMWidget {
         self.engine.teardown();
     }
 
+    /// Exposes the surface to UI Automation, so scripts can find it and
+    /// double-click it with real input (#515).
+    fn accessibility(&self, cx: &AccessCx) -> Option<Node> {
+        Some(
+            Node::new(Role::Image, "Visualization")
+                .id("projectm-surface")
+                .bounds(cx.bounds()),
+        )
+    }
+
     fn input(&self, input: Input, cx: &mut WidgetCx<ProjectMGesture>) {
         match input {
             Input::Frame => {
@@ -287,9 +313,17 @@ impl CustomWidget for ProjectMWidget {
             Input::MouseMove { .. } => self.set_hovered(cx, true),
             Input::MouseLeave => self.set_hovered(cx, false),
             Input::MouseDoubleClick {
+                x,
+                y,
                 button: MouseButton::Left,
                 ..
-            } => cx.emit(ProjectMGesture::DoubleClick),
+            } => {
+                // The first click of a double-click on an overlay button already
+                // pressed it; the second must not also move the surface.
+                if self.overlay_action(cx, x, y).is_none() {
+                    cx.emit(ProjectMGesture::DoubleClick);
+                }
+            }
             Input::MouseDown {
                 button: MouseButton::Right,
                 ..
@@ -299,14 +333,10 @@ impl CustomWidget for ProjectMWidget {
                 y,
                 button: MouseButton::Left,
                 ..
-            } if self.engine.is_fallback() && self.hovered.get() => {
-                // The buttons are only drawn on the GDI fallback; an invisible
-                // GL overlay must not swallow clicks (see `overlay`).
-                let buttons = overlay::buttons(cx.bounds(), cx.dpi());
-                if let Some(action) = overlay::hit(&buttons, x, y) {
+            } => {
+                if let Some(action) = self.overlay_action(cx, x, y) {
                     cx.emit(match action {
                         overlay::Action::PopOut => ProjectMGesture::PopOut,
-                        overlay::Action::Fullscreen => ProjectMGesture::Fullscreen,
                         overlay::Action::Hide => ProjectMGesture::Hide,
                     });
                 }

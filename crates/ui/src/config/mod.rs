@@ -142,8 +142,8 @@ pub struct Config {
     pub visualizer_enabled: bool,
     /// Visualizer strip mode (#25): spectrum, oscilloscope or off.
     pub visualizer: VisualizerMode,
-    /// Where the projectM visualization is shown (#300): visible, dock,
-    /// fullscreen and its monitor.
+    /// Where the projectM visualization is shown (#300): visible and dock.
+    /// An old `fullscreen = true` loads as the window dock (#515).
     #[serde(default)]
     pub projectm_layout: VizLayout,
     /// projectM preset timing, sensitivity and preset selection (#300).
