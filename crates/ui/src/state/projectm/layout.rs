@@ -1,13 +1,11 @@
-//! Where the projectM visualization is shown (#300): docked in the
-//! now-playing panel or in its own window, optionally fullscreen on a chosen
-//! monitor, or hidden.
+//! Where the projectM visualization is shown (#300, #515): docked in the
+//! now-playing panel or in its own window, or hidden. There is no fullscreen
+//! mode; the user maximizes the window instead.
 
 use serde::{Deserialize, Serialize};
 
-use super::monitor::VizMonitor;
-
-/// The non-fullscreen home of the visualization. Leaving fullscreen returns
-/// here, so the frontend never has to remember a "previous" placement.
+/// Where the visualization lives while shown. Double-clicking the surface
+/// moves it to the other one (#515).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum VizDock {
@@ -24,24 +22,21 @@ pub enum VizDock {
 pub enum VizSurface {
     Panel,
     Window,
-    Fullscreen,
 }
 
-/// Persisted visualization placement: shown or hidden, its dock, whether it
-/// is fullscreen and on which monitor.
+/// Persisted visualization placement: shown or hidden, and its dock.
+///
+/// Deserialized through [`StoredVizLayout`], so a config written before
+/// fullscreen was removed (#515) still loads: `fullscreen = true` maps to the
+/// window dock and the old monitor choice is dropped.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "StoredVizLayout")]
 pub struct VizLayout {
     /// Whether the visualization is shown at all. Off by default: while
     /// hidden it does no work at all (#305).
     pub visible: bool,
-    /// Where it lives when not fullscreen.
+    /// Where it is shown.
     pub dock: VizDock,
-    /// Whether it covers a whole monitor.
-    pub fullscreen: bool,
-    /// The monitor fullscreen goes to, when one has been chosen. Resolved
-    /// against the connected monitors with [`super::pick_monitor`].
-    pub fullscreen_monitor: Option<VizMonitor>,
 }
 
 impl VizLayout {
@@ -50,10 +45,32 @@ impl VizLayout {
         if !self.visible {
             return None;
         }
-        Some(match (self.fullscreen, self.dock) {
-            (true, _) => VizSurface::Fullscreen,
-            (false, VizDock::Panel) => VizSurface::Panel,
-            (false, VizDock::Window) => VizSurface::Window,
+        Some(match self.dock {
+            VizDock::Panel => VizSurface::Panel,
+            VizDock::Window => VizSurface::Window,
         })
+    }
+}
+
+/// The on-disk shape of [`VizLayout`], including the retired `fullscreen`
+/// flag. Unknown keys (such as the old `fullscreen_monitor`) are ignored.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct StoredVizLayout {
+    visible: bool,
+    dock: VizDock,
+    fullscreen: bool,
+}
+
+impl From<StoredVizLayout> for VizLayout {
+    fn from(stored: StoredVizLayout) -> Self {
+        Self {
+            visible: stored.visible,
+            dock: if stored.fullscreen {
+                VizDock::Window
+            } else {
+                stored.dock
+            },
+        }
     }
 }

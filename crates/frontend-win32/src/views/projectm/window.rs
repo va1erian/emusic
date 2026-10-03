@@ -9,17 +9,19 @@
 //! child forwards gestures and engine events back to the main app through a
 //! [`Proxy`]. Closing the window is intercepted and forwarded as a visibility
 //! change, so the main app hides it and its state — and placement — survive a
-//! show/hide cycle.
+//! show/hide cycle. Docking back into the panel (#515) closes it for real; its
+//! geometry is kept for the next pop-out.
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use emusic_ui::state::WindowGeometry;
-use emusic_ui::state::projectm::{PresetRequest, ProjectMSettings, VizCommand, VizDock};
+use emusic_ui::state::projectm::{PresetRequest, ProjectMSettings, VizCommand};
 use win32ui::prelude::*;
 use win32ui::{column, dip};
 
+use super::gestures::window_gesture;
 use super::presets::PresetFiles;
 use super::{ProjectMEvent, ProjectMGesture, ProjectMView};
 use crate::app::Msg;
@@ -121,20 +123,10 @@ impl App for VizWindowApp {
     }
 }
 
-/// Maps a surface gesture onto the message that forwards it to the main app:
-/// "pop out" docks back to the panel, double-click and the fullscreen button go
-/// fullscreen, the hide button hides, and a right-click opens the main app's
-/// preset menu.
+/// Forwards a surface gesture to the main app (see [`window_gesture`]): a
+/// double-click docks the visualization back into the panel (#515).
 fn forward_gesture(gesture: ProjectMGesture) -> Option<VizWindowMsg> {
-    let command = match gesture {
-        ProjectMGesture::PopOut => VizCommand::SetDock(VizDock::Panel),
-        ProjectMGesture::Fullscreen | ProjectMGesture::DoubleClick => {
-            VizCommand::SetFullscreen(true)
-        }
-        ProjectMGesture::Hide => VizCommand::SetVisible(false),
-        ProjectMGesture::ContextMenu => return Some(VizWindowMsg::Main(Msg::VizMenu)),
-    };
-    Some(VizWindowMsg::Main(Msg::Viz(command)))
+    Some(VizWindowMsg::Main(window_gesture(gesture)))
 }
 
 /// The independent visualization window: the handle the main app drives it
@@ -195,6 +187,12 @@ impl VizWindow {
     pub fn hide(&self) {
         self.send(VizWindowMsg::Visible(false));
         self.handle.hide();
+    }
+
+    /// Closes the window for good, freeing its surface; the visualization
+    /// was docked back into the panel (#515).
+    pub fn close(self) {
+        self.handle.close();
     }
 
     /// Tells the child to free its projectM instance once the grace period

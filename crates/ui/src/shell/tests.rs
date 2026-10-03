@@ -232,7 +232,9 @@ fn moving_projectm_reports_a_visualization_change() {
     shell.dispatch(Command::Viz(VizCommand::SetVisible(true)));
     shell.tick(Instant::now());
 
-    shell.dispatch(Command::Viz(VizCommand::SetFullscreen(true)));
+    shell.dispatch(Command::Viz(VizCommand::SetDock(
+        crate::state::projectm::VizDock::Window,
+    )));
     assert!(
         shell
             .tick(Instant::now())

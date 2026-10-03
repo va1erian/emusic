@@ -14,7 +14,7 @@ use emusic_player::{ExplicitQueueSnapshot, QueueSnapshot, RepeatMode as PlayerRe
 use crate::config::{Config, PlaybackSession, UiState, load, save};
 use crate::mock::MockPlayer;
 use crate::player_api::{PlaybackStatus, PlayerApi, RepeatMode};
-use crate::state::projectm::{ProjectMSettings, VizDock, VizLayout, VizMonitor};
+use crate::state::projectm::{ProjectMSettings, VizDock, VizLayout};
 use crate::state::{
     Accent, AppState, Appearance, DEFAULT_ACCENT_TINT_STRENGTH, Density, FontSize, PanelVisibility,
     Rgb, Theme, View, VisualizerMode, WindowGeometry,
@@ -107,11 +107,6 @@ fn non_default_config() -> Config {
         projectm_layout: VizLayout {
             visible: true,
             dock: VizDock::Window,
-            fullscreen: true,
-            fullscreen_monitor: Some(VizMonitor {
-                device: r"\\.\DISPLAY2".to_string(),
-                name: "DELL U2720Q".to_string(),
-            }),
         },
         projectm: ProjectMSettings {
             preset_duration_secs: 45.0,
@@ -499,12 +494,37 @@ fn saved_milkdrop_strip_mode_loads_as_spectrum() {
 }
 
 #[test]
+fn old_fullscreen_projectm_layout_loads_as_window_mode() {
+    let config: Config = toml::from_str(
+        r#"
+            [projectm_layout]
+            visible = true
+            dock = "panel"
+            fullscreen = true
+
+            [projectm_layout.fullscreen_monitor]
+            device = '\\.\DISPLAY2'
+            name = "DELL U2720Q"
+        "#,
+    )
+    .expect("a config from before #515 still loads");
+    assert_eq!(
+        config.projectm_layout,
+        VizLayout {
+            visible: true,
+            dock: VizDock::Window,
+        }
+    );
+    let saved = toml::to_string(&config).expect("serializes");
+    assert!(!saved.contains("fullscreen"), "{saved}");
+}
+
+#[test]
 fn apply_to_state_restores_and_sanitizes_projectm() {
     let config = Config {
         projectm_layout: VizLayout {
             visible: true,
             dock: VizDock::Window,
-            ..VizLayout::default()
         },
         projectm: ProjectMSettings {
             fps_cap: 0,

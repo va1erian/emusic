@@ -5,7 +5,7 @@
 //! Every field change is pushed as [`Command::Viz`]`(`[`VizCommand::SetSettings`]`)`,
 //! which the shell applies to the shared state and the running surface; the
 //! pack list is counted on a background thread so thousands of `.milk` files
-//! never stall the UI. `Panel`/`Window`/`Fullscreen` placement and the preset
+//! never stall the UI. `Panel`/`Window` placement and the preset
 //! actions live in the View menu and the surface's context menu, not here.
 
 mod form;

@@ -3,13 +3,11 @@
 //! the app shares it; the engine itself lives in the app's surface widget.
 
 mod layout;
-mod monitor;
 mod settings;
 #[cfg(test)]
 mod tests;
 
 pub use layout::{VizDock, VizLayout, VizSurface};
-pub use monitor::{VizMonitor, pick_monitor};
 pub use settings::ProjectMSettings;
 
 use std::path::PathBuf;
@@ -47,12 +45,9 @@ pub enum VizCommand {
     SetVisible(bool),
     /// Flip between shown and hidden.
     ToggleVisible,
-    /// Show it docked at `dock`, leaving fullscreen.
+    /// Show it docked at `dock`. A double-click on either surface sends the
+    /// other dock (#515).
     SetDock(VizDock),
-    /// Enter (showing it) or leave fullscreen.
-    SetFullscreen(bool),
-    /// Choose the fullscreen monitor.
-    SetFullscreenMonitor(VizMonitor),
     /// Switch presets on the running engine.
     Preset(PresetRequest),
     /// Lock or unlock the current preset.
@@ -89,17 +84,7 @@ impl ProjectMState {
             VizCommand::ToggleVisible => self.layout.visible = !self.layout.visible,
             VizCommand::SetDock(dock) => {
                 self.layout.dock = *dock;
-                self.layout.fullscreen = false;
                 self.layout.visible = true;
-            }
-            VizCommand::SetFullscreen(on) => {
-                self.layout.fullscreen = *on;
-                if *on {
-                    self.layout.visible = true;
-                }
-            }
-            VizCommand::SetFullscreenMonitor(monitor) => {
-                self.layout.fullscreen_monitor = Some(monitor.clone());
             }
             VizCommand::Preset(request) => {
                 // Only a shown engine can act on it; a stale request must

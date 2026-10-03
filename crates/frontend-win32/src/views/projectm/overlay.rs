@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 //! The projectM surface's hover overlay (#302): a small row of buttons at the
-//! top-right that pop the visualization out, take it fullscreen or hide it.
+//! top-right that pop the visualization out (or dock it back) or hide it.
 //!
 //! The buttons are owner-drawn while the surface uses its GDI fallback. A
 //! [`Renderer::Gl`](win32ui::Renderer::Gl) surface cannot show native siblings
@@ -14,10 +14,8 @@ use win32ui::{Rect, Theme, dip};
 /// What an overlay button asks the shell to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Action {
-    /// Dock the visualization into its own window.
+    /// Move the visualization to its other dock.
     PopOut,
-    /// Cover a monitor with it.
-    Fullscreen,
     /// Hide it.
     Hide,
 }
@@ -30,7 +28,7 @@ pub(super) struct Button {
 }
 
 /// Every overlay button, left to right.
-const ACTIONS: [Action; 3] = [Action::PopOut, Action::Fullscreen, Action::Hide];
+const ACTIONS: [Action; 2] = [Action::PopOut, Action::Hide];
 
 /// Button size and insets, in design units.
 const WIDTH_DIP: f32 = 76.0;
@@ -98,7 +96,6 @@ pub(super) fn draw(
 fn label(action: Action) -> &'static str {
     match action {
         Action::PopOut => "Pop out",
-        Action::Fullscreen => "Fullscreen",
         Action::Hide => "Hide",
     }
 }
@@ -111,30 +108,25 @@ mod tests {
     fn buttons_are_right_aligned_in_a_row() {
         let bounds = Rect::new(0, 0, 400, 300);
         let buttons = buttons(bounds, 96);
-        assert_eq!(buttons.len(), 3);
         assert_eq!(
             buttons.iter().map(|b| b.action).collect::<Vec<_>>(),
-            vec![Action::PopOut, Action::Fullscreen, Action::Hide]
+            vec![Action::PopOut, Action::Hide]
         );
         // Right edge sits at the margin, and every button shares the top.
-        let last = buttons.last().expect("three buttons");
+        let last = buttons.last().expect("two buttons");
         assert_eq!(last.rect.right, 400 - 6);
         assert!(buttons.iter().all(|b| b.rect.top == 6));
-        // Laid left-to-right, each strictly left of the previous.
+        // Laid left-to-right.
         assert!(buttons[0].rect.left < buttons[1].rect.left);
-        assert!(buttons[1].rect.left < buttons[2].rect.left);
     }
 
     #[test]
     fn hit_finds_the_button_under_the_point() {
         let bounds = Rect::new(0, 0, 400, 300);
         let buttons = buttons(bounds, 96);
-        let fullscreen = buttons[1].rect;
-        let centre = (
-            (fullscreen.left + fullscreen.right) / 2,
-            (fullscreen.top + fullscreen.bottom) / 2,
-        );
-        assert_eq!(hit(&buttons, centre.0, centre.1), Some(Action::Fullscreen));
+        let hide = buttons[1].rect;
+        let centre = ((hide.left + hide.right) / 2, (hide.top + hide.bottom) / 2);
+        assert_eq!(hit(&buttons, centre.0, centre.1), Some(Action::Hide));
         assert_eq!(hit(&buttons, 0, 0), None);
     }
 
@@ -142,8 +134,8 @@ mod tests {
     fn hit_ignores_the_gaps_between_buttons() {
         let bounds = Rect::new(0, 0, 400, 300);
         let buttons = buttons(bounds, 96);
-        // Just right of the fullscreen button, inside the gap.
-        let gap_x = buttons[1].rect.right + 1;
-        assert_eq!(hit(&buttons, gap_x, buttons[1].rect.top + 1), None);
+        // Just right of the pop-out button, inside the gap.
+        let gap_x = buttons[0].rect.right + 1;
+        assert_eq!(hit(&buttons, gap_x, buttons[0].rect.top + 1), None);
     }
 }

@@ -92,24 +92,14 @@ fn viz_menu(state: &AppState) -> Menu<Msg> {
         .keyed("viz-lock");
 
     let placement = Menu::new()
-        .radio_item(
-            "Panel",
-            None,
-            !layout.fullscreen && layout.dock == VizDock::Panel,
-            || Msg::Viz(VizCommand::SetDock(VizDock::Panel)),
-        )
-        .keyed("viz-panel")
-        .radio_item(
-            "Window",
-            None,
-            !layout.fullscreen && layout.dock == VizDock::Window,
-            || Msg::Viz(VizCommand::SetDock(VizDock::Window)),
-        )
-        .keyed("viz-window")
-        .radio_item("Fullscreen", None, layout.fullscreen, || {
-            Msg::Viz(VizCommand::SetFullscreen(true))
+        .radio_item("Panel", None, layout.dock == VizDock::Panel, || {
+            Msg::Viz(VizCommand::SetDock(VizDock::Panel))
         })
-        .keyed("viz-fullscreen");
+        .keyed("viz-panel")
+        .radio_item("Window", None, layout.dock == VizDock::Window, || {
+            Msg::Viz(VizCommand::SetDock(VizDock::Window))
+        })
+        .keyed("viz-window");
 
     Menu::new()
         .checked_item("Show visualization", None, layout.visible, || {

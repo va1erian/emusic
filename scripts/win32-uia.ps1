@@ -11,7 +11,8 @@
     Invoke-Uia $app 'Settings'                # menu item / button: Invoke, else Select
     Invoke-Uia $app 'Playback'                # a tab
     Click-Uia $app 'Smooth'                   # REAL mouse click at the element's centre
-    Send-Key 9                                # real key press (VK_TAB)
+    DoubleClick-Uia $app 'Visualization'      # REAL double-click (name or element)
+    Send-Key 9                               # real key press (VK_TAB)
     Test-Responding $app                      # $false if the UI thread is stuck
     Stop-Emusic $app
 
@@ -97,6 +98,22 @@ function Click-Uia($app, [string]$Name) {
   [UiaInput]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
   Start-Sleep -Milliseconds 300
   [UiaInput]::mouse_event(2, 0, 0, 0, 0); Start-Sleep -Milliseconds 80; [UiaInput]::mouse_event(4, 0, 0, 0, 0)
+  Start-Sleep -Milliseconds 500
+}
+
+# A REAL double-click at the centre of an element, given by name or as an
+# AutomationElement (e.g. one found by id). The two clicks land well inside the
+# system double-click time, so the app sees WM_LBUTTONDBLCLK.
+function DoubleClick-Uia($app, $Target) {
+  $el = if ($Target -is [string]) { Find-Uia $app $Target } else { $Target }
+  if (-not $el) { throw "no element '$Target'" }
+  $r = $el.Current.BoundingRectangle
+  [UiaInput]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null
+  Start-Sleep -Milliseconds 300
+  foreach ($i in 1..2) {
+    [UiaInput]::mouse_event(2, 0, 0, 0, 0); Start-Sleep -Milliseconds 40; [UiaInput]::mouse_event(4, 0, 0, 0, 0)
+    if ($i -eq 1) { Start-Sleep -Milliseconds 80 }
+  }
   Start-Sleep -Milliseconds 500
 }
 

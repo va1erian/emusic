@@ -40,6 +40,7 @@ only reproduced with real input). Always `Stop-Emusic` when done.
 | Search | `Edit` named by its cue text; Value pattern reads and sets the text. |
 | Status bar | `StatusBar` > `Text` per part. |
 | Now playing panel | `Separator 'Queue splitter'` (id `queue-splitter`) above the queue list; its Value is the queue height in DIP. Drag it with real input to resize the queue, double-click to reset (#514). |
+| Visualization | `Image 'Visualization'`, id `projectm-surface`, in the right panel when docked, or inside the `emusic - Visualization` window, which UIA lists as a `Window` child of the main window (it is owned by it). `DoubleClick-Uia` on it moves it between the two (#515). |
 
 Give a control a stable handle with `ControlExt::set_accessible_name` /
 `set_accessible_id` (`win32ui`). A custom widget describes itself by

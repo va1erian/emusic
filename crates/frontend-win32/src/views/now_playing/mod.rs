@@ -33,7 +33,6 @@ mod summary;
 
 use std::cell::Cell;
 
-use emusic_ui::state::projectm::{VizCommand, VizDock};
 use emusic_ui::state::{DEFAULT_QUEUE_HEIGHT, displayed_queue_height, drag_queue_height};
 use emusic_ui::views::now_playing::NowPlayingView as Model;
 use emusic_ui::waker::WakerHandle;
@@ -42,7 +41,7 @@ use win32ui::{Dip, Px, Rect};
 use win32ui::{column, dip};
 
 use crate::app::Msg;
-use crate::views::projectm::{ProjectMGesture, ProjectMView};
+use crate::views::projectm::{ProjectMView, panel_gesture};
 
 use pair::WidgetPair;
 use splitter::{QueueSplitter, SPLITTER_HEIGHT};
@@ -93,14 +92,7 @@ impl NowPlayingView {
             || Msg::QueueRemove,
             || Msg::QueueRemoveSelected,
         )?;
-        let viz = ProjectMView::new(ui)?.with_gestures(|gesture| match gesture {
-            ProjectMGesture::PopOut => Some(Msg::Viz(VizCommand::SetDock(VizDock::Window))),
-            ProjectMGesture::Fullscreen | ProjectMGesture::DoubleClick => {
-                Some(Msg::Viz(VizCommand::SetFullscreen(true)))
-            }
-            ProjectMGesture::Hide => Some(Msg::Viz(VizCommand::SetVisible(false))),
-            ProjectMGesture::ContextMenu => Some(Msg::VizMenu),
-        });
+        let viz = ProjectMView::new(ui)?.with_gestures(panel_gesture);
         viz.set_visible(false);
         let proxy = ui.proxy();
         pair.summary.on_resize(move |_| {

@@ -2,13 +2,6 @@ use std::path::PathBuf;
 
 use super::*;
 
-fn monitor(device: &str, name: &str) -> VizMonitor {
-    VizMonitor {
-        device: device.into(),
-        name: name.into(),
-    }
-}
-
 #[test]
 fn hidden_by_default_and_has_no_surface() {
     let state = ProjectMState::default();
@@ -17,7 +10,7 @@ fn hidden_by_default_and_has_no_surface() {
 }
 
 #[test]
-fn surface_follows_dock_and_fullscreen() {
+fn surface_follows_the_dock() {
     let mut state = ProjectMState::default();
     state.apply(&VizCommand::SetVisible(true));
     assert_eq!(state.surface(), Some(VizSurface::Panel));
@@ -25,27 +18,70 @@ fn surface_follows_dock_and_fullscreen() {
     state.apply(&VizCommand::SetDock(VizDock::Window));
     assert_eq!(state.surface(), Some(VizSurface::Window));
 
-    state.apply(&VizCommand::SetFullscreen(true));
-    assert_eq!(state.surface(), Some(VizSurface::Fullscreen));
-
-    state.apply(&VizCommand::SetFullscreen(false));
-    assert_eq!(
-        state.surface(),
-        Some(VizSurface::Window),
-        "back to its dock"
-    );
+    state.apply(&VizCommand::SetDock(VizDock::Panel));
+    assert_eq!(state.surface(), Some(VizSurface::Panel));
 }
 
 #[test]
-fn entering_fullscreen_or_docking_shows_it() {
+fn docking_shows_it() {
     let mut state = ProjectMState::default();
-    state.apply(&VizCommand::SetFullscreen(true));
-    assert_eq!(state.surface(), Some(VizSurface::Fullscreen));
+    state.apply(&VizCommand::SetDock(VizDock::Window));
+    assert_eq!(state.surface(), Some(VizSurface::Window));
 
     state.apply(&VizCommand::SetVisible(false));
     state.apply(&VizCommand::SetDock(VizDock::Panel));
     assert_eq!(state.surface(), Some(VizSurface::Panel));
-    assert!(!state.layout.fullscreen);
+}
+
+#[test]
+fn redocking_where_it_already_is_keeps_it_there() {
+    let mut state = ProjectMState::default();
+    state.apply(&VizCommand::SetDock(VizDock::Window));
+    state.apply(&VizCommand::SetDock(VizDock::Window));
+    assert_eq!(state.surface(), Some(VizSurface::Window));
+}
+
+#[test]
+fn layout_loads_an_old_fullscreen_config_as_window_mode() {
+    let layout: VizLayout = toml::from_str(
+        r#"
+            visible = true
+            dock = "panel"
+            fullscreen = true
+
+            [fullscreen_monitor]
+            device = '\\.\DISPLAY2'
+            name = "DELL U2720Q"
+        "#,
+    )
+    .expect("an old layout still parses");
+    assert_eq!(
+        layout,
+        VizLayout {
+            visible: true,
+            dock: VizDock::Window,
+        }
+    );
+}
+
+#[test]
+fn layout_keeps_the_dock_when_it_was_not_fullscreen() {
+    let layout: VizLayout =
+        toml::from_str("visible = false\ndock = \"panel\"\nfullscreen = false\n").expect("parses");
+    assert_eq!(layout, VizLayout::default());
+    let layout: VizLayout = toml::from_str("dock = \"window\"").expect("parses");
+    assert_eq!(layout.dock, VizDock::Window);
+}
+
+#[test]
+fn layout_round_trips_without_fullscreen_keys() {
+    let layout = VizLayout {
+        visible: true,
+        dock: VizDock::Window,
+    };
+    let text = toml::to_string(&layout).expect("serializes");
+    assert!(!text.contains("fullscreen"), "{text}");
+    assert_eq!(toml::from_str::<VizLayout>(&text).expect("parses"), layout);
 }
 
 #[test]
@@ -124,35 +160,4 @@ fn packs_are_enabled_unless_disabled() {
     };
     assert!(settings.pack_enabled("cream-of-the-crop"));
     assert!(!settings.pack_enabled("projectm-classic"));
-}
-
-#[test]
-fn pick_monitor_prefers_the_saved_device() {
-    let connected = [monitor("D1", "A"), monitor("D2", "B")];
-    let saved = monitor("D2", "B");
-    assert_eq!(pick_monitor(Some(&saved), &connected, Some(0), 0), Some(1));
-}
-
-#[test]
-fn pick_monitor_matches_by_name_when_the_device_changed() {
-    let connected = [monitor("D1", "A"), monitor("D3", "B")];
-    let saved = monitor("D2", "B");
-    assert_eq!(pick_monitor(Some(&saved), &connected, Some(0), 0), Some(1));
-}
-
-#[test]
-fn pick_monitor_falls_back_to_the_window_then_the_primary() {
-    let connected = [monitor("D1", "A"), monitor("D2", "B")];
-    let gone = monitor("D9", "Z");
-    assert_eq!(pick_monitor(Some(&gone), &connected, Some(1), 0), Some(1));
-    assert_eq!(pick_monitor(None, &connected, None, 1), Some(1));
-    assert_eq!(pick_monitor(None, &connected, Some(7), 5), Some(0));
-    assert_eq!(pick_monitor(None, &[], Some(0), 0), None);
-}
-
-#[test]
-fn pick_monitor_ignores_empty_saved_names() {
-    let connected = [monitor("D1", ""), monitor("D2", "B")];
-    let saved = monitor("", "");
-    assert_eq!(pick_monitor(Some(&saved), &connected, None, 1), Some(1));
 }

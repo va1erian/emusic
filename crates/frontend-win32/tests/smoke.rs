@@ -342,7 +342,8 @@ fn albums_view_builds_its_model_and_quits() {
 
 /// Exercises the independent visualization window (#303): with the layout
 /// pointing at the window surface, the app must open it, hide it on
-/// `SetVisible(false)` (without quitting), and re-show it after `SetDock`
+/// `SetVisible(false)` (without quitting), re-show it after `SetDock`, close
+/// it when docked into the panel and reopen it on the next pop-out (#515),
 /// without panicking. Skips if the session cannot create windows.
 #[test]
 fn visualization_window_opens_hides_and_reopens() {
@@ -359,7 +360,6 @@ fn visualization_window_opens_hides_and_reopens() {
                 projectm_layout: VizLayout {
                     visible: true,
                     dock: VizDock::Window,
-                    ..VizLayout::default()
                 },
                 ..Config::default()
             };
@@ -377,6 +377,12 @@ fn visualization_window_opens_hides_and_reopens() {
             ui.emit(Msg::Viz(VizCommand::SetVisible(false)));
             ui.emit(Msg::Timer);
             // Docking back to the window shows the same (still open) window.
+            ui.emit(Msg::Viz(VizCommand::SetDock(VizDock::Window)));
+            ui.emit(Msg::Timer);
+            // A double-click docks it into the panel, closing the window
+            // (#515); the next pop-out opens a fresh one.
+            ui.emit(Msg::Viz(VizCommand::SetDock(VizDock::Panel)));
+            ui.emit(Msg::Timer);
             ui.emit(Msg::Viz(VizCommand::SetDock(VizDock::Window)));
             ui.emit(Msg::Timer);
             ui.emit(Msg::Quit);
