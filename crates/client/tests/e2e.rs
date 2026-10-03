@@ -335,3 +335,48 @@ fn concurrent_cache_fetches_do_not_corrupt_the_file() {
     assert!(paths.windows(2).all(|pair| pair[0] == pair[1]));
     assert_eq!(std::fs::metadata(&paths[0]).unwrap().len(), track.file_size);
 }
+
+#[test]
+fn starred_round_trip_with_etag() {
+    let server = start_server();
+    let pairing = pair(&server);
+    let token = &pairing.credentials.token;
+    let client = &pairing.client;
+    let track_id = client.sync(token, 0).expect("sync").tracks[0].id.clone();
+
+    let empty = client.starred(token, None).expect("starred").expect("set");
+    assert_eq!(empty.version, 0);
+    assert!(empty.tracks.is_empty());
+
+    assert_eq!(client.star(token, &track_id).expect("star"), 1);
+    assert_eq!(client.star(token, &track_id).expect("idempotent"), 1);
+    match client.star(token, "no-such-track") {
+        Err(ClientError::Http { status: 404, .. }) => {}
+        other => panic!("expected 404, got {other:?}"),
+    }
+
+    let set = client
+        .starred(token, Some(0))
+        .expect("starred")
+        .expect("changed");
+    assert_eq!(set.version, 1);
+    assert_eq!(set.tracks.len(), 1);
+    assert_eq!(set.tracks[0].id, track_id);
+    assert!(client.starred(token, Some(1)).expect("starred").is_none());
+
+    let batch = client
+        .star_batch(
+            token,
+            &["ghost".to_string()],
+            std::slice::from_ref(&track_id),
+        )
+        .expect("batch");
+    assert_eq!(batch.version, 2);
+    assert_eq!(batch.unknown, vec!["ghost".to_string()]);
+    assert_eq!(client.unstar(token, &track_id).expect("unstar"), 2);
+    let set = client
+        .starred(token, Some(1))
+        .expect("starred")
+        .expect("changed");
+    assert!(set.tracks.is_empty());
+}

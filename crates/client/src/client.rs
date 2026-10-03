@@ -14,7 +14,10 @@ use serde_json::json;
 
 use crate::config::{ServerEndpoint, normalize_url};
 use crate::error::{ClientError, Result};
-use crate::types::{ApiErrorBody, Health, PairResponse, SyncDelta, TokenResponse, TrackView};
+use crate::types::{
+    ApiErrorBody, Health, PairResponse, StarredBatchResult, StarredSet, StarredVersion, SyncDelta,
+    TokenResponse, TrackView,
+};
 
 /// Maximum bytes buffered for a JSON response (sync/meta).
 const MAX_JSON_BYTES: usize = 64 * 1024 * 1024;
@@ -213,6 +216,58 @@ impl RemoteClient {
         let mut reader = response.into_body().into_reader();
         let copied = std::io::copy(&mut reader, writer)?;
         Ok(copied)
+    }
+
+    /// `GET /api/v1/starred`: the server-wide starred set, newest first.
+    ///
+    /// Pass the last seen [`StarredSet::version`] as `etag` to make the
+    /// request conditional; `Ok(None)` means it is unchanged (`304`).
+    pub fn starred(&self, token: &str, etag: Option<i64>) -> Result<Option<StarredSet>> {
+        let mut request = Self::bearer(self.agent.get(self.url("/api/v1/starred")), token);
+        if let Some(version) = etag {
+            request = request.header("If-None-Match", format!("\"{version}\""));
+        }
+        let response = request.call().map_err(map_transport)?;
+        if response.status().as_u16() == 304 {
+            return Ok(None);
+        }
+        Self::decode(response).map(Some)
+    }
+
+    /// `PUT /api/v1/starred/{track_id}`: star a track (idempotent). Returns
+    /// the new starred-set version; an unknown track is an HTTP 404 error.
+    pub fn star(&self, token: &str, track_id: &str) -> Result<i64> {
+        let url = self.url(&format!("/api/v1/starred/{}", encode_segment(track_id)));
+        let response = Self::bearer(self.agent.put(url), token)
+            .send_empty()
+            .map_err(map_transport)?;
+        Self::decode::<StarredVersion>(response).map(|body| body.version)
+    }
+
+    /// `DELETE /api/v1/starred/{track_id}`: unstar a track (idempotent).
+    /// Returns the new starred-set version.
+    pub fn unstar(&self, token: &str, track_id: &str) -> Result<i64> {
+        let url = self.url(&format!("/api/v1/starred/{}", encode_segment(track_id)));
+        let response = Self::bearer(self.agent.delete(url), token)
+            .call()
+            .map_err(map_transport)?;
+        Self::decode::<StarredVersion>(response).map(|body| body.version)
+    }
+
+    /// `POST /api/v1/starred/batch`: star and unstar in one transaction (at
+    /// most 5,000 ids in total; unstars apply after stars). Unknown ids in
+    /// `star` are skipped and reported back.
+    pub fn star_batch(
+        &self,
+        token: &str,
+        star: &[String],
+        unstar: &[String],
+    ) -> Result<StarredBatchResult> {
+        let body = json!({ "star": star, "unstar": unstar });
+        let response = Self::bearer(self.agent.post(self.url("/api/v1/starred/batch")), token)
+            .send_json(&body)
+            .map_err(map_transport)?;
+        Self::decode(response)
     }
 
     /// `DELETE /api/v1/devices/{id}`: revoke a device (typically this one).

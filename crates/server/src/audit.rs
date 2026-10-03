@@ -89,6 +89,19 @@ pub fn path_violation(client_ip: &str, device_id: &str, track_id: &str) {
     );
 }
 
+/// The server-wide starred set changed: `starred`/`unstarred` count the ids
+/// that actually changed state.
+pub fn starred_changed(client_ip: &str, device_id: &str, starred: usize, unstarred: usize) {
+    tracing::info!(
+        target: AUDIT_TARGET,
+        event = "starred_changed",
+        client_ip,
+        device_id,
+        starred,
+        unstarred
+    );
+}
+
 /// A request was rejected by a rate limiter.
 pub fn rate_limited(client_ip: &str, scope: &str) {
     tracing::warn!(target: AUDIT_TARGET, event = "rate_limited", client_ip, scope);

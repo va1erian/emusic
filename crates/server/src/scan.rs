@@ -53,6 +53,11 @@ pub enum ServerEvent {
         /// New library version.
         version: i64,
     },
+    /// The server-wide starred set changed.
+    StarredChanged {
+        /// New starred-set version.
+        version: i64,
+    },
 }
 
 /// A snapshot of scan state for the status endpoint.
@@ -118,6 +123,12 @@ impl ScanCoordinator {
     /// Subscribes to scan events.
     pub fn subscribe(&self) -> broadcast::Receiver<ServerEvent> {
         self.events.subscribe()
+    }
+
+    /// Broadcasts an event raised outside a scan (e.g. a starred change) to
+    /// WebSocket subscribers. Having no subscribers is not an error.
+    pub fn broadcast(&self, event: ServerEvent) {
+        let _ = self.events.send(event);
     }
 
     /// The current status snapshot.

@@ -5,7 +5,7 @@
 //! Once released an entry must never be edited — add a new one instead.
 
 /// The schema version this build expects.
-pub const CURRENT_VERSION: i64 = 1;
+pub const CURRENT_VERSION: i64 = 2;
 
 /// Ordered migration statements.
 pub const MIGRATIONS: &[&str] = &[
@@ -70,6 +70,16 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_tombstones_sync_version ON tombstones(sync_version);
     ",
+    // v2: server-wide starred tracks (#513). Rows outlive the track so a
+    // file that comes back keeps its star.
+    r"
+    CREATE TABLE starred (
+        track_id    TEXT PRIMARY KEY,
+        starred_at  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_starred_starred_at ON starred(starred_at);
+    INSERT OR IGNORE INTO meta (key, value) VALUES ('starred_version', '0');
+    ",
 ];
 
 /// Seed the monotonic library version used by delta sync.
@@ -77,3 +87,6 @@ pub const INITIAL_LIBRARY_VERSION: i64 = 0;
 
 /// Key under which the library version is stored in `meta`.
 pub const META_LIBRARY_VERSION: &str = "library_version";
+
+/// Key under which the starred-set version is stored in `meta`.
+pub const META_STARRED_VERSION: &str = "starred_version";
