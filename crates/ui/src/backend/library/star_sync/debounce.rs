@@ -77,17 +77,19 @@ mod tests {
     fn a_burst_of_changes_fires_once_after_the_delay() {
         let (tx, rx) = mpsc::channel();
         let updates = Updates::new(tx, WakerHandle::default());
-        let mut debouncer = StarSyncDebouncer::new(Duration::from_millis(150));
+        let delay = Duration::from_millis(300);
+        let mut debouncer = StarSyncDebouncer::new(delay);
+        // Back-to-back pokes: no sleeps between them, so a slow CI scheduler
+        // cannot stretch the burst past the delay and split it in two.
         let started = Instant::now();
         for _ in 0..5 {
             debouncer.poke(&updates);
-            std::thread::sleep(Duration::from_millis(20));
         }
         let fired = rx
             .recv_timeout(Duration::from_secs(5))
             .expect("the debounced sync fires");
         assert!(matches!(fired, Update::StarSyncDue));
-        assert!(started.elapsed() >= Duration::from_millis(150 + 80));
+        assert!(started.elapsed() >= delay);
         assert!(
             rx.recv_timeout(Duration::from_millis(400)).is_err(),
             "one burst fires once"
