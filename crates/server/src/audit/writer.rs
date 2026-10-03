@@ -211,22 +211,37 @@ pub(crate) fn run_writer(db: &Db, receiver: &Receiver<Command>, dropped: &Atomic
             }
         }
 
-        let total = dropped.load(Ordering::Relaxed);
-        if total > reported {
-            records.push(
-                AuditRecord::new("audit_events_dropped")
-                    .warn()
-                    .field("count", total - reported),
-            );
-            reported = total;
-        }
-        if !records.is_empty()
-            && let Err(error) = db.insert_audit_records(&records)
-        {
-            tracing::error!(%error, lost = records.len(), "cannot persist audit events");
-        }
+        write_batch(db, records, dropped, &mut reported);
         for ack in acks {
             let _ = ack.send(());
+        }
+    }
+}
+
+/// Inserts `records` plus an `audit_events_dropped` row for drops not yet
+/// reported. `reported` only advances once that row is actually written, so
+/// a failed insert leaves the drop count to be reported by the next batch.
+pub(crate) fn write_batch(
+    db: &Db,
+    mut records: Vec<AuditRecord>,
+    dropped: &AtomicU64,
+    reported: &mut u64,
+) {
+    let total = dropped.load(Ordering::Relaxed);
+    if total > *reported {
+        records.push(
+            AuditRecord::new("audit_events_dropped")
+                .warn()
+                .field("count", total - *reported),
+        );
+    }
+    if records.is_empty() {
+        return;
+    }
+    match db.insert_audit_records(&records) {
+        Ok(_) => *reported = total,
+        Err(error) => {
+            tracing::error!(%error, lost = records.len(), "cannot persist audit events");
         }
     }
 }

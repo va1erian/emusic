@@ -70,6 +70,40 @@ fn client_triggerable_events_are_throttled_per_client() {
 }
 
 #[test]
+fn a_failed_insert_keeps_the_drop_count_for_the_next_batch() {
+    let (_dir, db) = temp_db();
+    let dropped = AtomicU64::new(4);
+    let mut reported = 0;
+    let rename = |sql: &str| db.conn().unwrap().execute_batch(sql).unwrap();
+
+    rename("ALTER TABLE audit_log RENAME TO audit_log_offline");
+    writer::write_batch(
+        &db,
+        vec![AuditRecord::new("scan_started")],
+        &dropped,
+        &mut reported,
+    );
+    assert_eq!(reported, 0, "nothing was written, so nothing was reported");
+
+    rename("ALTER TABLE audit_log_offline RENAME TO audit_log");
+    dropped.store(6, std::sync::atomic::Ordering::Relaxed);
+    writer::write_batch(
+        &db,
+        vec![AuditRecord::new("scan_finished")],
+        &dropped,
+        &mut reported,
+    );
+    assert_eq!(reported, 6);
+
+    let rows = all_rows(&db);
+    let report = rows
+        .iter()
+        .find(|row| row.event == "audit_events_dropped")
+        .expect("drop report");
+    assert_eq!(report.detail["count"], 6, "the full drop count is reported");
+}
+
+#[test]
 fn direct_log_writes_synchronously() {
     let (_dir, db) = temp_db();
     let audit = AuditLog::direct(db.clone());
