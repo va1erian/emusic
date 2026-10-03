@@ -14,6 +14,7 @@ sealed interface Destination {
         Artists("Artists"),
         Genres("Genres"),
         Folders("Folders"),
+        Starred("Starred"),
         Recent("Recently added"),
         NowPlaying("Now playing"),
     }
@@ -31,7 +32,7 @@ sealed interface Destination {
     data class Folder(val path: String) : Destination
 }
 
-/** The navigator's sections, in order, like the desktop's LIBRARY/ACTIVITY. */
+/** The navigator's sections, in order, like the desktop's LIBRARY/PLAYLISTS/ACTIVITY. */
 val NAVIGATOR_SECTIONS: List<Pair<String, List<Destination.Root>>> = listOf(
     "LIBRARY" to listOf(
         Destination.Root.Music,
@@ -40,6 +41,7 @@ val NAVIGATOR_SECTIONS: List<Pair<String, List<Destination.Root>>> = listOf(
         Destination.Root.Genres,
         Destination.Root.Folders,
     ),
+    "PLAYLISTS" to listOf(Destination.Root.Starred),
     "ACTIVITY" to listOf(Destination.Root.Recent, Destination.Root.NowPlaying),
 )
 

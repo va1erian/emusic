@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -133,7 +134,8 @@ fun TrackList(
 
 /**
  * One track: title over "artist · album" (or just the artist inside an
- * album), duration trailing. [leading] is an optional track number.
+ * album), duration trailing (after a star when the track is starred, see
+ * [LocalStarredIds]). [leading] is an optional track number.
  */
 @Composable
 fun TrackRow(
@@ -169,10 +171,13 @@ fun TrackRow(
             Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingContent = {
-            Text(
-                text = track.durationSecs?.let { formatDuration(it) } ?: track.format,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (track.id in LocalStarredIds.current) StarMark()
+                Text(
+                    text = track.durationSecs?.let { formatDuration(it) } ?: track.format,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         },
     )
 }
@@ -281,7 +286,7 @@ fun FolderDetail(
 
 /** A centred note for an empty list, so the pane never looks broken. */
 @Composable
-fun EmptyState(text: String, modifier: Modifier = Modifier) {
+fun EmptyState(text: String, modifier: Modifier = Modifier, icon: ImageVector = Lucide.Search) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -290,7 +295,7 @@ fun EmptyState(text: String, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            Lucide.Search,
+            icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(32.dp),

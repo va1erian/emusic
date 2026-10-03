@@ -53,6 +53,10 @@ class LibraryIndex(val tracks: List<Track>) {
     val recentlyAdded: List<Track> by lazy { tracks.sortedByDescending { it.addedAt } }
 
     private val albumsByKey by lazy { albums.associateBy { it.key } }
+    private val tracksById by lazy { tracks.associateBy { it.id } }
+
+    /** The tracks named by `ids`, in that order, skipping ids not in this index. */
+    fun inOrder(ids: List<String>): List<Track> = ids.mapNotNull { tracksById[it] }
 
     fun album(key: String): AlbumGroup? = albumsByKey[key]
 

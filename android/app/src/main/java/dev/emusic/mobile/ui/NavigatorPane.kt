@@ -27,6 +27,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Music
 import com.composables.icons.lucide.Palette
 import com.composables.icons.lucide.RefreshCw
+import com.composables.icons.lucide.Star
 import com.composables.icons.lucide.Tag
 import com.composables.icons.lucide.Users
 
@@ -38,13 +39,14 @@ val Destination.Root.icon: ImageVector
         Destination.Root.Artists -> Lucide.Users
         Destination.Root.Genres -> Lucide.Tag
         Destination.Root.Folders -> Lucide.Folder
+        Destination.Root.Starred -> Lucide.Star
         Destination.Root.Recent -> Lucide.Clock
         Destination.Root.NowPlaying -> Lucide.ListMusic
     }
 
 /**
- * The library navigator: LIBRARY and ACTIVITY sections like the desktop
- * sidebar, then server actions and appearance. It is the permanent left pane on wide screens
+ * The library navigator: LIBRARY, PLAYLISTS and ACTIVITY sections like the
+ * desktop sidebar, then server actions and appearance. It is the permanent left pane on wide screens
  * (an unfolded Fold, a tablet) and the drawer's content on a phone.
  *
  * [counts] labels each root with its size (tracks, albums, ...), when known.

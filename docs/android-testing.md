@@ -82,7 +82,8 @@ before submitting a change that touches the app or its connector crates.
 ## Android Auto
 
 The player is a Media3 `MediaLibraryService`, so it is browsable by Android Auto
-(albums / artists / folders / tracks, from the cached library). The
+(the read-only Starred playlist synced from the server, then albums / artists /
+all tracks / folders, from the cached library). The
 `MediaLibraryServiceTest` instrumentation test connects a `MediaBrowser` and
 walks the tree — run it like any other instrumentation test and prefer it over
 manual checks.

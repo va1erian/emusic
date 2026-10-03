@@ -34,6 +34,7 @@ class MediaLibraryServiceTest {
         val dir = File(context.filesDir, "emusic")
         dir.mkdirs()
         File(dir, "library.json").writeText(LIBRARY_JSON)
+        File(dir, "starred.json").writeText(STARRED_JSON)
         context.getSharedPreferences("emusic_playback", Context.MODE_PRIVATE)
             .edit()
             .putString("server_url", "http://10.0.2.2:8080")
@@ -44,6 +45,7 @@ class MediaLibraryServiceTest {
     fun clearLibrary() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         File(File(context.filesDir, "emusic"), "library.json").delete()
+        File(File(context.filesDir, "emusic"), "starred.json").delete()
         context.getSharedPreferences("emusic_playback", Context.MODE_PRIVATE)
             .edit()
             .clear()
@@ -65,6 +67,7 @@ class MediaLibraryServiceTest {
                 .get(timeout, TimeUnit.SECONDS).value!!
             val ids = categories.map { it.mediaId }
             assertTrue("expected all categories, got $ids", ids.containsAll(CATEGORIES))
+            assertEquals("Starred is listed first", LibraryBrowser.STARRED, ids.first())
 
             val albums = onMain { browser.getChildren(LibraryBrowser.ALBUMS, 0, 100, null) }
                 .get(timeout, TimeUnit.SECONDS).value!!
@@ -97,6 +100,48 @@ class MediaLibraryServiceTest {
         }
     }
 
+    @Test
+    fun browsesAndPlaysTheStarredPlaylist() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val browser = onMain { MediaBrowser.Builder(context, token).buildAsync() }
+            .get(timeout, TimeUnit.SECONDS)
+        try {
+            onMain { browser.getLibraryRoot(null) }.get(timeout, TimeUnit.SECONDS)
+            val starred = onMain { browser.getChildren(LibraryBrowser.STARRED, 0, 100, null) }
+                .get(timeout, TimeUnit.SECONDS).value!!
+            // Newest first, as cached; the star on a track not in the library is dropped.
+            assertEquals(listOf("Second Song", "First Tune"), starred.map { it.mediaMetadata.title.toString() })
+            assertTrue(starred.all { it.mediaMetadata.isPlayable == true })
+
+            // Picking a starred track queues the starred playlist from that track.
+            onMain { browser.setMediaItem(starred[1]) }
+            // The controller first shows the picked item alone (masking), then
+            // the session's expanded queue arrives.
+            val queue = waitFor {
+                onMain { (0 until browser.mediaItemCount).map { browser.getMediaItemAt(it).mediaId } }
+                    .takeIf { it.size >= starred.size }
+            }
+            assertEquals(listOf(starred[1].mediaId, starred[0].mediaId), queue)
+        } finally {
+            onMain {
+                browser.stop()
+                browser.clearMediaItems()
+                browser.release()
+            }
+        }
+    }
+
+    /** Polls [probe] until it returns non-null, failing after the timeout. */
+    private fun <T : Any> waitFor(probe: () -> T?): T {
+        val deadline = System.currentTimeMillis() + timeout * 1000
+        while (System.currentTimeMillis() < deadline) {
+            probe()?.let { return it }
+            Thread.sleep(100)
+        }
+        throw AssertionError("timed out")
+    }
+
     /** Runs [block] on the application main thread and returns its result. */
     private fun <T> onMain(block: () -> T): T {
         val result = AtomicReference<T>()
@@ -106,11 +151,14 @@ class MediaLibraryServiceTest {
 
     private companion object {
         val CATEGORIES = listOf(
+            LibraryBrowser.STARRED,
             LibraryBrowser.ALBUMS,
             LibraryBrowser.ARTISTS,
             LibraryBrowser.FOLDERS,
             LibraryBrowser.TRACKS,
         )
+
+        const val STARRED_JSON = """{"version":5,"ids":["t2","not-synced","t1"]}"""
 
         const val LIBRARY_JSON = """
             {"schema":2,"version":1,"tracks":[
