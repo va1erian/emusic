@@ -10,10 +10,11 @@ use rand::Rng;
 use rand::distributions::Uniform;
 use sha2::Sha256;
 
+use crate::audit::PairFailure;
 use crate::auth::keys::ServerKey;
 use crate::auth::paseto::{IssuedToken, issue_access_token};
 use crate::db::Db;
-use crate::db::devices::is_valid_pairing_code_format;
+use crate::db::devices::{PairCodeCheck, is_valid_pairing_code_format};
 use crate::db::models::Device;
 use crate::error::{Result, ServerError};
 
@@ -42,8 +43,9 @@ pub fn generate_pairing_code(db: &Db, key: &ServerKey, ttl_secs: u64, now: i64) 
 
 /// Validates a pairing request and, on success, registers the device.
 ///
-/// A wrong, expired or already-used code all yield [`ServerError::InvalidPairingCode`]
-/// so callers cannot distinguish them.
+/// A wrong, expired or already-used code all yield
+/// [`ServerError::InvalidPairingCode`]; its reason is meant for the audit log
+/// and must not reach the client.
 pub fn pair(
     db: &Db,
     key: &ServerKey,
@@ -55,7 +57,7 @@ pub fn pair(
 ) -> Result<PairOutcome> {
     let name = validate_device_name(device_name)?;
     if !is_valid_pairing_code_format(pairing_code) {
-        return Err(ServerError::InvalidPairingCode);
+        return Err(ServerError::InvalidPairingCode(PairFailure::InvalidRequest));
     }
     let parsed_key = parse_public_key(public_key)?;
     let canonical_key = crate::auth::paseto::public_key_paserk(&parsed_key)?;
@@ -71,8 +73,14 @@ pub fn pair(
     // Consumption and device registration are one transaction, so a code
     // cannot be burned without creating its device.
     let expected = pairing_code_hash(key, pairing_code);
-    if !db.pair_device_with_code(&expected, now, &device)? {
-        return Err(ServerError::InvalidPairingCode);
+    let refusal = match db.pair_device_with_code(&expected, now, &device)? {
+        PairCodeCheck::Accepted => None,
+        PairCodeCheck::Wrong => Some(PairFailure::Wrong),
+        PairCodeCheck::Expired => Some(PairFailure::Expired),
+        PairCodeCheck::Reused => Some(PairFailure::Reused),
+    };
+    if let Some(reason) = refusal {
+        return Err(ServerError::InvalidPairingCode(reason));
     }
 
     let token = issue_access_token(key, &device.id, token_ttl)?;

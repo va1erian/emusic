@@ -20,6 +20,16 @@ pub const DB_FILE: &str = "emusic-server.db";
 #[derive(Clone)]
 pub struct Db {
     pool: r2d2::Pool<SqliteConnectionManager>,
+    migrated: Option<Migration>,
+}
+
+/// A schema upgrade applied while opening the store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Migration {
+    /// Version found on disk.
+    pub from: i64,
+    /// Version after migrating.
+    pub to: i64,
 }
 
 impl Db {
@@ -29,9 +39,7 @@ impl Db {
         let manager =
             SqliteConnectionManager::file(data_dir.join(DB_FILE)).with_init(configure_connection);
         let pool = r2d2::Pool::builder().max_size(8).build(manager)?;
-        let db = Self { pool };
-        db.migrate()?;
-        Ok(db)
+        Self::from_pool(pool)
     }
 
     /// Opens an isolated database at an explicit file path (used by tests).
@@ -41,17 +49,31 @@ impl Db {
         }
         let manager = SqliteConnectionManager::file(path).with_init(configure_connection);
         let pool = r2d2::Pool::builder().max_size(4).build(manager)?;
-        let db = Self { pool };
-        db.migrate()?;
+        Self::from_pool(pool)
+    }
+
+    fn from_pool(pool: r2d2::Pool<SqliteConnectionManager>) -> Result<Self> {
+        let mut db = Self {
+            pool,
+            migrated: None,
+        };
+        db.migrated = db.migrate()?;
         Ok(db)
+    }
+
+    /// The schema upgrade applied when this store was opened, if any, so the
+    /// caller can audit it once logging is set up.
+    pub fn migration(&self) -> Option<Migration> {
+        self.migrated
     }
 
     /// Borrows a pooled connection.
     pub fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>> {
         Ok(self.pool.get()?)
     }
-    /// Brings the schema up to [`schema::CURRENT_VERSION`].
-    pub fn migrate(&self) -> Result<()> {
+    /// Brings the schema up to [`schema::CURRENT_VERSION`], returning the
+    /// upgrade applied (`None` when already current).
+    pub fn migrate(&self) -> Result<Option<Migration>> {
         let mut conn = self.conn()?;
         let mut version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
         // A negative value indicates local tampering; treat it as empty.
@@ -62,6 +84,7 @@ impl Db {
                 schema::CURRENT_VERSION
             )));
         }
+        let from = version;
         while version < schema::CURRENT_VERSION {
             let statements = schema::MIGRATIONS[version as usize];
             // IMMEDIATE serializes concurrent migrators (e.g. a CLI run while
@@ -79,7 +102,7 @@ impl Db {
                 schema::INITIAL_LIBRARY_VERSION.to_string()
             ],
         )?;
-        Ok(())
+        Ok((from != version).then_some(Migration { from, to: version }))
     }
 }
 

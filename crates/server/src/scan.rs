@@ -12,6 +12,7 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 use tokio::sync::broadcast;
 
+use crate::audit::AuditLog;
 use crate::db::Db;
 use crate::error::{Result, ServerError};
 use crate::scanner::{DEFAULT_BATCH_SIZE, ScanReport, ScanUpdate, Scanner};
@@ -99,11 +100,13 @@ pub struct ScanCoordinator {
     status: Arc<RwLock<ScanStatus>>,
     events: broadcast::Sender<ServerEvent>,
     running: Arc<AtomicBool>,
+    audit: AuditLog,
 }
 
 impl ScanCoordinator {
-    /// Creates a coordinator with no scan in progress.
-    pub fn new(scanner: Scanner, library_version: i64) -> Self {
+    /// Creates a coordinator with no scan in progress. Scan lifecycle events
+    /// are recorded to `audit`.
+    pub fn new(scanner: Scanner, library_version: i64, audit: AuditLog) -> Self {
         let (events, _) = broadcast::channel(256);
         let roots = scanner.root_count();
         Self {
@@ -117,6 +120,7 @@ impl ScanCoordinator {
             })),
             events,
             running: Arc::new(AtomicBool::new(false)),
+            audit,
         }
     }
 
@@ -157,6 +161,7 @@ impl ScanCoordinator {
             let _guard = RunningGuard(Arc::clone(&coordinator.running));
             if let Err(error) = coordinator.run(db).await {
                 tracing::error!(%error, "library scan failed");
+                coordinator.audit.scan_failed(&error.to_string());
             }
         });
         true
@@ -187,6 +192,7 @@ impl ScanCoordinator {
 
     async fn run(&self, db: Db) -> Result<ScanReport> {
         let roots = self.scanner.root_count();
+        self.audit.scan_started(roots);
         let _ = self.events.send(ServerEvent::ScanStarted {
             at: unix_now(),
             roots,
@@ -235,8 +241,9 @@ impl ScanCoordinator {
                 return Err(error);
             }
         };
-        {
+        let previous_version = {
             let mut status = self.status.write().await;
+            let previous = status.library_version;
             status.running = false;
             status.files_found = report.files_found;
             status.library_version = version;
@@ -248,7 +255,8 @@ impl ScanCoordinator {
                 elapsed_ms: report.elapsed_ms,
                 finished_at: unix_now(),
             });
-        }
+            previous
+        };
         let _ = self.events.send(ServerEvent::ScanFinished {
             files_found: report.files_found,
             changed: report.tracks_changed,
@@ -257,13 +265,11 @@ impl ScanCoordinator {
             elapsed_ms: report.elapsed_ms,
         });
         let _ = self.events.send(ServerEvent::LibraryChanged { version });
-        crate::audit::scan_finished(
-            report.files_found,
-            report.tracks_changed,
-            report.tracks_deleted,
-            report.partial,
-            report.elapsed_ms,
-        );
+        self.audit.scan_finished(&report);
+        if version != previous_version {
+            self.audit
+                .library_version_changed(previous_version, version);
+        }
         Ok(report)
     }
 

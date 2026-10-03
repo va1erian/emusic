@@ -1,10 +1,22 @@
-//! Structured audit logging for security-relevant events.
+//! Structured audit logging for security-relevant and operational events.
 //!
 //! Operational logs go to stdout; audit events additionally go to a JSON log
-//! file under the data directory, one JSON object per line, so they can be
-//! shipped or grepped without parsing prose. The helper functions here are
-//! deliberately typed: it is impossible to emit an audit event with the wrong
-//! field set.
+//! file under the data directory, one JSON object per line, and to the
+//! `audit_log` table so the admin page and `emusic-server audit` can query
+//! them. Every event flows through an [`AuditLog`] handle (held by
+//! `AppState`): its typed helpers fix each event's name and fields, and
+//! [`AuditRecord`] covers anything else. Persistence is asynchronous and
+//! lossy under extreme load (see [`writer`]), so recording an event never
+//! blocks or fails a request.
+
+mod events;
+pub mod record;
+pub mod retention;
+pub mod store;
+pub mod writer;
+
+#[cfg(test)]
+mod tests;
 
 use std::path::Path;
 
@@ -13,6 +25,11 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+pub use events::{KNOWN_EVENTS, PER_CLIENT_LIMIT};
+pub use record::{Actor, AuditLevel, AuditRecord, CLI_SOURCE, PairFailure, SYSTEM_SOURCE};
+pub use store::{AuditQuery, AuditRow};
+pub use writer::AuditLog;
 
 /// Tracing target reserved for audit events.
 pub const AUDIT_TARGET: &str = "emusic_server::audit";
@@ -45,77 +62,4 @@ pub fn init(data_dir: &Path) -> std::io::Result<WorkerGuard> {
         .with(audit)
         .init();
     Ok(guard)
-}
-
-/// A failed authentication attempt: bad token, revoked device or bad proof.
-pub fn auth_failed(client_ip: &str, reason: &str) {
-    tracing::warn!(target: AUDIT_TARGET, event = "auth_failed", client_ip, reason);
-}
-
-/// A failed pairing attempt (wrong, expired or reused code).
-pub fn pair_failed(client_ip: &str) {
-    tracing::warn!(target: AUDIT_TARGET, event = "pair_failed", client_ip);
-}
-
-/// A device successfully paired.
-pub fn device_paired(client_ip: &str, device_id: &str, device_name: &str) {
-    tracing::info!(
-        target: AUDIT_TARGET,
-        event = "device_paired",
-        client_ip,
-        device_id,
-        device_name
-    );
-}
-
-/// A device was revoked by an administrator or another device.
-pub fn device_revoked(client_ip: &str, device_id: &str) {
-    tracing::warn!(target: AUDIT_TARGET, event = "device_revoked", client_ip, device_id);
-}
-
-/// A token was refreshed after a successful proof of possession.
-pub fn token_refreshed(client_ip: &str, device_id: &str) {
-    tracing::info!(target: AUDIT_TARGET, event = "token_refreshed", client_ip, device_id);
-}
-
-/// A stored path failed the library-root jail.
-pub fn path_violation(client_ip: &str, device_id: &str, track_id: &str) {
-    tracing::warn!(
-        target: AUDIT_TARGET,
-        event = "path_violation",
-        client_ip,
-        device_id,
-        track_id
-    );
-}
-
-/// The server-wide starred set changed: `starred`/`unstarred` count the ids
-/// that actually changed state.
-pub fn starred_changed(client_ip: &str, device_id: &str, starred: usize, unstarred: usize) {
-    tracing::info!(
-        target: AUDIT_TARGET,
-        event = "starred_changed",
-        client_ip,
-        device_id,
-        starred,
-        unstarred
-    );
-}
-
-/// A request was rejected by a rate limiter.
-pub fn rate_limited(client_ip: &str, scope: &str) {
-    tracing::warn!(target: AUDIT_TARGET, event = "rate_limited", client_ip, scope);
-}
-
-/// A library scan finished.
-pub fn scan_finished(files_found: u64, changed: u64, deleted: u64, partial: bool, elapsed_ms: u64) {
-    tracing::info!(
-        target: AUDIT_TARGET,
-        event = "scan_finished",
-        files_found,
-        changed,
-        deleted,
-        partial,
-        elapsed_ms
-    );
 }

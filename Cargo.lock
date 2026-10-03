@@ -1345,6 +1345,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-server",
+ "base64 0.22.1",
  "clap",
  "dirs",
  "emusic-render",

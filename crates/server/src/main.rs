@@ -37,6 +37,15 @@ enum Command {
         /// The device id to revoke.
         device_id: String,
     },
+    /// Print recent audit events, newest first.
+    Audit {
+        /// Maximum number of rows (1-500).
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        /// Only show this event (e.g. `pair_failed`).
+        #[arg(long)]
+        event: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -82,6 +91,18 @@ fn main() -> Result<()> {
             } else {
                 eprintln!("no such device: {device_id}");
                 std::process::exit(1);
+            }
+        }
+        Command::Audit { limit, event } => {
+            for row in server::list_audit(&config, limit, event).context("reading audit log")? {
+                println!(
+                    "{}  {:<24} {:<15} {:<36} {}",
+                    emusic_server::util::format_utc(row.at),
+                    row.event,
+                    row.client_ip,
+                    row.device_id.as_deref().unwrap_or("-"),
+                    row.detail
+                );
             }
         }
     }

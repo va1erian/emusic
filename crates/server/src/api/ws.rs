@@ -12,7 +12,7 @@ use crate::state::AppState;
 /// `GET /api/v1/ws`
 pub async fn ws(
     State(state): State<AppState>,
-    AuthDevice(_): AuthDevice,
+    AuthDevice(device): AuthDevice,
     upgrade: WebSocketUpgrade,
 ) -> Response {
     // Clients only receive events; cap inbound frames so a peer cannot send
@@ -20,7 +20,10 @@ pub async fn ws(
     let upgrade = upgrade
         .max_message_size(64 * 1024)
         .max_frame_size(16 * 1024);
-    upgrade.on_upgrade(move |socket| handle(socket, state))
+    upgrade.on_upgrade(move |socket| async move {
+        let _open = state.activity.websocket_opened(&device.id);
+        handle(socket, state).await;
+    })
 }
 
 async fn handle(mut socket: WebSocket, state: AppState) {

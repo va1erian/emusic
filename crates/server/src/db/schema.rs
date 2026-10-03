@@ -5,7 +5,7 @@
 //! Once released an entry must never be edited — add a new one instead.
 
 /// The schema version this build expects.
-pub const CURRENT_VERSION: i64 = 2;
+pub const CURRENT_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// Ordered migration statements.
 pub const MIGRATIONS: &[&str] = &[
@@ -79,6 +79,19 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_starred_starred_at ON starred(starred_at);
     INSERT OR IGNORE INTO meta (key, value) VALUES ('starred_version', '0');
+    ",
+    // v3: persistent audit log (#512). `detail` is a JSON object.
+    r"
+    CREATE TABLE audit_log (
+        id          INTEGER PRIMARY KEY,
+        at          INTEGER NOT NULL,
+        event       TEXT NOT NULL,
+        client_ip   TEXT NOT NULL,
+        device_id   TEXT,
+        detail      TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX idx_audit_log_at ON audit_log(at);
+    CREATE INDEX idx_audit_log_event ON audit_log(event);
     ",
 ];
 

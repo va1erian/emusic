@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use axum::extract::{ConnectInfo, FromRequestParts};
-use axum::http::header::AUTHORIZATION;
+use axum::http::header::{AUTHORIZATION, USER_AGENT};
 use axum::http::request::Parts;
 
 use crate::api::error::ApiError;
@@ -60,12 +60,16 @@ impl FromRequestParts<AppState> for AuthDevice {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let token = bearer_token(&parts.headers).ok_or_else(|| {
-            crate::audit::auth_failed(&client_string(parts, state), "missing token");
+            state
+                .audit
+                .auth_failed(&client_string(parts, state), "missing token");
             ApiError::unauthorized("missing bearer token")
         })?;
 
         let verified = verify_access_token(&state.keys, token).map_err(|error| {
-            crate::audit::auth_failed(&client_string(parts, state), "invalid token");
+            state
+                .audit
+                .auth_failed(&client_string(parts, state), "invalid token");
             ApiError::from(error)
         })?;
 
@@ -77,11 +81,15 @@ impl FromRequestParts<AppState> for AuthDevice {
             .map_err(ApiError::from)?;
 
         let Some(device) = device else {
-            crate::audit::auth_failed(&client_string(parts, state), "unknown device");
+            state
+                .audit
+                .auth_failed(&client_string(parts, state), "unknown device");
             return Err(ApiError::unauthorized("unknown device"));
         };
         if device.is_revoked {
-            crate::audit::auth_failed(&client_string(parts, state), "revoked device");
+            state
+                .audit
+                .auth_failed(&client_string(parts, state), "revoked device");
             return Err(ApiError::unauthorized("device revoked"));
         }
 
@@ -96,6 +104,17 @@ impl FromRequestParts<AppState> for AuthDevice {
             let id = device.id.clone();
             let _ = tokio::task::spawn_blocking(move || db.touch_device(&id, now)).await;
         }
+        let user_agent = parts
+            .headers
+            .get(USER_AGENT)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        state.activity.touch(
+            &device.id,
+            &device.name,
+            &client_string(parts, state),
+            user_agent,
+        );
 
         Ok(AuthDevice(device))
     }

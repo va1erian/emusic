@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::api::error::ApiError;
-use crate::audit;
 use crate::auth::middleware::{AuthDevice, ClientIp};
 use crate::db::starred::StarredUpdate;
 use crate::scan::ServerEvent;
@@ -184,7 +183,7 @@ fn publish(state: &AppState, client_ip: &str, device_id: &str, update: &StarredU
     if !update.changed() {
         return;
     }
-    audit::starred_changed(
+    state.audit.starred_changed(
         client_ip,
         device_id,
         update.starred.len(),

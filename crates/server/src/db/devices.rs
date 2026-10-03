@@ -8,6 +8,20 @@ use crate::db::Db;
 use crate::db::models::Device;
 use crate::error::{Result, ServerError};
 
+/// Result of presenting a pairing code. Clients see the same `401` for every
+/// refusal; only the audit trail distinguishes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairCodeCheck {
+    /// The code was valid and is now consumed.
+    Accepted,
+    /// No stored code matches.
+    Wrong,
+    /// A stored code matches but has expired.
+    Expired,
+    /// A stored code matches but was already used.
+    Reused,
+}
+
 impl Db {
     /// Fetches a device by id.
     pub fn device_by_id(&self, id: &str) -> Result<Option<Device>> {
@@ -90,16 +104,17 @@ impl Db {
         code_hash: &str,
         now: i64,
         device: &Device,
-    ) -> Result<bool> {
+    ) -> Result<PairCodeCheck> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if !consume_code_tx(&tx, code_hash, now)? {
+            let refusal = classify_refused_code(&tx, code_hash, now)?;
             tx.commit()?;
-            return Ok(false);
+            return Ok(refusal);
         }
         insert_device_conn(&tx, device)?;
         tx.commit()?;
-        Ok(true)
+        Ok(PairCodeCheck::Accepted)
     }
 
     /// Removes pairing codes whose expiry has passed.
@@ -158,6 +173,39 @@ fn consume_code_tx(conn: &rusqlite::Connection, code_hash: &str, now: i64) -> Re
         }
         None => false,
     })
+}
+
+/// Explains why a code was refused, by matching it against every stored row
+/// (expired and used ones included), still in constant time per row.
+fn classify_refused_code(
+    conn: &rusqlite::Connection,
+    code_hash: &str,
+    now: i64,
+) -> Result<PairCodeCheck> {
+    let expected = decode_hash(code_hash);
+    let mut stmt = conn.prepare("SELECT code_hash, expires_at, used FROM pairing_codes")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)? != 0,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut check = PairCodeCheck::Wrong;
+    for (stored, expires_at, used) in rows {
+        if constant_time_eq(expected.as_deref(), decode_hash(&stored).as_deref()) {
+            check = if used {
+                PairCodeCheck::Reused
+            } else if expires_at <= now {
+                PairCodeCheck::Expired
+            } else {
+                check
+            };
+        }
+    }
+    Ok(check)
 }
 
 fn constant_time_eq(a: Option<&[u8]>, b: Option<&[u8]>) -> bool {

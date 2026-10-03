@@ -31,6 +31,29 @@ impl RateLimiter {
         self.check_at(key, limit, window, Instant::now())
     }
 
+    /// Whether `key` already has `limit` attempts within `window`, without
+    /// recording a new one. Lets a caller count only failures while still
+    /// refusing every request once the limit is reached.
+    pub fn exceeded(&self, key: &str, limit: u32, window: Duration) -> bool {
+        self.exceeded_at(key, limit, window, Instant::now())
+    }
+
+    /// Clock-injectable variant of [`Self::exceeded`].
+    pub fn exceeded_at(&self, key: &str, limit: u32, window: Duration, now: Instant) -> bool {
+        let map = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(entries) = map.get(key) else {
+            return false;
+        };
+        let recent = match now.checked_sub(window) {
+            Some(cutoff) => entries.iter().filter(|at| **at > cutoff).count(),
+            None => entries.len(),
+        };
+        recent as u32 >= limit
+    }
+
     /// Clock-injectable variant used by tests.
     pub fn check_at(&self, key: &str, limit: u32, window: Duration, now: Instant) -> bool {
         let mut map = self
@@ -95,6 +118,19 @@ mod tests {
         assert!(limiter.check_at("ip", 1, window, start));
         assert!(!limiter.check_at("ip", 1, window, start + Duration::from_secs(30)));
         assert!(limiter.check_at("ip", 1, window, start + Duration::from_secs(61)));
+    }
+
+    #[test]
+    fn exceeded_peeks_without_recording() {
+        let limiter = RateLimiter::new();
+        let now = Instant::now();
+        let window = Duration::from_secs(60);
+        assert!(!limiter.exceeded_at("ip", 2, window, now));
+        assert!(limiter.check_at("ip", 2, window, now));
+        assert!(!limiter.exceeded_at("ip", 2, window, now));
+        assert!(limiter.check_at("ip", 2, window, now));
+        assert!(limiter.exceeded_at("ip", 2, window, now));
+        assert!(!limiter.exceeded_at("ip", 2, window, now + Duration::from_secs(61)));
     }
 
     #[test]

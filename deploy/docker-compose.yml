@@ -15,12 +15,23 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      # Admin page: published on the host's loopback only, never through the
+      # proxy. Reach it over an SSH tunnel:
+      #   ssh -L 8081:127.0.0.1:8081 you@homelab   then open http://localhost:8081/
+      - "127.0.0.1:8081:8081"
     environment:
       - RUST_LOG=info,emusic_server=debug
       # The server only reads the library and writes its own data directory.
       - EMUSIC_SERVER_LIBRARY_PATHS=/media/music
       - EMUSIC_SERVER_TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1
       - EMUSIC_SERVER_HVSC_SONGLENGTHS=/media/hvsc_sid/DOCUMENTS/Songlengths.md5
+      # Inside the container the admin listener must bind 0.0.0.0 for the
+      # port mapping above to reach it, which requires a token (24+ chars;
+      # e.g. `openssl rand -hex 24`). Log in with any user name and the token
+      # as password. The placeholder is too short on purpose: the server
+      # refuses to start until you replace it.
+      - EMUSIC_SERVER_ADMIN_HOST=0.0.0.0
+      - EMUSIC_SERVER_ADMIN_TOKEN=CHANGE-ME
     volumes:
       # Music is mounted read-only: the server never writes to the library.
       - /path/to/music:/media/music:ro
