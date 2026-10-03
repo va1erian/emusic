@@ -31,3 +31,10 @@ tracing = "0.1"
 # Single-instance/IPC (named pipes) is Windows-only; non-Windows builds use an
 # inert `IpcBridge` (see `backend::ipc`).
 winshell = { path = "../winshell" }
+
+[dev-dependencies]
+# The starred-sync integration test (#516) runs the real server in-process.
+axum = "0.8"
+emusic-server = { path = "../server" }
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "net"] }

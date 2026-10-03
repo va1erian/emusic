@@ -14,6 +14,7 @@ pub(crate) mod playlists;
 pub(crate) mod remote;
 pub(crate) mod scan;
 pub(crate) mod source;
+pub(crate) mod star_sync;
 pub(crate) mod stats;
 pub(crate) mod tag_edit;
 
@@ -83,6 +84,9 @@ pub(crate) enum Update {
     /// One completed online auto-tag lookup, held for the UI to drain via
     /// [`LibraryDataSource::take_auto_tag_results`].
     AutoTag(AutoTagOutcome),
+    /// The debounce after a star change elapsed: sync the remote servers so
+    /// the change is pushed (#516).
+    StarSyncDue,
 }
 
 /// [`LibraryDataSource`] implementation backed by `emusic-library`.
@@ -138,6 +142,8 @@ pub struct LibraryBackend {
     revision: u64,
     /// The user playlists, mirrored from the store (#473).
     playlists: playlists::PlaylistCache,
+    /// Schedules a remote sync shortly after a star change (#516).
+    star_sync: star_sync::debounce::StarSyncDebouncer,
 }
 
 impl Default for LibraryBackend {
@@ -214,6 +220,9 @@ impl LibraryBackend {
             last_scan: None,
             revision: 0,
             playlists,
+            star_sync: star_sync::debounce::StarSyncDebouncer::new(
+                star_sync::debounce::STAR_SYNC_DELAY,
+            ),
         }
     }
 
@@ -388,6 +397,9 @@ impl LibraryDataSource for LibraryBackend {
         }
         self.snapshot.set_starred(id, starred);
         self.mark_changed();
+        if !self.remote.servers().is_empty() {
+            self.star_sync.poke(&self.update_tx);
+        }
     }
 
     fn remote_cache_root(&self) -> Option<PathBuf> {
@@ -497,6 +509,7 @@ impl LibraryDataSource for LibraryBackend {
                 }
                 Update::TagEdits(outcomes) => self.tag_edit_results.extend(outcomes),
                 Update::AutoTag(outcome) => self.auto_tag.handle_outcome(outcome),
+                Update::StarSyncDue => self.sync_remote(),
             }
         }
 
@@ -698,11 +711,13 @@ pub(crate) fn scan_options(bass: Option<Arc<bass::Bass>>) -> emusic_library::sca
     }
 }
 
-/// Deletes every remote row stored for each server id (unpair, #391).
+/// Deletes every remote row stored for each server id and its starred-sync
+/// base (unpair, #391, #516).
 fn forget_servers_in(store: &mut Store, server_ids: &[String]) -> emusic_library::Result<()> {
     for id in server_ids {
         let tracks: Vec<String> = store.remote_track_ids(id)?.into_iter().collect();
         store.delete_remote_tracks(id, &tracks)?;
+        store.forget_starred_base(id)?;
     }
     Ok(())
 }

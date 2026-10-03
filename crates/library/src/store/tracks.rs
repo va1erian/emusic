@@ -215,13 +215,11 @@ impl Store {
     /// Sets whether `track_id` is starred, returning whether a row matched.
     ///
     /// Unrelated to the scanner's upserts, which never touch `starred`, so
-    /// the flag survives rescans and moves.
+    /// the flag survives rescans and moves. An actual change is stamped with
+    /// the current time for server starred sync (#516); see
+    /// [`Store::set_starred_at`].
     pub fn set_starred(&self, track_id: TrackId, starred: bool) -> Result<bool> {
-        let updated = self.conn.execute(
-            "UPDATE tracks SET starred = ?1 WHERE id = ?2",
-            params![starred, track_id.0],
-        )?;
-        Ok(updated > 0)
+        self.set_starred_at(track_id, starred, super::starred_sync::unix_now_ms())
     }
 
     /// Updates the tag columns of the row at `path` from `tags`, together
