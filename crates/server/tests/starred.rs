@@ -294,15 +294,31 @@ async fn a_deleted_track_is_hidden_but_keeps_its_star() {
     harness.send("PUT", "/api/v1/starred/a", None).await;
     harness.send("PUT", "/api/v1/starred/b", None).await;
 
+    // Deleting a starred track changes the visible list, so the version
+    // (and ETag) moves on and a cached `"2"` no longer matches.
     harness.state.db.delete_tracks(&["a".to_string()]).unwrap();
-    assert_eq!(harness.starred_ids().await, (2, vec!["b".to_string()]));
+    assert_eq!(harness.starred_ids().await, (3, vec!["b".to_string()]));
+    let (status, _, _) = harness
+        .send_with("GET", "/api/v1/starred", None, Some("\"2\""))
+        .await;
+    assert_eq!(status, StatusCode::OK);
 
-    // The file comes back: its star is still there.
+    // The file comes back: its star is still there, under a new version.
     harness.state.db.upsert_tracks(&[track("a")]).unwrap();
     assert_eq!(
         harness.starred_ids().await,
-        (2, vec!["b".to_string(), "a".to_string()])
+        (4, vec!["b".to_string(), "a".to_string()])
     );
+}
+
+#[tokio::test]
+async fn scan_changes_to_unstarred_tracks_keep_the_version() {
+    let harness = Harness::new().await;
+    harness.send("PUT", "/api/v1/starred/a", None).await;
+
+    harness.state.db.delete_tracks(&["c".to_string()]).unwrap();
+    harness.state.db.upsert_tracks(&[track("d")]).unwrap();
+    assert_eq!(harness.starred_ids().await, (1, vec!["a".to_string()]));
 }
 
 #[tokio::test]

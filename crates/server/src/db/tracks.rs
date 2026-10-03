@@ -7,6 +7,7 @@ use rusqlite::{OptionalExtension, TransactionBehavior};
 use crate::db::Db;
 use crate::db::models::{NewTrack, SyncDelta, TrackRecord};
 use crate::db::schema::META_LIBRARY_VERSION;
+use crate::db::starred::touch_starred_tx;
 use crate::error::{Result, ServerError};
 use crate::util::unix_now;
 
@@ -26,7 +27,7 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let next = library_version_tx(&tx)? + 1;
-        let mut changed = 0usize;
+        let mut changed = Vec::new();
         {
             let mut upsert = tx.prepare(UPSERT_SQL)?;
             let mut clear_tombstone = tx.prepare("DELETE FROM tombstones WHERE track_id = ?1")?;
@@ -57,16 +58,17 @@ impl Db {
                     track.added_at,
                 ])?;
                 if affected > 0 {
-                    changed += 1;
+                    changed.push(track.id.as_str());
                     clear_tombstone.execute([&track.id])?;
                 }
             }
         }
-        if changed > 0 {
+        if !changed.is_empty() {
             set_library_version_tx(&tx, next)?;
+            touch_starred_tx(&tx, &changed)?;
         }
         tx.commit()?;
-        Ok(changed)
+        Ok(changed.len())
     }
 
     /// Deletes tracks by id and records tombstones so clients can sync the
@@ -79,7 +81,7 @@ impl Db {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let next = library_version_tx(&tx)? + 1;
         let now = unix_now();
-        let mut removed = 0usize;
+        let mut removed = Vec::new();
         {
             let mut delete = tx.prepare("DELETE FROM tracks WHERE id = ?1")?;
             let mut tombstone = tx.prepare(
@@ -89,15 +91,16 @@ impl Db {
             for id in ids {
                 if delete.execute([id])? > 0 {
                     tombstone.execute(rusqlite::params![id, next, now])?;
-                    removed += 1;
+                    removed.push(id.as_str());
                 }
             }
         }
-        if removed > 0 {
+        if !removed.is_empty() {
             set_library_version_tx(&tx, next)?;
+            touch_starred_tx(&tx, &removed)?;
         }
         tx.commit()?;
-        Ok(removed)
+        Ok(removed.len())
     }
 
     /// Fetches a track by id.

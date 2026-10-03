@@ -139,6 +139,24 @@ impl Db {
     }
 }
 
+/// Bumps the starred-set version when any of `track_ids` carries a retained
+/// star. Called inside the scan's track transactions: deleting or restoring
+/// a starred track changes the visible list, so cached ETags must go stale.
+pub(crate) fn touch_starred_tx(conn: &rusqlite::Connection, track_ids: &[&str]) -> Result<()> {
+    let mut is_starred = conn.prepare("SELECT 1 FROM starred WHERE track_id = ?1")?;
+    for id in track_ids {
+        if is_starred.query_row([id], |_| Ok(())).optional()?.is_some() {
+            let version = starred_version(conn)? + 1;
+            conn.execute(
+                "UPDATE meta SET value = ?1 WHERE key = ?2",
+                rusqlite::params![version.to_string(), META_STARRED_VERSION],
+            )?;
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 fn starred_version(conn: &rusqlite::Connection) -> Result<i64> {
     let value: String = conn.query_row(
         "SELECT value FROM meta WHERE key = ?1",
