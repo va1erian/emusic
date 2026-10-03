@@ -42,7 +42,7 @@ pub struct MobileCore {
 impl MobileCore {
     /// Loads the stored credentials for this server, refreshing the token when
     /// it is close to expiry.
-    fn fresh_token(&self) -> Result<(Credentials, String), MobileError> {
+    pub(crate) fn fresh_token(&self) -> Result<(Credentials, String), MobileError> {
         let mut credentials =
             self.store
                 .load(&self.endpoint.id)?
@@ -65,6 +65,16 @@ impl MobileCore {
         }
         let token = credentials.token.clone();
         Ok((credentials, token))
+    }
+
+    /// The HTTP client bound to this server.
+    pub(crate) fn client(&self) -> &RemoteClient {
+        &self.client
+    }
+
+    /// The app's private data directory.
+    pub(crate) fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
     }
 
     fn auth_state_from(&self, credentials: Option<&Credentials>) -> AuthState {
@@ -389,7 +399,7 @@ fn merge_tracks(tracks: &mut Vec<Track>, updates: Vec<Track>, deleted: &[String]
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -487,7 +497,7 @@ mod tests {
         assert!(cached.tracks.is_empty());
     }
 
-    fn track(id: &str, title: &str) -> Track {
+    pub(crate) fn track(id: &str, title: &str) -> Track {
         Track {
             id: id.into(),
             filename: None,

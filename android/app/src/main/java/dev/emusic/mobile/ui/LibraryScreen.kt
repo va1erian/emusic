@@ -34,6 +34,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -54,6 +55,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Menu
@@ -90,7 +94,9 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var version by remember { mutableLongStateOf(0L) }
     var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var starredIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var nonce by remember { mutableIntStateOf(0) }
+    var starredNonce by remember { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var showInfo by remember { mutableStateOf(false) }
     var showAccent by remember { mutableStateOf(false) }
@@ -112,6 +118,8 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                     version = cached.version
                     tracks = cached.tracks
                     loading = false
+                    withContext(Dispatchers.IO) { runCatching { client.cachedStarred() } }
+                        .onSuccess { starredIds = it }
                     // Let the playback service browse this server.
                     ActiveServer.set(context, url)
                 }
@@ -123,12 +131,34 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 tracks = refreshed.tracks
                 error = null
                 ActiveServer.set(context, url)
+                // After the library, so newly synced starred tracks are kept.
+                refreshStarred(client)?.let { starredIds = it }
             }
             .onFailure { failure ->
                 // Keep the cache when the refresh fails (for example offline).
                 if (tracks.isEmpty()) error = failure.message ?: failure.toString()
             }
         loading = false
+    }
+
+    // Starring happens on the desktop: re-check (cheaply, by ETag) whenever the
+    // app returns to the foreground.
+    LaunchedEffect(starredNonce) {
+        val client = core
+        if (starredNonce > 0 && client != null) refreshStarred(client)?.let { starredIds = it }
+    }
+    val lifecycle = (context as? LifecycleOwner)?.lifecycle
+    DisposableEffect(lifecycle) {
+        // The first ON_RESUME is the initial composition, covered by the load above.
+        var resumedOnce = false
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (resumedOnce) starredNonce++
+                resumedOnce = true
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
     }
 
     val player = rememberPlayerState(core, url) {
@@ -146,6 +176,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     val searched = remember(library, query) {
         if (query.isBlank()) library else LibraryIndex(searchTracks(tracks, query))
     }
+    val starredSet = remember(starredIds) { starredIds.toSet() }
     val drawer = rememberDrawerState(DrawerValue.Closed)
 
     // Back closes the drawer, then pops a drill-down, then leaves the server.
@@ -180,7 +211,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
     }
 
     val artSource = remember(core) { core?.let { client -> ArtSource { client.albumArtFile(it) } } }
-    CompositionLocalProvider(LocalArtSource provides artSource) {
+    CompositionLocalProvider(LocalArtSource provides artSource, LocalStarredIds provides starredSet) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -192,7 +223,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                 NavigatorPane(
                     server = url,
                     selected = nav.root,
-                    counts = if (loading) emptyMap() else library.counts(),
+                    counts = if (loading) emptyMap() else library.counts(starredIds),
                     onSelect = { root ->
                         nav.select(root)
                         scope.launch { drawer.close() }
@@ -274,6 +305,7 @@ fun LibraryScreen(url: String, dataDir: String, onBack: () -> Unit) {
                                     library = library,
                                     searched = searched,
                                     query = query,
+                                    starredIds = starredIds,
                                     options = options,
                                     player = player,
                                     modifier = Modifier.weight(1f),
@@ -326,11 +358,16 @@ private fun ColumnScope.LibraryBody(
     }
 }
 
-/** Navigator badges: how many tracks, albums, artists, genres and folders. */
-private fun LibraryIndex.counts(): Map<Destination.Root, Int> = mapOf(
+/** Fetches the starred ids, or `null` when the server cannot be reached. */
+private suspend fun refreshStarred(client: MobileCore): List<String>? =
+    withContext(Dispatchers.IO) { runCatching { client.refreshStarred() }.getOrNull() }
+
+/** Navigator badges: how many tracks, albums, artists, genres, folders and stars. */
+private fun LibraryIndex.counts(starredIds: List<String>): Map<Destination.Root, Int> = mapOf(
     Destination.Root.Music to tracks.size,
     Destination.Root.Albums to albums.size,
     Destination.Root.Artists to artists.size,
     Destination.Root.Genres to genres.size,
     Destination.Root.Folders to folders.size,
+    Destination.Root.Starred to inOrder(starredIds).size,
 )

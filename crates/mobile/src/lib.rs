@@ -18,6 +18,7 @@ mod core;
 mod error;
 mod library_store;
 mod registry;
+mod starred;
 mod types;
 mod util;
 

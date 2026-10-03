@@ -113,4 +113,19 @@ class LibraryIndexTest {
         nav.select(Destination.Root.Music)
         assertEquals(listOf<Destination>(Destination.Root.Music), nav.stack)
     }
+
+    @Test
+    fun starredFollowsTheServerOrderAndTheSearch() {
+        val library = LibraryIndex(
+            listOf(track("a", title = "Alpha"), track("b", title = "Beta"), track("c", title = "Gamma")),
+        )
+        // Newest first, as the server sends them; unknown ids are skipped.
+        assertEquals(listOf("c", "a"), library.inOrder(listOf("c", "gone", "a")).map { it.id })
+        val searched = LibraryIndex(searchTracks(library.tracks, "alp"))
+        assertEquals(listOf("a"), searched.inOrder(listOf("c", "a")).map { it.id })
+        assertEquals(
+            listOf("PLAYLISTS"),
+            NAVIGATOR_SECTIONS.filter { (_, roots) -> Destination.Root.Starred in roots }.map { it.first },
+        )
+    }
 }

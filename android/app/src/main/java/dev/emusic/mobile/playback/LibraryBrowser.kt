@@ -12,9 +12,15 @@ data class TrackSource(val uri: String, val playable: Boolean)
 /**
  * Builds an Android Auto / Media3 browse tree from a synced library.
  *
- * Ids are opaque and stable: `root`, `albums`, `artists`, `folders`, `tracks`,
- * `album:<n>`, `artist:<n>`, `folder:<n>` and `track:<id>`. The tree is built
- * once from the cached library and held in memory.
+ * Ids are opaque and stable: `root`, `starred`, `albums`, `artists`,
+ * `folders`, `tracks`, `album:<n>`, `artist:<n>`, `folder:<n>`, `track:<id>`
+ * and `starred:<id>`. The tree is built once from the cached library and held
+ * in memory.
+ *
+ * [starredIds] are the server's starred tracks, newest first (already limited
+ * to the library); they form the read-only `starred` playlist, listed first at
+ * the root. Its items get their own `starred:` ids so picking one queues the
+ * starred list rather than the whole library.
  *
  * [source] resolves a track to its playable URI (a `/stream` URL, or a
  * `content://` render URI for specialized formats) and whether it can play.
@@ -23,6 +29,7 @@ data class TrackSource(val uri: String, val playable: Boolean)
  */
 class LibraryBrowser(
     tracks: List<Track>,
+    starredIds: List<String>,
     private val source: (Track) -> TrackSource,
 ) {
     private data class Node(val item: MediaItem, val childIds: List<String>)
@@ -55,6 +62,14 @@ class LibraryBrowser(
             folders.getOrPut(track.directory) { mutableListOf() } += id
         }
 
+        val byId = tracks.associateBy { it.id }
+        val starred = starredIds.mapNotNull { trackId ->
+            val track = byId[trackId] ?: return@mapNotNull null
+            val id = "$STARRED_PREFIX$trackId"
+            nodes[id] = Node(playable(id, track), emptyList())
+            id
+        }
+
         val albumIds = albums.entries.map { (album, ids) ->
             val id = "album:$album"
             nodes[id] = Node(browsable(id, album, albumArt[album]), ids)
@@ -71,11 +86,14 @@ class LibraryBrowser(
             id
         }
 
+        nodes[STARRED] = Node(browsable(STARRED, "Starred", null), starred)
         nodes[ALBUMS] = Node(browsable(ALBUMS, "Albums", null), albumIds)
         nodes[ARTISTS] = Node(browsable(ARTISTS, "Artists", null), artistIds)
         nodes[FOLDERS] = Node(browsable(FOLDERS, "Folders", null), folderIds)
         nodes[TRACKS] = Node(browsable(TRACKS, "All tracks", null), trackIds)
-        nodes[ROOT] = Node(root, listOf(ALBUMS, ARTISTS, FOLDERS, TRACKS))
+        // Android Auto may show only the first four root entries as tabs, so the
+        // rarely used folders come last.
+        nodes[ROOT] = Node(root, listOf(STARRED, ALBUMS, ARTISTS, TRACKS, FOLDERS))
     }
 
     /** The library root item. */
@@ -85,12 +103,14 @@ class LibraryBrowser(
     fun item(id: String): MediaItem? = nodes[id]?.item
 
     /**
-     * The full track list rotated to start at `trackId`, used to give a car a
-     * real queue when it picks a track. Empty when `trackId` is unknown.
+     * The list a picked item came from (the starred playlist for a `starred:`
+     * id, else every track) rotated to start at `itemId`, used to give a car a
+     * real queue when it picks a track. Empty when `itemId` is unknown.
      */
-    fun queueFrom(trackId: String): List<MediaItem> {
-        val all = nodes[TRACKS]?.childIds ?: return emptyList()
-        val start = all.indexOf(trackId)
+    fun queueFrom(itemId: String): List<MediaItem> {
+        val list = if (itemId.startsWith(STARRED_PREFIX)) STARRED else TRACKS
+        val all = nodes[list]?.childIds ?: return emptyList()
+        val start = all.indexOf(itemId)
         if (start < 0) return emptyList()
         val rotated = all.subList(start, all.size) + all.subList(0, start)
         return rotated.mapNotNull { nodes[it]?.item }
@@ -161,10 +181,16 @@ class LibraryBrowser(
 
     companion object {
         const val ROOT = "root"
+        const val STARRED = "starred"
         const val ALBUMS = "albums"
         const val ARTISTS = "artists"
         const val FOLDERS = "folders"
         const val TRACKS = "tracks"
         private const val MAX_SEARCH_RESULTS = 100
+        private const val STARRED_PREFIX = "starred:"
+
+        /** Whether `mediaId` is a playable track (in any list) of this tree. */
+        fun isTrack(mediaId: String): Boolean =
+            mediaId.startsWith("track:") || mediaId.startsWith(STARRED_PREFIX)
     }
 }

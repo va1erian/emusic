@@ -39,6 +39,7 @@ fun ContentPane(
     library: LibraryIndex,
     searched: LibraryIndex,
     query: String,
+    starredIds: List<String>,
     options: BrowseOptions,
     player: PlayerState,
     modifier: Modifier = Modifier,
@@ -97,6 +98,18 @@ fun ContentPane(
             onOpen = { nav.push(Destination.Folder(it.path)) },
             modifier = modifier,
         )
+
+        Destination.Root.Starred -> {
+            val starred = remember(searched, starredIds) { searched.inOrder(starredIds) }
+            StarredView(
+                tracks = starred,
+                nowPlayingId = playingId,
+                emptyText = if (query.isBlank()) NO_STARRED else empty("starred tracks"),
+                onPlay = player::play,
+                onShuffle = player::shuffleAll,
+                modifier = modifier,
+            )
+        }
 
         Destination.Root.Recent -> TrackList(
             tracks = searched.recentlyAdded,

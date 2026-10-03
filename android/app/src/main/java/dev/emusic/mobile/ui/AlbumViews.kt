@@ -280,8 +280,9 @@ fun GroupDetail(
     }
 }
 
+/** Play-all and Shuffle buttons for a list's header. */
 @Composable
-private fun PlayShuffleButtons(onPlay: () -> Unit, onShuffle: () -> Unit) {
+fun PlayShuffleButtons(onPlay: () -> Unit, onShuffle: () -> Unit) {
     // Wraps rather than squeezing the labels on a narrow (folded) screen.
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -33,7 +33,7 @@ import java.io.File
 class PlaybackService : MediaLibraryService() {
     private var librarySession: MediaLibraryService.MediaLibrarySession? = null
     private var browser: LibraryBrowser? = null
-    private var browserStamp: Long = Long.MIN_VALUE
+    private var browserStamp: List<Long>? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -70,7 +70,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * The browse tree, rebuilt whenever the cached library file changes.
+     * The browse tree, rebuilt whenever the cached library or starred file
+     * changes.
      *
      * A tree built without an active server or with no tracks is returned but
      * not cached: it is transient (the app may not be paired/synced yet) and
@@ -78,13 +79,16 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun library(): LibraryBrowser {
         val active = ActiveServer.get(this)
-        val snapshot = File(ActiveServer.dataDir(this), "library.json")
-        val stamp = if (active == null) Long.MIN_VALUE else snapshot.lastModified()
+        val dataDir = ActiveServer.dataDir(this)
+        val stamp = active?.let {
+            listOf(File(dataDir, "library.json").lastModified(), File(dataDir, "starred.json").lastModified())
+        }
         browser?.let { if (stamp == browserStamp) return it }
 
-        val core = active?.let { runCatching { MobileCore(it, ActiveServer.dataDir(this)) }.getOrNull() }
+        val core = active?.let { runCatching { MobileCore(it, dataDir) }.getOrNull() }
         val tracks = core?.let { runCatching { it.cachedLibrary().tracks }.getOrNull() }.orEmpty()
-        val built = LibraryBrowser(tracks) { track ->
+        val starred = core?.let { runCatching { it.cachedStarred() }.getOrNull() }.orEmpty()
+        val built = LibraryBrowser(tracks, starred) { track ->
             when {
                 core == null -> TrackSource("", false)
                 !track.specialized -> TrackSource(core.streamUrl(track.id), true)
@@ -119,9 +123,10 @@ class PlaybackService : MediaLibraryService() {
          *
          * The session strips `localConfiguration`, so the playable URI travels
          * in `requestMetadata.mediaUri` and is restored here. Expanding the
-         * whole track list (starting at the picked track) gives the car a real
-         * queue, so next/previous/repeat/shuffle work there too. The phone UI's
-         * items have no `track:` id and are passed through untouched.
+         * list the track was picked from (the starred playlist or every track,
+         * starting at the picked one) gives the car a real queue, so
+         * next/previous/repeat/shuffle work there too. The phone UI's items
+         * have no tree id and are passed through untouched.
          */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
@@ -130,7 +135,7 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<List<MediaItem>> {
             val resolved = ArrayList<MediaItem>(mediaItems.size)
             for (item in mediaItems) {
-                val queue = if (item.mediaId.startsWith("track:")) {
+                val queue = if (LibraryBrowser.isTrack(item.mediaId)) {
                     library().queueFrom(item.mediaId)
                 } else {
                     emptyList()
