@@ -95,6 +95,17 @@ impl<M: 'static> ProjectMView<M> {
         }
     }
 
+    /// Marks the surface as hosted by the independent window (#303), so its
+    /// dock button reads "Dock" rather than "Pop out" (#515).
+    #[must_use]
+    pub fn in_window(self) -> Self {
+        self.custom
+            .widget()
+            .borrow()
+            .set_host(overlay::Host::Window);
+        self
+    }
+
     /// Shows or hides the surface. While hidden it stops: no repaints, no
     /// audio read, no GPU work (#305).
     pub fn set_visible(&self, visible: bool) {

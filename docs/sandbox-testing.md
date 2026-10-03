@@ -125,7 +125,10 @@ scripts\sandbox\run.ps1 -Build `
 - **UI Automation can't reach into the sandbox.** The sandbox is a separate
   VM, so `scripts\win32-uia.ps1` on the host can't drive an app running inside
   it. Use `-Screenshot` for visuals here; run UIA on the host or in CI when you
-  need real clicks and keystrokes (see [win32-uia.md](win32-uia.md)).
+  need real clicks and keystrokes (see [win32-uia.md](win32-uia.md)). A UIA
+  script run *inside* the sandbox (from its logon command) does work, but
+  there window names come back empty and the owned visualization window is
+  listed as a `Window` child of the main window, so match by id/type, not name.
 - **Disk.** The static-CRT build in `target\sandbox` is a second, cold build
   (several GB). Use `-TargetDir` to point it at a shared location, and delete
   it when you're done with a branch.

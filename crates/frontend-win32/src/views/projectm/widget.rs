@@ -37,6 +37,8 @@ pub(super) struct ProjectMWidget {
     visible: Cell<bool>,
     /// Whether the pointer rests on the surface, so its overlay shows.
     hovered: Cell<bool>,
+    /// The surface hosting the widget, which names the dock button.
+    host: Cell<overlay::Host>,
     /// The persisted settings pushed by the frontend.
     settings: RefCell<ProjectMSettings>,
     /// The preset to restore when the instance is created.
@@ -70,6 +72,7 @@ impl ProjectMWidget {
         Self {
             visible: Cell::new(true),
             hovered: Cell::new(false),
+            host: Cell::new(overlay::Host::Panel),
             settings: RefCell::new(ProjectMSettings::default()),
             last_preset: RefCell::new(None),
             requests: RefCell::new(Vec::new()),
@@ -95,6 +98,12 @@ impl ProjectMWidget {
         if !visible {
             self.hovered.set(false);
         }
+    }
+
+    /// Marks the widget as hosted by the independent window, so its dock
+    /// button reads "Dock" instead of "Pop out" (#515).
+    pub(super) fn set_host(&self, host: overlay::Host) {
+        self.host.set(host);
     }
 
     /// Reads the player for this frame, buffering its samples (or silence).
@@ -252,7 +261,14 @@ impl CustomWidget for ProjectMWidget {
         );
         if self.hovered.get() {
             let buttons = overlay::buttons(bounds, self.dpi.get());
-            overlay::draw(canvas, &buttons, theme, self.font.as_ref(), self.dpi.get());
+            overlay::draw(
+                canvas,
+                &buttons,
+                self.host.get(),
+                theme,
+                self.font.as_ref(),
+                self.dpi.get(),
+            );
         }
     }
 
@@ -276,12 +292,26 @@ impl CustomWidget for ProjectMWidget {
     }
 
     /// Exposes the surface to UI Automation, so scripts can find it and
-    /// double-click it with real input (#515).
+    /// double-click it with real input (#515), plus its overlay buttons while
+    /// they are shown, named as drawn ("Pop out" or "Dock", "Hide").
     fn accessibility(&self, cx: &AccessCx) -> Option<Node> {
+        let buttons = if self.engine.is_fallback() && self.hovered.get() {
+            overlay::buttons(cx.bounds(), self.dpi.get())
+        } else {
+            Vec::new()
+        };
+        let host = self.host.get();
+        let children: Vec<Node> = buttons
+            .iter()
+            .map(|button| {
+                Node::new(Role::Button, overlay::label(button.action, host)).bounds(button.rect)
+            })
+            .collect();
         Some(
             Node::new(Role::Image, "Visualization")
                 .id("projectm-surface")
-                .bounds(cx.bounds()),
+                .bounds(cx.bounds())
+                .children(children),
         )
     }
 
