@@ -46,3 +46,44 @@ fn accent_tint_commands_update_the_state() {
     assert!(state.accent_tint);
     assert_eq!(state.accent_tint_strength, 0xD0);
 }
+
+#[test]
+fn docking_into_the_panel_reveals_a_hidden_right_panel() {
+    use crate::state::projectm::{VizDock, VizSurface};
+    use crate::state::{PanelKind, VizCommand};
+
+    let mut state = AppState::default();
+    state.apply_local(&Command::Viz(VizCommand::SetDock(VizDock::Window)));
+    state.apply_local(&Command::TogglePanel(PanelKind::RightPanel));
+    assert!(!state.panels.right_panel, "hidden while in window mode");
+
+    // A double-click in the window docks it back into the panel (#515).
+    state.apply_local(&Command::Viz(VizCommand::SetDock(VizDock::Panel)));
+    assert_eq!(state.projectm.surface(), Some(VizSurface::Panel));
+    assert!(
+        state.panels.right_panel,
+        "the docked surface must stay on screen"
+    );
+}
+
+#[test]
+fn showing_the_docked_visualization_reveals_a_hidden_right_panel() {
+    use crate::state::{PanelKind, VizCommand};
+
+    let mut state = AppState::default();
+    state.apply_local(&Command::TogglePanel(PanelKind::RightPanel));
+    state.apply_local(&Command::Viz(VizCommand::SetVisible(true)));
+    assert!(state.panels.right_panel);
+}
+
+#[test]
+fn hiding_the_right_panel_while_docked_stays_hidden() {
+    use crate::state::{PanelKind, VizCommand};
+
+    let mut state = AppState::default();
+    state.apply_local(&Command::Viz(VizCommand::SetVisible(true)));
+    state.apply_local(&Command::TogglePanel(PanelKind::RightPanel));
+    // Preset navigation does not move the surface, so it leaves the panel alone.
+    state.apply_local(&Command::Viz(VizCommand::TogglePresetLock));
+    assert!(!state.panels.right_panel);
+}

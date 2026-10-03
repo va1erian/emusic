@@ -44,6 +44,7 @@ use emusic_player::tracker::TrackerSettings;
 use crate::panels::navigator::Navigator;
 use crate::panels::status_bar::StatusBar as StatusBarModel;
 use crate::panels::top_bar::TopBar;
+use crate::state::projectm::VizSurface;
 use crate::views::album_grid::AlbumGrid;
 use crate::views::artists::ArtistsView;
 use crate::views::folders::FoldersView;
@@ -285,7 +286,18 @@ impl AppState {
             Command::SetAccentTint(on) => self.accent_tint = *on,
             Command::SetAccentTintStrength(strength) => self.accent_tint_strength = *strength,
             Command::CycleVisualizer => self.visualizer = self.visualizer.next(),
-            Command::Viz(cmd) => self.projectm.apply(cmd),
+            Command::Viz(cmd) => {
+                let before = self.projectm.surface();
+                self.projectm.apply(cmd);
+                // Docking (or showing) the visualization in the panel must put
+                // it on screen: reveal a hidden right panel, or it would vanish
+                // (#515).
+                if before != Some(VizSurface::Panel)
+                    && self.projectm.surface() == Some(VizSurface::Panel)
+                {
+                    self.panels.right_panel = true;
+                }
+            }
             Command::TogglePanel(kind) => match kind {
                 PanelKind::Navigator => self.panels.navigator = !self.panels.navigator,
                 PanelKind::RightPanel => self.panels.right_panel = !self.panels.right_panel,
