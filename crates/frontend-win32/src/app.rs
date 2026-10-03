@@ -17,9 +17,9 @@ use emusic_ui::player_api::{PlaybackStatus, PlayerApi};
 use emusic_ui::shell::{Changes, Shell};
 use emusic_ui::state::projectm::{ProjectMAvailability, VizDock, VizSurface};
 use emusic_ui::state::{
-    AppState, Appearance, Command, MAX_NAVIGATOR_WIDTH, MAX_RIGHT_PANEL_WIDTH, MIN_NAVIGATOR_WIDTH,
-    MIN_RIGHT_PANEL_WIDTH, SHORTCUTS, ShortcutAction, ShortcutKey, View, VisualizerMode,
-    VizCommand, WindowGeometry, shortcut_command,
+    AppState, Appearance, Command, DEFAULT_QUEUE_HEIGHT, MAX_NAVIGATOR_WIDTH,
+    MAX_RIGHT_PANEL_WIDTH, MIN_NAVIGATOR_WIDTH, MIN_RIGHT_PANEL_WIDTH, SHORTCUTS, ShortcutAction,
+    ShortcutKey, View, VisualizerMode, VizCommand, WindowGeometry, shortcut_command,
 };
 use emusic_ui::views::Commands;
 use emusic_ui::views::Ctx;
@@ -50,7 +50,9 @@ use crate::views::history::HistoryView;
 use crate::views::most_played::MostPlayedView;
 use crate::views::music::MusicView;
 use crate::views::navigator::NavigatorView;
-use crate::views::now_playing::{CentralNowPlayingView, NowPlayingView, SummaryEvent};
+use crate::views::now_playing::{
+    CentralNowPlayingView, NowPlayingView, SplitterEvent, SummaryEvent,
+};
 use crate::views::placeholder::Placeholder;
 use crate::views::playlist::PlaylistView;
 use crate::views::preset_browser::{self, PresetBrowserView};
@@ -182,6 +184,8 @@ pub enum Msg {
     NowPlaying(SummaryEvent),
     /// The tag editor dialog left a save request in its bridge (#278).
     TagEditorApply,
+    /// The right panel's queue splitter was dragged or double-clicked (#514).
+    QueueSplitter(SplitterEvent),
     /// Jump to a right-panel queue preview row (double-click / Enter).
     QueueJump(usize),
     /// Open the right panel's queue context menu for a preview row.
@@ -421,6 +425,7 @@ impl Win32App {
         // here or the first tick would skip it and the panel would stay on.
         navigator.set_visible(shell.state.panels.navigator);
         right_panel.set_visible(shell.state.panels.right_panel);
+        right_panel.set_queue_height(shell.state.queue_height);
         right_panel
             .set_queue_visible(shell.state.panels.right_panel && shell.state.panels.next_tracks);
         status.set_visible(shell.state.panels.status_bar);
@@ -1854,6 +1859,19 @@ impl App for Win32App {
                     }
                     self.shell.dispatch(Command::RequestTagEdits(vec![request]));
                     self.tick(ui);
+                }
+            }
+            Msg::QueueSplitter(event) => {
+                let height = match event {
+                    SplitterEvent::Dragged(delta) => {
+                        self.right_panel.dragged_queue_height(delta, ui.dpi())
+                    }
+                    SplitterEvent::Reset => DEFAULT_QUEUE_HEIGHT,
+                };
+                if height != self.shell.state.queue_height {
+                    self.shell.state.queue_height = height;
+                    self.right_panel.set_queue_height(height);
+                    self.install_layout(ui, self.applied_view);
                 }
             }
             Msg::QueueJump(row) => {

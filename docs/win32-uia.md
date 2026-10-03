@@ -39,6 +39,7 @@ only reproduced with real input). Always `Stop-Emusic` when done.
 | Settings | Tabs (`Library`, `Appearance`, ...) as `TabItem`; buttons, check boxes, radios and sliders by their label. |
 | Search | `Edit` named by its cue text; Value pattern reads and sets the text. |
 | Status bar | `StatusBar` > `Text` per part. |
+| Now playing panel | `Separator 'Queue splitter'` (id `queue-splitter`) above the queue list; its Value is the queue height in DIP. Drag it with real input to resize the queue, double-click to reset (#514). |
 
 Give a control a stable handle with `ControlExt::set_accessible_name` /
 `set_accessible_id` (`win32ui`). A custom widget describes itself by

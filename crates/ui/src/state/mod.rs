@@ -10,6 +10,7 @@ mod metrics;
 mod palette;
 mod panels;
 pub mod projectm;
+mod queue_split;
 mod search;
 mod settings;
 mod shortcuts;
@@ -23,6 +24,10 @@ pub use metrics::{Appearance, Density, FontSize, Metrics};
 pub use palette::{Palette, Rgba};
 pub use panels::{PanelKind, PanelVisibility};
 pub use projectm::{ProjectMState, VizCommand};
+pub use queue_split::{
+    DEFAULT_QUEUE_HEIGHT, MAX_QUEUE_HEIGHT, MIN_QUEUE_HEIGHT, MIN_SUMMARY_HEIGHT,
+    clamp_queue_height, drag_queue_height, sanitize_queue_height,
+};
 pub use search::{SearchPopupItem, SearchPopupState};
 pub use settings::SettingsTab;
 pub use shortcuts::{
@@ -84,6 +89,9 @@ pub struct AppState {
     pub navigator_width: f32,
     /// Now-playing (right panel) width, in DIP; dragged by its splitter (#342).
     pub right_panel_width: f32,
+    /// Height of the now-playing panel's queue list, in DIP; dragged by the
+    /// splitter above it (#514).
+    pub queue_height: f32,
     pub search_query: String,
     /// Number of tracks the Music view's search box currently matches;
     /// `None` when no query is active. Set by the Music view each frame,
@@ -211,6 +219,7 @@ impl Default for AppState {
             panels: PanelVisibility::default(),
             navigator_width: DEFAULT_NAVIGATOR_WIDTH,
             right_panel_width: DEFAULT_RIGHT_PANEL_WIDTH,
+            queue_height: DEFAULT_QUEUE_HEIGHT,
             search_query: String::new(),
             search_result_count: None,
             search_popup: crate::views::search_popup::SearchPopup::default(),

@@ -83,6 +83,7 @@ fn non_default_config() -> Config {
         column_browser_height: 222.0,
         navigator_width: 198.0,
         right_panel_width: 321.0,
+        queue_height: 333.0,
         last_view: View::Playlist,
         last_playlist: Some(7),
         resume_playback: false,
@@ -179,6 +180,42 @@ fn apply_to_state_restores_column_browser() {
     assert_eq!(state.music.browser.height, 222.0);
     assert_eq!(state.navigator_width, 198.0);
     assert_eq!(state.right_panel_width, 321.0);
+}
+
+#[test]
+fn queue_height_round_trips_through_state() {
+    let config = Config {
+        queue_height: 333.0,
+        ..Config::default()
+    };
+    let mut state = AppState::default();
+    config.apply_to_state(&mut state);
+    assert_eq!(state.queue_height, 333.0);
+    let player = MockPlayer::default();
+    assert_eq!(Config::capture(&state, &player).queue_height, 333.0);
+}
+
+#[test]
+fn a_missing_queue_height_keeps_the_default_layout() {
+    let config: Config = toml::from_str("volume = 0.5").expect("parse config");
+    assert_eq!(config.queue_height, crate::state::DEFAULT_QUEUE_HEIGHT);
+}
+
+#[test]
+fn a_hand_edited_queue_height_is_sanitized_on_load() {
+    let mut state = AppState::default();
+    for (stored, expected) in [
+        (1.0, crate::state::MIN_QUEUE_HEIGHT),
+        (1.0e9, crate::state::MAX_QUEUE_HEIGHT),
+        (f32::NAN, crate::state::DEFAULT_QUEUE_HEIGHT),
+    ] {
+        let config = Config {
+            queue_height: stored,
+            ..Config::default()
+        };
+        config.apply_to_state(&mut state);
+        assert_eq!(state.queue_height, expected);
+    }
 }
 
 #[test]
