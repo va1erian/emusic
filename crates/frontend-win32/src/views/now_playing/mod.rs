@@ -13,6 +13,11 @@
 //! The panel is placed as a nested layout column, so [`NowPlayingView::layout`]
 //! returns the item the window's layout tree installs.
 //!
+//! A [`splitter::QueueSplitter`] sits above the queue list (#514): dragging it
+//! resizes the queue (clamped by [`emusic_ui::state::drag_queue_height`]) and
+//! double-clicking it restores the default height. The app keeps the height in
+//! [`emusic_ui::state::AppState::queue_height`] and relayouts on each change.
+//!
 //! No progress bar: the top-bar transport (#110's `top_bar`) already shows
 //! elapsed/total time with a seek slider, so neither surface repeats it.
 
@@ -20,20 +25,24 @@ pub(crate) mod artwork;
 mod central;
 mod pair;
 mod queue;
+mod splitter;
 mod summary;
 
 use std::cell::Cell;
 
 use emusic_ui::state::projectm::{VizCommand, VizDock};
+use emusic_ui::state::{DEFAULT_QUEUE_HEIGHT, drag_queue_height};
 use emusic_ui::views::now_playing::NowPlayingView as Model;
 use emusic_ui::waker::WakerHandle;
 use win32ui::prelude::*;
+use win32ui::{Dip, Px};
 use win32ui::{column, dip};
 
 use crate::app::Msg;
 use crate::views::projectm::{ProjectMGesture, ProjectMView};
 
 use pair::WidgetPair;
+use splitter::{QueueSplitter, SPLITTER_HEIGHT};
 
 /// Width of the right panel, in device-independent pixels.
 pub const PANEL_WIDTH: f32 = 280.0;
@@ -42,12 +51,18 @@ pub const PANEL_WIDTH: f32 = 280.0;
 pub const VIZ_HEIGHT: f32 = PANEL_WIDTH * 3.0 / 4.0;
 
 pub use central::CentralNowPlayingView;
+pub use splitter::SplitterEvent;
 pub use summary::SummaryEvent;
 
 /// The Win32 now-playing panel: the projectM section between the summary and
-/// the queue list.
+/// the queue list, and the splitter that resizes the queue.
 pub struct NowPlayingView {
     pair: WidgetPair,
+    /// The drag handle above the queue list (#514).
+    splitter: Custom<QueueSplitter, Msg>,
+    /// The queue list's height, in DIP. The layout reads it, so a change needs
+    /// a relayout.
+    queue_height: Cell<f32>,
     /// The single projectM surface; only this panel hosts one (#302).
     viz: ProjectMView,
     /// Whether the projectM row is expanded. The layout reads it, so a change
@@ -60,7 +75,10 @@ impl NowPlayingView {
     /// builds the artwork cache woken by `waker`. The panel's queue routes
     /// jump/context/remove through [`Msg::QueueJump`], [`Msg::QueueContext`]
     /// and [`Msg::QueueRemove`]; the visualization's hover buttons and
-    /// double-click route through [`Msg::Viz`].
+    /// double-click route through [`Msg::Viz`], and the queue splitter's
+    /// gestures through [`Msg::QueueSplitter`]. The queue starts at its
+    /// default height; the app restores the saved one with
+    /// [`Self::set_queue_height`].
     pub fn new(ui: &mut Ui<Msg>, waker: WakerHandle) -> win32ui::Result<Self> {
         let pair = WidgetPair::new(
             ui,
@@ -80,22 +98,44 @@ impl NowPlayingView {
             ProjectMGesture::ContextMenu => Some(Msg::VizMenu),
         });
         viz.set_visible(false);
+        let splitter = Custom::new(ui, QueueSplitter::new(DEFAULT_QUEUE_HEIGHT))?
+            .on_event(|event| Some(Msg::QueueSplitter(event)));
         Ok(Self {
             pair,
+            splitter,
+            queue_height: Cell::new(DEFAULT_QUEUE_HEIGHT),
             viz,
             viz_visible: Cell::new(false),
         })
     }
 
     /// The panel as a layout column: the summary fills the space above the
-    /// projectM section (when shown) and the fixed-height queue list.
+    /// projectM section (when shown), the splitter and the queue list at its
+    /// current height.
     #[must_use]
     pub fn layout(&self) -> Layout {
         column![
             self.pair.summary.fill(1),
             self.viz.height(dip(viz_row_height(self.viz_visible.get()))),
-            self.pair.queue.height(dip(queue::QUEUE_HEIGHT)),
+            self.splitter.height(dip(SPLITTER_HEIGHT)),
+            self.pair.queue.height(dip(self.queue_height.get())),
         ]
+    }
+
+    /// Sets the queue list's height, in DIP; the caller relayouts.
+    pub fn set_queue_height(&self, height: f32) {
+        self.queue_height.set(height);
+        self.splitter.widget().borrow().set_queue_height(height);
+    }
+
+    /// The queue height a splitter drag by `delta` leads to: the current
+    /// height moved by the drag, clamped so the summary and the queue both
+    /// keep their minimum of the height they share. `dpi` is the window's.
+    #[must_use]
+    pub fn dragged_queue_height(&self, delta: Dip, dpi: u32) -> f32 {
+        let summary = Px(self.pair.summary.window_rect().height()).to_dip(dpi);
+        let current = self.queue_height.get();
+        drag_queue_height(current, delta.value(), summary.value() + current)
     }
 
     /// Expands or collapses the projectM row; the caller relayouts.
@@ -112,15 +152,17 @@ impl NowPlayingView {
         &self.viz
     }
 
-    /// Shows or hides the whole panel (both native controls).
+    /// Shows or hides the whole panel (its native controls and the splitter).
     pub fn set_visible(&self, visible: bool) {
         self.pair.set_visible(visible);
+        self.splitter.set_visible(visible);
     }
 
-    /// Shows or hides just the upcoming "next tracks" queue list, leaving the
-    /// summary and visualization in place.
+    /// Shows or hides just the upcoming "next tracks" queue list and its
+    /// splitter, leaving the summary and visualization in place.
     pub fn set_queue_visible(&self, visible: bool) {
         self.pair.set_queue_visible(visible);
+        self.splitter.set_visible(visible);
     }
 
     /// Applies the current appearance metrics and zebra flag (#309).

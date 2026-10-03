@@ -114,6 +114,8 @@ pub struct Config {
     pub navigator_width: f32,
     /// Width of the now-playing (right panel) splitter, in pixels (#342).
     pub right_panel_width: f32,
+    /// Height of the now-playing panel's queue list, in DIP (#514).
+    pub queue_height: f32,
     /// View shown on startup.
     pub last_view: View,
     /// The playlist shown when `last_view` is the Playlist view (#473).
@@ -207,6 +209,7 @@ impl Default for Config {
             column_browser_height: crate::views::column_browser::DEFAULT_HEIGHT,
             navigator_width: crate::state::DEFAULT_NAVIGATOR_WIDTH,
             right_panel_width: crate::state::DEFAULT_RIGHT_PANEL_WIDTH,
+            queue_height: crate::state::DEFAULT_QUEUE_HEIGHT,
             last_view: View::default(),
             last_playlist: None,
             resume_playback: true,
@@ -253,6 +256,7 @@ impl Config {
             column_browser_height: state.music.browser.height,
             navigator_width: state.navigator_width,
             right_panel_width: state.right_panel_width,
+            queue_height: state.queue_height,
             last_view: state.view,
             last_playlist: state.selected_playlist,
             resume_playback: state.resume_playback,
@@ -287,6 +291,7 @@ impl Config {
         state.music.browser.height = self.column_browser_height;
         state.navigator_width = self.navigator_width;
         state.right_panel_width = self.right_panel_width;
+        state.queue_height = crate::state::sanitize_queue_height(self.queue_height);
         state.view = self.last_view;
         state.selected_playlist = self.last_playlist;
         state.resume_playback = self.resume_playback;

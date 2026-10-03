@@ -13,8 +13,6 @@ use win32ui::{ColumnWidth, Fill, ListView, Menu, dip};
 
 use crate::app::Msg;
 
-/// Height of the queue list, in device-independent pixels.
-pub(super) const QUEUE_HEIGHT: f32 = 200.0;
 /// Width of the row-number column.
 const NUMBER_WIDTH: f32 = 28.0;
 /// Width of the artist column.
