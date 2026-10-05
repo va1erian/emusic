@@ -59,8 +59,26 @@ pub(crate) fn normalize_key(path: &Path) -> String {
         .map(|rest| format!(r"\\{rest}"))
         .or_else(|| text.strip_prefix(r"\\?\").map(String::from))
         .unwrap_or_else(|| text.into_owned());
-    let lowered = without_verbatim.to_lowercase();
-    lowered.replace('\\', "/")
+
+    // Optimization: For pure ASCII paths (the vast majority of filesystem paths),
+    // perform lowercasing and backslash-to-forward-slash replacement in-place within
+    // a single string buffer. This avoids allocating intermediate String instances
+    // from `.to_lowercase()` and `.replace()`.
+    if without_verbatim.is_ascii() {
+        let mut bytes = without_verbatim.into_bytes();
+        for b in &mut bytes {
+            if *b == b'\\' {
+                *b = b'/';
+            } else {
+                *b = b.to_ascii_lowercase();
+            }
+        }
+        // SAFETY: `without_verbatim` was ASCII UTF-8 and only ASCII bytes were replaced with ASCII bytes.
+        String::from_utf8(bytes).expect("ASCII byte modification preserves UTF-8")
+    } else {
+        let lowered = without_verbatim.to_lowercase();
+        lowered.replace('\\', "/")
+    }
 }
 
 /// Whether `key` is `root_key` itself or lives underneath it.
@@ -122,5 +140,12 @@ mod tests {
         assert!(key_is_under("z:/music/sub/a.flac", root));
         assert!(!key_is_under("z:/musician/a.flac", root));
         assert!(!key_is_under("z:/other/a.flac", root));
+    }
+
+    #[test]
+    fn normalize_key_handles_non_ascii_unicode_paths() {
+        let path = PathBuf::from(r"C:\Music\Mísia\01 - Canción.flac");
+        let normalized = normalize_key(&path);
+        assert_eq!(normalized, "c:/music/mísia/01 - canción.flac");
     }
 }

@@ -9,3 +9,7 @@
 ## 2026-10-01 - Avoid Double-Allocation in Deunicode & Char-by-Char Haystack Appends
 **Learning:** `deunicode::deunicode` returns a guaranteed ASCII `String`. Calling `.to_lowercase()` allocates a second `String` on the heap when `.make_ascii_lowercase()` mutates in-place. For pure ASCII strings, `input.is_ascii()` allows bypassing `deunicode` entirely. In haystack string construction, pushing char-by-char causes UTF-8 decoding/re-encoding and incremental reallocations, which can be avoided with initial capacity reservation and `push_str`.
 **Action:** Use ASCII fast path and `make_ascii_lowercase()` in string normalization, and pre-allocate capacity with bulk `push_str` when building search haystacks.
+
+## 2026-10-02 - Single-Pass In-Place String Buffer Normalization for Filesystem Path Keys
+**Learning:** Normalizing filesystem path keys with sequential calls to `.to_lowercase()` and `.replace('\\', "/")` allocates two intermediate `String`s on the heap per path. For pure ASCII paths (which make up >99% of filesystem paths during library scans), performing ASCII lowercasing and backslash replacement in-place within a single `String` buffer eliminates both intermediate heap allocations.
+**Action:** Use an `is_ascii()` fast path that mutates bytes in-place for ASCII path key normalization, falling back to Unicode lowercasing for non-ASCII paths.
