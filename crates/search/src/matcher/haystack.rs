@@ -31,7 +31,9 @@ impl Haystack {
         let title = builder.push(track.title.as_deref());
         let genre = builder.push(track.genre.as_deref());
         let file = builder.push(Some(&track.filename));
-        let dir = {
+        let dir = if let Some(s) = track.dir.to_str() {
+            builder.push(Some(s))
+        } else {
             let text = track.dir.to_string_lossy();
             builder.push(Some(&text))
         };
@@ -129,13 +131,32 @@ impl Builder {
     fn push(&mut self, value: Option<&str>) -> Span {
         let start = self.text.len();
         if let Some(value) = value {
-            let normalized = normalize_text(value);
-            // Optimization: Use `push_str` for bulk memory copying (`memcpy`) instead of
-            // pushing character-by-character. Sanitize `FIELD_SEP` if present.
-            if normalized.contains(FIELD_SEP) {
-                self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+            // Optimization: For ASCII inputs (the vast majority of track fields), write
+            // lowercased/sanitized bytes directly into `self.text` without temporary heap
+            // allocations (`normalize_text` allocates a new `String` per field).
+            if value.is_ascii() {
+                if value
+                    .bytes()
+                    .any(|b| b.is_ascii_uppercase() || b == b'\x1f')
+                {
+                    self.text.reserve(value.len());
+                    for b in value.bytes() {
+                        if b == b'\x1f' {
+                            self.text.push(' ');
+                        } else {
+                            self.text.push(b.to_ascii_lowercase() as char);
+                        }
+                    }
+                } else {
+                    self.text.push_str(value);
+                }
             } else {
-                self.text.push_str(&normalized);
+                let normalized = normalize_text(value);
+                if normalized.contains(FIELD_SEP) {
+                    self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+                } else {
+                    self.text.push_str(&normalized);
+                }
             }
         }
         let end = self.text.len();
