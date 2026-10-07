@@ -1,6 +1,7 @@
 //! Fake-sink tests for the shared cache's upload cap, LRU and byte budget.
 
 use std::path::Path;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
@@ -114,7 +115,19 @@ fn missing_sources_use_the_placeholder_without_spawning_a_worker() {
 
     assert!(handle.is_some());
     assert_eq!(sink.uploads.len(), 1);
-    assert!(cache.jobs.is_none());
+    assert!(cache.pool.is_none());
+}
+
+#[test]
+fn without_a_placeholder_a_missing_source_is_left_to_the_worker() {
+    let mut cache = cache(usize::MAX);
+    let mut sink = FakeSink::default();
+
+    let handle = cache.get(&mut sink, "definitely/not/on/disk.jpg");
+
+    assert!(handle.is_none());
+    assert!(sink.uploads.is_empty());
+    assert!(cache.pool.is_some());
 }
 
 #[test]
@@ -159,4 +172,40 @@ fn the_decoder_receives_the_fallback_directory() {
         seen_dir_len.load(Ordering::SeqCst),
         "D:/some/album/dir".len()
     );
+}
+
+#[test]
+fn the_pool_decodes_the_newest_request_first() {
+    // The decoder reports each job it starts, then blocks on the gate, so the
+    // single worker holds the first job while the others pile up behind it.
+    let gate = Arc::new(Mutex::new(()));
+    let held = gate.lock().expect("gate");
+    let (started_tx, started) = std::sync::mpsc::channel();
+    let decode: DecodeFn = Arc::new({
+        let gate = Arc::clone(&gate);
+        move |path: &Path, _: Option<&Path>| {
+            let _ = started_tx.send(path.to_string_lossy().into_owned());
+            drop(gate.lock().expect("gate"));
+            None
+        }
+    });
+    let pool = pool::Pool::spawn(1, &decode);
+    let job = |name: &str| pool::Job {
+        key: 0,
+        source: name.into(),
+        fallback_dir: None,
+        waker: WakerHandle::default(),
+    };
+    let timeout = Duration::from_secs(5);
+
+    pool.submit(job("first"));
+    assert_eq!(started.recv_timeout(timeout).expect("first"), "first");
+    pool.submit(job("older"));
+    pool.submit(job("newer"));
+    drop(held);
+
+    let rest: Vec<String> = (0..2)
+        .map(|_| started.recv_timeout(timeout).expect("job started"))
+        .collect();
+    assert_eq!(rest, ["newer", "older"]);
 }
