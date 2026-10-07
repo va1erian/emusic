@@ -242,7 +242,8 @@ fn track_matches<S: PlayStats>(
                 field: None,
                 negated,
             } => (
-                finder.find(entry.haystack.full().as_bytes()).is_some(),
+                // Optimization: Use `full_bytes()` for raw byte searching, skipping UTF-8 checks.
+                finder.find(entry.haystack.full_bytes()).is_some(),
                 *negated,
             ),
             PreparedTerm::Text {
@@ -250,9 +251,8 @@ fn track_matches<S: PlayStats>(
                 field: Some(field),
                 negated,
             } => (
-                finder
-                    .find(entry.haystack.field(*field).as_bytes())
-                    .is_some(),
+                // Optimization: Use `field_bytes()` for direct byte slicing.
+                finder.find(entry.haystack.field_bytes(*field)).is_some(),
                 *negated,
             ),
             PreparedTerm::Numeric {

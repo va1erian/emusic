@@ -143,21 +143,38 @@ impl Field {
     /// Parses a field name as written by the user (case-insensitive).
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
-        match name.to_ascii_lowercase().as_str() {
-            "artist" => Some(Self::Artist),
-            "album" => Some(Self::Album),
-            "albumartist" | "album_artist" => Some(Self::AlbumArtist),
-            "title" => Some(Self::Title),
-            "genre" => Some(Self::Genre),
-            "file" => Some(Self::File),
-            "dir" | "directory" => Some(Self::Dir),
-            "ext" | "extension" => Some(Self::Ext),
-            "comment" => Some(Self::Comment),
-            "composer" => Some(Self::Composer),
-            "year" => Some(Self::Year),
-            "plays" | "playcount" => Some(Self::Plays),
-            "duration" => Some(Self::Duration),
-            _ => None,
+        // Optimization: Match using `eq_ignore_ascii_case` to avoid heap allocations
+        // from calling `to_ascii_lowercase()` on every field lookup during parsing.
+        if name.eq_ignore_ascii_case("artist") {
+            Some(Self::Artist)
+        } else if name.eq_ignore_ascii_case("album") {
+            Some(Self::Album)
+        } else if name.eq_ignore_ascii_case("albumartist")
+            || name.eq_ignore_ascii_case("album_artist")
+        {
+            Some(Self::AlbumArtist)
+        } else if name.eq_ignore_ascii_case("title") {
+            Some(Self::Title)
+        } else if name.eq_ignore_ascii_case("genre") {
+            Some(Self::Genre)
+        } else if name.eq_ignore_ascii_case("file") {
+            Some(Self::File)
+        } else if name.eq_ignore_ascii_case("dir") || name.eq_ignore_ascii_case("directory") {
+            Some(Self::Dir)
+        } else if name.eq_ignore_ascii_case("ext") || name.eq_ignore_ascii_case("extension") {
+            Some(Self::Ext)
+        } else if name.eq_ignore_ascii_case("comment") {
+            Some(Self::Comment)
+        } else if name.eq_ignore_ascii_case("composer") {
+            Some(Self::Composer)
+        } else if name.eq_ignore_ascii_case("year") {
+            Some(Self::Year)
+        } else if name.eq_ignore_ascii_case("plays") || name.eq_ignore_ascii_case("playcount") {
+            Some(Self::Plays)
+        } else if name.eq_ignore_ascii_case("duration") {
+            Some(Self::Duration)
+        } else {
+            None
         }
     }
 

@@ -9,3 +9,7 @@
 ## 2026-10-01 - Avoid Double-Allocation in Deunicode & Char-by-Char Haystack Appends
 **Learning:** `deunicode::deunicode` returns a guaranteed ASCII `String`. Calling `.to_lowercase()` allocates a second `String` on the heap when `.make_ascii_lowercase()` mutates in-place. For pure ASCII strings, `input.is_ascii()` allows bypassing `deunicode` entirely. In haystack string construction, pushing char-by-char causes UTF-8 decoding/re-encoding and incremental reallocations, which can be avoided with initial capacity reservation and `push_str`.
 **Action:** Use ASCII fast path and `make_ascii_lowercase()` in string normalization, and pre-allocate capacity with bulk `push_str` when building search haystacks.
+
+## 2026-10-03 - Keep PreparedTerm Small with Boxed Finder
+**Learning:** Unboxing `memchr::memmem::Finder` in `PreparedTerm` ballooned the enum size from 24 bytes to 72 bytes. When evaluating matching terms across 100,000 candidates, iterating over 72-byte terms increased cache line pressure and degraded matching speed by ~40%.
+**Action:** Keep `Finder` wrapped in `Box<Finder>` inside `PreparedTerm` to maintain a compact 24-byte term layout that fits efficiently in CPU cache during high-volume candidate search loops.

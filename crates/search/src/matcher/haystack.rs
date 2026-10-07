@@ -62,11 +62,31 @@ impl Haystack {
         &self.text
     }
 
+    /// The full folded text as bytes, searchable for unscoped terms.
+    ///
+    /// Optimization: Returning raw bytes avoids UTF-8 slicing checks during matching.
+    #[must_use]
+    #[inline]
+    pub fn full_bytes(&self) -> &[u8] {
+        self.text.as_bytes()
+    }
+
     /// The folded text for a single field, if that field is textual.
     #[must_use]
     pub fn field(&self, field: Field) -> &str {
         let range = self.offsets.get(field);
         &self.text[range]
+    }
+
+    /// The folded text as bytes for a single field, if that field is textual.
+    ///
+    /// Optimization: Directly slicing byte slice `&self.text.as_bytes()[range]` bypasses
+    /// UTF-8 character boundary checks (`is_char_boundary`), eliminating per-candidate slice checks.
+    #[must_use]
+    #[inline]
+    pub fn field_bytes(&self, field: Field) -> &[u8] {
+        let range = self.offsets.get(field);
+        &self.text.as_bytes()[range]
     }
 }
 
@@ -108,6 +128,7 @@ impl FieldOffsets {
 struct Span(usize, usize);
 
 impl From<Span> for Range<usize> {
+    #[inline]
     fn from(span: Span) -> Self {
         span.0..span.1
     }
