@@ -80,12 +80,10 @@ impl Store {
             source,
         })?;
         remove_partials(&dir)?;
-        let dest = dir.join(format!("{PREFIX}{}{EXTENSION}", self.timestamp(now)?));
+        let stamp = self.timestamp(now)?;
+        let dest = dir.join(format!("{PREFIX}{stamp}{EXTENSION}"));
         if !dest.exists() {
-            let partial = dir.join(format!(
-                "{PREFIX}{}{EXTENSION}{PARTIAL}",
-                self.timestamp(now)?
-            ));
+            let partial = dir.join(format!("{PREFIX}{stamp}{EXTENSION}{PARTIAL}"));
             let checked = self
                 .backup_to(&partial)
                 .and_then(|()| repair_and_check(&partial));
