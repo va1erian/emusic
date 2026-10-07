@@ -102,6 +102,7 @@ impl Store {
                 path: dest.clone(),
                 source,
             })?;
+            sync_dir(&dir)?;
         }
         prune(&dir, KEEP)?;
         Ok(BackupOutcome::Written(dest))
@@ -182,6 +183,24 @@ fn list_dir(dir: &Path) -> Result<Vec<PathBuf>> {
     entries
         .map(|entry| entry.map(|entry| entry.path()).map_err(error))
         .collect()
+}
+
+/// Makes the rename that published a backup durable. On Unix a rename lives
+/// in its directory, which needs its own sync; the copy's contents were
+/// already flushed when its `REINDEX` committed (SQLite's default
+/// `synchronous = FULL`). Windows offers no directory sync through `std` and
+/// journals the rename itself on NTFS, so this is a no-op there.
+fn sync_dir(dir: &Path) -> Result<()> {
+    #[cfg(unix)]
+    std::fs::File::open(dir)
+        .and_then(|handle| handle.sync_all())
+        .map_err(|source| LibraryError::Backup {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
 }
 
 /// Deletes copies left half-written by an interrupted backup.
