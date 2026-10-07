@@ -5,6 +5,7 @@
 //! operations live in sibling modules (`tracks`, `folders`, `stats`) as
 //! `impl Store` blocks so this file stays focused on connection setup.
 
+mod backup;
 mod folders;
 mod migrations;
 mod playlists;
@@ -21,6 +22,7 @@ use rusqlite::Connection;
 
 use crate::error::{LibraryError, Result};
 
+pub use backup::{BackupOutcome, backup_dir};
 pub use folders::Folder;
 pub use playlists::{Playlist, PlaylistEntry, reordered};
 pub use remote::RemoteTrack;

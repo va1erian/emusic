@@ -19,6 +19,14 @@ pub enum LibraryError {
         source: std::io::Error,
     },
 
+    /// A library backup could not be written, listed or its folder created.
+    #[error("library backup failed at {path}: {source}")]
+    Backup {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     /// [`Store::open_second`](crate::Store::open_second) was called on an
     /// in-memory store, which has no file for a second connection to open.
     #[error("an in-memory library store has no second connection")]
