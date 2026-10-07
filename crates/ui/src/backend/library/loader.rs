@@ -78,6 +78,8 @@ fn run(
         &[],
         bass,
         only_root,
+        // The initial snapshot above already reflects the store as it was.
+        scan::Refresh::IfChanged,
     )
 }
 
