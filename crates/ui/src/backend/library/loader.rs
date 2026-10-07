@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use emusic_library::{Folder, Store};
+use emusic_library::{BackupOutcome, Folder, Store};
 use tracing::{info, warn};
 
 use super::scan::{self, ScanHandle};
@@ -58,7 +58,11 @@ fn run(
     only_root: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     match private {
-        Some(private) => send_initial_snapshot(&private, folders, updates, only_root.as_deref())?,
+        Some(private) => {
+            send_initial_snapshot(&private, folders, updates, only_root.as_deref())?;
+            // After the library is on screen and before the scan changes it.
+            back_up(&private);
+        }
         // In-memory stores cannot be reopened (unit tests); fall back to the
         // shared connection for the startup snapshot only.
         None => send_shared_snapshot(store, folders, updates, only_root.as_deref())?,
@@ -81,6 +85,19 @@ fn run(
         // The initial snapshot above already reflects the store as it was.
         scan::Refresh::IfChanged,
     )
+}
+
+/// Writes the daily library backup if one is due. Failures are logged, never
+/// fatal: a missed backup must not keep the library from loading.
+fn back_up(store: &Store) {
+    match store.backup_if_due(std::time::SystemTime::now()) {
+        Ok(BackupOutcome::Written(path)) => info!(path = %path.display(), "backed up the library"),
+        Ok(BackupOutcome::SkippedDamaged(problem)) => {
+            warn!(%problem, "library database failed its integrity check; not backing it up");
+        }
+        Ok(BackupOutcome::NotDue | BackupOutcome::NoFile) => {}
+        Err(err) => warn!(%err, "library backup failed"),
+    }
 }
 
 fn send_initial_snapshot(

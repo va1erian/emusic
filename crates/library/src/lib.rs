@@ -12,8 +12,8 @@ pub mod watch;
 
 pub use error::{LibraryError, Result};
 pub use store::{
-    Folder, MostPlayedEntry, PlayHistoryEntry, Playlist, PlaylistEntry, RemoteTrack, StarSyncRow,
-    StarredBase, Store, TrackStats, default_db_path, reordered,
+    BackupOutcome, Folder, MostPlayedEntry, PlayHistoryEntry, Playlist, PlaylistEntry, RemoteTrack,
+    StarSyncRow, StarredBase, Store, TrackStats, backup_dir, default_db_path, reordered,
 };
 
 // Re-export domain types used in the public store/scanner/index API so
