@@ -527,6 +527,7 @@ impl LibraryDataSource for LibraryBackend {
                         Vec::new(),
                         self.bass.clone(),
                         self.only_root(),
+                        scan::Refresh::IfChanged,
                     );
                 }
             }
@@ -640,6 +641,7 @@ impl LibraryDataSource for LibraryBackend {
             Vec::new(),
             self.bass.clone(),
             self.only_root(),
+            scan::Refresh::IfChanged,
         );
     }
 

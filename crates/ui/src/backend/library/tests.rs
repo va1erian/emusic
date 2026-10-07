@@ -247,6 +247,7 @@ fn scan_does_not_hold_the_shared_store_lock() {
         Vec::new(),
         None,
         None,
+        scan::Refresh::Always,
     );
 
     let mut scanning = false;
@@ -276,6 +277,73 @@ fn scan_does_not_hold_the_shared_store_lock() {
     assert!(
         lock_free_during_scan,
         "the shared store lock was held for the whole scan"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Runs one scan of `dir` to completion on this thread and returns every
+/// update it sent.
+fn scan_once(store: &Arc<Mutex<Store>>, dir: &PathBuf, id: u64) -> Vec<Update> {
+    let folders = store.lock().unwrap().list_folders().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = ScanHandle {
+        cancel: CancelToken::default(),
+        id,
+    };
+    scan::run(
+        store,
+        &folders,
+        std::slice::from_ref(dir),
+        &Updates::new(tx, Default::default()),
+        &handle,
+        &[],
+        None,
+        None,
+        scan::Refresh::IfChanged,
+    )
+    .unwrap();
+    rx.try_iter().collect()
+}
+
+/// A rescan that changed nothing must not send a snapshot: applying one
+/// rebuilds every library view on the UI thread (a ~70 ms stall on a
+/// 6,000-track library). It still clears the status bar and finishes.
+#[test]
+fn unchanged_rescan_sends_no_snapshot() {
+    let dir = unique_temp_dir("unchanged");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_wav(&dir.join("track.wav"), 8_000, 1);
+    let store = Store::open_in_memory().unwrap();
+    store.add_folder(&dir).unwrap();
+    let store = Arc::new(Mutex::new(store));
+
+    let first = scan_once(&store, &dir, 1);
+    assert!(
+        first
+            .iter()
+            .any(|u| matches!(u, Update::Snapshot(s) if s.tracks.len() == 1))
+    );
+
+    let second = scan_once(&store, &dir, 2);
+    assert!(
+        !second.iter().any(|u| matches!(u, Update::Snapshot(_))),
+        "an unchanged rescan sent a snapshot"
+    );
+    assert!(matches!(second.last(), Some(Update::ScanFinished(2))));
+    assert!(
+        second
+            .iter()
+            .any(|u| matches!(u, Update::Status(text) if text.is_empty()))
+    );
+
+    // A new file is a change again.
+    write_wav(&dir.join("second.wav"), 8_000, 1);
+    let third = scan_once(&store, &dir, 3);
+    assert!(
+        third
+            .iter()
+            .any(|u| matches!(u, Update::Snapshot(s) if s.tracks.len() == 2))
     );
 
     std::fs::remove_dir_all(&dir).ok();

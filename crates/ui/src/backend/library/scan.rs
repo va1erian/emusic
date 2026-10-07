@@ -8,11 +8,15 @@
 //! written through that connection, then a fresh snapshot built via the
 //! shared one and sent to the UI thread, forwarding coarse progress updates
 //! for the status bar. All file I/O stays off the UI thread.
+//!
+//! A rescan that changed nothing skips the snapshot (see [`Refresh`]):
+//! applying one rebuilds every library-derived view on the UI thread, a
+//! visible stall on a large library for no visible change.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use emusic_library::scanner::{CancelToken, ScanEvent, scan};
+use emusic_library::scanner::{CancelToken, ScanEvent, ScanSummary, scan};
 use emusic_library::{Folder, Store};
 use tracing::{info, warn};
 
@@ -31,6 +35,36 @@ pub(crate) struct ScanHandle {
     pub id: u64,
 }
 
+/// When a finished scan sends the UI a fresh [`Snapshot`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Refresh {
+    /// Always send one: the folder list changed, so the snapshot's folders
+    /// (and per-folder counts) are stale even if no track row did.
+    Always,
+    /// Send one only when the scan or purge changed the store. For rescans
+    /// whose UI already holds a snapshot of the same store (the startup scan
+    /// after the initial load, on-demand and watch-triggered rescans).
+    IfChanged,
+}
+
+impl Refresh {
+    /// Whether a scan that purged `purged` tracks and finished with
+    /// `summary` (`None` when no roots were scanned) needs a new snapshot.
+    fn needed(self, purged: usize, summary: Option<&ScanSummary>) -> bool {
+        self == Refresh::Always || purged > 0 || summary.is_some_and(store_changed)
+    }
+}
+
+/// Whether a scan wrote to the store, or stopped early (cancelled) so its
+/// counts may not tell the whole story.
+fn store_changed(summary: &ScanSummary) -> bool {
+    summary.tracks_added > 0
+        || summary.tracks_updated > 0
+        || summary.tracks_moved > 0
+        || summary.tracks_deleted > 0
+        || summary.cancelled
+}
+
 /// Spawns a scan of `roots` on a background thread, first purging tracks
 /// under any `purge` prefixes (folders removed from the library).
 #[allow(clippy::too_many_arguments)]
@@ -43,18 +77,20 @@ pub(crate) fn spawn(
     purge: Vec<PathBuf>,
     bass: Option<Arc<bass::Bass>>,
     only_root: Option<PathBuf>,
+    refresh: Refresh,
 ) {
     std::thread::spawn(move || {
         if let Err(err) = run(
-            &store, &folders, &roots, &updates, &handle, &purge, bass, only_root,
+            &store, &folders, &roots, &updates, &handle, &purge, bass, only_root, refresh,
         ) {
             warn!(%err, "library scan failed");
         }
     });
 }
 
-/// Runs one scan to completion, reporting progress, a final snapshot and the
-/// [`Update::ScanFinished`] that clears the scanning state.
+/// Runs one scan to completion, reporting progress, a final snapshot (when
+/// `refresh` calls for one) and the [`Update::ScanFinished`] that clears the
+/// scanning state.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     store: &Arc<Mutex<Store>>,
@@ -65,9 +101,10 @@ pub(crate) fn run(
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
     only_root: Option<PathBuf>,
+    refresh: Refresh,
 ) -> anyhow::Result<()> {
     let result = run_inner(
-        store, folders, roots, updates, handle, purge, bass, only_root,
+        store, folders, roots, updates, handle, purge, bass, only_root, refresh,
     );
     if result.is_err() {
         let _ = updates.send(Update::Status(String::new()));
@@ -86,27 +123,28 @@ fn run_inner(
     purge: &[PathBuf],
     bass: Option<Arc<bass::Bass>>,
     only_root: Option<PathBuf>,
+    refresh: Refresh,
 ) -> anyhow::Result<()> {
     // Real deployments scan through a private connection, so the shared lock
     // stays free for the UI. In-memory stores (unit tests) cannot be
     // reopened; for those, fall back to the shared connection and hold its
     // lock for the run, matching the pre-#69 behaviour.
-    match private_store(store) {
+    let (purged, summary) = match private_store(store) {
         Some(mut scan_store) => {
-            purge_removed_roots(&mut scan_store, purge)?;
-            if !roots.is_empty() {
-                scan_roots(&mut scan_store, roots, updates, &handle.cancel, bass)?;
-            }
+            purge_and_scan(&mut scan_store, roots, updates, handle, purge, bass)?
         }
         None => {
             let mut shared = store
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            purge_removed_roots(&mut shared, purge)?;
-            if !roots.is_empty() {
-                scan_roots(&mut shared, roots, updates, &handle.cancel, bass)?;
-            }
+            purge_and_scan(&mut shared, roots, updates, handle, purge, bass)?
         }
+    };
+
+    if !refresh.needed(purged, summary.as_ref()) {
+        info!("library unchanged; keeping the current snapshot");
+        let _ = updates.send(Update::Status(String::new()));
+        return Ok(());
     }
 
     let snapshot = {
@@ -120,6 +158,25 @@ fn run_inner(
     Ok(())
 }
 
+/// Purges `purge`, then scans `roots` (if any). Returns how many tracks were
+/// purged and the scan's summary (`None` when there was nothing to scan).
+fn purge_and_scan(
+    store: &mut Store,
+    roots: &[PathBuf],
+    updates: &Updates,
+    handle: &ScanHandle,
+    purge: &[PathBuf],
+    bass: Option<Arc<bass::Bass>>,
+) -> anyhow::Result<(usize, Option<ScanSummary>)> {
+    let purged = purge_removed_roots(store, purge)?;
+    let summary = if roots.is_empty() {
+        None
+    } else {
+        Some(scan_roots(store, roots, updates, &handle.cancel, bass)?)
+    };
+    Ok((purged, summary))
+}
+
 /// Scans `roots` on a worker thread while this thread forwards coarse
 /// progress updates to the UI.
 fn scan_roots(
@@ -128,7 +185,7 @@ fn scan_roots(
     updates: &Updates,
     cancel: &CancelToken,
     bass: Option<Arc<bass::Bass>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ScanSummary> {
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     let roots = roots.to_vec();
     let cancel = cancel.clone();
@@ -166,11 +223,12 @@ fn scan_roots(
             info!(
                 added = summary.tracks_added,
                 updated = summary.tracks_updated,
+                moved = summary.tracks_moved,
                 deleted = summary.tracks_deleted,
                 cancelled = summary.cancelled,
                 "library scan complete"
             );
-            Ok(())
+            Ok(summary)
         }
         Err(err) => Err(err.into()),
     }
@@ -178,10 +236,11 @@ fn scan_roots(
 
 /// Deletes every stored track under a removed folder. Folder rows are
 /// independent of tracks (see `Store::remove_folder`), so without this a
-/// removed folder's music would linger in the library.
-fn purge_removed_roots(store: &mut Store, roots: &[PathBuf]) -> anyhow::Result<()> {
+/// removed folder's music would linger in the library. Returns how many
+/// tracks were deleted.
+fn purge_removed_roots(store: &mut Store, roots: &[PathBuf]) -> anyhow::Result<usize> {
     if roots.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let paths: Vec<PathBuf> = store
         .load_all_tracks()?
@@ -189,11 +248,12 @@ fn purge_removed_roots(store: &mut Store, roots: &[PathBuf]) -> anyhow::Result<(
         .filter(|track| roots.iter().any(|root| track.path.starts_with(root)))
         .map(|track| track.path)
         .collect();
-    if !paths.is_empty() {
-        let deleted = store.delete_tracks_by_paths(&paths)?;
-        info!(deleted, "purged tracks under removed library folders");
+    if paths.is_empty() {
+        return Ok(0);
     }
-    Ok(())
+    let deleted = store.delete_tracks_by_paths(&paths)?;
+    info!(deleted, "purged tracks under removed library folders");
+    Ok(deleted)
 }
 
 /// Groups digits in threes, e.g. `1234` -> `"1,234"`, matching the status
@@ -217,15 +277,4 @@ fn file_name(path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::format_count;
-
-    #[test]
-    fn format_count_groups_thousands() {
-        assert_eq!(format_count(0), "0");
-        assert_eq!(format_count(999), "999");
-        assert_eq!(format_count(1_000), "1,000");
-        assert_eq!(format_count(12_345), "12,345");
-        assert_eq!(format_count(1_234_567), "1,234,567");
-    }
-}
+mod tests;

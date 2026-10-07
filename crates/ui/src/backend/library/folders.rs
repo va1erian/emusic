@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use emusic_library::scanner::CancelToken;
 use tracing::warn;
 
-use super::scan::ScanHandle;
+use super::scan::{Refresh, ScanHandle};
 use super::{LibraryBackend, enabled_roots, loader, scan};
 
 impl LibraryBackend {
@@ -51,6 +51,7 @@ impl LibraryBackend {
                 removed,
                 self.bass.clone(),
                 self.only_root(),
+                Refresh::Always,
             );
         }
         self.scanned_roots = roots;
