@@ -135,6 +135,25 @@ fn a_stale_index_is_rebuilt_in_the_backup() {
 }
 
 #[test]
+fn an_interrupted_backup_is_neither_counted_nor_kept() {
+    let scratch = Scratch::new("partial");
+    let dir = scratch.dir.join(DIR_NAME);
+    std::fs::create_dir_all(&dir).expect("backup dir");
+    // What a crash in the middle of `VACUUM INTO` leaves behind.
+    let leftover = dir.join(format!("library-20260101-000000.db{PARTIAL}"));
+    std::fs::write(&leftover, b"half a database").expect("partial file");
+
+    let outcome = scratch
+        .store
+        .backup_if_due(SystemTime::now())
+        .expect("backup");
+
+    assert!(matches!(outcome, BackupOutcome::Written(_)), "{outcome:?}");
+    assert!(!leftover.exists());
+    assert_eq!(scratch.backups().len(), 1);
+}
+
+#[test]
 fn a_healthy_database_has_no_integrity_problem() {
     let scratch = Scratch::new("healthy");
     assert_eq!(integrity_problem(&scratch.store.conn).expect("check"), None);

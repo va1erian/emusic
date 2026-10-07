@@ -11,7 +11,9 @@
 //! SQLite's `quick_check` before it counts. A copy that fails is deleted and
 //! nothing is rotated out, so a damaged database can never push the last good
 //! backups out, while one whose only fault is a stale index is still backed
-//! up, repaired.
+//! up, repaired. The copy is written under a temporary name and only renamed
+//! to its backup name once it passes, so an interrupted backup never looks
+//! like a finished one.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -34,6 +36,9 @@ const DIR_NAME: &str = "backups";
 /// sorts chronologically.
 const PREFIX: &str = "library-";
 const EXTENSION: &str = ".db";
+
+/// Suffix of a backup still being written or checked; not a backup name.
+const PARTIAL: &str = ".partial";
 
 /// What [`Store::backup_if_due`] did.
 #[derive(Debug, PartialEq, Eq)]
@@ -74,13 +79,31 @@ impl Store {
             path: dir.clone(),
             source,
         })?;
+        remove_partials(&dir)?;
         let dest = dir.join(format!("{PREFIX}{}{EXTENSION}", self.timestamp(now)?));
         if !dest.exists() {
-            self.backup_to(&dest)?;
-        }
-        if let Some(problem) = repair_and_check(&dest)? {
-            let _ = std::fs::remove_file(&dest);
-            return Ok(BackupOutcome::SkippedDamaged(problem));
+            let partial = dir.join(format!(
+                "{PREFIX}{}{EXTENSION}{PARTIAL}",
+                self.timestamp(now)?
+            ));
+            let checked = self
+                .backup_to(&partial)
+                .and_then(|()| repair_and_check(&partial));
+            match checked {
+                Ok(None) => {}
+                Ok(Some(problem)) => {
+                    let _ = std::fs::remove_file(&partial);
+                    return Ok(BackupOutcome::SkippedDamaged(problem));
+                }
+                Err(err) => {
+                    let _ = std::fs::remove_file(&partial);
+                    return Err(err);
+                }
+            }
+            std::fs::rename(&partial, &dest).map_err(|source| LibraryError::Backup {
+                path: dest.clone(),
+                source,
+            })?;
         }
         prune(&dir, KEEP)?;
         Ok(BackupOutcome::Written(dest))
@@ -114,7 +137,8 @@ impl Store {
 }
 
 /// Rebuilds the indexes of the copy at `path`, then returns its first
-/// integrity problem, if any.
+/// integrity problem, if any. The connection is closed on return, so the file
+/// can be renamed or deleted.
 fn repair_and_check(path: &Path) -> Result<Option<String>> {
     let copy = Connection::open(path)?;
     copy.execute_batch("REINDEX")?;
@@ -136,22 +160,44 @@ pub fn backup_dir(db: &Path) -> PathBuf {
 
 /// The backups in `dir`, oldest first; empty if the folder does not exist.
 fn list_backups(dir: &Path) -> Result<Vec<PathBuf>> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(source) => {
-            return Err(LibraryError::Backup {
-                path: dir.to_path_buf(),
-                source,
-            });
-        }
-    };
-    let mut backups: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+    let mut backups: Vec<PathBuf> = list_dir(dir)?
+        .into_iter()
         .filter(|path| is_backup(path))
         .collect();
     backups.sort();
     Ok(backups)
+}
+
+/// Every entry in `dir`; empty if the folder does not exist. An unreadable
+/// entry is an error rather than skipped, so the due check and the rotation
+/// never work from an incomplete list.
+fn list_dir(dir: &Path) -> Result<Vec<PathBuf>> {
+    let error = |source| LibraryError::Backup {
+        path: dir.to_path_buf(),
+        source,
+    };
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(error(source)),
+    };
+    entries
+        .map(|entry| entry.map(|entry| entry.path()).map_err(error))
+        .collect()
+}
+
+/// Deletes copies left half-written by an interrupted backup.
+fn remove_partials(dir: &Path) -> Result<()> {
+    for path in list_dir(dir)? {
+        let partial = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(PREFIX) && name.ends_with(PARTIAL));
+        if partial && let Err(err) = std::fs::remove_file(&path) {
+            tracing::warn!(%err, path = %path.display(), "could not delete a partial library backup");
+        }
+    }
+    Ok(())
 }
 
 /// Whether `path` is named like a backup this module wrote.
