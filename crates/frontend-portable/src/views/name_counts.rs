@@ -19,6 +19,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Fill, ListModel, ListView};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::list;
 
 /// A count column of a [`NameCountsView`]: its header and fixed width (in
 /// design units). Counts are right-aligned.
@@ -91,7 +93,7 @@ impl NameCountsView {
     /// Creates the list with a fill-width `name_title` column and the given
     /// right-aligned count columns.
     pub fn new(ui: &Ui<Msg>, name_title: &str, count_columns: &[CountColumn]) -> NameCountsView {
-        let mut list = ListView::new(ui, Rect::default(), &[])
+        let mut list = make(ui, list())
             .expect("create name-counts list")
             .column(name_title, Fill);
         for column in count_columns {

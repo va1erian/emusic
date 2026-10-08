@@ -12,11 +12,12 @@
 
 use emusic_ui::state::{AppState, Command, PanelKind, View};
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::{Menu, MenuId};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::track_table::ContextAction;
+use xui::xui_core::arrange::menu_bar;
 
 /// The height reserved for the menu bar, in device-independent pixels.
 pub const MENU_BAR_HEIGHT: f32 = 26.0;
@@ -51,48 +52,42 @@ mod id {
     pub(super) const QUEUE_REMOVE: MenuId = MenuId::new(40);
 }
 
-/// Builds the File/View/Help menu bar at `bounds`, ticking the toggles that
-/// are currently on.
+/// Builds the File/View/Help menu bar, ticking the toggles that are
+/// currently on; the app places it.
 #[must_use]
-pub fn bar(ui: &Ui<Msg>, bounds: Rect, state: &AppState) -> Menu<Msg> {
-    let menu = Menu::bar(ui, bounds)
+pub fn bar(ui: &Ui<Msg>, state: &AppState) -> Menu<Msg> {
+    let panels = state.panels;
+    let browser_visible = state.music.browser.visible;
+    let builder = menu_bar(move |m| {
+        m.submenu(MenuId::new(0), "&File", |f| {
+            f.item(id::FILE_DATABASE_INFO, "&Database info...");
+            f.item(id::FILE_SETTINGS, "&Settings");
+            f.separator();
+            f.item(id::FILE_QUIT, "&Quit");
+        });
+        m.submenu(MenuId::new(4), "&View", |v| {
+            v.check(id::VIEW_NAVIGATOR, "&Navigator", panels.navigator);
+            v.check(
+                id::VIEW_RIGHT_PANEL,
+                "Now &playing panel",
+                panels.right_panel,
+            );
+            v.check(id::VIEW_NEXT_TRACKS, "&Next tracks", panels.next_tracks);
+            v.check(id::VIEW_STATUS_BAR, "&Status bar", panels.status_bar);
+            v.separator();
+            v.check(id::VIEW_COLUMN_BROWSER, "&Column browser", browser_visible);
+            v.separator();
+            v.item(id::VIEW_THEME, "Toggle &dark / light theme");
+        });
+        m.submenu(MenuId::new(5), "&Help", |h| {
+            h.item(id::HELP_SHORTCUTS, "&Keyboard shortcuts...");
+            h.item(id::HELP_ABOUT, "&About emusic");
+        });
+    });
+    let menu = make(ui, builder)
         .expect("create the menu bar")
         .on_select(bar_select)
-        .on_toggle(bar_toggle)
-        .build(|m| {
-            m.submenu(MenuId::new(0), "&File", |f| {
-                f.item(id::FILE_DATABASE_INFO, "&Database info...");
-                f.item(id::FILE_SETTINGS, "&Settings");
-                f.separator();
-                f.item(id::FILE_QUIT, "&Quit");
-            });
-            m.submenu(MenuId::new(4), "&View", |v| {
-                v.check(id::VIEW_NAVIGATOR, "&Navigator", state.panels.navigator);
-                v.check(
-                    id::VIEW_RIGHT_PANEL,
-                    "Now &playing panel",
-                    state.panels.right_panel,
-                );
-                v.check(
-                    id::VIEW_NEXT_TRACKS,
-                    "&Next tracks",
-                    state.panels.next_tracks,
-                );
-                v.check(id::VIEW_STATUS_BAR, "&Status bar", state.panels.status_bar);
-                v.separator();
-                v.check(
-                    id::VIEW_COLUMN_BROWSER,
-                    "&Column browser",
-                    state.music.browser.visible,
-                );
-                v.separator();
-                v.item(id::VIEW_THEME, "Toggle &dark / light theme");
-            });
-            m.submenu(MenuId::new(5), "&Help", |h| {
-                h.item(id::HELP_SHORTCUTS, "&Keyboard shortcuts...");
-                h.item(id::HELP_ABOUT, "&About emusic");
-            });
-        });
+        .on_toggle(bar_toggle);
     sync(&menu, state);
     menu
 }
@@ -224,7 +219,7 @@ mod tests {
         with_ui(|ui| {
             let mut state = AppState::default();
             state.panels.navigator = false;
-            let menu = bar(ui, Rect::default(), &state);
+            let menu = bar(ui, &state);
             assert!(!menu.is_checked(id::VIEW_NAVIGATOR));
             assert_eq!(
                 menu.is_checked(id::VIEW_STATUS_BAR),

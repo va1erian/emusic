@@ -5,7 +5,6 @@
 use std::path::Path;
 
 use emusic_ui::state::AppState;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, CheckBox, HasText, Label};
 
@@ -13,6 +12,8 @@ use super::super::SettingsMsg;
 use super::super::form::{FormPage, HEADING_HEIGHT, ROW_HEIGHT};
 use super::packs::{self, KNOWN_PACKS};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, checkbox, label};
 
 /// Width of a pack's enable checkbox, in design units.
 const PACK_NAME_WIDTH: f32 = 220.0;
@@ -37,19 +38,18 @@ pub(super) struct PacksSection {
 impl PacksSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(form: &FormPage) -> PacksSection {
-        let heading =
-            Label::new(form.ui(), Rect::default(), "Preset packs").expect("create packs heading");
+        let heading = make(form.ui(), label("Preset packs")).expect("create packs heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
         let mut packs = Vec::with_capacity(KNOWN_PACKS.len());
         for pack in KNOWN_PACKS {
             let row = form.row(ROW_HEIGHT).expect("create pack row");
-            let checkbox = CheckBox::new(row.ui(), Rect::default(), pack)
+            let checkbox = make(row.ui(), checkbox(pack))
                 .expect("create pack checkbox")
                 .on_toggle(move |on| {
                     Some(Msg::Settings(SettingsMsg::VizPack(pack.to_owned(), on)))
                 });
-            let status = Label::new(row.ui(), Rect::default(), "").expect("create pack status");
+            let status = make(row.ui(), label("")).expect("create pack status");
             row.fixed(checkbox.id(), dip(PACK_NAME_WIDTH))
                 .fixed(status.id(), dip(PACK_STATUS_WIDTH))
                 .finish();
@@ -60,12 +60,12 @@ impl PacksSection {
             });
         }
 
-        let get_more = Button::new(form.ui(), Rect::default(), "Get more presets...")
+        let get_more = make(form.ui(), button("Get more presets..."))
             .expect("create get-more button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::VizGetPresets)));
         form.add_full(get_more.id(), ROW_HEIGHT);
 
-        let note = Label::new(form.ui(), Rect::default(), "").expect("create packs note");
+        let note = make(form.ui(), label("")).expect("create packs note");
         form.add_full(note.id(), ROW_HEIGHT);
 
         PacksSection {

@@ -20,15 +20,16 @@ use emusic_ui::state::projectm::ProjectMAvailability;
 use emusic_ui::state::{AppState, Command, VizCommand};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::{Proxy, Ui};
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::{HasText, Label};
 
 use super::SettingsMsg;
 use super::form::{FormPage, HEADING_HEIGHT, ROW_HEIGHT};
 use crate::app::Msg;
 
+use crate::make::make;
 pub use form::VisualizationEdit;
 use packs_section::PacksSection;
+use xui::xui_core::arrange::label;
 
 /// The Visualization page's controls.
 pub(super) struct VisualizationPage {
@@ -56,12 +57,11 @@ impl VisualizationPage {
             .unwrap_or_default();
         let form = FormPage::new(ui).expect("create visualization form");
 
-        let heading = Label::new(form.ui(), Rect::default(), "Visualization")
-            .expect("create visualization heading");
+        let heading =
+            make(form.ui(), label("Visualization")).expect("create visualization heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let status =
-            Label::new(form.ui(), Rect::default(), "").expect("create visualization status");
+        let status = make(form.ui(), label("")).expect("create visualization status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         let timing = form::TimingForm::new(&form);

@@ -35,6 +35,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::Tabs;
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::tabs;
 
 pub use playback::{TrackerEdit, TrackerPreset};
 pub use visualization::VisualizationEdit;
@@ -165,7 +167,7 @@ pub struct SettingsView {
 impl SettingsView {
     /// Builds every page and the tab strip over them.
     pub fn new(ui: &Ui<Msg>) -> SettingsView {
-        let tabs = Tabs::new(ui, Rect::default()).expect("create settings tab strip");
+        let tabs = make(ui, tabs()).expect("create settings tab strip");
         let inner = tabs.ui().clone();
         let library = library::LibraryPage::new(&inner);
         let appearance = appearance::AppearancePage::new(&inner);
@@ -173,7 +175,7 @@ impl SettingsView {
         let associations = associations::AssociationsPage::new(&inner);
         let playback = playback::PlaybackPage::new(&inner);
         let server = server::ServerPage::new(&inner);
-        let about = about::build(&inner, Rect::default());
+        let about = about::build(&inner);
         let tabs = tabs
             .page(SettingsTab::Library.label(), &[library.id()])
             .page(SettingsTab::Appearance.label(), &[appearance.id()])
@@ -206,7 +208,8 @@ impl SettingsView {
 
     /// Moves/resizes the view and re-lays the selected page's form.
     pub fn set_bounds(&self, rect: Rect) {
-        self.tabs.set_bounds(rect);
+        self.ui.apply_moves(&[(self.tabs.id(), rect)]);
+        self.tabs.relayout();
         self.relayout_pages();
     }
 

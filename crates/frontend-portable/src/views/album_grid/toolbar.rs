@@ -15,6 +15,8 @@ use xui::xui_core::widget::{Button, ComboBox, HasText, Label, Slider};
 
 use super::AlbumMsg;
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, combo_box, label, slider};
 
 /// The toolbar band height, in design units.
 pub(super) const TOOLBAR_HEIGHT: f32 = 34.0;
@@ -44,30 +46,27 @@ pub(super) struct Toolbar {
 impl Toolbar {
     /// Creates the toolbar and maps each control to its [`AlbumMsg`].
     pub(super) fn new(ui: &mut Ui<Msg>) -> Result<Self> {
-        let sort = ComboBox::new(ui, Rect::default(), &sort_labels())?
+        let sort = make(ui, combo_box(&sort_labels()))?
             .on_select(|index| Some(Msg::Album(AlbumMsg::SetSort(AlbumSort::ALL[index]))));
         sort.select(sort_index(AlbumSort::default()));
 
-        let size = Slider::new(
+        let size = make(
             ui,
-            Rect::default(),
-            f64::from(MIN_TILE_SIZE),
-            f64::from(MAX_TILE_SIZE),
+            slider(f64::from(MIN_TILE_SIZE), f64::from(MAX_TILE_SIZE)),
         )?
         .on_change(|value| Some(Msg::Album(AlbumMsg::SetTileSize(value as f32))));
         size.set_value(f64::from(DEFAULT_TILE_SIZE));
 
-        let shuffle = Button::new(ui, Rect::default(), "Shuffle")?
-            .on_click(|| Some(Msg::Album(AlbumMsg::Shuffle)));
-        let close = Button::new(ui, Rect::default(), "Close album")?
-            .on_click(|| Some(Msg::Album(AlbumMsg::CloseAlbum)));
+        let shuffle = make(ui, button("Shuffle"))?.on_click(|| Some(Msg::Album(AlbumMsg::Shuffle)));
+        let close =
+            make(ui, button("Close album"))?.on_click(|| Some(Msg::Album(AlbumMsg::CloseAlbum)));
 
         Ok(Self {
             ui: ui.clone(),
-            count: Label::new(ui, Rect::default(), "0 albums")?,
-            sort_label: Label::new(ui, Rect::default(), "Sort")?,
+            count: make(ui, label("0 albums"))?,
+            sort_label: make(ui, label("Sort"))?,
             sort,
-            size_label: Label::new(ui, Rect::default(), "Size")?,
+            size_label: make(ui, label("Size"))?,
             size,
             shuffle,
             close,

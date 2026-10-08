@@ -13,7 +13,6 @@ use emusic_ui::library_api::LibraryDataSource;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, HasText, Label, ListView};
 
@@ -21,6 +20,8 @@ use crate::app::Msg;
 
 use super::SettingsMsg;
 use super::form::{FormPage, HEADING_HEIGHT, ROW_HEIGHT};
+use crate::make::make;
+use xui::xui_core::arrange::{button, label, list};
 
 /// Height of the folder list, in design units.
 const LIST_HEIGHT: f32 = 180.0;
@@ -53,29 +54,27 @@ impl LibraryPage {
     pub(super) fn new(ui: &Ui<Msg>) -> LibraryPage {
         let form = FormPage::new(ui).expect("create library form");
 
-        let heading = Label::new(form.ui(), Rect::default(), "Music folders")
-            .expect("create library heading");
+        let heading = make(form.ui(), label("Music folders")).expect("create library heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let hint = Label::new(
+        let hint = make(
             form.ui(),
-            Rect::default(),
-            "Folders scanned for music. Adding or removing one rescans in the background.",
+            label("Folders scanned for music. Adding or removing one rescans in the background."),
         )
         .expect("create library hint");
         form.add_full(hint.id(), dip(HINT_HEIGHT));
 
         let actions = form.row(ROW_HEIGHT).expect("create folder action row");
-        let add = Button::new(actions.ui(), Rect::default(), "Add folder...")
+        let add = make(actions.ui(), button("Add folder..."))
             .expect("create add-folder button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::AddFolder)));
-        let remove = Button::new(actions.ui(), Rect::default(), "Remove")
+        let remove = make(actions.ui(), button("Remove"))
             .expect("create remove-folder button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::RemoveFolder)));
-        let rescan = Button::new(actions.ui(), Rect::default(), "Rescan now")
+        let rescan = make(actions.ui(), button("Rescan now"))
             .expect("create rescan button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::Rescan)));
-        let cancel = Button::new(actions.ui(), Rect::default(), "Cancel scan")
+        let cancel = make(actions.ui(), button("Cancel scan"))
             .expect("create cancel-scan button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::CancelScan)));
         actions
@@ -85,15 +84,14 @@ impl LibraryPage {
             .fixed(cancel.id(), dip(ACTION_WIDTH))
             .finish();
 
-        let list = ListView::new(form.ui(), Rect::default(), &[])
+        let list = make(form.ui(), list())
             .expect("create folder list")
             .on_select(|_| Some(Msg::Settings(SettingsMsg::LibrarySelect)));
         form.add_full(list.id(), dip(LIST_HEIGHT));
 
-        let status = Label::new(
+        let status = make(
             form.ui(),
-            Rect::default(),
-            "No folders yet. Add one to start scanning.",
+            label("No folders yet. Add one to start scanning."),
         )
         .expect("create library status");
         form.add_full(status.id(), ROW_HEIGHT);

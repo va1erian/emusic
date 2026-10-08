@@ -30,6 +30,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, Fill, HasText, Label, ListModel, ListView};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, label, list};
 
 /// The "N plays" / "Clear history" band height, in design units.
 const HEADER_HEIGHT: f32 = 28.0;
@@ -147,13 +149,13 @@ pub struct HistoryView {
 impl HistoryView {
     /// Creates the band's controls and the (empty) grouped list.
     pub fn new(ui: &Ui<Msg>) -> HistoryView {
-        let header = Label::new(ui, Rect::default(), "0 plays").expect("create history header");
-        let clear = Button::new(ui, Rect::default(), "Clear history")
+        let header = make(ui, label("0 plays")).expect("create history header");
+        let clear = make(ui, button("Clear history"))
             .expect("create clear-history button")
             .on_click(|| Some(Msg::HistoryClear));
         clear.set_enabled(false);
 
-        let list = ListView::new(ui, Rect::default(), &[])
+        let list = make(ui, list())
             .expect("create history list")
             .column("Time", dip(TIME_WIDTH))
             .column("Title", Fill)

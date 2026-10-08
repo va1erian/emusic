@@ -29,7 +29,9 @@ use xui::xui_core::widget::{Control, Edit, Glyph, HasText, TopBar, TopBarId};
 
 use crate::app::Msg;
 use crate::backend::has_native_chrome;
+use crate::make::make;
 use crate::window::WindowChrome;
+use xui::xui_core::arrange::{edit, top_bar};
 
 /// Width of the search field, in device-independent pixels.
 const SEARCH_WIDTH: f32 = 200.0;
@@ -123,10 +125,10 @@ impl TopBarView {
         let caption_buttons = build_caption_buttons(&ui.with_parent(caption_buttons_host.id()));
         // The band's surface spans the whole transport band, behind the
         // transport bar and the search field; it is raised below them.
-        let band = TopBar::new(ui, Rect::default()).expect("create band");
+        let band = make(ui, top_bar()).expect("create band");
         let duration = Rc::new(Cell::new(0.0));
         let bar = build_bar(ui, false, Rc::clone(&duration));
-        let search = Edit::new(ui, Rect::default(), "")
+        let search = make(ui, edit())
             .expect("create search box")
             .on_change(|text| Some(Msg::Dispatch(Command::SetSearchQuery(text.to_string()))));
         // A backend with no native chrome (the canvas backend on Windows/Linux)
@@ -253,14 +255,14 @@ fn local(rect: Rect) -> Rect {
 /// Builds the caption band: the app title at the leading edge. The rest of the
 /// band is left empty so it is the window's drag region.
 fn build_caption(ui: &Ui<Msg>) -> TopBar<Msg> {
-    TopBar::new(ui, Rect::default())
+    make(ui, top_bar())
         .expect("create caption band")
         .label(TITLE, CAPTION_TITLE)
 }
 
 /// Builds the caption band's trailing window buttons (canvas backend only).
 fn build_caption_buttons(ui: &Ui<Msg>) -> TopBar<Msg> {
-    TopBar::new(ui, Rect::default())
+    make(ui, top_bar())
         .expect("create caption buttons")
         .icon(MINIMIZE, Glyph::Text(GLYPH_MINIMIZE))
         .tooltip(MINIMIZE, "Minimize")
@@ -288,7 +290,7 @@ fn build_bar(ui: &Ui<Msg>, playing: bool, duration: Rc<Cell<f64>>) -> TopBar<Msg
     // build; a flexible spacer on each side of the elapsed/seek/total group
     // keeps it near the centre and lets the band fill the client width, with
     // the volume and search pinned right.
-    let bar = TopBar::new(ui, Rect::default())
+    let bar = make(ui, top_bar())
         .expect("create top bar")
         .icon(PREVIOUS, Glyph::Previous)
         .tooltip(PREVIOUS, "Previous")

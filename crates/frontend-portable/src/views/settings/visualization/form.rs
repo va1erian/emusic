@@ -11,13 +11,14 @@ use std::path::{Path, PathBuf};
 
 use emusic_ui::state::projectm::ProjectMSettings;
 use xui::xui_core::backend::WidgetId;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, CheckBox, Edit, HasText, Label, Slider};
 
 use super::super::SettingsMsg;
 use super::super::form::{FormPage, LABEL_WIDTH, ROW_HEIGHT, RowBuilder};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, checkbox, edit, label, slider};
 
 /// Width of a slider's value label, in design units.
 const VALUE_WIDTH: f32 = 64.0;
@@ -76,15 +77,12 @@ impl TimingForm {
     /// Builds the controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(form: &FormPage) -> TimingForm {
         let duration_row = form.row(ROW_HEIGHT).expect("create duration row");
-        let duration_label = Label::new(duration_row.ui(), Rect::default(), "Preset duration")
-            .expect("create duration label");
-        let duration_value =
-            Label::new(duration_row.ui(), Rect::default(), "").expect("create duration value");
-        let duration = Slider::new(
+        let duration_label =
+            make(duration_row.ui(), label("Preset duration")).expect("create duration label");
+        let duration_value = make(duration_row.ui(), label("")).expect("create duration value");
+        let duration = make(
             duration_row.ui(),
-            Rect::default(),
-            DURATION_RANGE.0,
-            DURATION_RANGE.1,
+            slider(DURATION_RANGE.0, DURATION_RANGE.1),
         )
         .expect("create duration slider")
         .on_change(|value| {
@@ -100,24 +98,19 @@ impl TimingForm {
         );
 
         let soft_row = form.row(ROW_HEIGHT).expect("create soft-cut row");
-        let soft_label = Label::new(soft_row.ui(), Rect::default(), "Soft cut duration")
-            .expect("create soft label");
-        let soft_value = Label::new(soft_row.ui(), Rect::default(), "").expect("create soft value");
-        let soft = Slider::new(
-            soft_row.ui(),
-            Rect::default(),
-            SOFT_CUT_RANGE.0,
-            SOFT_CUT_RANGE.1,
-        )
-        .expect("create soft slider")
-        .on_change(|value| {
-            Some(Msg::Settings(SettingsMsg::Viz(VisualizationEdit::SoftCut(
-                value,
-            ))))
-        });
+        let soft_label =
+            make(soft_row.ui(), label("Soft cut duration")).expect("create soft label");
+        let soft_value = make(soft_row.ui(), label("")).expect("create soft value");
+        let soft = make(soft_row.ui(), slider(SOFT_CUT_RANGE.0, SOFT_CUT_RANGE.1))
+            .expect("create soft slider")
+            .on_change(|value| {
+                Some(Msg::Settings(SettingsMsg::Viz(VisualizationEdit::SoftCut(
+                    value,
+                ))))
+            });
         slider_row(soft_row, soft_label.id(), soft_value.id(), soft.id());
 
-        let hard_cuts = CheckBox::new(form.ui(), Rect::default(), "Switch preset on a loud beat")
+        let hard_cuts = make(form.ui(), checkbox("Switch preset on a loud beat"))
             .expect("create hard-cuts checkbox")
             .on_toggle(|on| {
                 Some(Msg::Settings(SettingsMsg::Viz(
@@ -127,15 +120,12 @@ impl TimingForm {
         form.add_full(hard_cuts.id(), ROW_HEIGHT);
 
         let hard_row = form.row(ROW_HEIGHT).expect("create hard-cut row");
-        let hard_label = Label::new(hard_row.ui(), Rect::default(), "Hard cut sensitivity")
-            .expect("create hard-cut label");
-        let hard_value =
-            Label::new(hard_row.ui(), Rect::default(), "").expect("create hard-cut value");
-        let hard = Slider::new(
+        let hard_label =
+            make(hard_row.ui(), label("Hard cut sensitivity")).expect("create hard-cut label");
+        let hard_value = make(hard_row.ui(), label("")).expect("create hard-cut value");
+        let hard = make(
             hard_row.ui(),
-            Rect::default(),
-            SENSITIVITY_RANGE.0,
-            SENSITIVITY_RANGE.1,
+            slider(SENSITIVITY_RANGE.0, SENSITIVITY_RANGE.1),
         )
         .expect("create hard-cut slider")
         .on_change(|value| {
@@ -146,14 +136,11 @@ impl TimingForm {
         slider_row(hard_row, hard_label.id(), hard_value.id(), hard.id());
 
         let beat_row = form.row(ROW_HEIGHT).expect("create beat row");
-        let beat_label = Label::new(beat_row.ui(), Rect::default(), "Beat sensitivity")
-            .expect("create beat label");
-        let beat_value = Label::new(beat_row.ui(), Rect::default(), "").expect("create beat value");
-        let beat = Slider::new(
+        let beat_label = make(beat_row.ui(), label("Beat sensitivity")).expect("create beat label");
+        let beat_value = make(beat_row.ui(), label("")).expect("create beat value");
+        let beat = make(
             beat_row.ui(),
-            Rect::default(),
-            SENSITIVITY_RANGE.0,
-            SENSITIVITY_RANGE.1,
+            slider(SENSITIVITY_RANGE.0, SENSITIVITY_RANGE.1),
         )
         .expect("create beat slider")
         .on_change(|value| {
@@ -163,7 +150,7 @@ impl TimingForm {
         });
         slider_row(beat_row, beat_label.id(), beat_value.id(), beat.id());
 
-        let shuffle = CheckBox::new(form.ui(), Rect::default(), "Shuffle preset order")
+        let shuffle = make(form.ui(), checkbox("Shuffle preset order"))
             .expect("create shuffle checkbox")
             .on_toggle(|on| {
                 Some(Msg::Settings(SettingsMsg::Viz(VisualizationEdit::Shuffle(
@@ -173,10 +160,9 @@ impl TimingForm {
         form.add_full(shuffle.id(), ROW_HEIGHT);
 
         let fps_row = form.row(ROW_HEIGHT).expect("create fps row");
-        let fps_label =
-            Label::new(fps_row.ui(), Rect::default(), "FPS cap").expect("create fps label");
-        let fps_value = Label::new(fps_row.ui(), Rect::default(), "").expect("create fps value");
-        let fps = Slider::new(fps_row.ui(), Rect::default(), FPS_RANGE.0, FPS_RANGE.1)
+        let fps_label = make(fps_row.ui(), label("FPS cap")).expect("create fps label");
+        let fps_value = make(fps_row.ui(), label("")).expect("create fps value");
+        let fps = make(fps_row.ui(), slider(FPS_RANGE.0, FPS_RANGE.1))
             .expect("create fps slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::Viz(VisualizationEdit::FpsCap(
@@ -186,17 +172,16 @@ impl TimingForm {
         slider_row(fps_row, fps_label.id(), fps_value.id(), fps.id());
 
         let user_row = form.row(ROW_HEIGHT).expect("create user preset row");
-        let user_label = Label::new(user_row.ui(), Rect::default(), "User preset folder")
-            .expect("create user label");
-        let user_edit =
-            Edit::new(user_row.ui(), Rect::default(), "").expect("create user preset field");
-        let user_browse = Button::new(user_row.ui(), Rect::default(), "Browse...")
+        let user_label =
+            make(user_row.ui(), label("User preset folder")).expect("create user label");
+        let user_edit = make(user_row.ui(), edit()).expect("create user preset field");
+        let user_browse = make(user_row.ui(), button("Browse..."))
             .expect("create user browse")
             .on_click(|| Some(Msg::Settings(SettingsMsg::VizBrowse)));
-        let user_clear = Button::new(user_row.ui(), Rect::default(), "Clear")
+        let user_clear = make(user_row.ui(), button("Clear"))
             .expect("create user clear")
             .on_click(|| Some(Msg::Settings(SettingsMsg::VizClearUserDir)));
-        let user_apply = Button::new(user_row.ui(), Rect::default(), "Apply")
+        let user_apply = make(user_row.ui(), button("Apply"))
             .expect("create user apply")
             .on_click(|| Some(Msg::Settings(SettingsMsg::VizCommitUserDir)));
         user_row

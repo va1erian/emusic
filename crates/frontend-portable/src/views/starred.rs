@@ -20,7 +20,9 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{HasText, Label};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::track_table::TrackView;
+use xui::xui_core::arrange::label;
 
 /// The header band height, in design units.
 const HEADER_HEIGHT: f32 = 26.0;
@@ -37,7 +39,7 @@ pub struct StarredView {
 impl StarredView {
     /// Creates the header and the (empty) track table.
     pub fn new(ui: &Ui<Msg>) -> StarredView {
-        let header = Label::new(ui, Rect::default(), "0 starred").expect("create starred header");
+        let header = make(ui, label("0 starred")).expect("create starred header");
         StarredView {
             ui: ui.clone(),
             header,

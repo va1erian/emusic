@@ -1,36 +1,36 @@
 //! A scrollable Settings form page on the portable [`ScrollView`].
 //!
-//! `xui_core`'s `ScrollView` stacks one widget per full-width row; a form needs
-//! "label | field" rows too, so [`FormPage`] adds two kinds of row:
+//! A form needs "label | field" rows as well as full-width ones, so
+//! [`FormPage`] keeps its own list of rows:
 //!
 //! - [`FormPage::add_full`] registers a single widget as a full-width row
 //!   (headings, checkboxes, a [`RadioGroup`] option, a [`ListView`]).
-//! - [`FormPage::row`] registers a row-height spacer and lays several widgets
-//!   out over it left to right, each either a fixed width or filling the
-//!   remainder ([`RowBuilder::fixed`] / [`RowBuilder::fill`]).
+//! - [`FormPage::row`] lays several widgets out left to right, each either a
+//!   fixed width or filling the remainder ([`RowBuilder::fixed`] /
+//!   [`RowBuilder::fill`]).
 //!
-//! A row's widgets are parented to the *scroll view*, not to the row container,
-//! as siblings of it: joining a painted child window to a painted parent stops
-//! the Win32 backend painting them (the same reason xui's own `Dialog` keeps its
-//! controls beside the scrim rather than inside it). The container is only a
-//! spacer that gives the scroll view its height, and [`position_items`] places
-//! the widgets over it from the container's current (scrolled) bounds. The
-//! `on_scroll` mapping re-runs that placement so the widgets follow the scroll.
+//! The scroll view's content is one [`FormContent`] leaf: it measures as the
+//! sum of the row heights, so the scrollbar matches exactly, and when the view
+//! places it (on resize and at every scroll offset) it places each row's
+//! widgets over itself. The widgets are its siblings, children of the scroll
+//! view, and a row scrolled out of the viewport has its widgets hidden.
 //!
-//! The scroll extent is the sum of the row heights, so the scrollbar matches
-//! exactly. Re-laying the widgets after the host has positioned a row keeps the
-//! form correct on resize and on the first layout after a tab becomes active.
+//! [`RadioGroup`]: xui::xui_core::widget::RadioGroup
+//! [`ListView`]: xui::xui_core::widget::ListView
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use xui::xui_core::app::Ui;
+use xui::xui_core::arrange::{LayoutExt, build, column, scroll};
 use xui::xui_core::backend::{NodeKind, NodeSpec, Result, WidgetId};
-use xui::xui_core::geometry::Rect;
+use xui::xui_core::geometry::{Rect, Size};
+use xui::xui_core::layout::Constraints;
 use xui::xui_core::units::{Dip, dip};
-use xui::xui_core::widget::ScrollView;
+use xui::xui_core::widget::{Control, Placeable, ScrollView};
 
 use crate::app::Msg;
+use crate::make::make;
 
 /// Height of a standard form row (label + field), in design units.
 pub const ROW_HEIGHT: Dip = dip(28.0);
@@ -49,37 +49,37 @@ enum ItemWidth {
     Fill,
 }
 
-/// One registered row: the spacer node the host scrolls, and the widgets to
-/// place over it (empty for a full-width single-widget row, whose node is the
-/// widget itself).
+/// One registered row: its height and the widgets placed across it.
 struct Row {
-    node: WidgetId,
     height: Dip,
     items: Vec<(WidgetId, ItemWidth)>,
 }
+
+/// The rows a page shares with its [`FormContent`].
+type Rows = Rc<RefCell<Vec<Row>>>;
 
 /// A page's form: the scroll host plus its registered rows.
 pub struct FormPage {
     scroll: ScrollView<Msg>,
     scoped: Ui<Msg>,
-    rows: Rc<RefCell<Vec<Row>>>,
+    rows: Rows,
 }
 
 impl FormPage {
     /// Creates an empty scrollable form page.
     pub fn new(ui: &Ui<Msg>) -> Result<FormPage> {
-        let scroll = ScrollView::new(ui, Rect::default())?;
+        let rows: Rows = Rc::new(RefCell::new(Vec::new()));
+        // The content is created inside the view, before the view's id is
+        // known to the page; it reads it from here once it is placed.
+        let scroll_id = Rc::new(Cell::new(WidgetId::NONE));
+        let content = {
+            let rows = Rc::clone(&rows);
+            let scroll_id = Rc::clone(&scroll_id);
+            build(move |ui: &Ui<Msg>| FormContent::new(ui, rows, scroll_id))
+        };
+        let scroll = make(ui, scroll(column().child(content.fill(1))))?;
+        scroll_id.set(scroll.id());
         let scoped = scroll.ui().clone();
-        let rows: Rc<RefCell<Vec<Row>>> = Rc::new(RefCell::new(Vec::new()));
-        // Scrolling moves the row containers; re-place the widgets over them so
-        // they move with the scroll instead of staying put.
-        let on_scroll_rows = Rc::clone(&rows);
-        let on_scroll_ui = scoped.clone();
-        let scroll_id = scroll.id();
-        let scroll = scroll.on_scroll(move |_offset| {
-            position_items(&on_scroll_ui, scroll_id, &on_scroll_rows.borrow());
-            None
-        });
         Ok(FormPage {
             scroll,
             scoped,
@@ -95,35 +95,14 @@ impl FormPage {
 
     /// Registers `id` as a full-width row `height` design values tall.
     pub fn add_full(&self, id: WidgetId, height: Dip) {
-        self.rows.borrow_mut().push(Row {
-            node: id,
-            height,
-            items: Vec::new(),
-        });
-        self.scroll.add(id, height);
+        self.commit(height, vec![(id, ItemWidth::Fill)]);
     }
 
     /// Starts a multi-widget row of `height`; finish it with
     /// [`RowBuilder::finish`].
     pub fn row(&self, height: Dip) -> Result<RowBuilder<'_>> {
-        let node = self.scoped.create_child(
-            self.scroll.id(),
-            &NodeSpec::new(NodeKind::Container, Rect::default()),
-        )?;
-        // The spacer paints the row background so the widgets over it (and the
-        // scroll view's own surface) never show the uninitialised back buffer.
-        let theme = self.scoped.theme_handle();
-        self.scoped.set_painter(
-            node,
-            Rc::new(move |canvas| canvas.clear(theme.get().background)),
-        );
-        // The widgets are siblings of the spacer, parented to the scroll view,
-        // so the Win32 backend paints them (see the module docs).
-        let ui = self.scoped.with_parent(self.scroll.id());
         Ok(RowBuilder {
             page: self,
-            node,
-            ui,
             height,
             items: Vec::new(),
         })
@@ -136,9 +115,9 @@ impl FormPage {
 
     /// Shows or hides the whole page.
     ///
-    /// The row widgets are siblings of the scroll view, so a backend that does
-    /// not cascade a hidden parent's visibility needs them hidden explicitly
-    /// (they are shown again the next time [`Self::relayout`] places them).
+    /// The row widgets are siblings of the content node, so a backend that
+    /// does not cascade a hidden parent's visibility needs them hidden
+    /// explicitly (they are shown again the next time the view places them).
     pub fn set_visible(&self, visible: bool) {
         self.scroll.set_visible(visible);
         if !visible {
@@ -150,54 +129,81 @@ impl FormPage {
         }
     }
 
-    /// Re-lays the scroll content and then places every row's widgets.
+    /// Re-measures the rows and places them at the current scroll offset.
     pub fn relayout(&self) {
         self.scroll.relayout();
-        position_items(&self.scoped, self.scroll.id(), &self.rows.borrow());
     }
 
-    /// Records a finished multi-widget row and lays it out.
-    fn commit(&self, node: WidgetId, height: Dip, items: Vec<(WidgetId, ItemWidth)>) {
-        self.rows.borrow_mut().push(Row {
-            node,
-            height,
-            items,
-        });
-        self.scroll.add(node, height);
+    /// Records a finished row and lays the page out again.
+    fn commit(&self, height: Dip, items: Vec<(WidgetId, ItemWidth)>) {
+        self.rows.borrow_mut().push(Row { height, items });
         self.relayout();
     }
 }
 
-/// Places every multi-widget row's widgets over its container, using the
-/// container's current (scrolled) bounds.
-fn position_items(ui: &Ui<Msg>, scroll_id: WidgetId, rows: &[Row]) {
+/// The scroll view's content: a background node as tall as the rows, which
+/// places the row widgets whenever the view places it.
+struct FormContent {
+    node: Control<Msg>,
+    scroll: Rc<Cell<WidgetId>>,
+    rows: Rows,
+}
+
+impl FormContent {
+    fn new(ui: &Ui<Msg>, rows: Rows, scroll: Rc<Cell<WidgetId>>) -> Result<FormContent> {
+        let node = Control::new(ui, &NodeSpec::new(NodeKind::Container, Rect::default()))?;
+        // The content paints the page background so the gaps between the row
+        // widgets never show the uninitialised back buffer.
+        let theme = ui.theme_handle();
+        node.set_painter(Rc::new(move |canvas| canvas.clear(theme.get().background)));
+        Ok(FormContent { node, scroll, rows })
+    }
+}
+
+impl Placeable<Msg> for FormContent {
+    fn id(&self) -> WidgetId {
+        self.node.id()
+    }
+
+    fn measure(&self, _ui: &Ui<Msg>, constraints: Constraints) -> Size {
+        let height = self
+            .rows
+            .borrow()
+            .iter()
+            .map(|row| row.height.to_px(constraints.dpi).value())
+            .sum();
+        Size::new(constraints.max_width.unwrap_or(0), height)
+    }
+
+    fn placed(&self, ui: &Ui<Msg>, rect: Rect) {
+        let scroll = self.scroll.get();
+        if scroll.is_none() {
+            return;
+        }
+        let viewport_height = ui.bounds(scroll).height();
+        place_rows(ui, rect, viewport_height, &self.rows.borrow());
+    }
+}
+
+/// Places every row's widgets down `content` (the content's rect in the
+/// scroll view's coordinates, shifted by the scroll offset), hiding the rows
+/// scrolled out of the `0..viewport_height` band.
+fn place_rows(ui: &Ui<Msg>, content: Rect, viewport_height: i32, rows: &[Row]) {
     let dpi = ui.dpi();
     let gap = GAP.to_px(dpi).value();
-    // Row containers are placed in the scroll view's own coordinates (origin at
-    // its top-left), so the viewport is `0..height`, not the node's parent-space
-    // bounds.
-    let viewport_height = ui.bounds(scroll_id).height();
+    let width = content.width();
     let mut moves = Vec::new();
-    let mut hidden = Vec::new();
+    let mut top = content.top;
     for row in rows {
-        if row.items.is_empty() {
-            continue;
-        }
-        let container = ui.bounds(row.node);
-        let width = container.width();
-        if width <= 0 {
-            continue;
-        }
-        // The host culls a row scrolled out of the viewport; hide its widgets
-        // too, since they are siblings of the culled spacer rather than
-        // children of it.
-        let on_screen = container.bottom > 0 && container.top < viewport_height;
-        if !on_screen {
-            hidden.extend(row.items.iter().map(|(id, _)| *id));
-            continue;
-        }
-        let top = container.top;
         let height = row.height.to_px(dpi).value();
+        let on_screen = width > 0 && top + height > 0 && top < viewport_height;
+        if !on_screen {
+            for (id, _) in &row.items {
+                show(ui, *id, false);
+            }
+            top += height;
+            continue;
+        }
         let gaps = gap * (row.items.len() as i32 - 1).max(0);
         let fixed: i32 = row
             .items
@@ -214,45 +220,43 @@ fn position_items(ui: &Ui<Msg>, scroll_id: WidgetId, rows: &[Row]) {
             .count()
             .max(1);
         let fill = ((width - fixed - gaps).max(0)) / fill_count as i32;
-        let mut x = 0;
+        let mut x = content.left;
         for (id, spec) in row.items.iter() {
             let item = match spec {
                 ItemWidth::Fixed(w) => w.to_px(dpi).value(),
                 ItemWidth::Fill => fill,
             };
-            ui.set_visible(*id, true);
-            // Clamp to the viewport so a too-wide row cannot cover the
+            show(ui, *id, true);
+            // Clamp to the content so a too-wide row cannot cover the
             // scrollbar in the band the view reserves for it.
-            let right = (x + item).min(width);
+            let right = (x + item).min(content.right);
             moves.push((*id, Rect::new(x, top, right, top + height)));
             x += item + gap;
         }
+        top += height;
     }
     ui.apply_moves(&moves);
-    // A moved window is not repainted by the window manager and a later sibling
-    // may cover it, so raise and repaint each widget at its new bounds.
-    for (id, _) in moves.iter() {
-        ui.raise(*id);
-        ui.invalidate(*id);
-    }
-    for id in hidden {
-        ui.set_visible(id, false);
+}
+
+/// Shows or hides `id`, touching it only on a change: a visibility change
+/// re-flows the window's layouts, and this runs inside one.
+fn show(ui: &Ui<Msg>, id: WidgetId, visible: bool) {
+    if ui.is_visible(id) != visible {
+        ui.set_visible(id, visible);
     }
 }
 
 /// Builds one multi-widget row; call [`RowBuilder::finish`] to register it.
 pub struct RowBuilder<'a> {
     page: &'a FormPage,
-    node: WidgetId,
-    ui: Ui<Msg>,
     height: Dip,
     items: Vec<(WidgetId, ItemWidth)>,
 }
 
 impl RowBuilder<'_> {
-    /// A [`Ui`] scoped to the row, so its widgets live over the row container.
+    /// The [`Ui`] the row's widgets are created through: the page's.
     pub fn ui(&self) -> &Ui<Msg> {
-        &self.ui
+        self.page.ui()
     }
 
     /// Adds `id` as a fixed-width item.
@@ -269,6 +273,6 @@ impl RowBuilder<'_> {
 
     /// Registers the row with the page.
     pub fn finish(self) {
-        self.page.commit(self.node, self.height, self.items);
+        self.page.commit(self.height, self.items);
     }
 }

@@ -4,10 +4,11 @@
 use emusic_ui::state::{Accent, Rgb};
 use xui::xui_core::Color;
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::ColorPicker;
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::color_picker;
 
 /// Height of the swatch strip, in design units.
 pub const STRIP_HEIGHT: f32 = 44.0;
@@ -26,9 +27,9 @@ fn palette() -> Vec<Color> {
         .collect()
 }
 
-/// Creates the picker at `bounds`; a click maps to `Msg::SetAccent`.
-pub fn create(ui: &Ui<Msg>, bounds: Rect) -> ColorPicker<Msg> {
-    ColorPicker::new(ui, bounds, &palette())
+/// Creates the picker; a click maps to `Msg::SetAccent`.
+pub fn create(ui: &Ui<Msg>) -> ColorPicker<Msg> {
+    make(ui, color_picker(&palette()))
         .expect("create accent picker")
         .columns(Accent::PRESETS.len())
         .on_select(|chosen| {

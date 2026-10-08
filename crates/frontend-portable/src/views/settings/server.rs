@@ -12,7 +12,6 @@ use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::{Proxy, Ui};
 use xui::xui_core::backend::WidgetId;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, CheckBox, Edit, HasText, Label, ListView};
 
@@ -20,6 +19,8 @@ use crate::app::Msg;
 
 use super::SettingsMsg;
 use super::form::{FormPage, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT};
+use crate::make::make;
+use xui::xui_core::arrange::{button, checkbox, edit, label, list};
 
 /// Height of the configured-server list, in design units.
 const LIST_HEIGHT: f32 = 120.0;
@@ -59,41 +60,36 @@ impl ServerPage {
         let form = FormPage::new(ui).expect("create server form");
         let proxy = ui.proxy();
 
-        let heading = Label::new(form.ui(), Rect::default(), "Homelab server")
-            .expect("create server heading");
+        let heading = make(form.ui(), label("Homelab server")).expect("create server heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let hint = Label::new(
+        let hint = make(
             form.ui(),
-            Rect::default(),
-            "Pair with an emusic-server, then its library syncs in and plays on demand.",
+            label("Pair with an emusic-server, then its library syncs in and plays on demand."),
         )
         .expect("create server hint");
         form.add_full(hint.id(), dip(HINT_HEIGHT));
 
         let url_row = form.row(ROW_HEIGHT).expect("create server url row");
-        let url_label =
-            Label::new(url_row.ui(), Rect::default(), "Server URL").expect("create url label");
-        let url = Edit::new(url_row.ui(), Rect::default(), "").expect("create url field");
+        let url_label = make(url_row.ui(), label("Server URL")).expect("create url label");
+        let url = make(url_row.ui(), edit()).expect("create url field");
         url_row
             .fixed(url_label.id(), LABEL_WIDTH)
             .fill(url.id())
             .finish();
 
         let name_row = form.row(ROW_HEIGHT).expect("create server name row");
-        let name_label =
-            Label::new(name_row.ui(), Rect::default(), "Device name").expect("create name label");
-        let name = Edit::new(name_row.ui(), Rect::default(), "").expect("create name field");
+        let name_label = make(name_row.ui(), label("Device name")).expect("create name label");
+        let name = make(name_row.ui(), edit()).expect("create name field");
         name_row
             .fixed(name_label.id(), LABEL_WIDTH)
             .fill(name.id())
             .finish();
 
         let code_row = form.row(ROW_HEIGHT).expect("create server code row");
-        let code_label =
-            Label::new(code_row.ui(), Rect::default(), "Pairing code").expect("create code label");
-        let code = Edit::new(code_row.ui(), Rect::default(), "").expect("create code field");
-        let pair = Button::new(code_row.ui(), Rect::default(), "Pair")
+        let code_label = make(code_row.ui(), label("Pairing code")).expect("create code label");
+        let code = make(code_row.ui(), edit()).expect("create code field");
+        let pair = make(code_row.ui(), button("Pair"))
             .expect("create pair button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::ServerPair)));
         code_row
@@ -103,10 +99,10 @@ impl ServerPage {
             .finish();
 
         let actions = form.row(ROW_HEIGHT).expect("create server action row");
-        let sync = Button::new(actions.ui(), Rect::default(), "Sync now")
+        let sync = make(actions.ui(), button("Sync now"))
             .expect("create sync button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::ServerSync)));
-        let unpair = Button::new(actions.ui(), Rect::default(), "Unpair")
+        let unpair = make(actions.ui(), button("Unpair"))
             .expect("create unpair button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::ServerUnpair)));
         actions
@@ -114,19 +110,15 @@ impl ServerPage {
             .fixed(unpair.id(), dip(ACTION_WIDTH))
             .finish();
 
-        let only = CheckBox::new(
-            form.ui(),
-            Rect::default(),
-            "Server only (ignore local folders)",
-        )
-        .expect("create server-only checkbox")
-        .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ServerOnly(on))));
+        let only = make(form.ui(), checkbox("Server only (ignore local folders)"))
+            .expect("create server-only checkbox")
+            .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ServerOnly(on))));
         form.add_full(only.id(), ROW_HEIGHT);
 
-        let list = ListView::new(form.ui(), Rect::default(), &[]).expect("create server list");
+        let list = make(form.ui(), list()).expect("create server list");
         form.add_full(list.id(), dip(LIST_HEIGHT));
 
-        let status = Label::new(form.ui(), Rect::default(), "").expect("create server status");
+        let status = make(form.ui(), label("")).expect("create server status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         ServerPage {

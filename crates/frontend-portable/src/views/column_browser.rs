@@ -16,6 +16,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Fill, ListModel, ListView};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::list;
 
 /// Width of a pane's right-aligned count column, in design units.
 const COUNT_WIDTH: f32 = 44.0;
@@ -151,7 +153,7 @@ impl ColumnBrowserView {
 /// Builds one pane: a virtual list with a left-aligned label and a right-aligned
 /// count, whose selection changes map to [`Msg::BrowserRow`] for `pane`.
 fn pane(ui: &Ui<Msg>, title: &str, pane: Pane) -> ListView<Msg> {
-    ListView::new(ui, Rect::default(), &[])
+    make(ui, list())
         .expect("create browser pane")
         .multi_select(true)
         .column(title, Fill)

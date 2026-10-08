@@ -16,7 +16,6 @@ use std::cell::{Cell, RefCell};
 
 use xui::xui_core::app::Ui;
 use xui::xui_core::backend::WidgetId;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, CheckBox, HasText, Label};
 
@@ -25,8 +24,10 @@ use crate::app::Msg;
 use super::SettingsMsg;
 use super::form::{FormPage, HEADING_HEIGHT, ROW_HEIGHT};
 
+use crate::make::make;
 #[cfg(windows)]
 use winshell::assoc::{AssocManager, EXTENSIONS, open_default_apps_settings};
+use xui::xui_core::arrange::{button, checkbox, label};
 
 /// The app name the registry keys are written under.
 #[cfg(windows)]
@@ -67,15 +68,16 @@ impl AssociationsPage {
     pub(super) fn new(ui: &Ui<Msg>) -> AssociationsPage {
         let form = FormPage::new(ui).expect("create associations form");
 
-        let heading = Label::new(form.ui(), Rect::default(), "File associations")
-            .expect("create associations heading");
+        let heading =
+            make(form.ui(), label("File associations")).expect("create associations heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let hint = Label::new(
+        let hint = make(
             form.ui(),
-            Rect::default(),
-            "Choose which audio file types emusic should open, then Register. Windows does not \
+            label(
+                "Choose which audio file types emusic should open, then Register. Windows does not \
              let an app make itself the default, so Settings opens for you to confirm emusic.",
+            ),
         )
         .expect("create associations hint");
         form.add_full(hint.id(), dip(HINT_HEIGHT));
@@ -84,7 +86,7 @@ impl AssociationsPage {
         for start in (0..EXTENSION_LIST.len()).step_by(PER_ROW) {
             let mut row = form.row(ROW_HEIGHT).expect("create extension row");
             for (index, extension) in EXTENSION_LIST.iter().enumerate().skip(start).take(PER_ROW) {
-                let check = CheckBox::new(row.ui(), Rect::default(), &format!(".{extension}"))
+                let check = make(row.ui(), checkbox(format!(".{extension}")))
                     .expect("create extension checkbox")
                     .on_toggle(move |on| Some(Msg::Settings(SettingsMsg::AssocToggle(index, on))));
                 row = row.fixed(check.id(), dip(CHECK_WIDTH));
@@ -95,25 +97,21 @@ impl AssociationsPage {
 
         let action_row = form.row(ROW_HEIGHT).expect("create association action row");
         let actions = vec![
-            Button::new(action_row.ui(), Rect::default(), "Select all")
+            make(action_row.ui(), button("Select all"))
                 .expect("create select-all button")
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocSelect(true)))),
-            Button::new(action_row.ui(), Rect::default(), "Select none")
+            make(action_row.ui(), button("Select none"))
                 .expect("create select-none button")
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocSelect(false)))),
-            Button::new(action_row.ui(), Rect::default(), "Register")
+            make(action_row.ui(), button("Register"))
                 .expect("create register button")
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocRegister))),
-            Button::new(action_row.ui(), Rect::default(), "Unregister all")
+            make(action_row.ui(), button("Unregister all"))
                 .expect("create unregister button")
                 .on_click(|| Some(Msg::Settings(SettingsMsg::AssocUnregister))),
-            Button::new(
-                action_row.ui(),
-                Rect::default(),
-                "Open Windows Default Apps...",
-            )
-            .expect("create open-defaults button")
-            .on_click(|| Some(Msg::Settings(SettingsMsg::AssocOpenSettings))),
+            make(action_row.ui(), button("Open Windows Default Apps..."))
+                .expect("create open-defaults button")
+                .on_click(|| Some(Msg::Settings(SettingsMsg::AssocOpenSettings))),
         ];
         let mut action_row = action_row;
         for (button, width) in actions.iter().zip(ACTION_WIDTHS) {
@@ -121,8 +119,7 @@ impl AssociationsPage {
         }
         action_row.finish();
 
-        let status =
-            Label::new(form.ui(), Rect::default(), "").expect("create associations status");
+        let status = make(form.ui(), label("")).expect("create associations status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         AssociationsPage {

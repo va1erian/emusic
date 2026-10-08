@@ -26,7 +26,9 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{CheckBox, NodeId, TreeModel, TreeNode, TreeView};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::track_table::TrackView;
+use xui::xui_core::arrange::{checkbox, tree_view_with};
 
 /// The directory tree panel's width, in design units.
 const TREE_WIDTH: f32 = 260.0;
@@ -159,18 +161,17 @@ impl FoldersView {
         let paths = Rc::new(RefCell::new(Vec::new()));
         let tree = {
             let paths = Rc::clone(&paths);
-            TreeView::with_model(
+            make(
                 ui,
-                Rect::default(),
-                DirTreeModel {
+                tree_view_with(DirTreeModel {
                     nodes: Vec::new(),
                     roots: Vec::new(),
-                },
+                }),
             )
             .expect("create folder tree")
             .on_select(move |id| paths.borrow().get(id).cloned().map(Msg::FoldersSelect))
         };
-        let include = CheckBox::new(ui, Rect::default(), "Include subfolders")
+        let include = make(ui, checkbox("Include subfolders"))
             .expect("create include-subfolders checkbox")
             .on_toggle(|on| Some(Msg::FoldersSubfolders(on)));
 

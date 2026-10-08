@@ -13,13 +13,14 @@ use emusic_player::tracker::{
 };
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, CheckBox, ComboBox, Label, RadioGroup, Slider};
 
 use super::super::SettingsMsg;
 use super::super::form::{FormPage, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT, RowBuilder};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, checkbox, combo_box, label, radio_group, slider};
 
 /// Width of a preset button, in design units.
 const PRESET_WIDTH: f32 = 150.0;
@@ -138,30 +139,27 @@ pub(super) struct TrackerSection {
 impl TrackerSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(form: &FormPage) -> TrackerSection {
-        let heading = Label::new(form.ui(), Rect::default(), "Tracker modules")
-            .expect("create tracker heading");
+        let heading = make(form.ui(), label("Tracker modules")).expect("create tracker heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
         let interp_row = form.row(ROW_HEIGHT).expect("create interpolation row");
-        let interp_label = Label::new(interp_row.ui(), Rect::default(), "Interpolation")
-            .expect("create interp label");
-        let interpolation =
-            RadioGroup::new(interp_row.ui(), Rect::default(), &names(&INTERPOLATION))
-                .expect("create interpolation radios")
-                .on_select(|index| {
-                    Some(Msg::Settings(SettingsMsg::Tracker(
-                        TrackerEdit::Interpolation(INTERPOLATION[index].1),
-                    )))
-                });
+        let interp_label =
+            make(interp_row.ui(), label("Interpolation")).expect("create interp label");
+        let interpolation = make(interp_row.ui(), radio_group(&names(&INTERPOLATION)))
+            .expect("create interpolation radios")
+            .on_select(|index| {
+                Some(Msg::Settings(SettingsMsg::Tracker(
+                    TrackerEdit::Interpolation(INTERPOLATION[index].1),
+                )))
+            });
         interp_row.fixed(interp_label.id(), LABEL_WIDTH).finish();
         for option in interpolation.ids() {
             form.add_full(option, ROW_HEIGHT);
         }
 
         let ramping_row = form.row(ROW_HEIGHT).expect("create ramping row");
-        let ramping_label =
-            Label::new(ramping_row.ui(), Rect::default(), "Ramping").expect("create ramping label");
-        let ramping = ComboBox::new(ramping_row.ui(), Rect::default(), &names(&RAMPING))
+        let ramping_label = make(ramping_row.ui(), label("Ramping")).expect("create ramping label");
+        let ramping = make(ramping_row.ui(), combo_box(&names(&RAMPING)))
             .expect("create ramping combo")
             .on_select(|index| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Ramping(
@@ -171,9 +169,9 @@ impl TrackerSection {
         labelled(ramping_row, ramping_label.id(), ramping.id());
 
         let surround_row = form.row(ROW_HEIGHT).expect("create surround row");
-        let surround_label = Label::new(surround_row.ui(), Rect::default(), "Surround")
-            .expect("create surround label");
-        let surround = ComboBox::new(surround_row.ui(), Rect::default(), &names(&SURROUND))
+        let surround_label =
+            make(surround_row.ui(), label("Surround")).expect("create surround label");
+        let surround = make(surround_row.ui(), combo_box(&names(&SURROUND)))
             .expect("create surround combo")
             .on_select(|index| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Surround(
@@ -183,9 +181,9 @@ impl TrackerSection {
         labelled(surround_row, surround_label.id(), surround.id());
 
         let emulation_row = form.row(ROW_HEIGHT).expect("create emulation row");
-        let emulation_label = Label::new(emulation_row.ui(), Rect::default(), "Emulation")
-            .expect("create emulation label");
-        let emulation = ComboBox::new(emulation_row.ui(), Rect::default(), &names(&EMULATION))
+        let emulation_label =
+            make(emulation_row.ui(), label("Emulation")).expect("create emulation label");
+        let emulation = make(emulation_row.ui(), combo_box(&names(&EMULATION)))
             .expect("create emulation combo")
             .on_select(|index| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Emulation(
@@ -195,9 +193,9 @@ impl TrackerSection {
         labelled(emulation_row, emulation_label.id(), emulation.id());
 
         let stereo_row = form.row(ROW_HEIGHT).expect("create stereo row");
-        let stereo_label = Label::new(stereo_row.ui(), Rect::default(), "Stereo separation")
-            .expect("create stereo label");
-        let stereo = Slider::new(stereo_row.ui(), Rect::default(), 0.0, 100.0)
+        let stereo_label =
+            make(stereo_row.ui(), label("Stereo separation")).expect("create stereo label");
+        let stereo = make(stereo_row.ui(), slider(0.0, 100.0))
             .expect("create stereo slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Stereo(
@@ -207,9 +205,8 @@ impl TrackerSection {
         labelled(stereo_row, stereo_label.id(), stereo.id());
 
         let amplify_row = form.row(ROW_HEIGHT).expect("create amplify row");
-        let amplify_label =
-            Label::new(amplify_row.ui(), Rect::default(), "Amplify").expect("create amplify label");
-        let amplify = Slider::new(amplify_row.ui(), Rect::default(), 0.0, 100.0)
+        let amplify_label = make(amplify_row.ui(), label("Amplify")).expect("create amplify label");
+        let amplify = make(amplify_row.ui(), slider(0.0, 100.0))
             .expect("create amplify slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Amplify(
@@ -220,9 +217,8 @@ impl TrackerSection {
 
         let resampling_row = form.row(ROW_HEIGHT).expect("create resampling row");
         let resampling_label =
-            Label::new(resampling_row.ui(), Rect::default(), "Resampling quality")
-                .expect("create resample label");
-        let resampling = Slider::new(resampling_row.ui(), Rect::default(), 0.0, 4.0)
+            make(resampling_row.ui(), label("Resampling quality")).expect("create resample label");
+        let resampling = make(resampling_row.ui(), slider(0.0, 4.0))
             .expect("create resampling slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::Tracker(
@@ -231,15 +227,14 @@ impl TrackerSection {
             });
         labelled(resampling_row, resampling_label.id(), resampling.id());
 
-        let ft2 = CheckBox::new(form.ui(), Rect::default(), "FastTracker 2 panning")
+        let ft2 = make(form.ui(), checkbox("FastTracker 2 panning"))
             .expect("create ft2 checkbox")
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::Ft2Pan(on)))));
         form.add_full(ft2.id(), ROW_HEIGHT);
 
         let end_row = form.row(ROW_HEIGHT).expect("create end row");
-        let end_label =
-            Label::new(end_row.ui(), Rect::default(), "End behaviour").expect("create end label");
-        let end = ComboBox::new(end_row.ui(), Rect::default(), &names(&END))
+        let end_label = make(end_row.ui(), label("End behaviour")).expect("create end label");
+        let end = make(end_row.ui(), combo_box(&names(&END)))
             .expect("create end combo")
             .on_select(|index| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::EndKind(
@@ -249,9 +244,9 @@ impl TrackerSection {
         labelled(end_row, end_label.id(), end.id());
 
         let times_row = form.row(ROW_HEIGHT).expect("create loop-times row");
-        let times_label = Label::new(times_row.ui(), Rect::default(), "Loop times")
-            .expect("create loop-times label");
-        let times = Slider::new(times_row.ui(), Rect::default(), 1.0, 99.0)
+        let times_label =
+            make(times_row.ui(), label("Loop times")).expect("create loop-times label");
+        let times = make(times_row.ui(), slider(1.0, 99.0))
             .expect("create loop-times slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::Tracker(TrackerEdit::End(
@@ -261,24 +256,23 @@ impl TrackerSection {
         labelled(times_row, times_label.id(), times.id());
 
         let presets_row = form.row(ROW_HEIGHT).expect("create preset row");
-        let presets_label =
-            Label::new(presets_row.ui(), Rect::default(), "Presets").expect("create presets label");
+        let presets_label = make(presets_row.ui(), label("Presets")).expect("create presets label");
         let presets = [
-            Button::new(presets_row.ui(), Rect::default(), "BASS default")
+            make(presets_row.ui(), button("BASS default"))
                 .expect("create bass preset")
                 .on_click(|| {
                     Some(Msg::Settings(SettingsMsg::TrackerPreset(
                         TrackerPreset::BassDefault,
                     )))
                 }),
-            Button::new(presets_row.ui(), Rect::default(), "Amiga authentic")
+            make(presets_row.ui(), button("Amiga authentic"))
                 .expect("create amiga preset")
                 .on_click(|| {
                     Some(Msg::Settings(SettingsMsg::TrackerPreset(
                         TrackerPreset::AmigaAuthentic,
                     )))
                 }),
-            Button::new(presets_row.ui(), Rect::default(), "Smooth")
+            make(presets_row.ui(), button("Smooth"))
                 .expect("create smooth preset")
                 .on_click(|| {
                     Some(Msg::Settings(SettingsMsg::TrackerPreset(

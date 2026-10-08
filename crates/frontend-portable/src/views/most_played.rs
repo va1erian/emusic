@@ -20,7 +20,9 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{HasText, Label, Tabs};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::track_table::TrackView;
+use xui::xui_core::arrange::{label, tabs};
 
 /// Height of the window-tab band, in design units (matches the tab strip).
 const HEADER_HEIGHT: f32 = 32.0;
@@ -40,18 +42,14 @@ pub struct MostPlayedView {
 impl MostPlayedView {
     /// Creates the tab strip, the count label and the (empty) track table.
     pub fn new(ui: &Ui<Msg>) -> MostPlayedView {
-        let tabs = Tabs::new(ui, Rect::default())
+        let tabs = make(ui, tabs())
             .expect("create most-played tabs")
             .page(StatsWindow::AllTime.label(), &[])
             .page(StatsWindow::Last30Days.label(), &[])
             .page(StatsWindow::LastYear.label(), &[])
             .on_change(|index| StatsWindow::ALL.get(index).copied().map(Msg::MostPlayed));
-        let count = Label::new(
-            ui,
-            Rect::default(),
-            "No completed plays in this window yet.",
-        )
-        .expect("create most-played count");
+        let count = make(ui, label("No completed plays in this window yet."))
+            .expect("create most-played count");
         MostPlayedView {
             ui: ui.clone(),
             tabs,
@@ -67,21 +65,22 @@ impl MostPlayedView {
         let dpi = self.ui.dpi();
         let header = dip(HEADER_HEIGHT).to_px(dpi).value();
         let label = dip(LABEL_HEIGHT).to_px(dpi).value();
-        self.tabs.set_bounds(Rect::new(
-            bounds.left,
-            bounds.top,
-            bounds.right,
-            bounds.top + header,
-        ));
-        self.ui.apply_moves(&[(
-            self.count.id(),
-            Rect::new(
-                bounds.left,
-                bounds.top + header,
-                bounds.right,
-                bounds.top + header + label,
+        self.ui.apply_moves(&[
+            (
+                self.tabs.id(),
+                Rect::new(bounds.left, bounds.top, bounds.right, bounds.top + header),
             ),
-        )]);
+            (
+                self.count.id(),
+                Rect::new(
+                    bounds.left,
+                    bounds.top + header,
+                    bounds.right,
+                    bounds.top + header + label,
+                ),
+            ),
+        ]);
+        self.tabs.relayout();
         self.table.set_bounds(Rect::new(
             bounds.left,
             bounds.top + header + label,

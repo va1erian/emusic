@@ -12,13 +12,14 @@ use emusic_player::midi::soundfont_problem;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Proxy;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::{Button, Edit, HasText, Label};
 
 use super::super::SettingsMsg;
 use super::super::form::{FormPage, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT};
 use super::{parse, path_text};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, edit, label};
 
 /// Width of the browse/clear/apply buttons, in design units.
 const BUTTON_WIDTH: f32 = 90.0;
@@ -40,21 +41,19 @@ pub(super) struct MidiSection {
 impl MidiSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(form: &FormPage, proxy: Proxy<Msg>) -> MidiSection {
-        let heading =
-            Label::new(form.ui(), Rect::default(), "MIDI playback").expect("create midi heading");
+        let heading = make(form.ui(), label("MIDI playback")).expect("create midi heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
         let row = form.row(ROW_HEIGHT).expect("create soundfont row");
-        let soundfont_label =
-            Label::new(row.ui(), Rect::default(), "Soundfont").expect("create soundfont label");
-        let edit = Edit::new(row.ui(), Rect::default(), "").expect("create soundfont field");
-        let browse = Button::new(row.ui(), Rect::default(), "Browse...")
+        let soundfont_label = make(row.ui(), label("Soundfont")).expect("create soundfont label");
+        let edit = make(row.ui(), edit()).expect("create soundfont field");
+        let browse = make(row.ui(), button("Browse..."))
             .expect("create soundfont browse")
             .on_click(|| Some(Msg::Settings(SettingsMsg::MidiBrowse)));
-        let clear = Button::new(row.ui(), Rect::default(), "Clear")
+        let clear = make(row.ui(), button("Clear"))
             .expect("create soundfont clear")
             .on_click(|| Some(Msg::Settings(SettingsMsg::MidiClear)));
-        let apply = Button::new(row.ui(), Rect::default(), "Apply")
+        let apply = make(row.ui(), button("Apply"))
             .expect("create soundfont apply")
             .on_click(|| Some(Msg::Settings(SettingsMsg::MidiCommit)));
         row.fixed(soundfont_label.id(), LABEL_WIDTH)
@@ -64,7 +63,7 @@ impl MidiSection {
             .fixed(apply.id(), xui::xui_core::units::dip(BUTTON_WIDTH))
             .finish();
 
-        let status = Label::new(form.ui(), Rect::default(), "").expect("create soundfont status");
+        let status = make(form.ui(), label("")).expect("create soundfont status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         MidiSection {

@@ -12,7 +12,6 @@ use emusic_player::sid::resolve_database_path;
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Proxy;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, Edit, HasText, Label, Slider};
 
@@ -20,6 +19,8 @@ use super::super::SettingsMsg;
 use super::super::form::{FormPage, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT};
 use super::{parse, path_text};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{button, edit, label, slider};
 
 /// Width of each SID button, in design units.
 const BUTTON_WIDTH: f32 = 110.0;
@@ -47,24 +48,22 @@ pub(super) struct SidSection {
 impl SidSection {
     /// Builds the section's controls and maps them to [`SettingsMsg`]s.
     pub(super) fn new(form: &FormPage, proxy: Proxy<Msg>) -> SidSection {
-        let heading =
-            Label::new(form.ui(), Rect::default(), "SID song lengths").expect("create sid heading");
+        let heading = make(form.ui(), label("SID song lengths")).expect("create sid heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
         let row = form.row(ROW_HEIGHT).expect("create sid row");
-        let database_label =
-            Label::new(row.ui(), Rect::default(), "HVSC Songlengths").expect("create sid label");
-        let edit = Edit::new(row.ui(), Rect::default(), "").expect("create sid field");
-        let browse_file = Button::new(row.ui(), Rect::default(), "Browse file...")
+        let database_label = make(row.ui(), label("HVSC Songlengths")).expect("create sid label");
+        let edit = make(row.ui(), edit()).expect("create sid field");
+        let browse_file = make(row.ui(), button("Browse file..."))
             .expect("create sid file button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::SidBrowseFile)));
-        let browse_folder = Button::new(row.ui(), Rect::default(), "Browse folder...")
+        let browse_folder = make(row.ui(), button("Browse folder..."))
             .expect("create sid folder button")
             .on_click(|| Some(Msg::Settings(SettingsMsg::SidBrowseFolder)));
-        let clear = Button::new(row.ui(), Rect::default(), "Clear")
+        let clear = make(row.ui(), button("Clear"))
             .expect("create sid clear")
             .on_click(|| Some(Msg::Settings(SettingsMsg::SidClear)));
-        let apply = Button::new(row.ui(), Rect::default(), "Apply")
+        let apply = make(row.ui(), button("Apply"))
             .expect("create sid apply")
             .on_click(|| Some(Msg::Settings(SettingsMsg::SidCommit)));
         row.fixed(database_label.id(), LABEL_WIDTH)
@@ -75,13 +74,13 @@ impl SidSection {
             .fixed(apply.id(), dip(BUTTON_WIDTH))
             .finish();
 
-        let status = Label::new(form.ui(), Rect::default(), "").expect("create sid status");
+        let status = make(form.ui(), label("")).expect("create sid status");
         form.add_full(status.id(), ROW_HEIGHT);
 
         let fallback_row = form.row(ROW_HEIGHT).expect("create fallback row");
-        let fallback_label = Label::new(fallback_row.ui(), Rect::default(), "Fallback length")
-            .expect("create fallback label");
-        let fallback = Slider::new(fallback_row.ui(), Rect::default(), 30.0, 600.0)
+        let fallback_label =
+            make(fallback_row.ui(), label("Fallback length")).expect("create fallback label");
+        let fallback = make(fallback_row.ui(), slider(30.0, 600.0))
             .expect("create fallback slider")
             .on_change(|value| {
                 Some(Msg::Settings(
@@ -93,12 +92,8 @@ impl SidSection {
             .fill(fallback.id())
             .finish();
 
-        let hint = Label::new(
-            form.ui(),
-            Rect::default(),
-            "SID tunes with no database entry play for this long, without a shown total, so the \
-             queue still advances.",
-        )
+        let hint = make(form.ui(), label("SID tunes with no database entry play for this long, without a shown total, so the \
+             queue still advances."))
         .expect("create sid hint");
         form.add_full(hint.id(), dip(HINT_HEIGHT));
 

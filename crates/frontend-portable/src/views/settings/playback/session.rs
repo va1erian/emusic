@@ -3,12 +3,13 @@
 //! playing. Persisted plain state, set directly.
 
 use emusic_ui::state::AppState;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::CheckBox;
 
 use super::super::SettingsMsg;
 use super::super::form::{FormPage, HEADING_HEIGHT, ROW_HEIGHT};
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::{checkbox, label};
 
 /// The session-resume section's controls.
 pub(super) struct SessionSection {
@@ -21,16 +22,15 @@ pub(super) struct SessionSection {
 impl SessionSection {
     /// Builds the section's heading and two checkboxes.
     pub(super) fn new(form: &FormPage) -> SessionSection {
-        let heading = xui::xui_core::widget::Label::new(form.ui(), Rect::default(), "Playback")
-            .expect("create playback heading");
+        let heading = make(form.ui(), label("Playback")).expect("create playback heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let resume = CheckBox::new(form.ui(), Rect::default(), "Resume playback on startup")
+        let resume = make(form.ui(), checkbox("Resume playback on startup"))
             .expect("create resume checkbox")
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ResumePlayback(on))));
         form.add_full(resume.id(), ROW_HEIGHT);
 
-        let autoplay = CheckBox::new(form.ui(), Rect::default(), "Start playing when resuming")
+        let autoplay = make(form.ui(), checkbox("Start playing when resuming"))
             .expect("create autoplay checkbox")
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::AutoplayOnRestore(on))));
         form.add_full(autoplay.id(), ROW_HEIGHT);
