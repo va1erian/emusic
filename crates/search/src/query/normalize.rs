@@ -8,8 +8,12 @@
 pub fn normalize_text(input: &str) -> String {
     // Optimization: For pure ASCII inputs (the vast majority of track metadata and search
     // terms), bypass `deunicode` transliteration and convert directly to ASCII lowercase.
-    // This reduces heap allocations from 2 to 1 and avoids Unicode processing overhead.
+    // Additionally, if the input is already purely lowercase ASCII, return `input.to_string()`
+    // directly without running character case conversion loops.
     if input.is_ascii() {
+        if !input.as_bytes().iter().any(u8::is_ascii_uppercase) {
+            return input.to_string();
+        }
         return input.to_ascii_lowercase();
     }
 
@@ -28,6 +32,11 @@ mod tests {
     #[test]
     fn lowercases_ascii() {
         assert_eq!(normalize_text("Hello World"), "hello world");
+    }
+
+    #[test]
+    fn lowercases_already_lowercase_ascii() {
+        assert_eq!(normalize_text("hello world"), "hello world");
     }
 
     #[test]

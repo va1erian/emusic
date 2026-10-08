@@ -129,13 +129,26 @@ impl Builder {
     fn push(&mut self, value: Option<&str>) -> Span {
         let start = self.text.len();
         if let Some(value) = value {
-            let normalized = normalize_text(value);
-            // Optimization: Use `push_str` for bulk memory copying (`memcpy`) instead of
-            // pushing character-by-character. Sanitize `FIELD_SEP` if present.
-            if normalized.contains(FIELD_SEP) {
-                self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+            // Optimization: For ASCII strings (the vast majority of track field values),
+            // lower-case and sanitize directly into `self.text` byte-by-byte without allocating
+            // a temporary String from `normalize_text`.
+            if value.is_ascii() {
+                self.text.reserve(value.len());
+                for &b in value.as_bytes() {
+                    let b_lower = b.to_ascii_lowercase();
+                    if b_lower == FIELD_SEP as u8 {
+                        self.text.push(' ');
+                    } else {
+                        self.text.push(b_lower as char);
+                    }
+                }
             } else {
-                self.text.push_str(&normalized);
+                let normalized = normalize_text(value);
+                if normalized.contains(FIELD_SEP) {
+                    self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+                } else {
+                    self.text.push_str(&normalized);
+                }
             }
         }
         let end = self.text.len();
