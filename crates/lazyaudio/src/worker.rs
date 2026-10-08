@@ -253,11 +253,12 @@ impl Worker {
         self.note_played(stream, played);
         while stream.end.is_none() {
             if self.carry.is_empty() && !self.decode()? {
-                // The sound system plays only whole periods: pad the last one
-                // with silence.
+                // The sound system plays only whole periods, and one that
+                // resamples holds the last frames back until more follow: pad
+                // the last period with silence, and one more after it.
                 let period = stream.output.period_frames().max(1);
                 stream.end = Some(stream.written);
-                stream.pad = (period - stream.written % period) % period;
+                stream.pad = (period - stream.written % period) % period + period;
                 break;
             }
             let frames = stream
