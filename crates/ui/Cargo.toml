@@ -15,17 +15,24 @@ emusic-client = { path = "../client" }
 emusic-core = { path = "../core" }
 emusic-library = { path = "../library" }
 emusic-metadata = { path = "../metadata" }
-emusic-player = { path = "../player" }
+emusic-player = { path = "../player", default-features = false }
 emusic-search = { path = "../search" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 lofty = "0.25"
 rand = "0.8"
 rand_chacha = "0.3"
-rfd = { version = "0.15", default-features = false }
+rfd = { version = "0.15", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "1"
 tracing = "0.1"
+
+[features]
+default = ["rfd", "sid"]
+# The platform file dialogs (`file_picker`); off on hosts with no GTK or portal.
+rfd = ["dep:rfd"]
+# SID playback (the cRSID engine, which needs GCC).
+sid = ["emusic-player/sid"]
 
 [target.'cfg(windows)'.dependencies]
 # Single-instance/IPC (named pipes) is Windows-only; non-Windows builds use an

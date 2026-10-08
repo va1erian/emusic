@@ -27,12 +27,6 @@ use super::decoder::{CrsidDecoder, SidDecoder};
 /// Sample rate the engine renders at and the push stream is created with.
 pub const SID_SAMPLE_RATE: u32 = 44_100;
 
-/// Fallback play length for a SID tune with no HVSC Songlengths entry (#192):
-/// long enough to hear the tune, short enough that playback doesn't sit on an
-/// unknown-length track forever. The real per-subtune length is used whenever
-/// the database has one.
-pub const DEFAULT_TUNE_LENGTH: Duration = Duration::from_secs(180);
-
 /// Samples rendered per feeder iteration.
 const RENDER_CHUNK: usize = 2_048;
 

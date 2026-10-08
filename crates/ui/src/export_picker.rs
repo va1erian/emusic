@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 
+use crate::file_picker::{self, Filter};
+
 /// A finished save dialog: the playlist and where the user wants it written.
 type Picked = (u64, PathBuf);
 
@@ -40,10 +42,11 @@ pub fn request(id: u64, playlist_name: &str) {
     let tx = channel.tx.clone();
     let file_name = default_file_name(playlist_name);
     std::thread::spawn(move || {
-        let picked = rfd::FileDialog::new()
-            .add_filter("M3U playlist", &["m3u8", "m3u"])
-            .set_file_name(file_name)
-            .save_file();
+        let filter = Filter {
+            name: "M3U playlist",
+            extensions: &["m3u8", "m3u"],
+        };
+        let picked = file_picker::save_file(filter, &file_name);
         if let Some(path) = picked {
             let _ = tx.send((id, path));
         }

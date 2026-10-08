@@ -24,4 +24,6 @@ pub mod window;
 
 mod run;
 
+#[cfg(feature = "winit")]
 pub use run::run;
+pub use run::{Host, run_on};

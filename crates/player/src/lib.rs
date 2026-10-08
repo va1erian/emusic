@@ -50,4 +50,5 @@ pub use queue::{
     ExplicitQueueSnapshot, Queue, QueueSnapshot, QueueSource, RepeatMode, ShuffleSnapshot,
     ShuffleSource,
 };
+#[cfg(feature = "sid")]
 pub use sid::{SidChannel, SidDecoder};

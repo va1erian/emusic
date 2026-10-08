@@ -30,12 +30,15 @@
 //! wraps every call in a `// SAFETY:` comment. Every other module starts with
 //! `#![forbid(unsafe_code)]`.
 
+#[cfg(feature = "engine")]
 mod engine;
 pub mod error;
+#[cfg(feature = "engine")]
 mod ffi;
 pub mod header;
 pub mod songlengths;
 
+#[cfg(feature = "engine")]
 pub use engine::{MAX_SAMPLE_RATE, MIN_SAMPLE_RATE, SidConfig, SidPlayer};
 pub use error::{SidError, SongLengthsError};
 pub use header::{ChipModel, Clock, SidFormat, SidHeader};

@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use emusic_player::sid::resolve_database_path;
+use emusic_ui::file_picker::{self, Filter};
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Proxy;
@@ -136,16 +137,17 @@ impl SidSection {
             SettingsMsg::SidBrowseFile => {
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
-                    let picked = rfd::FileDialog::new()
-                        .add_filter("Songlengths", &["md5", "txt"])
-                        .pick_file();
+                    let picked = file_picker::pick_file(Filter {
+                        name: "Songlengths",
+                        extensions: &["md5", "txt"],
+                    });
                     let _ = proxy.send(Msg::Settings(SettingsMsg::SidPicked(picked)));
                 });
             }
             SettingsMsg::SidBrowseFolder => {
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
-                    let picked = rfd::FileDialog::new().pick_folder();
+                    let picked = file_picker::pick_folder();
                     let _ = proxy.send(Msg::Settings(SettingsMsg::SidPicked(picked)));
                 });
             }

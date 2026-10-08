@@ -1,6 +1,6 @@
 //! Off-thread folder picker (#69).
 //!
-//! `rfd`'s synchronous `pick_folder()` runs a modal dialog on the calling
+//! [`file_picker::pick_folder`](crate::file_picker::pick_folder) runs a modal dialog on the calling
 //! thread; called straight from a view's sync it would block the UI thread and
 //! Windows marks the window as "not responding". This module runs the dialog
 //! on a dedicated thread and delivers the chosen path through a channel that
@@ -52,7 +52,7 @@ pub fn request() {
     };
     let tx = channel.tx.clone();
     std::thread::spawn(move || {
-        let result = match rfd::FileDialog::new().pick_folder() {
+        let result = match crate::file_picker::pick_folder() {
             Some(path) => PickResult::Picked(path),
             None => PickResult::Cancelled,
         };

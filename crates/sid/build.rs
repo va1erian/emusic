@@ -15,6 +15,9 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/crsid");
     println!("cargo:rerun-if-env-changed=EMUSIC_SID_CC");
     println!("cargo:rerun-if-env-changed=CC");
+    if std::env::var_os("CARGO_FEATURE_ENGINE").is_none() {
+        return;
+    }
 
     let mut build = cc::Build::new();
     build

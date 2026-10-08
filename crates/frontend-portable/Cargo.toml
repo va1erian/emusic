@@ -15,16 +15,15 @@ required-features = ["shot"]
 [dependencies]
 anyhow = "1"
 emusic-platform = { path = "../platform" }
-emusic-player = { path = "../player" }
-emusic-ui = { path = "../ui" }
-rfd = { version = "0.15", default-features = false }
+emusic-player = { path = "../player", default-features = false }
+emusic-ui = { path = "../ui", default-features = false }
 tracing = "0.1"
 clap = { version = "4", features = ["derive"], optional = true }
 png = { version = "0.18", optional = true }
-# The umbrella crate. Only its software `canvas` backend is used; the app
-# imports portable widgets from `xui::xui_core::widget` and names the backend
-# only in `run`.
-xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false, features = ["canvas"] }
+# The umbrella crate. The app imports portable widgets from
+# `xui::xui_core::widget` and names a backend only in `run`: the software
+# `canvas` one with the `winit` feature, or the one a host passes to `run_on`.
+xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # File associations are a Windows shell feature; the settings page reaches for
@@ -32,10 +31,18 @@ xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092
 winshell = { path = "../winshell" }
 
 [features]
+default = ["rfd", "sid", "winit"]
+# The platform file dialogs.
+rfd = ["emusic-ui/rfd"]
+# SID playback (the cRSID engine, which needs GCC).
+sid = ["emusic-ui/sid", "emusic-player/sid"]
+# `run`: the window on xui's software canvas backend over winit. A host that
+# brings its own backend (LazyOS) turns it off and calls `run_on`.
+winit = ["xui/canvas"]
 # The headless canvas screenshot tool (`emusic-portable-shot`, #459). Off by
 # default so the PNG encoder and `clap` never enter the real `emusic`
 # dependency tree.
-shot = ["dep:png", "dep:clap"]
+shot = ["winit", "dep:png", "dep:clap"]
 
 [build-dependencies]
 embed-resource = "3.0"
