@@ -31,8 +31,9 @@ pub trait Output {
     /// Samples per frame.
     fn channels(&self) -> u16;
     /// The frames the sound system takes at a time: the last frames of a
-    /// stream play only once they fill a whole period, so the caller pads the
-    /// tail with silence.
+    /// stream play only once they fill a whole period (and, through a
+    /// resampler, once more follow), so the caller pads the tail with
+    /// silence.
     fn period_frames(&self) -> u64;
     /// Queues as many whole frames of interleaved `samples` as fit now;
     /// returns the frames queued.
