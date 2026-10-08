@@ -7,6 +7,7 @@
 
 mod backup;
 mod folders;
+mod journal;
 mod migrations;
 mod playlists;
 mod remote;
@@ -63,6 +64,8 @@ impl Store {
         }
 
         let conn = Connection::open(path)?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        journal::choose(&conn, path)?;
         Self::init(&conn)?;
         Ok(Self {
             conn,
@@ -111,10 +114,10 @@ impl Store {
 
     /// Configures a freshly opened connection: a busy timeout so a concurrent
     /// writer (the scanner, #69) is waited out rather than failing with
-    /// `SQLITE_BUSY`, WAL journaling, foreign keys and migrations.
+    /// `SQLITE_BUSY`, foreign keys and migrations. A file database chose its
+    /// journal first ([`journal::choose`]).
     fn init(conn: &Connection) -> Result<()> {
         conn.busy_timeout(BUSY_TIMEOUT)?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", true)?;
         migrations::apply(conn)?;
         Ok(())
