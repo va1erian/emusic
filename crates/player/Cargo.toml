@@ -11,12 +11,18 @@ path = "src/lib.rs"
 
 [dependencies]
 bass = { path = "../bass" }
-emusic-sid = { path = "../sid" }
+emusic-sid = { path = "../sid", default-features = false }
 thiserror = "2"
 crossbeam-channel = "0.5"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
+
+[features]
+default = ["sid"]
+# SID playback over the cRSID engine. Off, `.sid` files open through BASS
+# like any other file (and fail there); the Songlengths settings still parse.
+sid = ["emusic-sid/engine"]
 
 [dev-dependencies]
 toml = "1"

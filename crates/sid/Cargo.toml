@@ -9,6 +9,13 @@ description = "Safe Rust API over the vendored cRSID Commodore 64 SID engine"
 name = "emusic_sid"
 path = "src/lib.rs"
 
+[features]
+default = ["engine"]
+# The vendored cRSID engine (C, needs GCC nested functions). Off, the crate is
+# only the pure-Rust header and Songlengths parsers, for targets with no GCC
+# (a zig/clang musl build).
+engine = []
+
 [dependencies]
 md-5 = "0.10"
 thiserror = "2"

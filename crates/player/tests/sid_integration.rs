@@ -1,3 +1,4 @@
+#![cfg(feature = "sid")]
 //! Real-file SID integration: verifies that the cRSID engine renders audible
 //! PCM and that switching subtunes actually changes the output, and that the
 //! BASS-backed [`SidChannel`] reports and plays a SID tune's subtunes.

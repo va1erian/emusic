@@ -8,9 +8,7 @@
 use std::rc::Rc;
 
 use xui::xui_core::Dip;
-#[cfg(not(target_os = "macos"))]
-use xui::xui_core::backend::{Backdrop, Decorations};
-use xui::xui_core::backend::{Backend, PlatformSpec, WidgetId, WindowId};
+use xui::xui_core::backend::{Backdrop, Backend, Decorations, PlatformSpec, WidgetId, WindowId};
 use xui::xui_core::dip;
 
 /// The height of the custom caption band reserved at the top of the client
@@ -26,18 +24,19 @@ pub const CAPTION_HEIGHT: f32 = 36.0;
 /// keeps the default `Decorations::System`, reserves no caption and uses the
 /// opaque backdrop (the canvas backend has no blur yet). The theme is applied
 /// separately with `Ui::set_theme`, since the portable spec carries no accent
-/// tint or menu strip (see the migration notes).
+/// tint or menu strip (see the migration notes). A host window system that
+/// draws its own frame (LazyOS's compositor) gets the macOS spec.
 ///
 /// `width` and `height` are in device-independent pixels.
 #[must_use]
 pub fn window_spec(width: f32, height: f32) -> PlatformSpec {
     let spec = PlatformSpec::new("emusic").size(dip(width), dip(height));
-    #[cfg(not(target_os = "macos"))]
-    let spec = spec
-        .backdrop(Backdrop::Acrylic)
+    if crate::backend::has_native_chrome() {
+        return spec;
+    }
+    spec.backdrop(Backdrop::Acrylic)
         .decorations(Decorations::None)
-        .caption_inset(dip(CAPTION_HEIGHT));
-    spec
+        .caption_inset(dip(CAPTION_HEIGHT))
 }
 
 /// The window-level operations the portable widget layer does not expose: the

@@ -9,6 +9,7 @@
 use std::path::Path;
 
 use emusic_player::midi::soundfont_problem;
+use emusic_ui::file_picker::{self, Filter};
 use emusic_ui::state::{AppState, Command};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Proxy;
@@ -100,9 +101,10 @@ impl MidiSection {
             SettingsMsg::MidiBrowse => {
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
-                    let picked = rfd::FileDialog::new()
-                        .add_filter("Soundfont", &["sf2", "sf3", "sfz"])
-                        .pick_file();
+                    let picked = file_picker::pick_file(Filter {
+                        name: "Soundfont",
+                        extensions: &["sf2", "sf3", "sfz"],
+                    });
                     let _ = proxy.send(Msg::Settings(SettingsMsg::MidiPicked(picked)));
                 });
             }

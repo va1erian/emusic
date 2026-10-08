@@ -56,6 +56,17 @@ pub struct Backends {
 /// update (e.g. the startup snapshot), so views populate without user input
 /// (#284).
 pub fn build(mock: bool, waker: WakerHandle) -> Backends {
+    build_with(mock, waker, None)
+}
+
+/// Like [`build`], but plays through `audio` when it is given instead of
+/// loading BASS: a host with its own sound system (LazyOS) passes its backend
+/// here. Without BASS the scanner counts tracker modules but skips their tags.
+pub fn build_with(
+    mock: bool,
+    waker: WakerHandle,
+    audio: Option<Arc<dyn emusic_player::AudioBackend>>,
+) -> Backends {
     if mock {
         let mut library = mock::MockLibrary::new();
         library.seed_demo_playlists();
@@ -67,6 +78,17 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
         return Backends {
             library: Box::new(library),
             player: Box::new(player),
+            notice: None,
+        };
+    }
+
+    if let Some(audio) = audio {
+        info!("playing through the host's audio backend");
+        let library = LibraryBackend::new(None, waker);
+        let player = real_player(&library, audio);
+        return Backends {
+            library: Box::new(library),
+            player,
             notice: None,
         };
     }
@@ -93,34 +115,11 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
     };
 
     let library = LibraryBackend::new(bass.clone(), waker);
-    let registry = library.remote_registry();
-    let updates = library.updates_handle();
-    let play_message_tx = library.play_message_tx();
-
     let player: Box<dyn PlayerApi> = match bass {
-        Some(bass) => {
-            let inner: Arc<dyn emusic_player::AudioBackend> = Arc::new(
-                emusic_player::BassBackend::new(bass).with_soundfont_dirs(vec![bass_dir()]),
-            );
-            // Wrap in the remote-fetching decorator when the cache and
-            // credential store are available; otherwise play local files only.
-            let backend: Arc<dyn emusic_player::AudioBackend> = match (
-                emusic_client::TrackCache::new(),
-                emusic_client::CredentialStore::new(),
-            ) {
-                (Ok(cache), Ok(credentials)) => Arc::new(RemoteAudioBackend::new(
-                    inner,
-                    cache,
-                    credentials,
-                    registry,
-                    updates,
-                )),
-                _ => inner,
-            };
-            let player =
-                PlayerAdapter::new(emusic_player::Player::new(backend), Some(play_message_tx));
-            Box::new(player)
-        }
+        Some(bass) => real_player(
+            &library,
+            Arc::new(emusic_player::BassBackend::new(bass).with_soundfont_dirs(vec![bass_dir()])),
+        ),
         None => Box::new(UnavailablePlayer),
     };
 
@@ -129,6 +128,32 @@ pub fn build(mock: bool, waker: WakerHandle) -> Backends {
         player,
         notice,
     }
+}
+
+/// The real player over `inner`, wrapped in the remote-fetching decorator when
+/// the cache and credential store are available (otherwise it plays local
+/// files only), reporting plays to `library`.
+fn real_player(
+    library: &LibraryBackend,
+    inner: Arc<dyn emusic_player::AudioBackend>,
+) -> Box<dyn PlayerApi> {
+    let backend: Arc<dyn emusic_player::AudioBackend> = match (
+        emusic_client::TrackCache::new(),
+        emusic_client::CredentialStore::new(),
+    ) {
+        (Ok(cache), Ok(credentials)) => Arc::new(RemoteAudioBackend::new(
+            inner,
+            cache,
+            credentials,
+            library.remote_registry(),
+            library.updates_handle(),
+        )),
+        _ => inner,
+    };
+    Box::new(PlayerAdapter::new(
+        emusic_player::Player::new(backend),
+        Some(library.play_message_tx()),
+    ))
 }
 
 /// Environment variable overriding where BASS DLLs are loaded from; matches

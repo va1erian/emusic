@@ -158,7 +158,7 @@ impl VisualizationPage {
             SettingsMsg::VizBrowse => {
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
-                    let picked = rfd::FileDialog::new().pick_folder();
+                    let picked = emusic_ui::file_picker::pick_folder();
                     let _ = proxy.send(Msg::Settings(SettingsMsg::VizPicked(picked)));
                 });
             }

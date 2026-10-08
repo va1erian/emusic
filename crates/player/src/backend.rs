@@ -12,7 +12,9 @@ use tracing::warn;
 
 use crate::error::PlayerError;
 use crate::midi::{is_midi_file, resolve_soundfont};
-use crate::sid::{DEFAULT_TUNE_LENGTH, SidChannel};
+use crate::sid::DEFAULT_TUNE_LENGTH;
+#[cfg(feature = "sid")]
+use crate::sid::SidChannel;
 use crate::tracker::TrackerSettings;
 
 /// How well a channel can seek to a requested position (#192).
@@ -207,6 +209,7 @@ struct MidiState {
 #[derive(Default)]
 struct SongLengthsState {
     configured: Option<PathBuf>,
+    #[cfg_attr(not(feature = "sid"), allow(dead_code))]
     loaded: Option<Arc<SongLengths>>,
     loaded_from: Option<PathBuf>,
     failed_for: Option<PathBuf>,
@@ -256,6 +259,7 @@ impl AudioBackend for BassBackend {
     fn open(&self, path: &Path) -> Result<Box<dyn BackendChannel>, PlayerError> {
         // SID tunes aren't decodable by BASS: the SID engine renders PCM into
         // a push stream instead (see `crate::sid`).
+        #[cfg(feature = "sid")]
         if is_sid_file(path) {
             self.clear_active_midi_channel();
             let lengths = self.songlengths();
@@ -382,6 +386,7 @@ impl BassBackend {
     /// the session. Reloads when the configured path changes; a missing or
     /// malformed file is logged once and treated as "no database" rather than
     /// failing playback (#192). Runs on the caller's (worker) thread.
+    #[cfg_attr(not(feature = "sid"), allow(dead_code))]
     fn songlengths(&self) -> Option<Arc<SongLengths>> {
         let mut state = self.lock_songlengths();
         let configured = state.configured.clone()?;
