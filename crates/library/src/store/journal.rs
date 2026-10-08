@@ -5,29 +5,29 @@
 //! system without shared file mappings (LazyOS) accepts the
 //! `journal_mode = WAL` pragma, records WAL in the database header, and then
 //! fails every write with `SQLITE_IOERR_SHMMAP`. So WAL is tried once per
-//! process on a throwaway file beside the database, never on the database
-//! itself; without it the database runs on the rollback journal, where the
+//! directory and process on a throwaway file beside the database, never on
+//! the database itself; without it the database runs on the rollback journal, where the
 //! busy timeout still serialises the scanner's writes against the UI's reads.
 
-use std::path::Path;
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use rusqlite::Connection;
 
 use crate::error::Result;
 
-static WAL_WORKS: OnceLock<bool> = OnceLock::new();
+/// What the probe found, by directory: a store reopens its database, and a
+/// second database may live on another file system.
+static WAL_WORKS: OnceLock<Mutex<HashMap<PathBuf, bool>>> = OnceLock::new();
+
+/// Numbers this process's probes, so concurrent ones never share a file.
+static PROBES: AtomicU64 = AtomicU64::new(0);
 
 /// Puts `conn`, a connection to the file `path`, in the best journal mode.
 pub(super) fn choose(conn: &Connection, path: &Path) -> Result<()> {
-    let works = *WAL_WORKS.get_or_init(|| {
-        let works = wal_works_beside(path);
-        if !works {
-            tracing::warn!("WAL journaling unavailable; using a rollback journal");
-        }
-        works
-    });
-    if works {
+    if wal_works(path) {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         return Ok(());
     }
@@ -41,10 +41,29 @@ pub(super) fn choose(conn: &Connection, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Whether a WAL database next to `path` can be written.
+/// Whether WAL works in `path`'s directory, probed once per directory.
+fn wal_works(path: &Path) -> bool {
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let mut cache = WAL_WORKS
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *cache.entry(dir).or_insert_with(|| {
+        let works = wal_works_beside(path);
+        if !works {
+            tracing::warn!("WAL journaling unavailable; using a rollback journal");
+        }
+        works
+    })
+}
+
+/// Whether a WAL database next to `path` can be written. The probe file is
+/// named after this process and probe, so another process probing beside the
+/// same database never removes it mid-probe.
 fn wal_works_beside(path: &Path) -> bool {
     let mut probe = path.as_os_str().to_owned();
-    probe.push(".walprobe");
+    let number = PROBES.fetch_add(1, Ordering::Relaxed);
+    probe.push(format!(".walprobe-{}-{number}", std::process::id()));
     let probe = Path::new(&probe);
     let works = (|| -> rusqlite::Result<()> {
         let conn = Connection::open(probe)?;
