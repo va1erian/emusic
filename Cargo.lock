@@ -134,6 +134,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arboard"
+version = "3.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0348a1c054491f4bfe6ab86a7b6ab1e44e45d899005de92f58b3df180b36ddaf"
+dependencies = [
+ "clipboard-win",
+ "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "parking_lot",
+ "percent-encoding",
+ "windows-sys 0.52.0",
+ "x11rb",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -643,6 +660,15 @@ name = "claxon"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bfbf56724aa9eca8afa4fcfadeb479e722935bb2a0900c2d37e0cc477af0688"
+
+[[package]]
+name = "clipboard-win"
+version = "5.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+dependencies = [
+ "error-code",
+]
 
 [[package]]
 name = "cmake"
@@ -1434,6 +1460,12 @@ dependencies = [
  "libc",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "error-code"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
 [[package]]
 name = "fallible-iterator"
@@ -2748,6 +2780,7 @@ dependencies = [
  "block2 0.6.2",
  "objc2 0.6.4",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
 ]
 
@@ -5776,7 +5809,7 @@ dependencies = [
 [[package]]
 name = "xui"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=f589eb6eaf133e6f1fbf6694e95c242adae3dd67#f589eb6eaf133e6f1fbf6694e95c242adae3dd67"
+source = "git+https://github.com/va1erian/xui?rev=6d7bb7ca98073df049b41092dc5953570ab8dc7e#6d7bb7ca98073df049b41092dc5953570ab8dc7e"
 dependencies = [
  "embed-resource",
  "xui-canvas",
@@ -5787,13 +5820,15 @@ dependencies = [
 [[package]]
 name = "xui-canvas"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=f589eb6eaf133e6f1fbf6694e95c242adae3dd67#f589eb6eaf133e6f1fbf6694e95c242adae3dd67"
+source = "git+https://github.com/va1erian/xui?rev=6d7bb7ca98073df049b41092dc5953570ab8dc7e#6d7bb7ca98073df049b41092dc5953570ab8dc7e"
 dependencies = [
+ "arboard",
  "cosmic-text",
  "glow 0.16.0",
  "glutin",
  "softbuffer",
  "tiny-skia",
+ "windows 0.62.2",
  "winit",
  "xui-core",
  "xui-gpu",
@@ -5802,7 +5837,7 @@ dependencies = [
 [[package]]
 name = "xui-core"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=f589eb6eaf133e6f1fbf6694e95c242adae3dd67#f589eb6eaf133e6f1fbf6694e95c242adae3dd67"
+source = "git+https://github.com/va1erian/xui?rev=6d7bb7ca98073df049b41092dc5953570ab8dc7e#6d7bb7ca98073df049b41092dc5953570ab8dc7e"
 dependencies = [
  "png 0.17.16",
  "zune-jpeg",
@@ -5811,7 +5846,7 @@ dependencies = [
 [[package]]
 name = "xui-gpu"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=f589eb6eaf133e6f1fbf6694e95c242adae3dd67#f589eb6eaf133e6f1fbf6694e95c242adae3dd67"
+source = "git+https://github.com/va1erian/xui?rev=6d7bb7ca98073df049b41092dc5953570ab8dc7e#6d7bb7ca98073df049b41092dc5953570ab8dc7e"
 dependencies = [
  "glow 0.16.0",
  "xui-core",
@@ -5820,7 +5855,7 @@ dependencies = [
 [[package]]
 name = "xui-win32"
 version = "0.1.0"
-source = "git+https://github.com/va1erian/xui?rev=f589eb6eaf133e6f1fbf6694e95c242adae3dd67#f589eb6eaf133e6f1fbf6694e95c242adae3dd67"
+source = "git+https://github.com/va1erian/xui?rev=6d7bb7ca98073df049b41092dc5953570ab8dc7e#6d7bb7ca98073df049b41092dc5953570ab8dc7e"
 dependencies = [
  "embed-resource",
  "glow 0.16.0",

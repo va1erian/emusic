@@ -26,6 +26,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Column, Fill, ListModel, ListView, SortDirection};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::list;
 
 /// The frontend-drawn star toggle column, first in the table (#243). The
 /// shared `emusic-ui` column list never mentions it: only the view knows how
@@ -152,7 +154,7 @@ impl TrackView {
     /// Creates the table and its (empty) virtual list.
     pub fn new(ui: &Ui<Msg>) -> TrackView {
         let playing = Rc::new(Cell::new(None));
-        let mut list = ListView::new(ui, Rect::default(), &[])
+        let mut list = make(ui, list())
             .expect("create track list")
             .multi_select(true);
         list = list

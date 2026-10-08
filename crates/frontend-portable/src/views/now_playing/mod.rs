@@ -28,7 +28,9 @@ use xui::xui_core::widget::{HasText, Label};
 
 use crate::app::Msg;
 
+use crate::make::make;
 use pair::SummaryQueue;
+use xui::xui_core::arrange::label;
 
 /// Height of the central view's queue list, in design units.
 const QUEUE_HEIGHT: f32 = 320.0;
@@ -52,8 +54,7 @@ impl NowPlayingView {
             |row| Some(Msg::QueueActivate(row)),
             |row, at| Some(Msg::QueueContext(row, at)),
         );
-        let count =
-            Label::new(ui, Rect::default(), "0 tracks").expect("create now-playing queue header");
+        let count = make(ui, label("0 tracks")).expect("create now-playing queue header");
         NowPlayingView {
             ui: ui.clone(),
             pair,

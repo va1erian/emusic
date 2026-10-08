@@ -22,6 +22,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, Edit, HasText, Label};
 
 use crate::app::Msg as AppMsg;
+use crate::make::make;
+use xui::xui_core::arrange::{self, button, edit};
 
 /// The dialog's client width, in design units.
 const WIDTH: f32 = 560.0;
@@ -181,9 +183,9 @@ impl TagEditorDialog {
         let block = dip(BLOCK_SPACING).to_px(dpi).value();
         let field_left = client.left + margin + label_w + label_gap;
 
-        let title = Label::new(ui, Rect::default(), "Edit tags").expect("create title");
-        let subtitle = Label::new(ui, Rect::default(), &state.path.display().to_string())
-            .expect("create subtitle");
+        let title = make(ui, arrange::label("Edit tags")).expect("create title");
+        let subtitle =
+            make(ui, arrange::label(state.path.display().to_string())).expect("create subtitle");
 
         let mut labels = Vec::new();
         let mut edits = Vec::new();
@@ -212,8 +214,8 @@ impl TagEditorDialog {
         y += dip(SUBTITLE_HEIGHT).to_px(dpi).value() + block;
 
         for (index, name) in FIELDS.iter().enumerate() {
-            let label = Label::new(ui, Rect::default(), name).expect("create label");
-            let edit = Edit::new(ui, Rect::default(), field_value(&state.form, index))
+            let label = make(ui, arrange::label(*name)).expect("create label");
+            let edit = make(ui, edit().text(field_value(&state.form, index)))
                 .expect("create field")
                 .on_change(move |text| Some(Msg::Field(index, text.to_owned())));
             moves.push((
@@ -233,7 +235,7 @@ impl TagEditorDialog {
             edits.push(edit);
             y += row_h + spacing;
             if NUMERIC.contains(&index) {
-                let error = Label::new(ui, Rect::default(), "").expect("create error label");
+                let error = make(ui, arrange::label("")).expect("create error label");
                 moves.push((
                     error.id(),
                     Rect::new(field_left, y, client.right - margin, y + error_h),
@@ -243,14 +245,14 @@ impl TagEditorDialog {
             }
         }
 
-        let status = Label::new(ui, Rect::default(), "").expect("create status line");
-        let apply = Button::new(ui, Rect::default(), "Apply")
+        let status = make(ui, arrange::label("")).expect("create status line");
+        let apply = make(ui, button("Apply"))
             .expect("create apply button")
             .on_click(|| Some(Msg::Apply));
-        let revert = Button::new(ui, Rect::default(), "Revert")
+        let revert = make(ui, button("Revert"))
             .expect("create revert button")
             .on_click(|| Some(Msg::Revert));
-        let close = Button::new(ui, Rect::default(), "Close")
+        let close = make(ui, button("Close"))
             .expect("create close button")
             .on_click(|| Some(Msg::Close));
 

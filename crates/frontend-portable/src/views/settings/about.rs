@@ -3,17 +3,18 @@
 //! clickable link.
 
 use xui::xui_core::app::Ui;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::{FlowText, Run};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::flow_text;
 
 /// Short repository URL shown in the credits.
 pub const REPOSITORY: &str = "https://github.com/va1erian/emusic";
 
 /// Builds the About flow line: name, version, repository link and credits.
-pub fn build(ui: &Ui<Msg>, bounds: Rect) -> FlowText<Msg> {
-    FlowText::new(ui, bounds)
+pub fn build(ui: &Ui<Msg>) -> FlowText<Msg> {
+    make(ui, flow_text())
         .expect("create about text")
         .run(Run::normal("emusic").weight(600).size(16.0))
         .separator("   ")

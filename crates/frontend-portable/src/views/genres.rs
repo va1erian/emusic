@@ -20,7 +20,9 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{HasText, Label};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::name_counts::{CountColumn, NameCountRow, NameCountsView};
+use xui::xui_core::arrange::label;
 
 /// Height of the "N genres" label, in design units.
 const LABEL_HEIGHT: f32 = 20.0;
@@ -44,7 +46,7 @@ pub struct GenresView {
 impl GenresView {
     /// Creates the label and the (empty) virtual list.
     pub fn new(ui: &Ui<Msg>) -> GenresView {
-        let label = Label::new(ui, Rect::default(), "0 genres").expect("create genres label");
+        let label = make(ui, label("0 genres")).expect("create genres label");
         GenresView {
             ui: ui.clone(),
             label,

@@ -33,6 +33,8 @@ use crate::views::track_table::TrackView;
 use self::thumbs::ThumbState;
 use self::tile::{AlbumCell, TileModel, content, tile_size};
 use self::toolbar::Toolbar;
+use crate::make::make;
+use xui::xui_core::arrange::grid_view_with;
 
 mod thumbs;
 mod tile;
@@ -92,12 +94,11 @@ impl AlbumGridView {
         let cells = Rc::new(RefCell::new(Rc::new(Vec::new())));
         let thumbs = Rc::new(RefCell::new(ThumbState::new(waker.clone())));
 
-        let grid = GridView::with_model(
+        let grid = make(
             ui,
-            Rect::default(),
-            TileModel {
+            grid_view_with(TileModel {
                 cells: Rc::clone(&cells.borrow()),
-            },
+            }),
         )?
         .tile_size(tile_size(DEFAULT_TILE_SIZE))
         .on_select(|index| Some(Msg::Album(AlbumMsg::Select(index))))

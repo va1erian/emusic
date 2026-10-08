@@ -13,7 +13,6 @@ use emusic_ui::state::{AppState, Density, FontSize, Theme, VisualizerMode};
 use emusic_ui::views::Commands;
 use xui::xui_core::app::Ui;
 use xui::xui_core::backend::WidgetId;
-use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
 use xui::xui_core::widget::{CheckBox, ColorPicker, Label, RadioGroup, Slider};
 
@@ -22,6 +21,8 @@ use crate::app::Msg;
 use super::SettingsMsg;
 use super::accent_swatches::{self, STRIP_HEIGHT};
 use super::form::{FormPage, HEADING_HEIGHT, LABEL_WIDTH, ROW_HEIGHT};
+use crate::make::make;
+use xui::xui_core::arrange::{checkbox, label, radio_group, slider};
 
 /// The Appearance page's controls.
 pub(super) struct AppearancePage {
@@ -49,13 +50,11 @@ impl AppearancePage {
     pub(super) fn new(ui: &Ui<Msg>) -> AppearancePage {
         let form = FormPage::new(ui).expect("create appearance form");
 
-        let heading = Label::new(form.ui(), Rect::default(), "Appearance")
-            .expect("create appearance heading");
+        let heading = make(form.ui(), label("Appearance")).expect("create appearance heading");
         form.add_full(heading.id(), HEADING_HEIGHT);
 
-        let theme_label =
-            Label::new(form.ui(), Rect::default(), "Theme").expect("create theme label");
-        let theme = RadioGroup::new(form.ui(), Rect::default(), &["Dark", "Light"])
+        let theme_label = make(form.ui(), label("Theme")).expect("create theme label");
+        let theme = make(form.ui(), radio_group(&["Dark", "Light"]))
             .expect("create theme radios")
             .on_select(|index| {
                 let theme = if index == 0 {
@@ -67,12 +66,10 @@ impl AppearancePage {
             });
         add_labelled_group(&form, theme_label.id(), &theme.ids());
 
-        let font_label =
-            Label::new(form.ui(), Rect::default(), "Font size").expect("create font label");
-        let font = RadioGroup::new(
+        let font_label = make(form.ui(), label("Font size")).expect("create font label");
+        let font = make(
             form.ui(),
-            Rect::default(),
-            &labels(FontSize::ALL.iter().map(|size| size.label())),
+            radio_group(&labels(FontSize::ALL.iter().map(|size| size.label()))),
         )
         .expect("create font radios")
         .on_select(|index| {
@@ -83,12 +80,10 @@ impl AppearancePage {
         });
         add_labelled_group(&form, font_label.id(), &font.ids());
 
-        let density_label =
-            Label::new(form.ui(), Rect::default(), "List density").expect("create density label");
-        let density = RadioGroup::new(
+        let density_label = make(form.ui(), label("List density")).expect("create density label");
+        let density = make(
             form.ui(),
-            Rect::default(),
-            &labels(Density::ALL.iter().map(|density| density.label())),
+            radio_group(&labels(Density::ALL.iter().map(|density| density.label()))),
         )
         .expect("create density radios")
         .on_select(|index| {
@@ -99,30 +94,24 @@ impl AppearancePage {
         });
         add_labelled_group(&form, density_label.id(), &density.ids());
 
-        let zebra = CheckBox::new(form.ui(), Rect::default(), "Zebra striping")
+        let zebra = make(form.ui(), checkbox("Zebra striping"))
             .expect("create zebra checkbox")
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleZebra(on))));
         form.add_full(zebra.id(), ROW_HEIGHT);
 
-        let accent_label =
-            Label::new(form.ui(), Rect::default(), "Accent colour").expect("create accent label");
-        let accent = accent_swatches::create(form.ui(), Rect::default());
+        let accent_label = make(form.ui(), label("Accent colour")).expect("create accent label");
+        let accent = accent_swatches::create(form.ui());
         form.add_full(accent_label.id(), ROW_HEIGHT);
         form.add_full(accent.id(), dip(STRIP_HEIGHT));
 
-        let tint = CheckBox::new(
-            form.ui(),
-            Rect::default(),
-            "Tint acrylic bands with the accent",
-        )
-        .expect("create tint checkbox")
-        .on_toggle(|on| Some(Msg::Settings(SettingsMsg::SetAccentTint(on))));
+        let tint = make(form.ui(), checkbox("Tint acrylic bands with the accent"))
+            .expect("create tint checkbox")
+            .on_toggle(|on| Some(Msg::Settings(SettingsMsg::SetAccentTint(on))));
         form.add_full(tint.id(), ROW_HEIGHT);
 
         let tint_row = form.row(ROW_HEIGHT).expect("create tint row");
-        let tint_label =
-            Label::new(tint_row.ui(), Rect::default(), "Tint strength").expect("create tint label");
-        let tint_strength = Slider::new(tint_row.ui(), Rect::default(), 0.0, 255.0)
+        let tint_label = make(tint_row.ui(), label("Tint strength")).expect("create tint label");
+        let tint_strength = make(tint_row.ui(), slider(0.0, 255.0))
             .expect("create tint slider")
             .on_change(|value| {
                 Some(Msg::Settings(SettingsMsg::SetAccentTintStrength(
@@ -134,17 +123,15 @@ impl AppearancePage {
             .fill(tint_strength.id())
             .finish();
 
-        let visualizer = CheckBox::new(form.ui(), Rect::default(), "Visualizer")
+        let visualizer = make(form.ui(), checkbox("Visualizer"))
             .expect("create visualizer checkbox")
             .on_toggle(|on| Some(Msg::Settings(SettingsMsg::ToggleVisualizer(on))));
         form.add_full(visualizer.id(), ROW_HEIGHT);
 
-        let mode_label =
-            Label::new(form.ui(), Rect::default(), "Visualizer mode").expect("create mode label");
-        let mode = RadioGroup::new(
+        let mode_label = make(form.ui(), label("Visualizer mode")).expect("create mode label");
+        let mode = make(
             form.ui(),
-            Rect::default(),
-            &labels(VisualizerMode::ALL.iter().map(|mode| mode.label())),
+            radio_group(&labels(VisualizerMode::ALL.iter().map(|mode| mode.label()))),
         )
         .expect("create mode radios")
         .on_select(|index| {

@@ -24,7 +24,7 @@ png = { version = "0.18", optional = true }
 # The umbrella crate. Only its software `canvas` backend is used; the app
 # imports portable widgets from `xui::xui_core::widget` and names the backend
 # only in `run`.
-xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["canvas"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false, features = ["canvas"] }
 
 [target.'cfg(windows)'.dependencies]
 # File associations are a Windows shell feature; the settings page reaches for
@@ -50,4 +50,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # process's main thread, which the test harness does not provide). Dropped
 # from the shipped binary itself in #470; a dev-dependency never links into
 # `cargo build`'s output.
-xui = { git = "https://github.com/va1erian/xui", rev = "f589eb6eaf133e6f1fbf6694e95c242adae3dd67", default-features = false, features = ["win32"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false, features = ["d2d"] }

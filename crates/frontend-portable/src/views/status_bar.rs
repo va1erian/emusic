@@ -18,9 +18,11 @@ use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::MaterialStatusBar;
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::visualizer_strip::{
     HEIGHT as STRIP_HEIGHT, VisualizerStrip, WIDTH as STRIP_WIDTH,
 };
+use xui::xui_core::arrange::material_status_bar;
 
 /// The bar's parts, in order.
 const PARTS: usize = 3;
@@ -51,7 +53,7 @@ impl StatusBarView {
     /// strip.
     pub fn new(ui: &Ui<Msg>) -> StatusBarView {
         let empty = [""; PARTS];
-        let bar = MaterialStatusBar::new(ui, Rect::default(), &empty).expect("create status bar");
+        let bar = make(ui, material_status_bar(&empty)).expect("create status bar");
         let strip = VisualizerStrip::new(ui);
         strip.set_visible(false);
         StatusBarView {

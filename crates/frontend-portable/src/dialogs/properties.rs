@@ -7,10 +7,12 @@
 //! they are display-only (selectable text is a follow-up once xui exposes a
 //! read-only editor).
 
+use crate::make::make;
 use emusic_ui::library_api::TrackInfo;
 use emusic_ui::views::track_table::columns;
 use emusic_ui::views::track_table::properties::{self};
 use xui::xui_core::app::{App, Ui, WindowHandle};
+use xui::xui_core::arrange::{self, button};
 use xui::xui_core::backend::{PlatformSpec, Result};
 use xui::xui_core::geometry::Rect;
 use xui::xui_core::units::dip;
@@ -66,8 +68,8 @@ impl PropertiesDialog {
         let mut moves = Vec::new();
         let mut y = client.top + margin;
 
-        let title = Label::new(ui, Rect::default(), columns::title_text(track))
-            .expect("create title label");
+        let title =
+            make(ui, arrange::label(columns::title_text(track))).expect("create title label");
         moves.push((
             title.id(),
             Rect::new(
@@ -85,8 +87,7 @@ impl PropertiesDialog {
             subtitle_text.push_str(" \u{2014} ");
             subtitle_text.push_str(&track.album);
         }
-        let subtitle =
-            Label::new(ui, Rect::default(), &subtitle_text).expect("create subtitle label");
+        let subtitle = make(ui, arrange::label(&subtitle_text)).expect("create subtitle label");
         moves.push((
             subtitle.id(),
             Rect::new(
@@ -108,8 +109,8 @@ impl PropertiesDialog {
             if index > 0 {
                 y += section_gap;
             }
-            let header = Label::new(ui, Rect::default(), &section.title.to_uppercase())
-                .expect("create header");
+            let header =
+                make(ui, arrange::label(section.title.to_uppercase())).expect("create header");
             moves.push((
                 header.id(),
                 Rect::new(client.left + margin, y, value_right, y + section_h),
@@ -117,8 +118,8 @@ impl PropertiesDialog {
             labels.push(header);
             y += section_h + spacing;
             for field in &section.fields {
-                let label = Label::new(ui, Rect::default(), field.label).expect("create label");
-                let value = Label::new(ui, Rect::default(), &field.value).expect("create value");
+                let label = make(ui, arrange::label(field.label)).expect("create label");
+                let value = make(ui, arrange::label(&field.value)).expect("create value");
                 moves.push((
                     label.id(),
                     Rect::new(
@@ -137,7 +138,7 @@ impl PropertiesDialog {
 
         let button_h = dip(BUTTON_HEIGHT).to_px(dpi).value();
         let button_w = dip(100.0).to_px(dpi).value();
-        let close = Button::new(ui, Rect::default(), "Close")
+        let close = make(ui, button("Close"))
             .expect("create close button")
             .on_click(|| Some(Msg::Close));
         moves.push((

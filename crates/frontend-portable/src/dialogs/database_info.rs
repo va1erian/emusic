@@ -16,6 +16,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, Label};
 
 use crate::app::Msg as AppMsg;
+use crate::make::make;
+use xui::xui_core::arrange::{self, button};
 
 /// Width of the field-name column, in design units.
 const LABEL_WIDTH: f32 = 120.0;
@@ -76,8 +78,8 @@ impl DatabaseInfoDialog {
         let mut moves = Vec::new();
         let mut y = client.top + margin;
         for (name, value) in fields {
-            let name = Label::new(ui, Rect::default(), name).expect("create field name label");
-            let value = Label::new(ui, Rect::default(), value).expect("create field value label");
+            let name = make(ui, arrange::label(*name)).expect("create field name label");
+            let value = make(ui, arrange::label(value)).expect("create field value label");
             moves.push((
                 name.id(),
                 Rect::new(
@@ -105,19 +107,18 @@ impl DatabaseInfoDialog {
         let button_y = client.bottom - margin - button_h;
         let close_w = dip(100.0).to_px(dpi).value();
         let rescan_w = dip(170.0).to_px(dpi).value();
-        let rescan = Button::new(
+        let rescan = make(
             ui,
-            Rect::default(),
-            if scanning {
+            button(if scanning {
                 "Scanning..."
             } else {
                 "Rescan everything"
-            },
+            }),
         )
         .expect("create rescan button")
         .on_click(|| Some(Msg::Rescan));
         rescan.set_enabled(!scanning);
-        let close = Button::new(ui, Rect::default(), "Close")
+        let close = make(ui, button("Close"))
             .expect("create close button")
             .on_click(|| Some(Msg::Close));
         moves.push((

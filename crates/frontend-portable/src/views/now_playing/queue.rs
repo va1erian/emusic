@@ -16,6 +16,8 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Fill, ListModel, ListView};
 
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::list;
 
 /// Width of the row-number column, in design units.
 const NUMBER_WIDTH: f32 = 28.0;
@@ -67,7 +69,7 @@ impl QueueList {
         on_activate: impl Fn(usize) -> Option<Msg> + 'static,
         on_context: impl Fn(usize, Point) -> Option<Msg> + 'static,
     ) -> QueueList {
-        let list = ListView::new(ui, Rect::default(), &[])
+        let list = make(ui, list())
             .expect("create now-playing queue list")
             .column("#", dip(NUMBER_WIDTH))
             .column("Title", Fill)

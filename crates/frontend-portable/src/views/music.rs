@@ -17,7 +17,9 @@ use xui::xui_core::units::dip;
 use xui::xui_core::widget::{Button, HasText, Label};
 
 use crate::app::Msg;
+use crate::make::make;
 use crate::views::track_table::TrackView;
+use xui::xui_core::arrange::{button, label};
 
 /// Header row height, in device-independent pixels.
 const HEADER_HEIGHT: f32 = 28.0;
@@ -48,8 +50,8 @@ pub struct MusicView {
 impl MusicView {
     /// Creates the view, its header row and its (empty) virtual list.
     pub fn new(ui: &Ui<Msg>) -> MusicView {
-        let count = Label::new(ui, Rect::default(), "0 tracks").expect("create track count");
-        let shuffle = Button::new(ui, Rect::default(), "Shuffle all")
+        let count = make(ui, label("0 tracks")).expect("create track count");
+        let shuffle = make(ui, button("Shuffle all"))
             .expect("create shuffle button")
             .on_click(|| Some(Msg::MusicShuffleAll));
         MusicView {

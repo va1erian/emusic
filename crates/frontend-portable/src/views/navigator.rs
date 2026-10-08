@@ -19,6 +19,8 @@ use xui::xui_core::widget::{TreeRow, TreeView};
 
 use super::navigator_icons;
 use crate::app::Msg;
+use crate::make::make;
+use xui::xui_core::arrange::tree_view;
 
 /// The navigator's rows, paired with the view each selects (`None` for a
 /// section heading), so a click and the highlight resolve through one map.
@@ -70,7 +72,7 @@ impl NavigatorView {
         let current = Rc::new(Cell::new(View::default()));
         let mapper_views = Rc::clone(&views);
         let mapper_current = Rc::clone(&current);
-        let tree = TreeView::new(ui, Rect::default(), &rows)
+        let tree = make(ui, tree_view().rows(rows.clone()))
             .expect("create navigator tree")
             .on_select(move |id| {
                 // A heading (no view) keeps the active view selected.

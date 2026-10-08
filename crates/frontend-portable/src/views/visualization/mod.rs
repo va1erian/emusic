@@ -28,7 +28,9 @@ use xui::xui_core::widget::{CheckBox, Edit, Fill, HasText, Label, ListModel, Lis
 
 use crate::app::Msg;
 
+use crate::make::make;
 use presets::{PresetFiles, PresetScanner};
+use xui::xui_core::arrange::{checkbox, edit, label, list};
 
 /// The filter/lock band height, in design units.
 const HEADER_HEIGHT: f32 = 30.0;
@@ -102,15 +104,15 @@ impl VisualizationView {
     /// Creates the filter box, the lock toggle, the count label and the (empty)
     /// virtualized list.
     pub fn new(ui: &Ui<Msg>, mock: bool, waker: WakerHandle) -> VisualizationView {
-        let filter = Edit::new(ui, Rect::default(), "")
+        let filter = make(ui, edit())
             .expect("create preset filter")
             .cue("Filter by name or pack")
             .on_change(|text| Some(Msg::PresetFilter(text.to_owned())));
-        let lock = CheckBox::new(ui, Rect::default(), "Lock current preset")
+        let lock = make(ui, checkbox("Lock current preset"))
             .expect("create preset lock")
             .on_toggle(|_| Some(Msg::PresetToggleLock));
-        let count = Label::new(ui, Rect::default(), "").expect("create preset count");
-        let list = ListView::new(ui, Rect::default(), &[])
+        let count = make(ui, label("")).expect("create preset count");
+        let list = make(ui, list())
             .expect("create preset list")
             .column("Name", Fill)
             .column("Pack", dip(PACK_WIDTH))

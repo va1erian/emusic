@@ -15,6 +15,7 @@
 pub mod app;
 pub mod backend;
 pub mod dialogs;
+mod make;
 pub mod menu;
 pub mod theme;
 pub mod views;

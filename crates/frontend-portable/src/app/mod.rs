@@ -171,7 +171,7 @@ impl Win32App {
             shell.player.replace_and_play(&startup_files, 0);
         }
 
-        let menu = menu::bar(ui, Rect::default(), &shell.state);
+        let menu = menu::bar(ui, &shell.state);
         let context_menu = menu::track_context(ui);
         let queue_context = menu::queue_context(ui, || Msg::QueueRemove);
         let right_panel_queue_context = menu::queue_context(ui, || Msg::RightPanelQueueRemove);
