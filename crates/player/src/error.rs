@@ -21,6 +21,9 @@ pub enum PlayerError {
     /// A track's file couldn't be read from disk.
     #[error("failed to read file: {0}")]
     ReadFailed(String),
+    /// An audio backend other than BASS failed to decode or play a track.
+    #[error("{0}")]
+    Backend(String),
     /// The SID engine failed to load or run a tune.
     #[error(transparent)]
     Sid(#[from] emusic_sid::SidError),

@@ -1,0 +1,12 @@
+[package]
+name = "emusic-lazyaudio"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "emusic's audio backend for hosts with a sample-stream sound system (LazyOS): MP3 decoding and a player channel over an Output"
+
+[dependencies]
+emusic-player = { path = "../player", default-features = false }
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "id3v1", "id3v2"] }
+thiserror = "2"
+tracing = "0.1"

@@ -17,6 +17,17 @@ DLLs themselves are never committed to git.
   are committed and embedded with `include_bytes!`;
   `scripts/gen-navigator-icons.mjs` regenerates them from the vendored SVGs.
 
+## Symphonia
+
+- **Component:** the MP3 decoder of `emusic-lazyaudio`, the audio backend for
+  hosts without BASS (LazyOS), compiled into that build only.
+- **Version:** [`symphonia` 0.6.1](https://crates.io/crates/symphonia/0.6.1)
+  (`symphonia-core`, `symphonia-bundle-mp3`, `symphonia-metadata`).
+- **Source:** <https://github.com/pdeljanov/Symphonia>
+- **License:** MPL-2.0 — see the project's [LICENSE](https://github.com/pdeljanov/Symphonia/blob/master/LICENSE).
+  The files are used unmodified; MPL-2.0 is file-level copyleft, so the MIT
+  code around them is unaffected.
+
 ## libprojectM
 
 - **Component:** `projectM-4.dll`, `projectM-4-playlist.dll` (MilkDrop visualization engine)
