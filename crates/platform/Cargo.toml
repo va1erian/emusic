@@ -7,7 +7,7 @@ description = "OS shell integration for emusic: the portable ShellIntegration se
 
 [dependencies]
 # The portable xui core only: this crate never names a backend.
-xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false }
+xui = { git = "https://github.com/va1erian/xui", rev = "51bded370a5174ab43a33be56991807ae5b2be93", default-features = false }
 tracing = "0.1"
 
 [target.'cfg(windows)'.dependencies]

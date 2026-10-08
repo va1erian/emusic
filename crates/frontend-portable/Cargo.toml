@@ -23,7 +23,7 @@ png = { version = "0.18", optional = true }
 # The umbrella crate. The app imports portable widgets from
 # `xui::xui_core::widget` and names a backend only in `run`: the software
 # `canvas` one with the `winit` feature, or the one a host passes to `run_on`.
-xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false }
+xui = { git = "https://github.com/va1erian/xui", rev = "51bded370a5174ab43a33be56991807ae5b2be93", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # File associations are a Windows shell feature; the settings page reaches for
@@ -57,4 +57,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # process's main thread, which the test harness does not provide). Dropped
 # from the shipped binary itself in #470; a dev-dependency never links into
 # `cargo build`'s output.
-xui = { git = "https://github.com/va1erian/xui", rev = "6d7bb7ca98073df049b41092dc5953570ab8dc7e", default-features = false, features = ["d2d"] }
+xui = { git = "https://github.com/va1erian/xui", rev = "51bded370a5174ab43a33be56991807ae5b2be93", default-features = false, features = ["d2d"] }
