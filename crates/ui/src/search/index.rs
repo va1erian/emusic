@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use emusic_core::{ArtSource, Track, TrackId, TrackKind};
-use emusic_search::matcher::TrackIdHasher;
 use emusic_search::Index;
+use emusic_search::matcher::TrackIdHasher;
 
 use crate::library_api::TrackInfo;
 
