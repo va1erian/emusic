@@ -22,6 +22,41 @@ pub fn focused_control_consumes_keys() -> bool {
     sys::focused_window_class().is_some_and(|class| consumes_keys(&class))
 }
 
+/// A bare typing key a focused text or navigation control consumes on its
+/// own, for the shortcut handler to give back after the accelerator table
+/// has swallowed the physical keystroke while that control had focus.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TypingKey {
+    /// A printable character (e.g. Space): `WM_KEYDOWN`, `WM_CHAR`,
+    /// `WM_KEYUP`. Text controls insert the character on the `WM_CHAR`; a
+    /// button activates on the `WM_KEYUP`.
+    Char {
+        /// The virtual key, for the surrounding key messages.
+        vk: u16,
+        /// The character the control receives.
+        ch: char,
+    },
+    /// A navigation key such as an arrow: `WM_KEYDOWN` + `WM_KEYUP`.
+    Key(u16),
+}
+
+/// Re-delivers the synthetic keystroke for `key` to the window that currently
+/// has keyboard focus, so a text field still gets its space or an arrow
+/// still moves its caret after the accelerator table consumed the physical
+/// key while that field had focus.
+///
+/// The keystroke is sent directly to the focused window, bypassing the
+/// message queue: a queued message would be offered to the accelerator table
+/// again and consumed, re-raising the shortcut forever. Returns `false` when
+/// no window has focus (e.g. the app is not foreground).
+pub fn forward_typing_key(key: TypingKey) -> bool {
+    let Some(hwnd) = sys::focused_window() else {
+        return false;
+    };
+    sys::send_typing_key(key, hwnd);
+    true
+}
+
 /// Whether a window class consumes typing keys itself.
 fn consumes_keys(class: &str) -> bool {
     const CONSUMING: &[&str] = &[

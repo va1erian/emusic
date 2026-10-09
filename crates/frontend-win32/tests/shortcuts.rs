@@ -271,6 +271,25 @@ impl WindowHandler for NullHandler {
     }
 }
 
+/// The real app plus a log of the search query after every message, so the
+/// test can assert what the search box got. `run_app` drops the app when the
+/// loop ends, so post-loop assertions read the shared log.
+struct RecordingApp {
+    inner: Win32App,
+    queries: Rc<RefCell<Vec<String>>>,
+}
+
+impl win32ui::App for RecordingApp {
+    type Msg = Msg;
+
+    fn update(&mut self, msg: Msg, ui: &mut Ui<Msg>) {
+        self.inner.update(msg, ui);
+        self.queries
+            .borrow_mut()
+            .push(self.inner.search_query().to_owned());
+    }
+}
+
 /// Posts `WM_KEYDOWN` for `vk` into the app's message loop, the way a real key
 /// arrives. `win32ui` exposes no way to post to an arbitrary `Hwnd`, so this
 /// makes a tiny child of the app window and posts to that: the loop resolves
@@ -374,6 +393,77 @@ fn posted_space_toggles_playback() {
         calls.statuses.last(),
         Some(&PlaybackStatus::Playing),
         "Space should have started playback from Stopped"
+    );
+}
+
+/// With the search box focused through the real Ctrl+F flow, a physical Space
+/// must type into the box, not toggle playback. The accelerator table consumes
+/// the raw `WM_KEYDOWN` before the guarded handler runs, so the handler has to
+/// re-deliver the keystroke to the focused edit — recorded here through the
+/// app's search query (a wrapper app logs it after every message; plain
+/// `run_app` drops the app after the loop). Only Space is covered: the
+/// injector's un-translated `WM_KEYDOWN`s for letters never turn into
+/// `WM_CHAR`s in this synthetic harness, so letters prove nothing here.
+#[test]
+fn space_types_while_the_search_box_has_focus() {
+    let calls = Rc::new(RefCell::new(None));
+    let queries = Rc::new(RefCell::new(Vec::new()));
+    let injected = Rc::new(Cell::new(false));
+    let calls_for_make = Rc::clone(&calls);
+    let queries_for_make = Rc::clone(&queries);
+    let injected_for_make = Rc::clone(&injected);
+
+    let result = win32ui::run_app(
+        // The search box lives in the top band, which needs the extended
+        // title bar (like `window_spec` in the real app) being available.
+        WindowSpec::new("emusic.shortcuts.search-space")
+            .theme(Theme::dark())
+            .title_bar(TitleBar::Extended),
+        move |ui| {
+            let (app, player_calls) = build_app(ui, MockPlayer::default());
+            calls_for_make.replace(Some(player_calls));
+            watchdog(ui);
+            // Focus the box through the real Ctrl+F handler, then type a
+            // space: the posted message is pumped in order, with the focus
+            // already applied when the key arrives.
+            ui.emit(Msg::Shortcut(ShortcutAction::Search));
+            injected_for_make.set(inject_key(ui.hwnd(), Theme::dark(), VK_SPACE));
+            let settle = ui.set_timer(KEY_SETTLE_MS).ok();
+            let watchdog = ui.set_timer(WATCHDOG_MS).ok();
+            ui.on_timer(move |fired| {
+                if Some(fired) == watchdog {
+                    win32ui::quit(1);
+                } else if Some(fired) == settle {
+                    win32ui::quit(0);
+                }
+                None
+            });
+            RecordingApp {
+                inner: app,
+                queries: queries_for_make,
+            }
+        },
+    );
+
+    if result.is_err() {
+        eprintln!("skipping: this session cannot create windows");
+        return;
+    }
+    if !injected.get() {
+        eprintln!("skipping: the key injector window could not be created");
+        return;
+    }
+    let outer = calls.borrow();
+    let calls = outer.as_ref().expect("the app was constructed");
+    let calls = calls.borrow();
+    assert_eq!(
+        calls.play_pause, 0,
+        "Space toggled playback instead of typing into the search box"
+    );
+    let queries = queries.borrow();
+    assert!(
+        queries.contains(&" ".to_string()),
+        "the typed space never reached the search box; query log was {queries:?}"
     );
 }
 

@@ -76,6 +76,16 @@ const TABLE_MIN_HEIGHT: f32 = 160.0;
 /// DIP (#342).
 const MIDDLE_MIN_WIDTH: f32 = 320.0;
 
+/// `VK_SPACE`, `winuser.h`: the bare-key binding a consuming control inserts
+/// as a character.
+const VK_SPACE: u16 = 0x20;
+/// `VK_LEFT`, `winuser.h`: the bare seek-backward binding moves a caret or a
+/// slider.
+const VK_LEFT: u16 = 0x25;
+/// `VK_RIGHT`, `winuser.h`: the bare seek-forward binding moves a caret or a
+/// slider.
+const VK_RIGHT: u16 = 0x27;
+
 /// A playlist action from the navigator's row context menu (#476).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaylistAction {
@@ -329,6 +339,12 @@ pub struct Win32App {
 }
 
 impl Win32App {
+    /// The live top-bar search query, so a test can assert what actually
+    /// reached the search box after a keystroke.
+    pub fn search_query(&self) -> &str {
+        &self.shell.state.search_query
+    }
+
     /// Builds the app: binds the frontend's [`Waker`](emusic_ui::waker::Waker)
     /// to the window, creates the shell and the window's controls, installs
     /// the menu bar and the layout, then ticks once so the views are populated.
@@ -1990,6 +2006,13 @@ impl App for Win32App {
 /// has focus (see [`winshell::input`]), so Space, the arrows and Delete keep
 /// working in the search box and tab controls. Ctrl-bearing bindings and F5
 /// fire regardless, so Ctrl+F still focuses the search box while typing.
+///
+/// Yielding is not enough on its own: the accelerator table consumes the raw
+/// `WM_KEYDOWN` before the mapper runs, so a yielded Space would vanish
+/// instead of reaching the focused edit. The guarded handlers therefore
+/// re-deliver their keystroke ([`winshell::input::forward_typing_key`])
+/// directly to the focused control, which is safe to call again and again
+/// because a direct send never passes the accelerator table.
 fn install_shortcuts(ui: &Ui<Msg>) {
     for shortcut in SHORTCUTS {
         let action = shortcut.action;
@@ -2000,8 +2023,23 @@ fn install_shortcuts(ui: &Ui<Msg>) {
             action,
             ShortcutAction::PlayPause | ShortcutAction::SeekBackward | ShortcutAction::SeekForward
         );
+        // The keystroke to give back when guarded and a consuming control is
+        // focused: Space is that character itself, the seek arrows move the
+        // caret or a slider.
+        let swallowed = match shortcut.key {
+            ShortcutKey::Space => Some(winshell::input::TypingKey::Char {
+                vk: VK_SPACE,
+                ch: ' ',
+            }),
+            ShortcutKey::Left => Some(winshell::input::TypingKey::Key(VK_LEFT)),
+            ShortcutKey::Right => Some(winshell::input::TypingKey::Key(VK_RIGHT)),
+            _ => None,
+        };
         ui.accelerator(win32_shortcut(shortcut), move || {
             if guarded && winshell::input::focused_control_consumes_keys() {
+                if let Some(key) = swallowed {
+                    winshell::input::forward_typing_key(key);
+                }
                 return None;
             }
             Some(Msg::Shortcut(action))
