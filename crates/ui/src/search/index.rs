@@ -8,10 +8,12 @@
 //! UI never exposed them either.
 
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use emusic_core::{ArtSource, Track, TrackId, TrackKind};
+use emusic_search::matcher::TrackIdHasher;
 use emusic_search::Index;
 
 use crate::library_api::TrackInfo;
@@ -23,7 +25,7 @@ use crate::library_api::TrackInfo;
 pub(crate) struct LibraryIndex {
     pub index: Index,
     pub order: Vec<TrackId>,
-    pub play_counts: HashMap<TrackId, u64>,
+    pub play_counts: HashMap<TrackId, u64, BuildHasherDefault<TrackIdHasher>>,
 }
 
 impl LibraryIndex {
@@ -33,7 +35,8 @@ impl LibraryIndex {
     pub fn build(tracks: &[TrackInfo]) -> Self {
         let mut index = Index::new();
         let mut order = Vec::with_capacity(tracks.len());
-        let mut play_counts = HashMap::with_capacity(tracks.len());
+        let mut play_counts =
+            HashMap::with_capacity_and_hasher(tracks.len(), BuildHasherDefault::default());
 
         for info in tracks {
             let id = TrackId(info.id as i64);

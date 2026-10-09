@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Single-Pass Track Filtering and Display Row Generation
+**Learning:** `SearchPopup::collect_rows` iterated over `library.tracks()` twice with `track_match(t.id)`—once to collect matching track IDs and again to take top result display rows. In large libraries, evaluating closure predicates twice over tens of thousands of tracks doubles search popup refresh time.
+**Action:** Collect matched candidate IDs and capped display rows simultaneously in a single pass over the candidate collection.
