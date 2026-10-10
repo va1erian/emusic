@@ -36,7 +36,11 @@ pub(super) type CoverCache = ThumbCache<RgbaSink>;
 
 /// Keeps decoded images as RGBA buffers for the Direct2D canvas. The image is
 /// already the cover size (see [`cover_decoder`]), so this only clones it.
-pub(super) struct RgbaSink;
+/// The upload count lets [`ThumbState::drain`] report that new covers became
+/// available.
+pub(super) struct RgbaSink {
+    uploads: u64,
+}
 
 impl ImageSink for RgbaSink {
     /// `None` only if the buffer is unusable; the grid then draws its
@@ -44,6 +48,7 @@ impl ImageSink for RgbaSink {
     type Handle = Option<Rc<RgbaImage>>;
 
     fn upload(&mut self, _key: u64, image: &Rgba8Image) -> Option<Rc<RgbaImage>> {
+        self.uploads += 1;
         Some(Rc::new(to_win32(image)))
     }
 }
@@ -64,7 +69,7 @@ impl ThumbState {
         cache.set_waker(waker);
         Self {
             cache,
-            sink: RgbaSink,
+            sink: RgbaSink { uploads: 0 },
         }
     }
 
@@ -79,9 +84,15 @@ impl ThumbState {
     /// once per frame before the grid paints. The shared cache caps uploads at
     /// four per call and wakes the UI while more are pending, so a burst of
     /// finished covers is spread over several frames instead of stalling one.
-    pub(super) fn drain(&mut self) {
+    ///
+    /// Returns whether any cover became available, so the view repaints the
+    /// grid exactly when one of its placeholders can be replaced: an upload
+    /// alone does not, the tiles need a paint to pick it up.
+    pub(super) fn drain(&mut self) -> bool {
+        let before = self.sink.uploads;
         let Self { cache, sink } = self;
         cache.drain(sink);
+        self.sink.uploads > before
     }
 }
 
