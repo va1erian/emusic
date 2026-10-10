@@ -30,3 +30,10 @@ strip = true
 # noticeably (#90).
 [profile.test]
 debug = "line-tables-only"
+
+# Temporary: the scrolled-grid hit-test fix lives on win32ui's
+# fix/grid-scroll-hit branch until its PR merges, then `scripts/bump-win32ui.sh`
+# pins main and this section goes away. The file:// clone refers to
+# D:\repos\win32ui at 15d5c821 (fix/grid-scroll-hit).
+[patch."https://github.com/va1erian/win32ui"]
+win32ui = { git = "file:///D:/repos/win32ui", branch = "fix/grid-scroll-hit" }
