@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - ASCII Fast Path for Natural Sort Case Folding
+**Learning:** `char::to_lowercase()` constructs a `std::char::ToLowercase` iterator with Unicode case mapping tables. Calling it on every character comparison step during natural order sorting (artists, albums, titles) adds iterator setup overhead for ASCII strings.
+**Action:** Use `if char.is_ascii() { char.to_ascii_lowercase() }` to bypass iterator creation for ASCII characters in natural sorting routines.
