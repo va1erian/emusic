@@ -280,7 +280,7 @@ impl AlbumGridView {
         changes: Changes,
     ) -> bool {
         self.theme.set(theme);
-        self.thumbs.borrow_mut().drain();
+        let uploaded = self.thumbs.borrow_mut().drain();
 
         {
             let cx = Ctx::with_library(&[], playing_id, library).with_search(search);
@@ -326,6 +326,12 @@ impl AlbumGridView {
             .and_then(|key| self.tiles.iter().position(|tile| &tile.key == key));
         if self.grid.selected() != selected_index {
             self.grid.set_selected(selected_index);
+        }
+        // A decode finished since the last frame: repaint, so tiles here in
+        // view swap their placeholder for the cover a later paint would pick
+        // up anyway.
+        if uploaded {
+            self.grid.invalidate();
         }
 
         let selection_revision = state.album_grid.selection_revision();
