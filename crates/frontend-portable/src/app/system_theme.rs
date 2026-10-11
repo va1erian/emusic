@@ -46,10 +46,11 @@ impl SystemTheme {
         true
     }
 
-    /// The repeat interval the shell asked for, shortened so the host's
-    /// theme is read while the app is otherwise idle.
-    pub(super) fn cap_wake(&self, wake: Option<Duration>) -> Option<Duration> {
-        if self.latest.is_none() {
+    /// The repeat interval the shell asked for, shortened while the window
+    /// follows the host (`following`) so the host's theme is read even when
+    /// the app is otherwise idle; unchanged once a scheme was picked by hand.
+    pub(super) fn cap_wake(&self, following: bool, wake: Option<Duration>) -> Option<Duration> {
+        if !following {
             return wake;
         }
         Some(wake.map_or(POLL, |wake| wake.min(POLL)))
@@ -62,17 +63,22 @@ impl Win32App {
     pub fn follow_system_theme(&mut self, host: Rc<dyn Backend>) {
         self.system.source = Some(host);
         self.system.poll(true, Instant::now());
-        self.sync_look();
+        // Applies the look and, now that there is a host to read, schedules
+        // the polling tick (the app's first tick ran before this).
+        self.tick_inner();
     }
 
     /// Whether the window is painted in the host's theme.
-    fn following_system(&self) -> bool {
+    pub(super) fn following_system(&self) -> bool {
         self.system.latest.is_some() && self.shell.state.follow_system.unwrap_or(true)
     }
 
     /// The look the window should have now, reading the host's theme if due.
     pub(super) fn current_look(&mut self) -> Look {
-        self.system.poll(false, Instant::now());
+        // A scheme picked by hand needs no reading of the host's.
+        if self.following_system() {
+            self.system.poll(false, Instant::now());
+        }
         match self.system.latest {
             Some(theme) if self.following_system() => {
                 // Keep the stored scheme in step, so the View menu's toggle
@@ -85,16 +91,6 @@ impl Win32App {
                 Look::System(theme)
             }
             _ => Look::Own(self.shell.state.theme, self.shell.state.accent),
-        }
-    }
-
-    /// Applies [`Self::current_look`] if it differs from the applied one.
-    fn sync_look(&mut self) {
-        let look = self.current_look();
-        if look != self.applied_look {
-            self.applied_look = look;
-            self.ui.set_theme(look.resolve());
-            self.navigator.set_dark(self.ui.theme().is_dark);
         }
     }
 }
