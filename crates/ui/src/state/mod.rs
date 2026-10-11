@@ -76,6 +76,9 @@ pub struct AppState {
     /// is selected.
     pub selected_playlist: Option<u64>,
     pub theme: Theme,
+    /// Follow the host's colour scheme and accent; `None` is the host's
+    /// choice (see [`Config::follow_system`](crate::config::Config)).
+    pub follow_system: Option<bool>,
     pub accent: Accent,
     /// Whether the win32 window's acrylic bands are tinted with the accent
     /// (#355).
@@ -214,6 +217,7 @@ impl Default for AppState {
             view: View::Music,
             selected_playlist: None,
             theme: Theme::Dark,
+            follow_system: None,
             accent: Accent::default(),
             accent_tint: false,
             accent_tint_strength: DEFAULT_ACCENT_TINT_STRENGTH,
@@ -281,7 +285,12 @@ impl AppState {
                 self.view = View::Settings;
                 self.settings_tab = *tab;
             }
-            Command::ToggleTheme => self.theme = self.theme.toggled(),
+            // Choosing a scheme by hand leaves the host's.
+            Command::ToggleTheme => {
+                self.theme = self.theme.toggled();
+                self.follow_system = Some(false);
+            }
+            Command::SetFollowSystem(on) => self.follow_system = Some(*on),
             Command::SetAccent(accent) => self.accent = *accent,
             Command::SetAccentTint(on) => self.accent_tint = *on,
             Command::SetAccentTintStrength(strength) => self.accent_tint_strength = *strength,

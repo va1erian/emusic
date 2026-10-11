@@ -22,6 +22,20 @@ pub(crate) fn set_host(native_chrome: bool, label: &'static str) {
     });
 }
 
+static SYSTEM_THEME: OnceLock<bool> = OnceLock::new();
+
+/// Records whether the host's backend has a colour scheme of its own to
+/// follow (`Backend::system_theme`), before the settings pages are built.
+pub(crate) fn set_system_theme_offered(offered: bool) {
+    let _ = SYSTEM_THEME.set(offered);
+}
+
+/// Whether the host offers its own colour scheme and accent, so Settings ->
+/// Appearance can offer "Follow system" and it is the default.
+pub fn system_theme_offered() -> bool {
+    SYSTEM_THEME.get().copied().unwrap_or(false)
+}
+
 /// Whether the window backend draws its own caption and window buttons, so
 /// the app must not draw the custom caption band.
 ///

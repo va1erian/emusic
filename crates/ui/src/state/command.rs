@@ -19,6 +19,8 @@ pub enum Command {
     /// was, this also selects the tab (e.g. Help → About emusic).
     OpenSettings(SettingsTab),
     ToggleTheme,
+    /// Follow the host's colour scheme and accent, or keep emusic's own.
+    SetFollowSystem(bool),
     SetAccent(Accent),
     /// Tint the win32 window's acrylic bands with the accent, or stop (#355).
     SetAccentTint(bool),

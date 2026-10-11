@@ -76,6 +76,7 @@ pub fn run_on(startup: Startup, host: Host) -> anyhow::Result<()> {
         audio,
     } = host;
     crate::backend::set_host(native_chrome, label);
+    crate::backend::set_system_theme_offered(backend.system_theme().is_some());
 
     // Register the Windows shell hooks before the window exists, so the
     // thumbnail-toolbar hook recognises the taskbar button it creates.
@@ -139,6 +140,7 @@ fn build_app(ui: &mut Ui<Msg>, backend: Rc<dyn Backend>, session: Session) -> Wi
     if let Some(notice) = notice {
         app.set_backend_notice(notice);
     }
+    app.follow_system_theme(Rc::clone(&backend));
     let chrome = WindowChrome::new(backend, ui.window());
     app.attach_chrome(chrome);
     schedule_smoke_exit(ui);

@@ -95,6 +95,7 @@ struct Observed {
     popup_search_count: Option<usize>,
     view: View,
     theme: Theme,
+    follow_system: Option<bool>,
     accent: Accent,
     appearance: crate::state::Appearance,
     panels: PanelVisibility,
@@ -376,7 +377,10 @@ impl Shell {
         if current.view != self.observed.view {
             changes |= Changes::VIEW;
         }
-        if current.theme != self.observed.theme || current.accent != self.observed.accent {
+        if current.theme != self.observed.theme
+            || current.follow_system != self.observed.follow_system
+            || current.accent != self.observed.accent
+        {
             changes |= Changes::THEME;
         }
         if current.appearance != self.observed.appearance {
@@ -413,6 +417,7 @@ impl Shell {
             popup_search_count: self.popup_search.match_count(),
             view: self.state.view,
             theme: self.state.theme,
+            follow_system: self.state.follow_system,
             accent: self.state.accent,
             appearance: self.state.appearance,
             panels: self.state.panels,

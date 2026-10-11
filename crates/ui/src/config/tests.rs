@@ -65,6 +65,7 @@ fn non_default_config() -> Config {
         repeat_mode: RepeatMode::One,
         shuffle: true,
         theme: Theme::Light,
+        follow_system: Some(false),
         accent: Accent::Blue,
         accent_tint: true,
         accent_tint_strength: 0xC8,

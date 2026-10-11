@@ -62,6 +62,9 @@ pub enum SettingsMsg {
     CancelScan,
     /// The Appearance page picked a colour scheme.
     SetTheme(Theme),
+    /// The Appearance page chose to follow the host's colour scheme and
+    /// accent, or not.
+    SetFollowSystem(bool),
     /// The Appearance page toggled the window accent tint (#355).
     SetAccentTint(bool),
     /// The Appearance page changed the accent tint strength (#355).
