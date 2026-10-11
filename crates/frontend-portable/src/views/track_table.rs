@@ -13,7 +13,7 @@
 //! per-cell click (the portable `ListView` has no cell-click hook; tracked as a
 //! follow-up to add one).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use emusic_ui::library_api::TrackInfo;
@@ -22,8 +22,9 @@ use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::{Point, Rect};
+use xui::xui_core::icon::IconRef;
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Column, Fill, ListModel, ListView, SortDirection};
+use xui::xui_core::widget::{Column, Fill, Glyph, ListModel, ListView, SortDirection};
 
 use crate::app::Msg;
 use crate::make::make;
@@ -39,9 +40,6 @@ pub(crate) const STAR_COLUMN: usize = 0;
 const COLUMNS_OFFSET: usize = 2;
 /// The star column's width, in design units.
 const STAR_COLUMN_WIDTH: f32 = 24.0;
-/// The play marker column's width, in design units.
-const PLAY_COLUMN_WIDTH: f32 = 20.0;
-
 /// The data columns in table order: Title first, then the shared `COLUMNS`.
 const DATA_COLUMNS: [ColumnId; 10] = [
     ColumnId::Title,
@@ -56,9 +54,54 @@ const DATA_COLUMNS: [ColumnId; 10] = [
     ColumnId::File,
 ];
 
-/// The star cell's glyph: a filled star when starred, an outline otherwise.
-pub(crate) fn star_glyph(starred: bool) -> &'static str {
-    if starred { "\u{2605}" } else { "\u{2606}" }
+/// The narrowest the Title column is kept, in design units: the data columns
+/// are shown only while they leave it this much.
+const TITLE_MIN_WIDTH: f32 = 140.0;
+
+/// Data columns in the order they are given room, most useful first.
+const COLUMN_PRIORITY: [ColumnId; 9] = [
+    ColumnId::Artist,
+    ColumnId::Album,
+    ColumnId::Time,
+    ColumnId::Genre,
+    ColumnId::Year,
+    ColumnId::Plays,
+    ColumnId::Format,
+    ColumnId::LastPlayed,
+    ColumnId::File,
+];
+
+/// Which of [`columns::COLUMNS`] fit a table `width` design units wide: the
+/// data columns take their initial width in priority order while the Title
+/// column keeps [`TITLE_MIN_WIDTH`], so a narrow table shows fewer columns
+/// instead of squeezing the title to nothing and clipping the rest.
+pub(crate) fn fitting_columns(width: f32) -> Vec<bool> {
+    let mut budget = width - STAR_COLUMN_WIDTH - TITLE_MIN_WIDTH;
+    let mut shown = vec![false; columns::COLUMNS.len()];
+    for id in COLUMN_PRIORITY {
+        let Some(index) = columns::COLUMNS.iter().position(|spec| spec.id == id) else {
+            continue;
+        };
+        let wanted = columns::COLUMNS[index].initial_width;
+        if wanted <= budget {
+            shown[index] = true;
+            budget -= wanted;
+        }
+    }
+    shown
+}
+
+/// The row's leading icon: a play triangle on the playing track, else a
+/// filled star when starred and an outline star otherwise. The UI font has
+/// none of these characters, so they cannot be cell text.
+pub(crate) fn row_icon(playing: bool, starred: bool) -> Glyph {
+    if playing {
+        Glyph::Play
+    } else if starred {
+        Glyph::StarFilled
+    } else {
+        Glyph::Star
+    }
 }
 
 /// A context-menu action on a track row.
@@ -121,19 +164,19 @@ impl ListModel for MusicModel {
     fn cell(&self, row: usize, column: usize) -> Option<&str> {
         let row = self.rows.get(row)?;
         Some(match column {
-            STAR_COLUMN => star_glyph(row.starred.get()),
-            1 => {
-                if self.playing.get() == Some(row.track.id) {
-                    "\u{25B6}"
-                } else {
-                    ""
-                }
-            }
+            // The star and the playing marker are the row's icon.
+            STAR_COLUMN | 1 => "",
             _ => row
                 .cells
                 .get(column - COLUMNS_OFFSET)
                 .map_or("", String::as_str),
         })
+    }
+
+    fn icon(&self, row: usize) -> Option<IconRef> {
+        let row = self.rows.get(row)?;
+        let playing = self.playing.get() == Some(row.track.id);
+        Some(row_icon(playing, row.starred.get()).into())
     }
 }
 
@@ -148,6 +191,9 @@ pub struct TrackView {
     /// The list's last client rectangle, so a row context point (node-local)
     /// can be translated to window-client coordinates for the popup.
     bounds: Cell<Rect>,
+    /// The data columns last shown ([`fitting_columns`]), so a resize only
+    /// touches the columns when the set changes.
+    shown: RefCell<Vec<bool>>,
 }
 
 impl TrackView {
@@ -159,7 +205,7 @@ impl TrackView {
             .multi_select(true);
         list = list
             .add_column(Column::new("", dip(STAR_COLUMN_WIDTH)).centered())
-            .add_column(Column::new("", dip(PLAY_COLUMN_WIDTH)).centered())
+            .add_column(Column::new("", dip(0.0)).centered())
             .column("Title", Fill);
         for spec in columns::COLUMNS {
             list = list.column(spec.label, dip(spec.initial_width));
@@ -181,7 +227,30 @@ impl TrackView {
             playing,
             indicator: Cell::new(None),
             bounds: Cell::new(Rect::default()),
+            shown: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Hides the data columns that do not fit `rect` (width 0) and restores
+    /// those that do, at their initial width.
+    fn fit_columns(&self, rect: Rect) {
+        let dpi = self.ui.dpi().max(1);
+        let width = rect.width() as f32 * 96.0 / dpi as f32;
+        let wanted = fitting_columns(width);
+        let mut shown = self.shown.borrow_mut();
+        if *shown == wanted {
+            return;
+        }
+        for (index, spec) in columns::COLUMNS.iter().enumerate() {
+            let column = index + COLUMNS_OFFSET + 1;
+            let width = if wanted[index] {
+                spec.initial_width
+            } else {
+                0.0
+            };
+            self.list.set_column_width(column, dip(width));
+        }
+        *shown = wanted;
     }
 
     /// The list's client origin, to translate a node-local context point into
@@ -200,6 +269,7 @@ impl TrackView {
     pub fn set_bounds(&self, rect: Rect) {
         self.bounds.set(rect);
         self.ui.apply_moves(&[(self.list.id(), rect)]);
+        self.fit_columns(rect);
     }
 
     /// Shows or hides the table.
@@ -325,5 +395,34 @@ pub fn run_context_action(action: ContextAction, track: &TrackInfo) -> Option<Co
         }
         ContextAction::Properties => None,
         ContextAction::EditTags => Some(Command::OpenTagEditor(track.id)),
+    }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    #[test]
+    fn narrow_tables_drop_the_least_useful_columns_first() {
+        let at = |width: f32| -> Vec<ColumnId> {
+            fitting_columns(width)
+                .iter()
+                .zip(columns::COLUMNS)
+                .filter(|(shown, _)| **shown)
+                .map(|(_, spec)| spec.id)
+                .collect()
+        };
+        assert!(at(100.0).is_empty());
+        // 540 wide, the default central area beside the right panel.
+        assert_eq!(
+            at(540.0),
+            [
+                ColumnId::Artist,
+                ColumnId::Album,
+                ColumnId::Year,
+                ColumnId::Time
+            ]
+        );
+        assert_eq!(at(2000.0).len(), columns::COLUMNS.len());
     }
 }

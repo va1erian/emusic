@@ -4,13 +4,16 @@
 //! testing; [`paint`] draws it through the portable `Canvas`, recording each
 //! clickable region into the widget's hit table as it draws it.
 
+use emusic_ui::state::View;
 use emusic_ui::views::now_playing::ModuleView;
 use xui::xui_core::Image;
 use xui::xui_core::Theme;
 use xui::xui_core::app::Ui;
 use xui::xui_core::backend::{Canvas, TextStyle};
 use xui::xui_core::geometry::Rect;
+use xui::xui_core::icon::draw_icon;
 use xui::xui_core::units::{Dip, dip};
+use xui::xui_core::widget::Glyph;
 
 use super::{Hit, SummaryData};
 use crate::app::Msg;
@@ -149,15 +152,13 @@ pub(super) fn paint(
     canvas.fill_rect(layout.artwork, theme.surface);
     match artwork {
         Some(image) => canvas.draw_image(image, layout.artwork),
-        None => draw_text(
-            ui,
-            canvas,
-            layout.artwork,
-            "\u{266A}",
-            &TextStyle::new(theme.text_secondary, TITLE_SIZE)
-                .centered()
-                .middle(),
-        ),
+        // The UI font has no musical note, so the placeholder is the
+        // navigator's Music icon (a raster in the theme's ink).
+        None => {
+            let side = layout.artwork.width().min(layout.artwork.height()) / 4;
+            let image = crate::views::navigator_icons::image(View::Music, theme.is_dark);
+            canvas.draw_image(&image, centered_square(layout.artwork, side));
+        }
     }
 
     hits.clear();
@@ -173,18 +174,20 @@ pub(super) fn paint(
     }
 
     if data.has_track {
-        let glyph = if data.starred { "\u{2605}" } else { "\u{2606}" };
-        let color = if data.starred {
-            theme.accent
+        // Droid Sans has no star either: an outline or a filled star icon.
+        let (glyph, color) = if data.starred {
+            (Glyph::StarFilled, theme.accent)
         } else {
-            theme.text_secondary
+            (Glyph::Star, theme.text_secondary)
         };
-        draw_text(
-            ui,
+        let side = layout.star.width().min(layout.star.height()) * 3 / 4;
+        let dpi = canvas.dpi();
+        draw_icon(
             canvas,
-            layout.star,
             glyph,
-            &TextStyle::new(color, BODY_SIZE).middle(),
+            centered_square(layout.star, side),
+            color,
+            dpi,
         );
         fill_hot(canvas, layout.star, hot == Some(Hit::Star), theme);
         hits.push((layout.star, Hit::Star));
@@ -375,6 +378,13 @@ fn fill_hot(canvas: &mut dyn Canvas, rect: Rect, hot: bool, theme: &Theme) {
     if hot {
         canvas.fill_rect(rect, theme.hover);
     }
+}
+
+/// A `side`-pixel square centred in `rect`.
+fn centered_square(rect: Rect, side: i32) -> Rect {
+    let left = rect.left + (rect.width() - side) / 2;
+    let top = rect.top + (rect.height() - side) / 2;
+    Rect::new(left, top, left + side, top + side)
 }
 
 #[cfg(test)]

@@ -12,6 +12,9 @@ use crate::window::CAPTION_HEIGHT;
 const TOP_BAR_HEIGHT: f32 = 40.0;
 /// The bottom status band's height, in device-independent pixels.
 const STATUS_BAR_HEIGHT: f32 = 24.0;
+/// The Music view's count row and column header above the table body, in
+/// device-independent pixels.
+const TABLE_HEAD_HEIGHT: f32 = 60.0;
 
 impl Win32App {
     /// Positions the caption band, the transport band, the status bar and the
@@ -92,12 +95,20 @@ impl Win32App {
                     central.right,
                     central.top + browser_height,
                 ));
+                let music_top = central.top + browser_height;
                 self.music.set_bounds(Rect::new(
                     central.left,
-                    central.top + browser_height,
+                    music_top,
                     central.right,
                     central.bottom,
                 ));
+                // The empty-library guidance sits in the table's body, below
+                // its count row and header.
+                let body_top = music_top + dip(TABLE_HEAD_HEIGHT).to_px(dpi).value();
+                self.empty.set_bounds(
+                    &self.ui,
+                    Rect::new(central.left, body_top, central.right, central.bottom),
+                );
             }
             View::Folders => self.folders.set_bounds(central),
             View::Albums => self.albums.set_bounds(central),

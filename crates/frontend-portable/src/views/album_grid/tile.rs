@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use emusic_ui::state::View;
 use emusic_ui::views::album_grid::models::AlbumKey;
 use xui::xui_core::backend::{Canvas, TextStyle};
 use xui::xui_core::units::dip;
@@ -33,8 +34,6 @@ pub(super) fn tile_size(edge: f32) -> TileSize {
 const NAME_SIZE: f32 = 12.0;
 const ARTIST_SIZE: f32 = 11.0;
 const YEAR_SIZE: f32 = 10.0;
-/// The placeholder glyph's size, in design units.
-const GLYPH_SIZE: f32 = 28.0;
 
 /// One album tile: the identity used for messages plus the caption fields and
 /// the source path its cover is read from.
@@ -80,13 +79,13 @@ pub(super) fn content(
             Some(image) => canvas.draw_image(&image, cover),
             None => {
                 canvas.fill_rect(cover, placeholder_color(&cell.name));
-                canvas.draw_text(
-                    "\u{266A}",
-                    cover,
-                    &TextStyle::new(Color::rgb(255, 255, 255), Dip(GLYPH_SIZE))
-                        .centered()
-                        .middle(),
-                );
+                // The UI font has no musical note: the Music icon, in the light
+                // ink, over the placeholder colour.
+                let side = cover.width() / 3;
+                let left = cover.left + (cover.width() - side) / 2;
+                let top = cover.top + (cover.height() - side) / 2;
+                let image = crate::views::navigator_icons::image(View::Music, true);
+                canvas.draw_image(&image, Rect::new(left, top, left + side, top + side));
             }
         }
         if paint.selected {
