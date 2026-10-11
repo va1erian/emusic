@@ -3,6 +3,7 @@
 //! window, plus the shared text the in-window message dialogs show.
 
 pub mod database_info;
+pub mod folder_picker;
 pub mod properties;
 pub mod tag_editor;
 

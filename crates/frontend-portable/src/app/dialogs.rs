@@ -40,6 +40,17 @@ impl Win32App {
         }
     }
 
+    /// Opens the Add folder browser, unless it is already open. The platform
+    /// dialog is used instead where there is one (`Msg::Settings` routes here
+    /// only when there is not).
+    pub(super) fn open_folder_picker(&mut self, ui: &Ui<Msg>) {
+        if self.folder_picker.as_ref().is_some_and(|w| w.is_open()) {
+            return;
+        }
+        self.folder_picker =
+            crate::dialogs::folder_picker::show(ui, crate::dialogs::folder_picker::start_dir());
+    }
+
     /// Mirrors the shared model's editor status into the open bridge, so the
     /// dialog's poll sees a finished save.
     pub(super) fn mirror_tag_editor_status(&self) {
