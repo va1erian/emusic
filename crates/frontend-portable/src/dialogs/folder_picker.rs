@@ -1,7 +1,7 @@
 //! Settings -> Library -> Add folder, on a host with no platform folder dialog
 //! (LazyOS has none): a small window that browses the folders under a start
-//! folder and hands the chosen one to the library through
-//! [`emusic_ui::folder_picker`], like the platform dialog's thread does.
+//! folder and hands the chosen one to the shell as a `LibraryAddFolder`
+//! command, which records it in the state and the config and tells the library.
 //!
 //! The window lists the current folder's subfolders (`..` first). Activating a
 //! row (double-click, Enter) enters it; **Choose** takes the selected folder, or
@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use emusic_ui::state::Command;
 use xui::xui_core::app::{App, Proxy, Ui, WindowHandle};
 use xui::xui_core::arrange::{button, label, list};
 use xui::xui_core::backend::PlatformSpec;
@@ -186,9 +187,11 @@ impl App for FolderPicker {
                 }
             }
             Msg::Choose => {
-                emusic_ui::folder_picker::deliver(self.candidate());
-                // The library backend reads the choice on its next tick.
-                let _ = self.sink.send(AppMsg::Wake);
+                // Through the shell like the Remove button: it records the
+                // folder in the state and the config, then tells the library.
+                let _ = self.sink.send(AppMsg::Dispatch(Command::LibraryAddFolder(
+                    self.candidate(),
+                )));
                 ui.close();
             }
             Msg::Cancel => ui.close(),
