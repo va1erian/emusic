@@ -60,15 +60,6 @@ pub fn request() {
     });
 }
 
-/// Hands the library a folder chosen by a dialog that is not the platform
-/// picker (a host's in-window browser), as if the picker thread had returned
-/// it. A no-op until [`init`] ran.
-pub fn deliver(path: PathBuf) {
-    if let Some(channel) = CHANNEL.get() {
-        let _ = channel.tx.send(PickResult::Picked(path));
-    }
-}
-
 /// Returns the next folder the user picked, if the shell has installed the
 /// channel and a dialog finished since the last call.
 pub fn try_recv() -> Option<PathBuf> {
