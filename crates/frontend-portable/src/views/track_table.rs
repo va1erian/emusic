@@ -40,8 +40,6 @@ pub(crate) const STAR_COLUMN: usize = 0;
 const COLUMNS_OFFSET: usize = 2;
 /// The star column's width, in design units.
 const STAR_COLUMN_WIDTH: f32 = 24.0;
-/// The play marker column's width, in design units.
-
 /// The data columns in table order: Title first, then the shared `COLUMNS`.
 const DATA_COLUMNS: [ColumnId; 10] = [
     ColumnId::Title,

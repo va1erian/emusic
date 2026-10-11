@@ -55,11 +55,14 @@ impl EmptyState {
     pub(super) fn set_bounds(&self, ui: &Ui<Msg>, area: Rect) {
         let dpi = ui.dpi();
         let px = |value: f32| dip(value).to_px(dpi).value();
-        let (hint_w, hint_h) = (px(HINT_WIDTH), px(HINT_HEIGHT));
-        let (button_w, button_h) = (px(BUTTON_WIDTH), px(BUTTON_HEIGHT));
+        // Never wider than the area, so a narrow window clips nothing.
+        let hint_w = px(HINT_WIDTH).min(area.width());
+        let button_w = px(BUTTON_WIDTH).min(area.width());
+        let (hint_h, button_h) = (px(HINT_HEIGHT), px(BUTTON_HEIGHT));
         let total = hint_h + px(GAP) + button_h;
         let cx = area.left + area.width() / 2;
-        let top = area.top + (area.height() - total) / 2;
+        // And never above it, so a short window keeps the pair off the header.
+        let top = area.top + ((area.height() - total) / 2).max(0);
         ui.apply_moves(&[
             (
                 self.hint.id(),
