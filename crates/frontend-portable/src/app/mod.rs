@@ -124,6 +124,9 @@ pub struct Win32App {
     history_dialog: Option<Dialog<Msg>>,
     /// The open tag editor's session, while its window is up (#376).
     tag_editor: Option<TagEditorSession>,
+    /// The Add folder browser, while it is open (hosts without a platform
+    /// folder dialog).
+    folder_picker: Option<xui::xui_core::app::WindowHandle<crate::dialogs::folder_picker::Msg>>,
 }
 
 impl Win32App {
@@ -231,6 +234,7 @@ impl Win32App {
             shortcuts_dialog: None,
             history_dialog: None,
             tag_editor: None,
+            folder_picker: None,
         };
         app.apply_visibility();
         app.relayout();

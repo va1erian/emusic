@@ -39,6 +39,13 @@ pub fn install(picker: Box<dyn FilePicker>) -> bool {
     INSTALLED.set(picker).is_ok()
 }
 
+/// Whether a dialog can be shown at all: a host [`install`]ed a picker, or
+/// the platform dialogs (`rfd`) are built in. When not, a frontend that has a
+/// browser of its own shows that instead.
+pub fn native_available() -> bool {
+    INSTALLED.get().is_some() || cfg!(feature = "rfd")
+}
+
 /// Asks for an existing folder; `None` when cancelled or unavailable.
 pub fn pick_folder() -> Option<PathBuf> {
     match INSTALLED.get() {

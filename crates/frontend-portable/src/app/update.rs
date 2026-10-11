@@ -165,6 +165,11 @@ impl Win32App {
                 self.shell.dispatch(Command::SetAccent(accent));
                 self.tick_inner();
             }
+            Msg::Settings(crate::views::settings::SettingsMsg::AddFolder)
+                if !emusic_ui::file_picker::native_available() =>
+            {
+                self.open_folder_picker(ui);
+            }
             Msg::Settings(message) => {
                 let mut out = Commands::new();
                 self.settings
