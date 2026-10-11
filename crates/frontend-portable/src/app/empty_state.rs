@@ -59,22 +59,39 @@ impl EmptyState {
         let hint_w = px(HINT_WIDTH).min(area.width());
         let button_w = px(BUTTON_WIDTH).min(area.width());
         let (hint_h, button_h) = (px(HINT_HEIGHT), px(BUTTON_HEIGHT));
-        let total = hint_h + px(GAP) + button_h;
+        let gap = px(GAP);
+        let total = hint_h + gap + button_h;
         let cx = area.left + area.width() / 2;
-        // And never above it, so a short window keeps the pair off the header.
-        let top = area.top + ((area.height() - total) / 2).max(0);
+        // Centred when the pair fits. When it does not, the button comes
+        // first: it sits at the bottom of the area and the line above it is
+        // collapsed rather than drawn over the table header.
+        let (hint_top, button_top) = if total <= area.height() {
+            let top = area.top + (area.height() - total) / 2;
+            (top, top + hint_h + gap)
+        } else {
+            let button_top = (area.bottom - button_h).max(area.top);
+            (button_top - gap - hint_h, button_top)
+        };
+        let hint_fits = hint_top >= area.top;
+        let hint_rect = if hint_fits {
+            Rect::new(
+                cx - hint_w / 2,
+                hint_top,
+                cx + hint_w / 2,
+                hint_top + hint_h,
+            )
+        } else {
+            Rect::new(cx, area.top, cx, area.top)
+        };
         ui.apply_moves(&[
-            (
-                self.hint.id(),
-                Rect::new(cx - hint_w / 2, top, cx + hint_w / 2, top + hint_h),
-            ),
+            (self.hint.id(), hint_rect),
             (
                 self.add.id(),
                 Rect::new(
                     cx - button_w / 2,
-                    top + hint_h + px(GAP),
+                    button_top,
                     cx + button_w / 2,
-                    top + total,
+                    (button_top + button_h).min(area.bottom.max(button_top)),
                 ),
             ),
         ]);
