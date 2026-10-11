@@ -264,7 +264,9 @@ impl Win32App {
         let tick = self.shell.tick(Instant::now());
         self.update_shell();
         self.sync_views(tick.changes);
-        let wake = self.system.cap_wake(tick.next_wake);
+        let wake = self
+            .system
+            .cap_wake(self.following_system(), tick.next_wake);
         self.schedule(wake);
     }
 
