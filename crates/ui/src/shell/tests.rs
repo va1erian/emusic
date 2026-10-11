@@ -104,6 +104,19 @@ fn dispatch_toggle_theme_changes_theme() {
 }
 
 #[test]
+fn choosing_a_scheme_by_hand_stops_following_the_system() {
+    let mut shell = shell();
+    shell.dispatch(Command::SetFollowSystem(true));
+    let tick = shell.tick(Instant::now());
+    assert_eq!(shell.state.follow_system, Some(true));
+    assert!(tick.changes.contains(Changes::THEME));
+
+    shell.dispatch(Command::ToggleTheme);
+    shell.tick(Instant::now());
+    assert_eq!(shell.state.follow_system, Some(false));
+}
+
+#[test]
 fn tick_reports_an_appearance_change() {
     let mut shell = shell();
     shell.state.appearance.zebra = false;

@@ -9,7 +9,6 @@ use emusic_ui::views::{Commands, Ctx};
 
 use super::Win32App;
 use crate::menu;
-use crate::theme::app_theme;
 
 impl Win32App {
     /// Pushes the current shell state into the views and reflects the theme.
@@ -146,10 +145,10 @@ impl Win32App {
             player,
         );
 
-        let look = (self.shell.state.theme, self.shell.state.accent);
+        let look = self.current_look();
         if look != self.applied_look {
             self.applied_look = look;
-            self.ui.set_theme(app_theme(look.0, look.1));
+            self.ui.set_theme(look.resolve());
             // Rasterized row icons paint in their own colours, so the
             // navigator re-tints them when the light/dark theme flips.
             self.navigator.set_dark(self.ui.theme().is_dark);

@@ -93,6 +93,10 @@ pub struct Config {
     pub shuffle: bool,
     /// Colour scheme.
     pub theme: Theme,
+    /// Whether the window follows the host's own colour scheme and accent
+    /// (the desktop's, on LazyOS) instead of `theme` and `accent`. `None`
+    /// leaves it to the host: on when it has a system theme to offer.
+    pub follow_system: Option<bool>,
     /// UI accent colour (preset name or `#rrggbb`).
     pub accent: Accent,
     /// Whether the win32 window's acrylic bands are tinted with the accent
@@ -200,6 +204,7 @@ impl Default for Config {
             repeat_mode: RepeatMode::Off,
             shuffle: false,
             theme: Theme::default(),
+            follow_system: None,
             accent: Accent::default(),
             accent_tint: false,
             accent_tint_strength: default_accent_tint_strength(),
@@ -247,6 +252,7 @@ impl Config {
             repeat_mode: player.repeat_mode(),
             shuffle: player.shuffle(),
             theme: state.theme,
+            follow_system: state.follow_system,
             accent: state.accent,
             accent_tint: state.accent_tint,
             accent_tint_strength: state.accent_tint_strength,
@@ -282,6 +288,7 @@ impl Config {
     /// last view).
     pub fn apply_to_state(&self, state: &mut AppState) {
         state.theme = self.theme;
+        state.follow_system = self.follow_system;
         state.accent = self.accent;
         state.accent_tint = self.accent_tint;
         state.accent_tint_strength = self.accent_tint_strength;

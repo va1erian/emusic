@@ -54,15 +54,15 @@ impl AppearancePage {
         form.add_full(heading.id(), HEADING_HEIGHT);
 
         let theme_label = make(form.ui(), label("Theme")).expect("create theme label");
-        let theme = make(form.ui(), radio_group(&["Dark", "Light"]))
+        let choices = theme_choices();
+        let theme = make(form.ui(), radio_group(&choices))
             .expect("create theme radios")
             .on_select(|index| {
-                let theme = if index == 0 {
-                    Theme::Dark
-                } else {
-                    Theme::Light
+                let message = match choice_at(index) {
+                    ThemeChoice::System => SettingsMsg::SetFollowSystem(true),
+                    ThemeChoice::Own(theme) => SettingsMsg::SetTheme(theme),
                 };
-                Some(Msg::Settings(SettingsMsg::SetTheme(theme)))
+                Some(Msg::Settings(message))
             });
         add_labelled_group(&form, theme_label.id(), &theme.ids());
 
@@ -180,7 +180,12 @@ impl AppearancePage {
 
     /// Pushes the shared state onto the controls.
     pub(super) fn sync(&self, state: &AppState) {
-        self.theme.select(theme_index(state.theme));
+        let following = follows_system(state);
+        self.theme.select(choice_index(if following {
+            ThemeChoice::System
+        } else {
+            ThemeChoice::Own(state.theme)
+        }));
         self.font
             .select(index_of(&FontSize::ALL, state.appearance.font_size));
         self.density
@@ -188,6 +193,8 @@ impl AppearancePage {
         self.zebra.set_checked(state.appearance.zebra);
         self.accent
             .select(accent_swatches::color(state.accent.rgb()));
+        // The host's theme carries its own accent.
+        self.form.ui().set_enabled(self.accent.id(), !following);
         self.tint.set_checked(state.accent_tint);
         self.tint_strength
             .set_value(f64::from(state.accent_tint_strength));
@@ -206,9 +213,17 @@ impl AppearancePage {
     ) -> bool {
         match msg {
             SettingsMsg::SetTheme(theme) => {
+                if follows_system(state) {
+                    out.push(emusic_ui::state::Command::SetFollowSystem(false));
+                }
+                // The stored scheme mirrors the host's while following, so
+                // this lands on the one picked either way.
                 if state.theme != *theme {
                     out.push(emusic_ui::state::Command::ToggleTheme);
                 }
+            }
+            SettingsMsg::SetFollowSystem(on) => {
+                out.push(emusic_ui::state::Command::SetFollowSystem(*on));
             }
             SettingsMsg::SetAccentTint(on) => {
                 out.push(emusic_ui::state::Command::SetAccentTint(*on));
@@ -241,12 +256,57 @@ fn labels<'a>(items: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
     items.collect()
 }
 
-/// The index of the [`Theme`] in the appearance radios.
-fn theme_index(theme: Theme) -> usize {
-    match theme {
-        Theme::Dark => 0,
-        Theme::Light => 1,
+/// One choice in the theme radios.
+#[derive(Clone, Copy, PartialEq)]
+enum ThemeChoice {
+    /// Follow the host's colour scheme and accent.
+    System,
+    /// emusic's own dark or light scheme.
+    Own(Theme),
+}
+
+/// The theme radios' choices, in order: "Follow system" first, on a host
+/// that has a theme to follow.
+fn choices() -> Vec<ThemeChoice> {
+    let mut all = Vec::with_capacity(3);
+    if crate::backend::system_theme_offered() {
+        all.push(ThemeChoice::System);
     }
+    all.push(ThemeChoice::Own(Theme::Dark));
+    all.push(ThemeChoice::Own(Theme::Light));
+    all
+}
+
+/// The radios' labels.
+fn theme_choices() -> Vec<&'static str> {
+    choices()
+        .into_iter()
+        .map(|choice| match choice {
+            ThemeChoice::System => "Follow system",
+            ThemeChoice::Own(Theme::Dark) => "Dark",
+            ThemeChoice::Own(Theme::Light) => "Light",
+        })
+        .collect()
+}
+
+/// The choice at radio `index`; the last one when out of range.
+fn choice_at(index: usize) -> ThemeChoice {
+    let all = choices();
+    all.get(index)
+        .or(all.last())
+        .copied()
+        .unwrap_or(ThemeChoice::Own(Theme::Dark))
+}
+
+/// The radio index of `choice`.
+fn choice_index(choice: ThemeChoice) -> usize {
+    index_of(&choices(), choice)
+}
+
+/// Whether the window follows the host's theme: the host has one, and the
+/// user has not picked a scheme by hand.
+fn follows_system(state: &AppState) -> bool {
+    crate::backend::system_theme_offered() && state.follow_system.unwrap_or(true)
 }
 
 /// The position of `value` in `all`, or 0 when absent.

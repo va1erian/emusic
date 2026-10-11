@@ -26,7 +26,7 @@ use xui::xui_core::geometry::Rect;
 use xui::xui_core::widget::{Dialog, Menu};
 
 use crate::menu;
-use crate::theme::app_theme;
+use crate::theme::Look;
 use crate::views::album_grid::AlbumGridView;
 use crate::views::artists::ArtistsView;
 use crate::views::column_browser::ColumnBrowserView;
@@ -49,6 +49,7 @@ mod dialogs;
 mod layout;
 mod msg;
 mod sync;
+mod system_theme;
 mod update;
 
 pub use msg::Msg;
@@ -102,8 +103,10 @@ pub struct Win32App {
     applied_panels: emusic_ui::state::PanelVisibility,
     /// Column-browser visibility last applied, so toggling it re-lays out.
     applied_browser_visible: bool,
-    /// Theme and accent last applied to the window, so a change re-themes it.
-    applied_look: (emusic_ui::state::Theme, emusic_ui::state::Accent),
+    /// The look last applied to the window, so a change re-themes it.
+    applied_look: Look,
+    /// The host's own theme, when it has one (`app/system_theme.rs`).
+    system: system_theme::SystemTheme,
     /// When the views were last fully synced.
     last_full_sync: Instant,
     /// The central area last laid out, so a context menu opens near it.
@@ -139,8 +142,8 @@ impl Win32App {
         waker: WakerSlot,
         mock: bool,
     ) -> Self {
-        let look = (config.theme, config.accent);
-        ui.set_theme(app_theme(look.0, look.1));
+        let look = Look::Own(config.theme, config.accent);
+        ui.set_theme(look.resolve());
         // The Library settings page adds folders through the off-thread picker;
         // installing its result channel once is a no-op after the first call.
         emusic_ui::folder_picker::init();
@@ -219,6 +222,7 @@ impl Win32App {
             applied_panels,
             applied_browser_visible,
             applied_look: look,
+            system: system_theme::SystemTheme::default(),
             last_full_sync: Instant::now(),
             central_bounds: Rect::default(),
             context_row: None,
@@ -260,7 +264,8 @@ impl Win32App {
         let tick = self.shell.tick(Instant::now());
         self.update_shell();
         self.sync_views(tick.changes);
-        self.schedule(tick.next_wake);
+        let wake = self.system.cap_wake(tick.next_wake);
+        self.schedule(wake);
     }
 
     /// Publishes the current track and transport state to the OS shell, then

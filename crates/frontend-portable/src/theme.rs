@@ -32,6 +32,27 @@ pub fn app_theme(theme: Theme, accent: Accent) -> UiTheme {
     }
 }
 
+/// The colours a window is painted with: emusic's own scheme and accent, or
+/// the host's theme (the desktop's, on LazyOS) as it last reported it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Look {
+    /// The scheme and accent chosen in Settings -> Appearance.
+    Own(Theme, Accent),
+    /// The host's theme, taken as is: it carries the desktop's accent.
+    System(UiTheme),
+}
+
+impl Look {
+    /// The portable theme to paint with.
+    #[must_use]
+    pub fn resolve(self) -> UiTheme {
+        match self {
+            Look::Own(theme, accent) => app_theme(theme, accent),
+            Look::System(theme) => theme,
+        }
+    }
+}
+
 /// Black or white, whichever contrasts more with `background`.
 fn readable_on(background: Color) -> Color {
     let white = Color::rgb(0xFF, 0xFF, 0xFF);
@@ -47,6 +68,16 @@ fn readable_on(background: Color) -> Color {
 mod tests {
     use super::*;
     use emusic_ui::state::Rgb;
+
+    #[test]
+    fn the_system_look_is_the_hosts_theme_untouched() {
+        let host = UiTheme::light();
+        assert_eq!(Look::System(host).resolve(), host);
+        assert_eq!(
+            Look::Own(Theme::Dark, Accent::default()).resolve(),
+            app_theme(Theme::Dark, Accent::default())
+        );
+    }
 
     #[test]
     fn accent_replaces_the_windows_blue() {
