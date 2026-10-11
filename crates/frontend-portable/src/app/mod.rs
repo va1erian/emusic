@@ -46,6 +46,7 @@ use crate::waker::UiWaker;
 use crate::window::WindowChrome;
 
 mod dialogs;
+mod empty_state;
 mod layout;
 mod msg;
 mod sync;
@@ -127,6 +128,9 @@ pub struct Win32App {
     /// The Add folder browser, while it is open (hosts without a platform
     /// folder dialog).
     folder_picker: Option<xui::xui_core::app::WindowHandle<crate::dialogs::folder_picker::Msg>>,
+    /// The Music view's "add a folder" guidance, shown while the library is
+    /// empty.
+    empty: empty_state::EmptyState,
 }
 
 impl Win32App {
@@ -177,6 +181,7 @@ impl Win32App {
             shell.player.replace_and_play(&startup_files, 0);
         }
 
+        let empty = empty_state::EmptyState::new(ui);
         let menu = menu::bar(ui, &shell.state);
         let context_menu = menu::track_context(ui);
         let queue_context = menu::queue_context(ui, || Msg::QueueRemove);
@@ -235,6 +240,7 @@ impl Win32App {
             history_dialog: None,
             tag_editor: None,
             folder_picker: None,
+            empty,
         };
         app.apply_visibility();
         app.relayout();

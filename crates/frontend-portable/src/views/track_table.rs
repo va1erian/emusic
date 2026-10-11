@@ -22,8 +22,9 @@ use emusic_ui::views::track_table::columns::{self, ColumnId};
 use emusic_ui::views::track_table::sort::{self, SortState};
 use xui::xui_core::app::Ui;
 use xui::xui_core::geometry::{Point, Rect};
+use xui::xui_core::icon::IconRef;
 use xui::xui_core::units::dip;
-use xui::xui_core::widget::{Column, Fill, ListModel, ListView, SortDirection};
+use xui::xui_core::widget::{Column, Fill, Glyph, ListModel, ListView, SortDirection};
 
 use crate::app::Msg;
 use crate::make::make;
@@ -56,9 +57,17 @@ const DATA_COLUMNS: [ColumnId; 10] = [
     ColumnId::File,
 ];
 
-/// The star cell's glyph: a filled star when starred, an outline otherwise.
-pub(crate) fn star_glyph(starred: bool) -> &'static str {
-    if starred { "\u{2605}" } else { "\u{2606}" }
+/// The row's leading icon: a play triangle on the playing track, else a
+/// filled star when starred and an outline star otherwise. The UI font has
+/// none of these characters, so they cannot be cell text.
+pub(crate) fn row_icon(playing: bool, starred: bool) -> Glyph {
+    if playing {
+        Glyph::Play
+    } else if starred {
+        Glyph::StarFilled
+    } else {
+        Glyph::Star
+    }
 }
 
 /// A context-menu action on a track row.
@@ -121,19 +130,19 @@ impl ListModel for MusicModel {
     fn cell(&self, row: usize, column: usize) -> Option<&str> {
         let row = self.rows.get(row)?;
         Some(match column {
-            STAR_COLUMN => star_glyph(row.starred.get()),
-            1 => {
-                if self.playing.get() == Some(row.track.id) {
-                    "\u{25B6}"
-                } else {
-                    ""
-                }
-            }
+            // The star and the playing marker are the row's icon.
+            STAR_COLUMN | 1 => "",
             _ => row
                 .cells
                 .get(column - COLUMNS_OFFSET)
                 .map_or("", String::as_str),
         })
+    }
+
+    fn icon(&self, row: usize) -> Option<IconRef> {
+        let row = self.rows.get(row)?;
+        let playing = self.playing.get() == Some(row.track.id);
+        Some(row_icon(playing, row.starred.get()).into())
     }
 }
 

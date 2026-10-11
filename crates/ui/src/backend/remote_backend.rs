@@ -66,7 +66,7 @@ impl RemoteAudioBackend {
         // Network indicator: shown in the status bar while the file downloads,
         // then left as the current track's source until the next track opens.
         let _ = self.updates.send(Update::Network(Some(format!(
-            "⇅ Streaming \"{}\" from {}…",
+            "Streaming \"{}\" from {}…",
             view.display_title(),
             server.name
         ))));
@@ -77,7 +77,7 @@ impl RemoteAudioBackend {
         match result {
             Ok(destination) => {
                 let _ = self.updates.send(Update::Network(Some(format!(
-                    "⇅ \"{}\" from {}",
+                    "\"{}\" from {}",
                     view.display_title(),
                     server.name
                 ))));

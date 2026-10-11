@@ -74,6 +74,7 @@ impl Win32App {
             .set_bounds(Rect::new(central_right, top, client.right, bottom));
         let central = Rect::new(central_left, top, central_right, bottom);
         self.central_bounds = central;
+        self.empty.set_bounds(&self.ui, central);
         match self.shell.state.view {
             View::Music => {
                 // The browser strip sits above the header + table; hidden, it

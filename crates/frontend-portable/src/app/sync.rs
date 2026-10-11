@@ -145,6 +145,12 @@ impl Win32App {
             player,
         );
 
+        // Guidance over the empty Music view: no folder and no track yet.
+        let empty = view == View::Music
+            && self.shell.state.library_folders.is_empty()
+            && self.shell.library.as_ref().tracks().is_empty();
+        self.empty.set_visible(empty);
+
         let look = self.current_look();
         if look != self.applied_look {
             self.applied_look = look;
