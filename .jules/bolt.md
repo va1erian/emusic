@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - ASCII Fast Path for Natural Sort & Enum Size Caveats
+**Learning:** `ac.to_lowercase()` constructs Unicode lowering iterators (`ToLowercase`) on every character comparison during natural-order sorting (`natural_compare`). Fast-pathing `ac.is_ascii()` with `to_ascii_lowercase()` and using direct byte subtraction `c as u8 - b'0'` for digits eliminates Unicode iterator overhead during O(N log N) sorts. Additionally, unboxing `memchr::memmem::Finder` in `PreparedTerm` increased enum memory size and stack frame footprint, regressing inner loop search performance.
+**Action:** Use `char::is_ascii()` fast paths with `to_ascii_lowercase()` in string comparisons, and keep `PreparedTerm` variants compact by keeping large structs boxed.
