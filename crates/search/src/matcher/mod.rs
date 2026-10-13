@@ -175,7 +175,7 @@ impl<'q> PreparedQuery<'q> {
             .iter()
             .map(|term| match &term.body {
                 TermBody::Text(text) => PreparedTerm::Text {
-                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
+                    finder: memchr::memmem::Finder::new(text.text()),
                     field: None,
                     negated: term.negated,
                 },
@@ -183,7 +183,7 @@ impl<'q> PreparedQuery<'q> {
                     field,
                     value: FieldValue::Text(text),
                 } => PreparedTerm::Text {
-                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
+                    finder: memchr::memmem::Finder::new(text.text()),
                     field: Some(*field),
                     negated: term.negated,
                 },
@@ -204,10 +204,14 @@ impl<'q> PreparedQuery<'q> {
     }
 }
 
+// Optimization: Keep `memchr::memmem::Finder` inline in `PreparedTerm` to avoid heap pointer
+// indirection during inner search loops over thousands of candidates. `PreparedQuery` holds
+// only a handful of terms in a `Vec`, so the larger enum size is an advantageous trade-off.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum PreparedTerm<'q> {
     Text {
-        finder: Box<memchr::memmem::Finder<'q>>,
+        finder: memchr::memmem::Finder<'q>,
         field: Option<Field>,
         negated: bool,
     },
@@ -241,18 +245,13 @@ fn track_matches<S: PlayStats>(
                 finder,
                 field: None,
                 negated,
-            } => (
-                finder.find(entry.haystack.full().as_bytes()).is_some(),
-                *negated,
-            ),
+            } => (finder.find(entry.haystack.full_bytes()).is_some(), *negated),
             PreparedTerm::Text {
                 finder,
                 field: Some(field),
                 negated,
             } => (
-                finder
-                    .find(entry.haystack.field(*field).as_bytes())
-                    .is_some(),
+                finder.find(entry.haystack.field_bytes(*field)).is_some(),
                 *negated,
             ),
             PreparedTerm::Numeric {

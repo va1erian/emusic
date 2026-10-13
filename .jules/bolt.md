@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Inline memmem Finder in PreparedTerm
+**Learning:** Storing `memchr::memmem::Finder` inside `Box` in `PreparedTerm` introduces pointer dereferencing on every candidate track evaluation in `search_prepared`. Keeping `Finder` stored inline in `PreparedTerm` yields an ~8% search speedup across 100k tracks by eliminating heap indirection, at the cost of a larger enum size (`clippy::large_enum_variant` allowed for search query terms).
+**Action:** Store `memchr::memmem::Finder` directly inline in `PreparedTerm` and bypass UTF-8 slice boundary checks using byte-based `Haystack` accessors during candidate matching.
