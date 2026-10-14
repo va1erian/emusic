@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Positional Column Indexing in SQLite Row Mapping
+**Learning:** Calling `row.get("column_name")` in `rusqlite` performs a linear string comparison against all statement columns for every field on every row. For wide tables (e.g. 23 columns), mapping 10k tracks executes over 2.5 million string comparisons.
+**Action:** Use 0-based positional indices (`row.get(0)`, `row.get(1)`, ...) in `rusqlite` row mappers for direct O(1) column array accesses.
