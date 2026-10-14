@@ -216,13 +216,16 @@ fn constant_time_eq(a: Option<&[u8]>, b: Option<&[u8]>) -> bool {
 }
 
 fn row_to_device(row: &rusqlite::Row<'_>) -> rusqlite::Result<Device> {
+    // Optimization: Access columns by 0-based positional index matching query SELECT
+    // projections (`id, name, public_key, paired_at, last_seen, is_revoked`) instead
+    // of string column names (`row.get("id")`), avoiding string column searches.
     Ok(Device {
-        id: row.get("id")?,
-        name: row.get("name")?,
-        public_key: row.get("public_key")?,
-        paired_at: row.get("paired_at")?,
-        last_seen: row.get("last_seen")?,
-        is_revoked: row.get::<_, i64>("is_revoked")? != 0,
+        id: row.get(0)?,
+        name: row.get(1)?,
+        public_key: row.get(2)?,
+        paired_at: row.get(3)?,
+        last_seen: row.get(4)?,
+        is_revoked: row.get::<_, i64>(5)? != 0,
     })
 }
 
