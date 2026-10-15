@@ -130,22 +130,28 @@ impl Builder {
         let start = self.text.len();
         if let Some(value) = value {
             // Optimization: For ASCII strings (the vast majority of track field values),
-            // lower-case and sanitize directly into `self.text` byte-by-byte without allocating
-            // a temporary String from `normalize_text`.
+            // append directly via `push_str` and lowercase in-place with `make_ascii_lowercase()`.
+            // This avoids byte-by-byte char conversions, UTF-8 encoding checks, and per-char bounds checks.
             if value.is_ascii() {
-                self.text.reserve(value.len());
-                for &b in value.as_bytes() {
-                    let b_lower = b.to_ascii_lowercase();
-                    if b_lower == FIELD_SEP as u8 {
-                        self.text.push(' ');
-                    } else {
-                        self.text.push(b_lower as char);
+                if value.as_bytes().contains(&(FIELD_SEP as u8)) {
+                    for b in value.bytes() {
+                        let b_lower = b.to_ascii_lowercase();
+                        if b_lower == FIELD_SEP as u8 {
+                            self.text.push(' ');
+                        } else {
+                            self.text.push(b_lower as char);
+                        }
                     }
+                } else {
+                    let val_start = self.text.len();
+                    self.text.push_str(value);
+                    self.text[val_start..].make_ascii_lowercase();
                 }
             } else {
                 let normalized = normalize_text(value);
                 if normalized.contains(FIELD_SEP) {
-                    self.text.push_str(&normalized.replace(FIELD_SEP, " "));
+                    let sanitized = normalized.replace(FIELD_SEP, " ");
+                    self.text.push_str(&sanitized);
                 } else {
                     self.text.push_str(&normalized);
                 }
