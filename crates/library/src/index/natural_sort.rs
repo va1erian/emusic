@@ -16,6 +16,68 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
     let a = strip_the(a);
     let b = strip_the(b);
 
+    // Optimization: For pure ASCII inputs (the vast majority of track titles, artists,
+    // and album names), iterate over raw bytes (`&[u8]`) and perform bitwise ASCII lowercasing.
+    // This avoids UTF-8 `char` iterator decoding overhead and `std::char::ToLowercase` unicode table lookups.
+    if a.is_ascii() && b.is_ascii() {
+        return natural_compare_ascii(a.as_bytes(), b.as_bytes());
+    }
+
+    natural_compare_unicode(a, b)
+}
+
+fn natural_compare_ascii(a: &[u8], b: &[u8]) -> Ordering {
+    let mut a_bytes = a.iter().copied().peekable();
+    let mut b_bytes = b.iter().copied().peekable();
+
+    loop {
+        match (a_bytes.peek().copied(), b_bytes.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(ab), Some(bb)) => {
+                if ab.is_ascii_digit() && bb.is_ascii_digit() {
+                    let a_num = take_number_ascii(&mut a_bytes);
+                    let b_num = take_number_ascii(&mut b_bytes);
+                    match a_num.cmp(&b_num) {
+                        Ordering::Equal => continue,
+                        other => return other,
+                    }
+                }
+
+                let ab_lower = ab.to_ascii_lowercase();
+                let bb_lower = bb.to_ascii_lowercase();
+                match ab_lower.cmp(&bb_lower) {
+                    Ordering::Equal => {
+                        a_bytes.next();
+                        b_bytes.next();
+                        continue;
+                    }
+                    other => return other,
+                }
+            }
+        }
+    }
+}
+
+fn take_number_ascii<I>(bytes: &mut std::iter::Peekable<I>) -> u64
+where
+    I: Iterator<Item = u8>,
+{
+    let mut value: u64 = 0;
+    while let Some(&b) = bytes.peek() {
+        if !b.is_ascii_digit() {
+            break;
+        }
+        value = value
+            .saturating_mul(10)
+            .saturating_add((b - b'0') as u64);
+        bytes.next();
+    }
+    value
+}
+
+fn natural_compare_unicode(a: &str, b: &str) -> Ordering {
     let mut a_chars = a.chars().peekable();
     let mut b_chars = b.chars().peekable();
 
@@ -26,16 +88,24 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
             (Some(_), None) => return Ordering::Greater,
             (Some(ac), Some(bc)) => {
                 if ac.is_ascii_digit() && bc.is_ascii_digit() {
-                    let a_num = take_number(&mut a_chars);
-                    let b_num = take_number(&mut b_chars);
+                    let a_num = take_number_unicode(&mut a_chars);
+                    let b_num = take_number_unicode(&mut b_chars);
                     match a_num.cmp(&b_num) {
                         Ordering::Equal => continue,
                         other => return other,
                     }
                 }
 
-                let ac_lower = ac.to_lowercase().next().unwrap_or(ac);
-                let bc_lower = bc.to_lowercase().next().unwrap_or(bc);
+                let ac_lower = if ac.is_ascii() {
+                    ac.to_ascii_lowercase()
+                } else {
+                    ac.to_lowercase().next().unwrap_or(ac)
+                };
+                let bc_lower = if bc.is_ascii() {
+                    bc.to_ascii_lowercase()
+                } else {
+                    bc.to_lowercase().next().unwrap_or(bc)
+                };
                 match ac_lower.cmp(&bc_lower) {
                     Ordering::Equal => {
                         a_chars.next();
@@ -59,7 +129,7 @@ fn strip_the(s: &str) -> &str {
     }
 }
 
-fn take_number<I>(chars: &mut std::iter::Peekable<I>) -> u64
+fn take_number_unicode<I>(chars: &mut std::iter::Peekable<I>) -> u64
 where
     I: Iterator<Item = char>,
 {
@@ -144,5 +214,19 @@ mod tests {
     #[test]
     fn leading_zeroes_compare_equal() {
         assert_eq!(natural_compare("Mix 07", "Mix 7"), Ordering::Equal);
+    }
+
+    #[test]
+    fn compares_ascii_and_unicode_mixtures() {
+        assert_eq!(natural_compare("Café 1", "Café 2"), Ordering::Less);
+        assert_eq!(natural_compare("café 2", "Café 10"), Ordering::Less);
+        assert_eq!(natural_compare("Mísia", "Misia"), Ordering::Greater);
+    }
+
+    #[test]
+    fn natural_key_ord_round_trips() {
+        let mut keys = vec![natural_key("Track 10"), natural_key("Track 2")];
+        keys.sort();
+        assert_eq!(keys, vec![natural_key("Track 2"), natural_key("Track 10")]);
     }
 }
