@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - ASCII Byte-Slice Fast Path in Natural String Comparison
+**Learning:** In natural-order string comparisons (`natural_compare`), `char`-by-`char` iteration and `to_lowercase()` trigger UTF-8 sequence decoding and Unicode table lookups for every character pair during sorting. For pure ASCII string inputs, checking `a.is_ascii() && b.is_ascii()` allows using raw byte slice iterators (`&[u8]`) and bitwise ASCII lowercasing, completely bypassing UTF-8 decoding and Unicode table lookups in $O(N \log N)$ sort loops.
+**Action:** Fast-path pure ASCII inputs using byte slice iterators and `to_ascii_lowercase()` in natural string comparison functions.
