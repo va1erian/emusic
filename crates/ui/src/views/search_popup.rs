@@ -209,24 +209,25 @@ fn collect_rows(
             }),
     );
 
-    let matched: Vec<u64> = library
-        .tracks()
-        .iter()
-        .filter(|t| track_match(t.id))
-        .map(|t| t.id)
-        .collect();
+    // Optimization: Collect all matching track IDs and capped display rows in a
+    // single pass over `library.tracks()`, avoiding evaluating `track_match` twice
+    // for every track in the library.
+    let mut track_rows = Vec::with_capacity(SECTION_LIMIT);
+    let mut matched = Vec::new();
 
-    rows.extend(
-        library
-            .tracks()
-            .iter()
-            .filter(|t| track_match(t.id))
-            .take(SECTION_LIMIT)
-            .map(|t| SearchPopupRow {
-                item: SearchPopupItem::Track(t.id),
-                label: format!("{} — {}", t.title, t.artist),
-            }),
-    );
+    for t in library.tracks() {
+        if track_match(t.id) {
+            matched.push(t.id);
+            if track_rows.len() < SECTION_LIMIT {
+                track_rows.push(SearchPopupRow {
+                    item: SearchPopupItem::Track(t.id),
+                    label: format!("{} — {}", t.title, t.artist),
+                });
+            }
+        }
+    }
+
+    rows.extend(track_rows);
 
     (rows, matched)
 }

@@ -2,12 +2,13 @@
 //! index without blocking the UI thread.
 
 use std::collections::HashSet;
+use std::hash::BuildHasherDefault;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use emusic_core::TrackId;
-use emusic_search::matcher::PreparedQuery;
+use emusic_search::matcher::{PreparedQuery, TrackIdHasher};
 use emusic_search::parse;
 
 use crate::library_api::TrackInfo;
@@ -46,7 +47,8 @@ pub struct SearchEngine {
     last_signature: (usize, Option<u64>, Option<u64>),
     last_query: String,
     /// `None` means "no query active", i.e. every track matches.
-    matches: Option<Arc<HashSet<TrackId>>>,
+    /// Fast `TrackIdHasher` avoids SipHash overhead on 64-bit integer keys.
+    matches: Option<Arc<HashSet<TrackId, BuildHasherDefault<TrackIdHasher>>>>,
     pending: bool,
     /// Bumped whenever the matching set changes (a query answered, or the
     /// query cleared), so views can key their filtered rows on it.
