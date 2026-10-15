@@ -69,9 +69,7 @@ where
         if !b.is_ascii_digit() {
             break;
         }
-        value = value
-            .saturating_mul(10)
-            .saturating_add((b - b'0') as u64);
+        value = value.saturating_mul(10).saturating_add((b - b'0') as u64);
         bytes.next();
     }
     value
