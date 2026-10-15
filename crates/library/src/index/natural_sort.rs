@@ -34,8 +34,18 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
                     }
                 }
 
-                let ac_lower = ac.to_lowercase().next().unwrap_or(ac);
-                let bc_lower = bc.to_lowercase().next().unwrap_or(bc);
+                // Optimization: For ASCII characters (the vast majority of string comparisons in
+                // music library metadata), lower-case directly to avoid creating ToLowercase iterators.
+                let ac_lower = if ac.is_ascii() {
+                    ac.to_ascii_lowercase()
+                } else {
+                    ac.to_lowercase().next().unwrap_or(ac)
+                };
+                let bc_lower = if bc.is_ascii() {
+                    bc.to_ascii_lowercase()
+                } else {
+                    bc.to_lowercase().next().unwrap_or(bc)
+                };
                 match ac_lower.cmp(&bc_lower) {
                     Ordering::Equal => {
                         a_chars.next();
@@ -68,9 +78,10 @@ where
         if !c.is_ascii_digit() {
             break;
         }
+        // Optimization: `c.is_ascii_digit()` was checked above, so byte arithmetic is safe and fast.
         value = value
             .saturating_mul(10)
-            .saturating_add(c.to_digit(10).unwrap_or(0) as u64);
+            .saturating_add((c as u8 - b'0') as u64);
         chars.next();
     }
     value
