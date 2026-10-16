@@ -16,6 +16,10 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
     let a = strip_the(a);
     let b = strip_the(b);
 
+    if a.is_ascii() && b.is_ascii() {
+        return natural_compare_ascii(a, b);
+    }
+
     let mut a_chars = a.chars().peekable();
     let mut b_chars = b.chars().peekable();
 
@@ -34,8 +38,16 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
                     }
                 }
 
-                let ac_lower = ac.to_lowercase().next().unwrap_or(ac);
-                let bc_lower = bc.to_lowercase().next().unwrap_or(bc);
+                let ac_lower = if ac.is_ascii() {
+                    ac.to_ascii_lowercase()
+                } else {
+                    ac.to_lowercase().next().unwrap_or(ac)
+                };
+                let bc_lower = if bc.is_ascii() {
+                    bc.to_ascii_lowercase()
+                } else {
+                    bc.to_lowercase().next().unwrap_or(bc)
+                };
                 match ac_lower.cmp(&bc_lower) {
                     Ordering::Equal => {
                         a_chars.next();
@@ -47,6 +59,56 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
             }
         }
     }
+}
+
+fn natural_compare_ascii(a: &str, b: &str) -> Ordering {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let mut i = 0;
+    let mut j = 0;
+
+    while i < a_bytes.len() && j < b_bytes.len() {
+        let ba = a_bytes[i];
+        let bb = b_bytes[j];
+
+        if ba.is_ascii_digit() && bb.is_ascii_digit() {
+            let (a_num, advance_a) = take_number_ascii(&a_bytes[i..]);
+            let (b_num, advance_b) = take_number_ascii(&b_bytes[j..]);
+            match a_num.cmp(&b_num) {
+                Ordering::Equal => {
+                    i += advance_a;
+                    j += advance_b;
+                    continue;
+                }
+                other => return other,
+            }
+        }
+
+        let ca = ba.to_ascii_lowercase();
+        let cb = bb.to_ascii_lowercase();
+        match ca.cmp(&cb) {
+            Ordering::Equal => {
+                i += 1;
+                j += 1;
+            }
+            other => return other,
+        }
+    }
+
+    (a_bytes.len() - i).cmp(&(b_bytes.len() - j))
+}
+
+fn take_number_ascii(bytes: &[u8]) -> (u64, usize) {
+    let mut val: u64 = 0;
+    let mut count = 0;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            break;
+        }
+        val = val.saturating_mul(10).saturating_add((b - b'0') as u64);
+        count += 1;
+    }
+    (val, count)
 }
 
 fn strip_the(s: &str) -> &str {
