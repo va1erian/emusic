@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Set Union and Subset Checks via Intersection Cardinality
+**Learning:** Calling `HashSet::union` and `HashSet::is_subset` repeatedly in candidate evaluation loops triggers unnecessary set iterations and hash table lookups. Set union cardinality can be computed in O(1) via Inclusion-Exclusion (`|A| + |B| - shared`), and `A` is a subset of `B` if and only if `shared == |A|`.
+**Action:** Replace `union().count()` and `is_subset()` calls with cardinality math on the intersection count when scoring candidate token sets.

@@ -76,15 +76,17 @@ fn similarity(a: &str, b: &str) -> f32 {
     let a_tokens = tokens(&a);
     let b_tokens = tokens(&b);
     let shared = a_tokens.intersection(&b_tokens).count() as f32;
-    let union = a_tokens.union(&b_tokens).count() as f32;
+
+    // Optimization: Compute set union via Inclusion-Exclusion Principle (|A U B| = |A| + |B| - |A ∩ B|).
+    // This avoids iterating `b_tokens` and performing redundant hash lookups in `a_tokens.union(&b_tokens)`.
+    let union = (a_tokens.len() + b_tokens.len()) as f32 - shared;
     let jaccard = if union > 0.0 { shared / union } else { 0.0 };
 
-    let (shorter, longer) = if a_tokens.len() <= b_tokens.len() {
-        (&a_tokens, &b_tokens)
-    } else {
-        (&b_tokens, &a_tokens)
-    };
-    if !shorter.is_empty() && shorter.is_subset(longer) {
+    // Optimization: The shorter set is a subset of the longer set if and only if all of its elements
+    // are present in the intersection (|shorter ∩ longer| == |shorter|).
+    // Checking `shared == shorter.len()` avoids re-iterating `shorter` and looking up each token in `longer`.
+    let shorter_len = a_tokens.len().min(b_tokens.len());
+    if shorter_len > 0 && shared as usize == shorter_len {
         jaccard.max(0.9)
     } else {
         jaccard
@@ -107,15 +109,32 @@ fn duration_similarity(query: Duration, candidate: Duration) -> f32 {
 fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut pending_space = false;
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            if pending_space && !out.is_empty() {
-                out.push(' ');
+
+    // Optimization: Fast-path pure ASCII inputs (the overwhelming majority of track/artist metadata)
+    // to lower-case directly without allocating `ToLowercase` iterators per character.
+    if text.is_ascii() {
+        for &b in text.as_bytes() {
+            if b.is_ascii_alphanumeric() {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.push(b.to_ascii_lowercase() as char);
+            } else {
+                pending_space = true;
             }
-            pending_space = false;
-            out.extend(ch.to_lowercase());
-        } else {
-            pending_space = true;
+        }
+    } else {
+        for ch in text.chars() {
+            if ch.is_alphanumeric() {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.extend(ch.to_lowercase());
+            } else {
+                pending_space = true;
+            }
         }
     }
     out
