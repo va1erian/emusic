@@ -175,7 +175,10 @@ impl<'q> PreparedQuery<'q> {
             .iter()
             .map(|term| match &term.body {
                 TermBody::Text(text) => PreparedTerm::Text {
-                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
+                    // Optimization: Store `Finder` inline rather than boxed to eliminate
+                    // per-term heap allocations during query preparation and pointer indirection
+                    // on every candidate track evaluation.
+                    finder: memchr::memmem::Finder::new(text.text()),
                     field: None,
                     negated: term.negated,
                 },
@@ -183,7 +186,7 @@ impl<'q> PreparedQuery<'q> {
                     field,
                     value: FieldValue::Text(text),
                 } => PreparedTerm::Text {
-                    finder: Box::new(memchr::memmem::Finder::new(text.text())),
+                    finder: memchr::memmem::Finder::new(text.text()),
                     field: Some(*field),
                     negated: term.negated,
                 },
@@ -205,9 +208,10 @@ impl<'q> PreparedQuery<'q> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum PreparedTerm<'q> {
     Text {
-        finder: Box<memchr::memmem::Finder<'q>>,
+        finder: memchr::memmem::Finder<'q>,
         field: Option<Field>,
         negated: bool,
     },
