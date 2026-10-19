@@ -99,13 +99,14 @@ pub fn walk_root(root: &Path) -> RootWalk {
 /// The path of `path` relative to `root`, with forward slashes.
 fn relative_slash_path(root: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
-    Some(
-        relative
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("/"),
-    )
+    // Optimization: Avoid allocating a `Vec<Cow<str>>` of path components per file.
+    // Converting directly to string and normalizing backslashes requires only 1 allocation per path.
+    let s = relative.to_string_lossy();
+    if s.contains('\\') {
+        Some(s.replace('\\', "/"))
+    } else {
+        Some(s.into_owned())
+    }
 }
 
 fn mtime_of(metadata: &std::fs::Metadata) -> i64 {

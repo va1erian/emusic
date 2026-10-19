@@ -220,11 +220,30 @@ enum PreparedTerm<'q> {
 
 impl<'q> PreparedTerm<'q> {
     /// Relative evaluation cost: lower is cheaper.
+    /// Positive filtering terms evaluate before negated terms because positive
+    /// filters short-circuit non-matching tracks early, whereas negated terms match
+    /// almost all tracks and rarely short-circuit.
     fn cost(&self) -> u8 {
+        let (base, negated) = match self {
+            Self::Numeric { negated, .. } => (0, *negated),
+            Self::Text {
+                field: Some(_),
+                negated,
+                ..
+            } => (1, *negated),
+            Self::Text {
+                field: None,
+                negated,
+                ..
+            } => (2, *negated),
+        };
+        if negated { base + 10 } else { base }
+    }
+
+    #[inline]
+    fn is_negated(&self) -> bool {
         match self {
-            Self::Numeric { .. } => 0,
-            Self::Text { field: Some(_), .. } => 1,
-            Self::Text { field: None, .. } => 2,
+            Self::Text { negated, .. } | Self::Numeric { negated, .. } => *negated,
         }
     }
 }
@@ -236,36 +255,24 @@ fn track_matches<S: PlayStats>(
     stats: &S,
 ) -> bool {
     for term in prepared {
-        let (matched, negated) = match term {
+        let is_match = match term {
             PreparedTerm::Text {
                 finder,
                 field: None,
-                negated,
-            } => (
-                finder.find(entry.haystack.full().as_bytes()).is_some(),
-                *negated,
-            ),
+                ..
+            } => finder.find(entry.haystack.full_bytes()).is_some(),
             PreparedTerm::Text {
                 finder,
                 field: Some(field),
-                negated,
-            } => (
-                finder
-                    .find(entry.haystack.field(*field).as_bytes())
-                    .is_some(),
-                *negated,
-            ),
-            PreparedTerm::Numeric {
-                spec,
-                field,
-                negated,
-            } => {
+                ..
+            } => finder.find(entry.haystack.field_bytes(*field)).is_some(),
+            PreparedTerm::Numeric { spec, field, .. } => {
                 let value = numeric_value(*field, &entry.track, id, stats);
-                (numeric::matches(*spec, value), *negated)
+                numeric::matches(*spec, value)
             }
         };
 
-        if matched == negated {
+        if is_match == term.is_negated() {
             return false;
         }
     }

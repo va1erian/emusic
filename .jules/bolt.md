@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Avoid Enum Bloat from Storing Large Structs Inline
+**Learning:** `memchr::memmem::Finder` is a large struct (~160-200 bytes). Storing it inline inside an enum within `Vec<PreparedTerm>` inflated the enum size from 24 bytes to ~176 bytes. This bloated memory layout degraded CPU L1/L2 cache locality during candidate search loops, outweighing the benefit of avoiding heap allocation.
+**Action:** Keep large search structures boxed inside enums stored in vectors to preserve compact memory layout and cache efficiency during tight iteration loops.

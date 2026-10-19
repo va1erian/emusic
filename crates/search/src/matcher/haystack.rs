@@ -62,11 +62,26 @@ impl Haystack {
         &self.text
     }
 
+    /// The full folded text bytes, searchable for unscoped terms.
+    #[inline]
+    #[must_use]
+    pub fn full_bytes(&self) -> &[u8] {
+        self.text.as_bytes()
+    }
+
     /// The folded text for a single field, if that field is textual.
     #[must_use]
     pub fn field(&self, field: Field) -> &str {
         let range = self.offsets.get(field);
         &self.text[range]
+    }
+
+    /// The folded text bytes for a single field.
+    #[inline]
+    #[must_use]
+    pub fn field_bytes(&self, field: Field) -> &[u8] {
+        let range = self.offsets.get(field);
+        &self.text.as_bytes()[range]
     }
 }
 
