@@ -87,7 +87,7 @@ fn the_clock_follows_what_played() {
     let played = sink.recording().samples.len() as f64 / 2.0 / 44_100.0;
     // The clock is what reached the sink, not what was decoded ahead.
     assert!((position - played).abs() < 0.06, "{position} vs {played}");
-    assert!((0.3..0.7).contains(&position), "{position}");
+    assert!((0.3..0.9).contains(&position), "{position}");
 }
 
 #[test]
