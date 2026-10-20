@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Fast ASCII Lowercasing & Equality Short-Circuiting in Natural Sort
+**Learning:** `char::to_lowercase()` constructs `ToLowercase` iterators and performs Unicode table lookups for every char comparison. For natural string sorting, short-circuiting on `ac == bc` bypasses lowercasing, and `to_ascii_lowercase()` provides a fast-path for ASCII chars. However, digit checks (`is_ascii_digit()`) MUST be evaluated before `ac == bc` short-circuiting so that numeric values of different length sequences (e.g. "012" vs "0120") are parsed and compared correctly.
+**Action:** In natural-order string comparison, run digit sequence matching first, then short-circuit character equality (`ac == bc`), and use `to_ascii_lowercase()` for ASCII characters.

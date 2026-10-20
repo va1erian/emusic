@@ -25,6 +25,8 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
             (Some(ac), Some(bc)) => {
+                // Evaluate numbers first so different digit sequence lengths
+                // compare numerically (e.g., "012" vs "0120").
                 if ac.is_ascii_digit() && bc.is_ascii_digit() {
                     let a_num = take_number(&mut a_chars);
                     let b_num = take_number(&mut b_chars);
@@ -34,8 +36,28 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
                     }
                 }
 
-                let ac_lower = ac.to_lowercase().next().unwrap_or(ac);
-                let bc_lower = bc.to_lowercase().next().unwrap_or(bc);
+                // Optimization: If non-digit characters are byte-for-byte identical,
+                // bypass lowercasing and advance both iterators immediately.
+                if ac == bc {
+                    a_chars.next();
+                    b_chars.next();
+                    continue;
+                }
+
+                // Optimization: For ASCII characters (the vast majority in track metadata),
+                // lowercasing with `to_ascii_lowercase()` avoids creating `ToLowercase` iterator structs
+                // and Unicode lookup tables.
+                let ac_lower = if ac.is_ascii() {
+                    ac.to_ascii_lowercase()
+                } else {
+                    ac.to_lowercase().next().unwrap_or(ac)
+                };
+                let bc_lower = if bc.is_ascii() {
+                    bc.to_ascii_lowercase()
+                } else {
+                    bc.to_lowercase().next().unwrap_or(bc)
+                };
+
                 match ac_lower.cmp(&bc_lower) {
                     Ordering::Equal => {
                         a_chars.next();
@@ -68,9 +90,10 @@ where
         if !c.is_ascii_digit() {
             break;
         }
+        // Optimization: Direct ASCII byte subtraction instead of `c.to_digit(10).unwrap_or(0)`.
         value = value
             .saturating_mul(10)
-            .saturating_add(c.to_digit(10).unwrap_or(0) as u64);
+            .saturating_add((c as u8 - b'0') as u64);
         chars.next();
     }
     value
