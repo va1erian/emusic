@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - ASCII Byte Slice Fast Path for Natural Sort Comparisons
+**Learning:** `natural_compare` is called O(N log N) times during library indexing when sorting artists, albums, tracks, directories, and genres. `a.chars().peekable()` incurs UTF-8 decoding overhead, `Peekable` caching state overhead, and Unicode lowercasing table lookups per character comparison. Fast-pathing pure ASCII inputs (`a.is_ascii() && b.is_ascii()`) via raw `u8` byte comparison eliminates UTF-8 decoding and Unicode lowercasing overhead entirely.
+**Action:** Check `a.is_ascii() && b.is_ascii()` in natural sorting comparators and perform raw byte-level comparisons with ASCII lowercasing for pure ASCII strings.
