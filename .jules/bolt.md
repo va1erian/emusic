@@ -13,3 +13,7 @@
 ## 2026-10-02 - Direct ASCII Lowercasing in Haystack Builder
 **Learning:** Even with `normalize_text` fast-pathing ASCII inputs, passing `value` through `normalize_text` allocated temporary `String`s for each track field during index construction. Lowercasing ASCII bytes directly into the pre-allocated haystack `String` buffer eliminates per-field allocations entirely.
 **Action:** Append ASCII fields directly into the destination string buffer while converting case byte-by-byte to avoid intermediate `String` allocations during bulk object index building.
+
+## 2026-10-03 - Fast-pathing Identical and ASCII Character Comparison in Natural Sort
+**Learning:** `char::to_lowercase()` constructs a `std::char::ToLowercase` iterator and accesses Unicode lookup tables for every character comparison. In sorting operations (`natural_compare`), matching prefixes and ASCII characters are extremely common. An `ac == bc` check bypasses case-folding entirely for identical characters, and `to_ascii_lowercase()` avoids `ToLowercase` iterator construction for ASCII characters.
+**Action:** When performing character-by-character string comparisons, check for exact equality (`ac == bc`) first and use bitwise `to_ascii_lowercase()` for ASCII characters before falling back to `char::to_lowercase()`.

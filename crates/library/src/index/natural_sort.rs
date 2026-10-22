@@ -34,8 +34,25 @@ pub fn natural_compare(a: &str, b: &str) -> Ordering {
                     }
                 }
 
-                let ac_lower = ac.to_lowercase().next().unwrap_or(ac);
-                let bc_lower = bc.to_lowercase().next().unwrap_or(bc);
+                // Optimization: Identical characters match directly without case folding,
+                // skipping ToLowercase iterator construction and Unicode table lookups.
+                if ac == bc {
+                    a_chars.next();
+                    b_chars.next();
+                    continue;
+                }
+
+                // Optimization: Use bitwise ASCII lowercasing for ASCII character comparisons
+                // to avoid allocating ToLowercase iterators on common ASCII strings.
+                let (ac_lower, bc_lower) = if ac.is_ascii() && bc.is_ascii() {
+                    (ac.to_ascii_lowercase(), bc.to_ascii_lowercase())
+                } else {
+                    (
+                        ac.to_lowercase().next().unwrap_or(ac),
+                        bc.to_lowercase().next().unwrap_or(bc),
+                    )
+                };
+
                 match ac_lower.cmp(&bc_lower) {
                     Ordering::Equal => {
                         a_chars.next();
@@ -144,5 +161,25 @@ mod tests {
     #[test]
     fn leading_zeroes_compare_equal() {
         assert_eq!(natural_compare("Mix 07", "Mix 7"), Ordering::Equal);
+    }
+
+    #[test]
+    fn ascii_fast_path_and_identical_chars() {
+        assert_eq!(
+            natural_compare("Artist - Album", "Artist - Album"),
+            Ordering::Equal
+        );
+        assert_eq!(
+            natural_compare("artist - album", "ARTIST - ALBUM"),
+            Ordering::Equal
+        );
+        assert_eq!(natural_compare("Track A", "Track B"), Ordering::Less);
+        assert_eq!(natural_compare("Track Z", "Track Y"), Ordering::Greater);
+    }
+
+    #[test]
+    fn unicode_non_ascii_case() {
+        assert_eq!(natural_compare("Émilie", "émilie"), Ordering::Equal);
+        assert_eq!(natural_compare("Mísia", "mísia"), Ordering::Equal);
     }
 }
