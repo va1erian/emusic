@@ -101,7 +101,7 @@ fn a_pause_loses_and_repeats_nothing() {
     channel.pause().expect("pause");
     let paused_at = channel.position().unwrap();
     let heard = sink.recording().samples.len();
-    std::thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(100));
     assert_eq!(channel.position().unwrap(), paused_at);
     assert_eq!(sink.recording().samples.len(), heard);
     assert!(channel.is_active(), "a paused channel is still active");
