@@ -75,8 +75,8 @@ cd android
 ```
 
 CI runs the same on a hardware-accelerated emulator, but the hosted emulator is
-too slow to boot for every PR, so the `instrumentation` job runs **nightly** (and
-on `workflow_dispatch`) — see `.github/workflows/android.yml`. Run it locally
+too slow to boot for every PR, so the `instrumentation` job runs only on manual
+`workflow_dispatch` — see `.github/workflows/android.yml`. Run it locally
 before submitting a change that touches the app or its connector crates.
 
 ## Android Auto

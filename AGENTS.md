@@ -45,7 +45,7 @@ cargo test --workspace
 
 Do not submit work with failing or skipped checks. PR bodies must contain `Closes #<issue>`.
 
-When the change touches `android/` or the Rust connector it builds on (`crates/mobile`, `crates/client`, `crates/render`), also run the Android instrumentation test locally, because the Android workflow's `instrumentation` job only runs nightly (the hosted emulator is too slow for every PR):
+When the change touches `android/` or the Rust connector it builds on (`crates/mobile`, `crates/client`, `crates/render`), also run the Android instrumentation test locally, because the Android workflow's `instrumentation` job only runs on manual dispatch (the hosted emulator is too slow for every PR):
 
 ```powershell
 cd android
